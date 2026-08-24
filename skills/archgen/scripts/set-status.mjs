@@ -3,7 +3,7 @@
 // Usage: node set-status.mjs <tasks.yaml> <taskId> <status> [--force]
 // Illegal transitions (done -> pending|ready) require --force. Exit 4 on refusal.
 // Writes via temp-file + rename so concurrent readers never see partial files.
-import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { parseYaml, stringifyYaml } from './lib/yaml.mjs';
 
 const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];

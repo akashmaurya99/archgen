@@ -34,21 +34,9 @@ for (const t of tasks) {
   }
 }
 
+// Direct = immediate dependents of seeds; transitive = everything beyond.
 const direct = new Set();
 const transitive = new Set();
-const frontier = [...seeds];
-while (frontier.length) {
-  const cur = frontier.pop();
-  for (const dep of dependents.get(cur) ?? []) {
-    if (seeds.includes(dep)) continue; // seeds themselves are not "affected"
-    if (direct.size === 0 && !transitive.has(dep)) direct.add(dep);
-    else if (!direct.has(dep)) transitive.add(dep);
-    else continue;
-    frontier.push(dep);
-  }
-}
-// Fix directness: direct = immediate dependents of seeds only.
-direct.clear();
 for (const s of seeds) for (const d of dependents.get(s) ?? []) direct.add(d);
 transitive.clear();
 {
