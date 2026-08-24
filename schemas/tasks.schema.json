@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "archgen/schemas/tasks.schema.json",
+  "title": "ArchGen Task",
+  "description": "Contract for a single task entry in an .archgen/<slug>/tasks.yaml file. NORMATIVE GRAPH SEMANTICS: depends_on lists PREREQUISITE task ids (never dependents). A task is ready iff all prerequisites are done; otherwise it is blocked. Wave 1 consists exactly of tasks whose depends_on is empty. Example: A{depends_on:[B]}, B{depends_on:[C]}, C{depends_on:[]} resolves to waves [[C],[B],[A]]. depends_on graphs MUST be acyclic.",
+  "type": "object",
+  "required": ["id", "title", "file_ownership"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique stable task identifier within the tasks file. Referenced by other tasks' depends_on entries.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable one-line summary of the task.",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "description": "Lifecycle state. Canonical enum is EXACTLY these six values - 'cancelled' does not exist in this contract.",
+      "enum": ["pending", "ready", "running", "blocked", "done", "failed"]
+    },
+    "depends_on": {
+      "type": "array",
+      "description": "Prerequisite task ids that must reach status 'done' before this task can run. Empty array = wave-1 task. Must not contain dangling references or cycles.",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "parallel_group": {
+      "type": ["string", "null"],
+      "description": "Optional label grouping tasks intended to execute concurrently within the same wave. Tasks sharing a parallel_group MUST have disjoint file_ownership.",
+      "default": null
+    },
+    "file_ownership": {
+      "type": "array",
+      "description": "Glob paths this task exclusively owns while running. REQUIRED and non-empty: two tasks scheduled in the same wave must never overlap on any owned path.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "Paths of files this task produces or meaningfully modifies (outputs, reports, generated code).",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "acceptance": {
+      "type": "array",
+      "description": "Checkable acceptance criteria; every entry must be verifiable before the task may be marked done.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    }
+  }
+}
