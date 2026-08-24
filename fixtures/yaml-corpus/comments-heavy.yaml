@@ -1,0 +1,12 @@
+# leading dangling comment
+# second dangling line
+top_key:
+  # pre-comment anchored to child
+  child_a: 1 # trailing inline
+  child_b: 2
+# between sections
+list:
+  # pre-item comment
+  - alpha # inline on item
+  - beta
+# final dangling comment

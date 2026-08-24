@@ -1,0 +1,6 @@
+# compact flow-map task entries — flat {id: X} shape
+tasks:
+  - {id: R, title: Root task, file_ownership: ["src/root/**"], depends_on: []}
+  - {id: M, title: Middle task, file_ownership: ["src/mid/**"], depends_on: [R]}
+  - {id: L, title: Leaf task, file_ownership: ["src/leaf/**"], depends_on: [M]}
+waves_note: wave-1 is exactly tasks whose depends_on is empty

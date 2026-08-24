@@ -1,0 +1,71 @@
+{
+  "ok": true,
+  "data": {
+    "top_key": {
+      "child_a": 1,
+      "child_b": 2
+    },
+    "list": [
+      "alpha",
+      "beta"
+    ]
+  },
+  "comments": [
+    {
+      "path": [
+        "top_key"
+      ],
+      "inline": false,
+      "text": "# leading dangling comment"
+    },
+    {
+      "path": [
+        "top_key"
+      ],
+      "inline": false,
+      "text": "# second dangling line"
+    },
+    {
+      "path": [
+        "child_a"
+      ],
+      "inline": false,
+      "text": "# pre-comment anchored to child"
+    },
+    {
+      "path": [
+        "child_a"
+      ],
+      "inline": true,
+      "text": "# trailing inline"
+    },
+    {
+      "path": [
+        "list"
+      ],
+      "inline": false,
+      "text": "# between sections"
+    },
+    {
+      "path": [
+        "\u0000seq",
+        0
+      ],
+      "inline": false,
+      "text": "# pre-item comment"
+    },
+    {
+      "path": [
+        "\u0000seq",
+        0
+      ],
+      "inline": true,
+      "text": "# inline on item"
+    },
+    {
+      "path": null,
+      "inline": false,
+      "text": "# final dangling comment"
+    }
+  ]
+}

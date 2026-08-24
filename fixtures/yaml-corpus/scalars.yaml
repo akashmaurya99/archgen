@@ -1,0 +1,15 @@
+plain: hello world
+quoted_double: "has: colon #hash"
+quoted_single: 'it''s'
+number_int: 42
+number_neg: -17
+number_float: 3.14
+bool_true: true
+bool_false: false
+null_tilde: ~
+null_word: null
+null_empty:
+flow_list: [a, b, c]
+flow_quoted: ["a, b", c, 'd']
+empty_flow_list: []
+version_like: 1.2.3

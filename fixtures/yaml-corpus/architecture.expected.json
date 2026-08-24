@@ -1,0 +1,52 @@
+{
+  "ok": true,
+  "data": {
+    "name": "Acme Shop",
+    "slug": "acme-shop",
+    "stack": [
+      "typescript",
+      "nextjs",
+      "postgres",
+      "redis"
+    ],
+    "structure": "src/ features/ migrations/ config/ tests/",
+    "modules": [
+      {
+        "name": "catalog",
+        "responsibility": "Browsing, searching, and rendering products and categories.",
+        "owns": [
+          "src/features/catalog/**",
+          "migrations/catalog/**"
+        ]
+      },
+      {
+        "name": "cart",
+        "responsibility": "Session-scoped basket state, quantity rules, price totals.",
+        "owns": [
+          "src/features/cart/**"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "id": "ADR-001",
+        "title": "Use Postgres over MongoDB",
+        "context": "transactional orders plus reporting queries",
+        "decision": "Postgres 16 with Prisma",
+        "consequences": [
+          "schema migrations required per release",
+          "relational integrity enforced at DB level"
+        ]
+      }
+    ]
+  },
+  "comments": [
+    {
+      "path": [
+        "structure"
+      ],
+      "inline": true,
+      "text": "# single-line: block scalars are outside the shared subset"
+    }
+  ]
+}
