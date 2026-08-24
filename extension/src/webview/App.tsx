@@ -18,6 +18,8 @@ import { StatusStore } from '../host/store';
 import { getVsCodeApi } from './vscode';
 import { EmptyState, ErrorBanner, LoadingState, VIEW_TABS, type ViewTab } from './states';
 import { TasksView } from './TasksView';
+import { CodeGraphView } from './CodeGraphView';
+import { DocsView } from './DocsView';
 
 export interface AppProps {
   /** injected for tests; defaults to the real webview API */
@@ -37,6 +39,7 @@ export function App(props: AppProps) {
   const vscode = useMemo(() => props.api ?? getVsCodeApi(), [props.api]);
   const [model, setModel] = useState<ArchgenModelMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [docContent, setDocContent] = useState<{ path: string; content: string } | null>(null);
   const [, setStoreVersion] = useState(0);
   const storeRef = useRef<StatusStore<TaskVM> | null>(null);
   const [tab, setTab] = useState<ViewTab>(() => {
@@ -55,6 +58,9 @@ export function App(props: AppProps) {
           setModel(msg);
           setError(null);
           applyTheme(msg.themeKind);
+          break;
+        case 'docContent':
+          setDocContent({ path: msg.path, content: msg.content });
           break;
         case 'update':
           // Batched into ONE rAF flush by the store; no setState here —
@@ -122,54 +128,25 @@ export function App(props: AppProps) {
         <EmptyState hasArchgenFolder={model.warnings.some((w) => w.includes('.archgen'))} />
       ) : tab === 'TASKS' ? (
         model.tasks.length > 0 && storeRef.current ? (
-          <TasksView tasks={model.tasks} store={storeRef.current} />
+          <TasksView
+            tasks={model.tasks}
+            store={storeRef.current}
+            onBuild={(taskId) => vscode.postMessage({ type: 'build', taskId })}
+            onStartWork={() => vscode.postMessage({ type: 'startWork' })}
+          />
         ) : (
           <EmptyState hasArchgenFolder />
         )
       ) : tab === 'CODE' ? (
-        <CodePlaceholder product={model.codegraph.product} reason={model.codegraph.unsupportedReason} nodeCount={model.codegraph.nodes?.length ?? 0} edgeCount={model.codegraph.edges?.length ?? 0} />
+        <CodeGraphView vm={model.codegraph} />
       ) : (
-        <DocsPlaceholder docs={model.docs} onOpen={openFile} />
+        <DocsView
+          docs={model.docs}
+          active={docContent}
+          onSelect={(path) => vscode.postMessage({ type: 'openDoc', path })}
+          onOpenInEditor={openFile}
+        />
       )}
     </main>
-  );
-}
-
-function CodePlaceholder({ product, reason, nodeCount, edgeCount }: { product: string; reason?: string; nodeCount: number; edgeCount: number }) {
-  if (product === 'unsupported') {
-    return (
-      <div className="archgen-state archgen-banner-unsupported" role="status">
-        <h2>Codegraph unavailable</h2>
-        <p>{reason ?? 'No supported codegraph index found in this workspace.'}</p>
-      </div>
-    );
-  }
-  return (
-    <section aria-label="Code graph summary">
-      <p>
-        Index <strong>{product}</strong>: {nodeCount} nodes, {edgeCount} edges loaded.
-      </p>
-      <p className="archgen-hint">Interactive dependency graph lands in the code-graph milestone.</p>
-    </section>
-  );
-}
-
-function DocsPlaceholder({ docs, onOpen }: { docs: Array<{ path: string; title: string }>; onOpen: (path: string) => void }) {
-  if (docs.length === 0) {
-    return <EmptyState hasArchgenFolder />;
-  }
-  return (
-    <section aria-label="Docs">
-      <ul className="archgen-doc-list">
-        {docs.map((d) => (
-          <li key={d.path}>
-            <button type="button" className="archgen-doc-link" onClick={() => onOpen(d.path)}>
-              {d.title}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p className="archgen-hint">Rendered markdown + mermaid lands in the docs milestone.</p>
-    </section>
   );
 }
