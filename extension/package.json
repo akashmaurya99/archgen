@@ -1,0 +1,98 @@
+{
+  "name": "archgen-extension",
+  "displayName": "ArchGen",
+  "description": "Living pictures for your .archgen/ folder: task DAG, code dependency graph, and rendered docs. Read-only window over your repo — the extension never edits anything itself.",
+  "version": "0.1.0",
+  "publisher": "archgen",
+  "license": "MIT",
+  "//": [
+    "NATIVE MODULE DECISION (todo 1): better-sqlite3 (native) chosen as PRIMARY SQLite driver over sql.js/WASM-primary.",
+    "Rationale: codegraph reads are synchronous, read-only, small-result queries where a native binding is fastest and simplest;",
+    "sql.js would force async handoff + manual WAL handling and a WASM blob shipped in the vsix. better-sqlite3 is opened with",
+    "{ readonly: true } so the extension can never mutate an index. Fallback: if the native binding fails to load (Electron ABI",
+    "mismatch before @electron/rebuild runs), src/host/codegraph.ts feature-detects node:sqlite (Node >= 22.5 / Electron >= 33",
+    "runtimes) and uses DatabaseSync read-only instead; a typed UnsupportedProductError surfaces to the UI banner only when NO",
+    "driver can open the detected product DB.",
+    "SUPPORTED MATRIX: VS Code >= 1.90 (engines floor). Desktop profiles (Electron): install devDep @electron/rebuild and run",
+    "`npx electron-rebuild -f -w better-sqlite3` against the profile's Electron ABI before debugging/testing (VS Code >= 1.9x",
+    "ships Electron >= 33 => node:sqlite fallback also available there). Node-based contexts (vitest, CLI smoke): plain",
+    "`npm install` prebuilds cover Node 20/22/24 on darwin-arm64/darwin-x64/linux-x64/win32-x64.",
+    "Packaging rules: better-sqlite3 stays EXTERNAL in the esbuild host bundle and ships as a native module per",
+    "https://code.visualstudio.com/api/working-with-extensions/bundling-extension (vsce packages node_modules/better-sqlite3/build/Release/*.node).",
+    "NO webview-ui-toolkit: the library is archived by Microsoft; UI is React 18 + @xyflow/react v12 only."
+  ],
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:archgen.openPanel"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "archgen.openPanel",
+        "title": "ArchGen: Open Task Board",
+        "category": "ArchGen"
+      }
+    ],
+    "configuration": {
+      "title": "ArchGen",
+      "properties": {
+        "archgen.harness.default": {
+          "type": "string",
+          "default": "claude",
+          "enum": [
+            "claude",
+            "opencode",
+            "codex",
+            "gemini",
+            "custom"
+          ],
+          "description": "Agent harness invoked by the ▶ build button (templates applied in wave 5)."
+        },
+        "archgen.harness.templates": {
+          "type": "object",
+          "default": {
+            "claude": "claude -p \"{{prompt}}\" --output-format json --permission-mode acceptEdits"
+          },
+          "description": "Command templates per harness. Placeholders: {{prompt}}, {{task}}."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:fixture-db": "node scripts/build-fixture-db.mjs"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "3.1.1",
+    "@xyflow/react": "12.11.3",
+    "better-sqlite3": "13.0.3",
+    "markdown-it": "15.0.0",
+    "mermaid": "11.17.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "4.2.0",
+    "@testing-library/react": "16.3.2",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/markdown-it": "14.2.0",
+    "@types/node": "22.18.11",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@types/vscode": "1.90.0",
+    "@vscode/test-electron": "3.1.0",
+    "esbuild": "0.28.2",
+    "jsdom": "30.0.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

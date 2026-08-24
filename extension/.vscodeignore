@@ -1,0 +1,12 @@
+.vscode/**
+src/**
+test/**
+scripts/**
+esbuild.mjs
+tsconfig.json
+**/*.map
+**/*.test.*
+node_modules/better-sqlite3/deps
+node_modules/better-sqlite3/src
+node_modules/**/{test,__tests__,tests,spec}/**
+.gitignore
