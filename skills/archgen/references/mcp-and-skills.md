@@ -11,7 +11,8 @@
    - `gemini mcp add -s project -t http <name> <url>`
 3. No CLI available: draft the exact config diff against the platform's real
    shape (see assets/mcp-template.json for annotated canonical forms) and SHOW
-   it to the user. Wait for explicit approval.
+   it to the user. **USER APPROVAL GATE** — wait for an explicit yes before any
+   write; approval is never inferred from earlier steps.
 4. Apply, then apply the restart semantics from the platforms table.
 5. Verify the tool is visible after reload; report failure modes honestly.
 

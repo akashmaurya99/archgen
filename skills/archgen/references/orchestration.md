@@ -60,10 +60,19 @@ SLUG="<slug>"; ROOT="$(pwd)"; SKILL="<abs-path-to-skills/archgen>"
 run_task() { # $1=id  $2=prompt-file
   local id="$1" pf="$2" log=".archgen/$SLUG/results/$id.log"
   mkdir -p "$(dirname "$log")"
-  claude -p "$(cat "$pf")
+  local body; body="$(cat "$pf")
+
+You own exactly the file_ownership globs listed for this task in tasks.yaml. Follow archgen code-standards. On success run: node \"$SKILL/scripts/set-status.mjs\" .archgen/$SLUG/tasks.yaml \"$id\" done ; on failure set-status failed."
+  case "$ARCHGEN_HARNESS" in
+    claude)    claude -p "$body" --output-format json --permission-mode acceptEdits > "$log" 2>&1 ;;
+    opencode)  opencode run "$body" --auto --format json > "$log" 2>&1 ;;
+    codex)     codex exec --sandbox workspace-write --json -o "$log.final" "$body" > "$log" 2>&1 ;;
+    gemini)    gemini --output-format json "$body" > "$log" 2>&1 ;;
+    agy)       agy -p --output-format json --print-timeout 15m "$body" > "$log" 2>&1 ;;
+    *) echo "unknown harness: $ARCHGEN_HARNESS" >&2; return 9 ;;
+  esac
 
 You own exactly: $(node "$SKILL/scripts/impact.mjs" .archgen/$SLUG/tasks.yaml "$id" >/dev/null 2>&1 && echo 'see tasks.yaml file_ownership'). Follow archgen code-standards. On success run: node "$SKILL/scripts/set-status.mjs" .archgen/$SLUG/tasks.yaml "$id" done ; on failure set-status failed." \
-    --output-format json --permission-mode acceptEdits > "$log" 2>&1
 }
 # Wave N: launch all frontier tasks in parallel…
 for t in $(node "$SKILL/scripts/next-tasks.mjs" .archgen/$SLUG/tasks.yaml \

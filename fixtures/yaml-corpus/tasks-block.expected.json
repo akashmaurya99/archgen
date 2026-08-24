@@ -61,7 +61,7 @@
     },
     {
       "path": [
-        "\u0000seq",
+        "tasks",
         0
       ],
       "inline": false,
@@ -69,6 +69,8 @@
     },
     {
       "path": [
+        "tasks",
+        0,
         "id"
       ],
       "inline": true,

@@ -54,7 +54,7 @@ export function parseYaml(text, opts = {}) {
   // Drop blank/comment-only knowledge from the recursive descent input by
   // filtering here but recording positions first (keeps parser core simple).
   const pos = { i: 0 };
-  const data = parseBlock(lines, pos, 0, ctx, /*root*/ true);
+  const data = parseBlock(lines, pos, 0, ctx, /*root*/ true, []);
   // Guard: nothing structural may survive past the root block (e.g. a sequence
   // followed by a mapping at the same indent) — silent truncation would corrupt
   // contracts, so refuse loudly instead.
@@ -86,12 +86,12 @@ function classify(raw) {
 }
 
 /** Recursive block parser: consumes lines at >= indent belonging to this block. */
-function parseBlock(lines, pos, indent, ctx, root = false) {
+function parseBlock(lines, pos, indent, ctx, root = false, basePath = []) {
   // Decide map vs sequence by first content line at exactly this indent.
   const peek = peekContent(lines, pos, indent);
   if (!peek) return null;
-  if (peek.line.bare.startsWith('- ') || peek.line.bare === '-') return parseSequence(lines, pos, indent, ctx);
-  return parseMapping(lines, pos, indent, ctx);
+  if (peek.line.bare.startsWith('- ') || peek.line.bare === '-') return parseSequence(lines, pos, indent, ctx, basePath);
+  return parseMapping(lines, pos, indent, ctx, basePath);
 }
 
 function peekContent(lines, pos, indent) {
@@ -107,7 +107,7 @@ function peekContent(lines, pos, indent) {
   return null;
 }
 
-function parseMapping(lines, pos, indent, ctx) {
+function parseMapping(lines, pos, indent, ctx, basePath = []) {
   /** @type {Record<string, any>} */
   const out = {};
   while (pos.i < lines.length) {
@@ -117,36 +117,37 @@ function parseMapping(lines, pos, indent, ctx) {
     if (c.indent < indent) break;
     if (c.indent > indent) fail(ctx, pos.i + 1, 'inconsistent indentation inside mapping');
 
-    const key = consumePendingAndParseKey(ctx, c, pos.i + 1);
-  assertKeyWellFormed(ctx, pos.i + 1, matchKey(c.text));
+    assertKeyWellFormed(ctx, pos.i + 1, matchKey(c.text));
+    const keyPath = [...basePath, matchKey(c.text).key];
+    const key = consumePendingAndParseKey(ctx, c, pos.i + 1, keyPath);
     pos.i++;
 
     // Value may be inline, a nested block, or a sequence at SAME indent (common YAML style).
     const inlineVal = splitKeyValue(c.text, ctx, pos.i);
     if (inlineVal.hasValue) {
       out[key.name] = parseScalarOrFlow(inlineVal.value, ctx, pos.i);
-      key.inlineComment(out, key.name);
+      key.inlineComment(keyPath);
       continue;
     }
     // Look ahead: nested block (deeper indent) or sequence at same indent.
     const next = nextContent(lines, pos.i);
-    if (!next || next.indent < indent) { out[key.name] = null; key.inlineComment(out, key.name); continue; }
+    if (!next || next.indent < indent) { out[key.name] = null; key.inlineComment(keyPath); continue; }
     if (next.indent > indent) {
-      out[key.name] = parseChild(lines, pos, next.indent, ctx);
+      out[key.name] = parseChild(lines, pos, next.indent, ctx, keyPath);
       continue;
     }
     // Same indent: only legal child here is a sequence ("- ...").
     if (next.bare.startsWith('- ')) {
-      out[key.name] = parseSequence(lines, pos, indent, ctx);
+      out[key.name] = parseSequence(lines, pos, indent, ctx, keyPath);
     } else {
       out[key.name] = null;
-      key.inlineComment(out, key.name);
+      key.inlineComment(keyPath);
     }
   }
   return out;
 }
 
-function parseChild(lines, pos, childIndent, ctx) {
+function parseChild(lines, pos, childIndent, ctx, basePath = []) {
   // Skip blanks/comments so a leading comment block never masquerades as the
   // child's first structural line (classify() of a comment has no `bare`).
   let c = null;
@@ -160,11 +161,11 @@ function parseChild(lines, pos, childIndent, ctx) {
     c = l; break;
   }
   if (!c) return null;
-  if (c.bare.startsWith('- ') || c.bare === '-') return parseSequence(lines, pos, childIndent, ctx);
-  return parseMapping(lines, pos, childIndent, ctx);
+  if (c.bare.startsWith('- ') || c.bare === '-') return parseSequence(lines, pos, childIndent, ctx, basePath);
+  return parseMapping(lines, pos, childIndent, ctx, basePath);
 }
 
-function parseSequence(lines, pos, indent, ctx) {
+function parseSequence(lines, pos, indent, ctx, basePath = []) {
   /** @type {any[]} */
   const out = [];
   while (pos.i < lines.length) {
@@ -177,21 +178,21 @@ function parseSequence(lines, pos, indent, ctx) {
     if (itemText === '-' || itemText.startsWith('- ')) {
       fail(ctx, pos.i + 1, 'nested sequence items are not supported by archgen\u0027s YAML subset');
     }
-    const idx = out.length;
-    flushPendingInto(ctx.comments, ctx.pendingComments, ['\u0000seq', idx], false);
+    // Positional anchor: comments above this item bind to its exact location.
+    const itemPath = [...basePath, out.length];
+    flushPendingInto(ctx.comments, ctx.pendingComments, itemPath, false);
 
     if (itemText === '') { // nested block under bare "-"
       pos.i++;
       const next = nextContent(lines, pos.i);
       if (!next || next.indent <= indent) { out.push(null); continue; }
-      out.push(parseChild(lines, pos, next.indent, ctx));
+      out.push(parseChild(lines, pos, next.indent, ctx, itemPath));
       continue;
     }
     const isFlowMap = itemText.startsWith('{');
     const isMapItem = !isFlowMap && (/^[^:#]+:(\s|$)/.test(itemText) || /^[A-Za-z_][\w.-]*:\s/.test(itemText));
     if (isFlowMap) {
       // Compact flow-map item: parse whole item as a flat mapping value.
-      const idx0 = out.length;
       out.push(parseScalarOrFlow(itemText, ctx, pos.i + 1));
       pos.i++;
       continue;
@@ -213,17 +214,18 @@ function parseSequence(lines, pos, indent, ctx) {
       }
       const subCtx = { filename: ctx.filename, comments: ctx.comments, pendingComments: [] };
       const subPos = { i: 0 };
-      const obj = parseMapping(sub, subPos, indent + INDENT_UNIT, subCtx);
+      // Sub-mapping inherits the item's positional path so inner keys anchor
+      // as [.., itemIndex, keyName] — reviewer notes can never migrate between
+      // sibling items that share key names (the set-status corruption class).
+      const obj = parseMapping(sub, subPos, indent + INDENT_UNIT, subCtx, itemPath);
       for (const pc of subCtx.pendingComments) ctx.comments.push({ path: null, inline: false, text: pc });
-      // Re-anchor seq-item comments recorded during sub-parse onto this item.
-      reanchorSeqComments(ctx.comments, out.length, idx);
       out.push(obj);
       continue;
     }
     // Plain scalar item (may include inline comment).
     const { value, inlineComment } = splitInlineComment(itemText);
     out.push(parseScalarOrFlow(value, ctx, pos.i + 1));
-    if (inlineComment) ctx.comments.push({ path: ['\u0000seq', idx], inline: true, text: inlineComment });
+    if (inlineComment) ctx.comments.push({ path: itemPath, inline: true, text: inlineComment });
     pos.i++;
   }
   return out;
@@ -354,50 +356,26 @@ function nextContent(lines, from) {
   return null;
 }
 
-/** Stable path of a key inside its mapping (best-effort: key name alone is ambiguous
- * across repeated names, but our schemas forbid duplicates — name is sufficient). */
-function currentPath(_out, keyName) { return [keyName]; }
-
-function consumePendingAndParseKey(ctx, line, lineNo) {
+function consumePendingAndParseKey(ctx, line, lineNo, keyPath) {
   const m = matchKey(line.text);
   if (!m) fail(ctx, lineNo, `expected 'key:' mapping entry, got: ${line.text.slice(0, 40)}`);
   assertKeyWellFormed(ctx, lineNo, m);
-  // Full-line comments sitting directly above this key anchor to it NOW;
-  // waiting longer would misattach them to a deeper child key.
+  // Full-line comments sitting directly above this key anchor to its FULL
+  // positional path NOW; waiting longer would misattach them to a deeper child.
   for (const t of ctx.pendingComments.splice(0)) {
-    ctx.comments.push({ path: [m.key], inline: false, text: t });
+    ctx.comments.push({ path: keyPath, inline: false, text: t });
   }
-  const name = m.key;
   return {
-    name,
-    inlineComment(_obj, k) {
+    name: m.key,
+    inlineComment(kp) {
       const { inlineComment } = splitInlineComment(line.text.slice(line.text.indexOf(':') + 1).trim());
-      if (inlineComment) ctx.comments.push({ path: [k], inline: true, text: inlineComment });
+      if (inlineComment) ctx.comments.push({ path: kp, inline: true, text: inlineComment });
     },
   };
 }
 
-// NOTE: pre-comments for mapping keys are flushed by the caller right before the
-// child block parses (flushPendingInto) using the child key path; top-level keys
-// flush via the same mechanism inside parseMapping's lookahead branch. Inline and
-// dangling comments are handled directly. This asymmetry is intentional: it keeps
-// the hot path simple while guaranteeing every captured comment is emitted exactly once.
-
 function flushPendingInto(comments, pending, path, _inline) {
   for (const t of pending.splice(0)) comments.push({ path, inline: false, text: t });
-}
-
-function reanchorSeqComments(comments, _len, idx) {
-  // Comments captured while parsing this sequence item were anchored with a
-  // placeholder first segment '\u0000seq'; retarget placeholder entries that
-  // were pushed AFTER the flush for this item to point at this item index.
-  for (let i = comments.length - 1; i >= 0; i--) {
-    const c = comments[i];
-    if (c.path && c.path[0] === '\u0000seq' && c.path[1] === undefined) {
-      c.path[1] = idx;
-      break; // only the most recent unanchored seq comment belongs to this item
-    }
-  }
 }
 
 /**
@@ -441,19 +419,25 @@ function emitValue(out, v, indent, comments, used, path) {
   if (Array.isArray(v)) {
     if (v.length === 0) { out.push(pad + '[]'); return; }
     v.forEach((item, idx) => {
-      const ipath = [...path, idx];
-      preComments(out, comments, used, ['\u0000seq', idx]); // seq pre-comments (document-level seqs)
+      const itemPath = [...path, idx];
+      // Pre-item comments keep their original indentation relative to the dash.
+      comments.forEach((c, i) => {
+        if (!used.has(i) && !c.inline && c.path && samePath(c.path, itemPath)) {
+          out.push(pad + c.text); used.add(i);
+        }
+      });
       if (item !== null && typeof item === 'object') {
         const entries = Object.entries(item);
         if (entries.length === 0) { out.push(pad + '- {}'); return; }
         const [k0, v0] = entries[0];
-        preComments(out, comments, used, [k0]);
+        const k0path = [...itemPath, k0];
+        preComments(out, comments, used, k0path);
         out.push(pad + '- ' + k0 + ': ' + encodeScalar(v0));
-        inlineCommentFor(out, comments, used, [k0]);
-        emitEntries(out, entries.slice(1), indent + INDENT_UNIT, comments, used, ipath.concat(k0));
+        inlineCommentFor(out, comments, used, k0path);
+        emitEntries(out, entries.slice(1), indent + INDENT_UNIT, comments, used, itemPath);
       } else {
         out.push(pad + '- ' + encodeScalar(item));
-        inlineCommentFor(out, comments, used, ['\u0000seq', idx]);
+        inlineCommentFor(out, comments, used, itemPath);
       }
     });
     return;
@@ -469,16 +453,16 @@ function emitEntries(out, entries, indent, comments, used, basePath) {
   const pad = ' '.repeat(indent);
   for (const [k, val] of entries) {
     const kpath = [...basePath, k];
-    preComments(out, comments, used, [k]);
+    preComments(out, comments, used, kpath);
     if (val !== null && typeof val === 'object') {
-      if (Object.keys(val).length === 0 && !Array.isArray(val)) { out.push(pad + k + ': {}'); inlineCommentFor(out, comments, used, [k]); continue; }
-      if (Array.isArray(val) && val.length === 0) { out.push(pad + k + ': []'); inlineCommentFor(out, comments, used, [k]); continue; }
+      if (Object.keys(val).length === 0 && !Array.isArray(val)) { out.push(pad + k + ': {}'); inlineCommentFor(out, comments, used, kpath); continue; }
+      if (Array.isArray(val) && val.length === 0) { out.push(pad + k + ': []'); inlineCommentFor(out, comments, used, kpath); continue; }
       out.push(pad + k + ':');
-      inlineCommentFor(out, comments, used, [k]);
+      inlineCommentFor(out, comments, used, kpath);
       emitValue(out, val, indent + INDENT_UNIT, comments, used, kpath);
     } else {
       out.push(pad + k + ': ' + encodeScalar(val));
-      inlineCommentFor(out, comments, used, [k]);
+      inlineCommentFor(out, comments, used, kpath);
     }
   }
 }

@@ -132,7 +132,7 @@ test('set-status: mutates value, preserves comments verbatim', () => {
   assert.ok(after.includes('# second line'));
   assert.ok(after.includes('# note on C'));
   assert.ok(after.includes('status: running'));
-  assert.equal(after.split('\n').filter((l) => l.startsWith('#')).length, 3);
+  assert.equal(after.split('\n').filter((l) => l.trimStart().startsWith('#')).length, 3); // verbatim text, indentation now preserved too
 });
 
 test('set-status: reopening done requires --force (exit 4)', () => {

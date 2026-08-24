@@ -6,7 +6,7 @@ production incidents somewhere.
 
 ## Typing (TypeScript projects)
 
-- `any` is BANNED — including implicit anys. Enable `"strict": true` plus
+- NO ANY: `any` is BANNED — including implicit anys and `as any` casts. Enable `"strict": true` plus
   `noImplicitAny`, `strictNullChecks`, `noUncheckedIndexedAccess`.
 - No unhandled `undefined`/null: validate at boundaries (env parsing, API
   input) with a schema; inside the codebase use non-optional types + explicit
@@ -38,13 +38,19 @@ src/
 
 ## File naming
 
-- TypeScript: `kebab-case.ts` for all files; PascalCase only for class-bearing
-  files when the language convention demands (`Models.ts`).
+Per-language conventions (professional, descriptive, consistent):
+
+| Language | Source files | Components/classes | Tests |
+|---|---|---|---|
+| TypeScript | `kebab-case.ts` | `PascalCase.tsx` components, `PascalCase` classes | `<subject>.test.ts` colocated |
+| Python | `snake_case.py` modules | `PascalCase` classes, `snake_case` functions | `test_<subject>.py` mirrored |
+| Rust | `snake_case.rs` modules | `PascalCase` types/traits | `#[cfg(test)] mod tests` inline or `tests/` |
+| Go | `snake_case.go` packages | `PascalCase` exported / `camelCase` internal | `<subject>_test.go` same dir |
+
 - Descriptive > clever: `rate-limiter.ts` not `rl.ts`; `parse-config.ts` not
   `utils2.ts`.
 - BANNED names: `utils.ts`, `misc.ts`, `helpers.ts`, `temp*`, `final*`,
   `copy*`, numbered duplicates (`auth2.ts`) — split by responsibility instead.
-- Tests: `<subject>.test.ts` colocated.
 
 ## Comments
 

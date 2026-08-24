@@ -27,6 +27,7 @@
     },
     {
       "path": [
+        "top_key",
         "child_a"
       ],
       "inline": false,
@@ -34,6 +35,7 @@
     },
     {
       "path": [
+        "top_key",
         "child_a"
       ],
       "inline": true,
@@ -48,7 +50,7 @@
     },
     {
       "path": [
-        "\u0000seq",
+        "list",
         0
       ],
       "inline": false,
@@ -56,7 +58,7 @@
     },
     {
       "path": [
-        "\u0000seq",
+        "list",
         0
       ],
       "inline": true,
