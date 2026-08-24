@@ -1,0 +1,20 @@
+# POISONED CASE 01 — dependency cycle: TA needs TC, TC needs TB, TB needs TA.
+tasks:
+  - id: TA
+    title: First stage of the pipeline
+    depends_on: [TC]
+    file_ownership: ["src/stage-a/**"]
+    acceptance:
+      - "stage a produces its output artifact"
+  - id: TB
+    title: Second stage of the pipeline
+    depends_on: [TA]
+    file_ownership: ["src/stage-b/**"]
+    acceptance:
+      - "stage b consumes stage a output"
+  - id: TC
+    title: Third stage of the pipeline
+    depends_on: [TB]
+    file_ownership: ["src/stage-c/**"]
+    acceptance:
+      - "stage c consumes stage b output"

@@ -1,0 +1,27 @@
+name: Demo Platform
+slug: demo            # becomes .archgen/demo/
+stack:
+  language: typescript
+  runtime: node20
+  framework: fastify
+  database: postgres
+structure:            # planned folder tree — planned BEFORE code exists
+  - path: src/features/<feature>/
+    purpose: feature modules (api, internal, tests colocated)
+  - path: src/shared/
+    purpose: cross-feature utilities, no feature imports
+  - path: src/config/
+    purpose: env parsing + constants
+modules:
+  - name: api
+    responsibility: HTTP surface for notes and users
+    owns: ["src/features/api/**"]
+  - name: web
+    responsibility: Server-rendered admin console
+    owns: ["src/features/web/**"]
+decisions:            # ADR-lite; full ADRs live in decisions/
+  - id: D1
+    title: Postgres over MongoDB
+    context: transactional records plus reporting queries
+    decision: Postgres 16 accessed through Prisma
+    consequences: schema migrations required per release

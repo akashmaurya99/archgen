@@ -1,0 +1,15 @@
+# POISONED CASE 02 — same-wave ownership overlap: OW1 and OW2 have no
+# prerequisites, land in the SAME wave, and claim the identical glob.
+tasks:
+  - id: OW1
+    title: Rewrite the shared serialization format
+    depends_on: []
+    file_ownership: ["src/shared/format.ts"]
+    acceptance:
+      - "serializer round-trips every sample payload"
+  - id: OW2
+    title: Add compression to the shared serialization format
+    depends_on: []
+    file_ownership: ["src/shared/format.ts"]
+    acceptance:
+      - "compressed payloads decompress to identical bytes"

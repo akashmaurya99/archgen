@@ -1,0 +1,26 @@
+# brownfield plan — add rate-limit feature (MEDIUM)
+# file_ownership references EXISTING paths only (verified against the survey);
+# the limiter lands inside files the codebase already has.
+tasks:
+  # Core limiter lands first — everything else builds on it
+  - id: RL1
+    title: Add token-bucket rate limiter to the http server
+    depends_on: []
+    file_ownership: ["src/server.ts"]
+    acceptance:
+      - "requests beyond 100 per minute receive 429 responses"
+      - "limiter state resets per window without leaks"
+  # Route wiring and logging depend on the core, run in parallel
+  - id: RL2
+    title: Apply the limiter to route handlers with per-route budgets
+    depends_on: [RL1]
+    file_ownership: ["src/routes.ts"]
+    acceptance:
+      - "health endpoint stays exempt from limiting"
+      - "limited responses carry retry-after headers"
+  - id: RL3
+    title: Emit rate-limit events through the shared logger
+    depends_on: [RL1]
+    file_ownership: ["src/shared/logger.ts"]
+    acceptance:
+      - "every limit rejection logs one structured event"

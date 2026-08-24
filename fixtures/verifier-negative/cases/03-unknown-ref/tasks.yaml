@@ -1,0 +1,9 @@
+# POISONED CASE 03 — plan references TASK-999 which does not exist in
+# tasks.yaml (dangling plan→task reference).
+tasks:
+  - id: BASE
+    title: Implement the export pipeline core
+    depends_on: []
+    file_ownership: ["src/exporter/**"]
+    acceptance:
+      - "exporter emits one file per record"

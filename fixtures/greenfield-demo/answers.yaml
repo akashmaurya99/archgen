@@ -1,0 +1,20 @@
+# Pre-seeded interview answers — references/interview.md answers-file format.
+# The GENERATE driver treats this as authoritative user input and skips the
+# conversational rounds (non-interactive E2E).
+scope_class: LARGE
+problem: Teams cannot ship a multi-module service without architecture decisions scattered across chat threads
+success_criteria:
+  - architecture and task graph exist before any code is written
+  - every task carries objective acceptance criteria and disjoint file ownership
+constraints:
+  - git is the only version-control requirement
+  - tooling scripts must stay zero-dependency
+stack:
+  language: typescript
+  runtime: node20
+  framework: fastify
+  database: postgres
+integrations: [stripe, sendgrid]
+compliance: []             # checklist placeholders only
+risks:
+  - scope creep beyond the initial module boundaries

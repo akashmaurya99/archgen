@@ -1,0 +1,14 @@
+# CLEAN CASE — valid chain, disjoint ownership, full plan coverage.
+tasks:
+  - id: STEP1
+    title: Define the migration record schema
+    depends_on: []
+    file_ownership: ["src/migrations/schema.ts"]
+    acceptance:
+      - "schema parses every historical dump"
+  - id: STEP2
+    title: Backfill records using the schema
+    depends_on: [STEP1]
+    file_ownership: ["src/migrations/backfill.ts"]
+    acceptance:
+      - "backfill is idempotent across reruns"
