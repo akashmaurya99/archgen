@@ -19,9 +19,12 @@
     "`npm install` prebuilds cover Node 20/22/24 on darwin-arm64/darwin-x64/linux-x64/win32-x64.",
     "Packaging rules: better-sqlite3 stays EXTERNAL in the esbuild host bundle and ships as a native module per",
     "https://code.visualstudio.com/api/working-with-extensions/bundling-extension (vsce packages node_modules/better-sqlite3/build/Release/*.node).",
+    "NOTE on `vsce package --no-dependencies`: that flag makes vsce skip node_modules ENTIRELY, which would drop the",
+    "externalized native binding from the vsix. `npm run package` therefore runs plain `vsce package`; the tuned",
+    ".vscodeignore excludes node_modules/** and whitelists ONLY the better-sqlite3 runtime chain (lib/ + prebuilds/),",
+    "so dependency traversal is safe — every other production dep is already esbuild-bundled into dist/media.",
     "NO webview-ui-toolkit: the library is archived by Microsoft; UI is React 18 + @xyflow/react v12 only."
   ],
-  "private": true,
   "engines": {
     "vscode": "^1.90.0",
     "node": ">=20"
@@ -77,6 +80,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "cross-mode": "node scripts/cross-mode-check.mjs",
+    "package": "npx @vscode/vsce package",
     "build:fixture-db": "node scripts/build-fixture-db.mjs"
   },
   "dependencies": {

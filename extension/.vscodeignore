@@ -1,12 +1,28 @@
+# --- dev-only sources ---
 .vscode/**
 src/**
 test/**
 scripts/**
 esbuild.mjs
 tsconfig.json
+vitest.config.mts
 **/*.map
 **/*.test.*
-node_modules/better-sqlite3/deps
-node_modules/better-sqlite3/src
-node_modules/**/{test,__tests__,tests,spec}/**
+**/__tests__/**
 .gitignore
+MANUAL-TEST.md
+
+# --- NATIVE MODULE STRATEGY (see package.json "//" decision) ---
+# The esbuild HOST bundle keeps better-sqlite3 EXTERNAL, so its runtime files
+# must ship inside the vsix. better-sqlite3 >= 13 is self-contained: the
+# platform binaries live in prebuilds/*.node and lib/ is plain JS — no
+# bindings/node-addon-api needed at RUNTIME (both are build/install-time only).
+# Everything else in node_modules is bundled into dist/ by esbuild, so with
+# `vsce package --no-dependencies` we exclude ALL of node_modules and
+# whitelist exactly the sqlite runtime chain:
+node_modules/**
+!node_modules/better-sqlite3/lib/**
+!node_modules/better-sqlite3/prebuilds/**
+!node_modules/better-sqlite3/package.json
+!node_modules/better-sqlite3/LICENSE
+!node_modules/better-sqlite3/README.md
