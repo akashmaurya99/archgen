@@ -1,0 +1,107 @@
+/* tokens.css — ArchGen design token layer (todo 2).
+ *
+ * DARK-FIRST GitHub Primer palette. Every COLOR token resolves through a
+ * --vscode-* variable first (theme adaptation inside webviews) with the
+ * canonical dark hex as fallback — so the extension looks native in light /
+ * high-contrast themes too, and exactly like the draft on unknown hosts.
+ *
+ * Structural tokens (spacing / radius) intentionally have NO --vscode-*
+ * alias: VS Code exposes no spacing variables, and inheriting an unrelated
+ * theme var would corrupt layout. The vitest token test enforces the alias
+ * rule for every COLOR-carrying token and whitelists these literals.
+ *
+ * Status enum is EXACTLY: pending | ready | running | blocked | done | failed
+ * (six values; the schema defines no seventh lifecycle state).
+ */
+
+:root {
+  /* ---- Surfaces ---- */
+  --archgen-canvas: var(--vscode-editor-background, #0d1117);
+  --archgen-surface: var(--vscode-sideBar-background, #161b22);
+  --archgen-surface-elevated: var(--vscode-editorWidget-background, #21262d);
+
+  /* ---- Hairlines & borders ---- */
+  --archgen-hairline: var(--vscode-widget-border, #30363d);
+  --archgen-hairline-strong: var(--vscode-panel-border, #3d444d);
+  --archgen-focus-ring: var(--vscode-focusBorder, #58a6ff);
+
+  /* ---- Text ---- */
+  --archgen-text: var(--vscode-editor-foreground, #e6edf3);
+  --archgen-text-muted: var(--vscode-descriptionForeground, #8b949e);
+  --archgen-text-on-status: var(--vscode-editor-background, #0d1117);
+
+  /* ---- Status palette (WCAG-AA on both dark surfaces) ---- */
+  --archgen-status-pending: var(--vscode-descriptionForeground, #8b949e);   /* gray-muted fill   */
+  --archgen-status-ready: var(--vscode-charts-blue, #58a6ff);               /* blue outline      */
+  --archgen-status-running: var(--vscode-charts-yellow, #d29922);           /* amber pulse       */
+  --archgen-status-blocked: var(--vscode-editorWarning-foreground, #e3b341);/* yellow HOLLOW     */
+  --archgen-status-done: var(--vscode-charts-green, #3fb950);               /* green             */
+  --archgen-status-failed: var(--vscode-charts-red, #f85149);               /* red               */
+
+  /* Muted fills derived from each status color (node backgrounds at rest).
+     color-mix keeps them theme-adaptive through the same --vscode-* vars. */
+  --archgen-fill-pending: color-mix(in srgb, var(--vscode-descriptionForeground, #8b949e) 12%, transparent);
+  --archgen-fill-ready: color-mix(in srgb, var(--vscode-charts-blue, #58a6ff) 12%, transparent);
+  --archgen-fill-running: color-mix(in srgb, var(--vscode-charts-yellow, #d29922) 14%, transparent);
+  --archgen-fill-blocked: color-mix(in srgb, var(--vscode-editorWarning-foreground, #e3b341) 0%, transparent); /* hollow by design */
+  --archgen-fill-done: color-mix(in srgb, var(--vscode-charts-green, #3fb950) 12%, transparent);
+  --archgen-fill-failed: color-mix(in srgb, var(--vscode-charts-red, #f85149) 12%, transparent);
+
+  /* ---- Typography ---- */
+  --archgen-font-ui: var(--vscode-font-family, -apple-system, 'Segoe UI', sans-serif);
+  --archgen-font-mono: var(--vscode-editor-font-family, ui-monospace, 'SF Mono', Menlo, monospace);
+  --archgen-font-size-xs: var(--vscode-editor-font-size, 11px);
+  --archgen-font-size-sm: var(--vscode-font-size, 12px);
+  --archgen-font-size-md: var(--vscode-font-size, 13px);
+  --archgen-font-size-xl: calc(var(--vscode-font-size, 13px) * 20 / 13);
+
+  /* ---- Spacing (4px grid) — structural literals, see header note ---- */
+  --archgen-space-1: 4px;
+  --archgen-space-2: 8px;
+  --archgen-space-3: 12px;
+  --archgen-space-4: 16px;
+  --archgen-space-6: 24px;
+
+  /* ---- Radius ---- */
+  --archgen-radius: 6px;
+  --archgen-radius-pill: 999px;
+
+  /* ---- Motion ---- */
+  --archgen-motion-fast: 120ms ease;
+  --archgen-motion-normal: 200ms ease;
+}
+
+/* Running node pulse: an expanding, fading ring in the running color. */
+@keyframes archgen-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--archgen-status-running) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.archgen-pulse {
+  animation: archgen-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Blocked = yellow HOLLOW: outline only, slashed feel comes from dashed border. */
+.archgen-node--blocked {
+  background: var(--archgen-fill-blocked);
+  border: 1px dashed var(--archgen-status-blocked);
+}
+
+/* Respect OS/editor reduced-motion preferences: kill all animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
