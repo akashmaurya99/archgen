@@ -1,0 +1,42 @@
+{
+  "_readme": "Canonical MCP server declarations. COPY the variant matching your platform (see references/platforms.md for file paths). Keys DIFFER per platform: mcpServers | servers | mcp | context_servers. Remote URL field varies: url | serverUrl | httpUrl.",
+  "_claude_code_cursor_windsurf_kiro_gemini": {
+    "mcpServers": {
+      "codegraph": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@colbymchenry/codegraph", "mcp"],
+        "env": {}
+      },
+      "context7-remote": {
+        "type": "http",
+        "url": "https://mcp.context7.com/mcp",
+        "headers": { "Authorization": "Bearer ${env:CONTEXT7_TOKEN}" }
+      }
+    }
+  },
+  "_vscode_copilot": {
+    "servers": {
+      "codegraph": { "type": "stdio", "command": "npx", "args": ["-y", "@colbymchenry/codegraph", "mcp"] },
+      "context7": { "type": "http", "url": "https://mcp.context7.com/mcp" }
+    },
+    "inputs": []
+  },
+  "_opencode": {
+    "mcp": {
+      "codegraph": { "type": "local", "command": ["npx", "-y", "@colbymchenry/codegraph", "mcp"], "environment": {}, "enabled": true },
+      "context7": { "type": "remote", "url": "https://mcp.context7.com/mcp", "enabled": true }
+    }
+  },
+  "_zed": {
+    "context_servers": {
+      "context7": { "url": "https://mcp.context7.com/mcp" }
+    }
+  },
+  "_codex_toml": {
+    "_note": "TOML in ~/.codex/config.toml",
+    "mcp_servers.codegraph": { "command": "npx", "args": ["-y", "@colbymchenry/codegraph", "mcp"] },
+    "mcp_servers.context7": { "url": "https://mcp.context7.com/mcp" }
+  },
+  "_antigravity_warning": "Remote servers MUST use serverUrl (url/httpUrl are rejected): { mcpServers: { name: { serverUrl: '...' } } }"
+}
