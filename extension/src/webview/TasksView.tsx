@@ -10,7 +10,7 @@
 //   - edges are re-derived from the same record; `animated` flips ONLY when the
 //     TARGET node is running ("flowing into running"), blocked targets get a
 //     dashed-static class, failed targets a red-stroke class.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -32,6 +32,10 @@ import { taskNodeTypes, type TaskFlowNode } from './TaskNode';
 export interface TasksViewProps {
   tasks: TaskVM[];
   store: StatusStore<TaskVM>;
+  /** ▶ dispatch — App posts {type:'build',taskId} to the host. */
+  onBuild?: (taskId: string) => void;
+  /** Header "Start Work" — App posts {type:'startWork'} to the host. */
+  onStartWork?: () => void;
 }
 
 /** MiniMap dot color per status — CSS vars keep it theme-adaptive. */
@@ -55,7 +59,7 @@ function structureKeyOf(tasks: TaskVM[]): string {
   return tasks.map((t) => `${t.id}(${t.dependsOn.join('+')})`).join('|');
 }
 
-export function TasksView({ tasks, store }: TasksViewProps) {
+export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps) {
   const [statuses, setStatuses] = useState<Record<string, TaskStatus>>(() =>
     selectStatuses(new Map(store.ids().map((id) => [id, store.getById(id) as TaskVM]))),
   );
@@ -63,6 +67,12 @@ export function TasksView({ tasks, store }: TasksViewProps) {
   // ONE index subscription for the whole canvas; fires at most once per store
   // flush and only when some status actually changed (store shallow-equality).
   useEffect(() => store.subscribeIndex(selectStatuses, setStatuses), [store]);
+
+  // Ref-indirection keeps data.onBuild stable across renders so the per-id
+  // node object cache below stays valid even when App re-creates the callback.
+  const buildRef = useRef(onBuild);
+  buildRef.current = onBuild;
+  const dispatchBuild = useCallback((id: string) => buildRef.current?.(id), []);
 
   const key = useMemo(() => structureKeyOf(tasks), [tasks]);
 
@@ -99,7 +109,7 @@ export function TasksView({ tasks, store }: TasksViewProps) {
           style: n.style,
           draggable: false,
           selectable: false,
-          data: { label: task?.title ?? n.id, status },
+          data: { label: task?.title ?? n.id, status, onBuild: dispatchBuild },
         };
         cacheRef.current.set(n.id, next);
         return next;
@@ -151,6 +161,11 @@ export function TasksView({ tasks, store }: TasksViewProps) {
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls showInteractive={false} />
         <MiniMap pannable ariaLabel="Tasks minimap" nodeColor={(n) => STATUS_COLOR[(n.data as { status?: TaskStatus })?.status ?? 'pending']} />
+        <Panel position="top-left">
+          <button type="button" className="archgen-start-work" onClick={() => onStartWork?.()} aria-label="Start Work">
+            ▶ Start Work
+          </button>
+        </Panel>
         <Panel position="top-right">
           <div className="archgen-legend" role="list" aria-label="Status legend">
             {STATUS_ORDER.map((s) => (

@@ -1,4 +1,5 @@
-// TaskNode.tsx — custom React Flow node for one task (todo 8).
+// TaskNode.tsx — custom React Flow node for one task (todo 8) + ▶ build
+// dispatch (todo 9).
 //
 // PERF RULES (xyflow guide): the component is memo()ized and nodeTypes is
 // declared at MODULE SCOPE — recreating either on every render would remount
@@ -6,7 +7,7 @@
 // pulse-ring keyframes); no inline styles, so memo stays cheap and theming
 // flows through --archgen-* / --vscode-* variables.
 import { memo } from 'react';
-import { Handle, Position, type Node, type NodeProps, type NodeTypes } from '@xyflow/react';
+import { Handle, NodeToolbar, Position, type Node, type NodeProps, type NodeTypes } from '@xyflow/react';
 import type { TaskStatus } from '../shared/status';
 
 // Type (not interface): object literal types carry an implicit string index
@@ -14,6 +15,8 @@ import type { TaskStatus } from '../shared/status';
 export type TaskNodeData = {
   label: string;
   status: TaskStatus;
+  /** Host-injected dispatch callback; stable via ref in TasksView. */
+  onBuild?: (taskId: string) => void;
 };
 
 export type TaskFlowNode = Node<TaskNodeData, 'task'>;
@@ -26,6 +29,17 @@ function TaskNodeComponent({ data, id }: NodeProps<TaskFlowNode>) {
       data-task-id={id}
       aria-label={`${id}: ${data.label} (status ${data.status})`}
     >
+      <NodeToolbar isVisible>
+        <button
+          type="button"
+          className="archgen-build-btn"
+          onClick={() => data.onBuild?.(id)}
+          aria-label={`Build ${id}`}
+          title={`Dispatch harness for ${id}`}
+        >
+          ▶
+        </button>
+      </NodeToolbar>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <span className="archgen-task-id">{id}</span>
       <span className="archgen-task-title" data-status={data.status}>

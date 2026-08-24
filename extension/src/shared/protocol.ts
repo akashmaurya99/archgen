@@ -29,6 +29,8 @@ export interface CodegraphVM {
   /** present when product !== 'unsupported' */
   nodes?: Array<{ id: string; label: string; kind: string; file: string; line: number }>;
   edges?: Array<{ source: string; target: string; kind: string }>;
+  /** whether the index exposes a nodes_fts table (host-side search available) */
+  hasFts?: boolean;
   /** human-readable reason when unsupported */
   unsupportedReason?: string;
 }
@@ -57,7 +59,7 @@ export interface ArchgenStatusMessage {
 
 export type ThemeKind = 'light' | 'dark' | 'highContrast' | 'highContrastLight';
 
-export type HostToWebview = ArchgenModelMessage | ArchgenUpdateMessage | ArchgenStatusMessage | { type: 'theme'; themeKind: ThemeKind };
+export type HostToWebview = ArchgenModelMessage | ArchgenUpdateMessage | ArchgenStatusMessage | ArchgenDocContentMessage | { type: 'theme'; themeKind: ThemeKind };
 
 export interface WebviewReadyMessage {
   type: 'ready';
@@ -75,4 +77,21 @@ export interface WebviewBuildMessage {
   taskId: string;
 }
 
-export type WebviewToHost = WebviewReadyMessage | WebviewOpenFileMessage | WebviewBuildMessage;
+/** Header "Start Work": dispatch wave-1 of next-tasks.mjs through the harness. */
+export interface WebviewStartWorkMessage {
+  type: 'startWork';
+}
+
+/** DOCS sidebar click: request in-panel markdown render for one doc. */
+export interface WebviewOpenDocMessage {
+  type: 'openDoc';
+  path: string;
+}
+
+export type WebviewToHost = WebviewReadyMessage | WebviewOpenFileMessage | WebviewBuildMessage | WebviewStartWorkMessage | WebviewOpenDocMessage;
+
+export interface ArchgenDocContentMessage {
+  type: 'docContent';
+  path: string;
+  content: string;
+}

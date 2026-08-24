@@ -43,6 +43,8 @@ export interface PanelHostOptions {
   onReady?: () => void;
   /** Build intent from the ▶ button (wired to harness spawn in todo 9). */
   onBuild?: (taskId: string) => void;
+  /** DOCS sidebar click — host reads the file and posts docContent back. */
+  onOpenDoc?: (path: string) => void;
 }
 
 export class ArchgenPanel {
@@ -146,6 +148,9 @@ export class ArchgenPanel {
       }
       case 'build':
         this.opts.onBuild?.(msg.taskId);
+        break;
+      case 'openDoc':
+        this.opts.onOpenDoc?.(msg.path);
         break;
     }
   }

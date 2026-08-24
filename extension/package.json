@@ -56,9 +56,17 @@
         "archgen.harness.templates": {
           "type": "object",
           "default": {
-            "claude": "claude -p \"{{prompt}}\" --output-format json --permission-mode acceptEdits"
+            "claude": "claude -p \"{{prompt}}\" --output-format json --permission-mode acceptEdits",
+            "opencode": "opencode run \"{{prompt}}\" --auto --format json",
+            "codex": "codex exec --sandbox workspace-write --json -o \"{{outfile}}\" \"{{prompt}}\"",
+            "gemini": "gemini --output-format json \"{{prompt}}\""
           },
-          "description": "Command templates per harness. Placeholders: {{prompt}}, {{task}}."
+          "description": "Command templates per harness. Placeholders: {{prompt}}, {{task}}, {{outfile}}."
+        },
+        "archgen.scriptsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Explicit path to the archgen scripts directory (next-tasks.mjs, set-status.mjs). Probed in order: this setting, <workspace>/skills/archgen/scripts, ~/.claude/skills/archgen/scripts, ~/.agents/skills/archgen/scripts."
         }
       }
     }
