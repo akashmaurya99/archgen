@@ -1,0 +1,134 @@
+/*
+ * dag.css — task DAG canvas styles (todo 8).
+ * Consumes tokens.css variables ONLY — no new colors are defined here.
+ * Loaded AFTER tokens.css (bundled main.css link order in panel.ts), so the
+ * double-class status rules below intentionally outrank the base node style
+ * and re-assert tokens.css's blocked treatment at higher specificity.
+ */
+
+/* ---- Canvas shell ---- */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.archgen-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--archgen-space-2);
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--archgen-space-2);
+}
+
+.archgen-tasks-view {
+  flex: 1 1 auto;
+  min-height: 320px;
+}
+
+/* ---- Task node (box must match layout.ts DEFAULT_NODE_W/H) ---- */
+.archgen-tasknode {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--archgen-space-2) var(--archgen-space-3);
+  border-radius: var(--archgen-radius);
+  background: var(--archgen-surface-elevated);
+  border: 1px solid var(--archgen-hairline-strong);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-sm);
+}
+
+.archgen-tasknode .archgen-task-id {
+  font-family: var(--archgen-font-mono);
+  font-size: var(--archgen-font-size-xs);
+  color: var(--archgen-text-muted);
+}
+
+/* Status treatments — EXACTLY the six-value schema enum; no cancelled exists. */
+.archgen-tasknode.archgen-node--pending {
+  background: var(--archgen-fill-pending);
+  border-color: var(--archgen-status-pending);
+}
+
+.archgen-tasknode.archgen-node--ready {
+  background: var(--archgen-fill-ready);
+  border-color: var(--archgen-status-ready);
+  box-shadow: inset 0 0 0 1px var(--archgen-status-ready); /* blue outline */
+}
+
+.archgen-tasknode.archgen-node--running {
+  background: var(--archgen-fill-running);
+  border-color: var(--archgen-status-running);
+}
+/* pulse ring itself comes from tokens.css `.archgen-pulse` (added by TaskNode) */
+
+.archgen-tasknode.archgen-node--blocked {
+  background: var(--archgen-fill-blocked); /* hollow by design */
+  border-style: dashed;
+  border-color: var(--archgen-status-blocked);
+}
+
+.archgen-tasknode.archgen-node--done {
+  background: var(--archgen-fill-done);
+  border-color: var(--archgen-status-done);
+}
+
+.archgen-tasknode.archgen-node--failed {
+  background: var(--archgen-fill-failed);
+  border-color: var(--archgen-status-failed);
+}
+
+/* ---- Edges ---- */
+.react-flow__edge-path {
+  stroke: var(--archgen-hairline-strong);
+}
+
+.react-flow__edge.archgen-edge--failed .react-flow__edge-path {
+  stroke: var(--archgen-status-failed);
+}
+
+.react-flow__edge.archgen-edge--blocked .react-flow__edge-path {
+  stroke: var(--archgen-status-blocked);
+  stroke-dasharray: 5 3; /* dashed-static for blocked flows */
+}
+
+/* ---- Legend (Panel top-right) ---- */
+.archgen-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--archgen-space-1);
+  padding: var(--archgen-space-2) var(--archgen-space-3);
+  border-radius: var(--archgen-radius);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface);
+  font-size: var(--archgen-font-size-xs);
+  color: var(--archgen-text-muted);
+}
+
+.archgen-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--archgen-space-2);
+}
+
+.archgen-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--archgen-radius-pill);
+  display: inline-block;
+}
+
+.archgen-dot--pending { background: var(--archgen-status-pending); }
+.archgen-dot--ready { background: transparent; border: 1.5px solid var(--archgen-status-ready); }
+.archgen-dot--running { background: var(--archgen-status-running); }
+.archgen-dot--blocked { background: transparent; border: 1.5px dashed var(--archgen-status-blocked); }
+.archgen-dot--done { background: var(--archgen-status-done); }
+.archgen-dot--failed { background: var(--archgen-status-failed); }

@@ -7,6 +7,7 @@ import { createElement } from 'react';
 import { App } from '../src/webview/App';
 import type { ArchgenModelMessage, HostToWebview } from '../src/shared/protocol';
 import { resetVsCodeApiForTests } from '../src/webview/vscode';
+import { installFlowDomStubs } from './helpers/dom-stubs';
 
 interface FakeApi {
   posted: unknown[];
@@ -44,6 +45,7 @@ function lastPosted(api: FakeApi): HostToWebview {
 }
 
 beforeEach(() => {
+  installFlowDomStubs();
   cleanup();
   resetVsCodeApiForTests();
 });
@@ -112,7 +114,7 @@ describe('App shell', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('applies update diffs without replacing the whole model', () => {
+  it('applies update diffs without replacing the whole model', async () => {
     const api = makeApi();
     render(createElement(App, { api }));
     act(() => {
@@ -122,6 +124,10 @@ describe('App shell', () => {
       window.dispatchEvent(new MessageEvent('message', {
         data: { type: 'update', changed: [{ id: 'B', status: 'failed' }] },
       }));
+    });
+    // store batches patches into one rAF flush — wait out the frame
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
     });
     const chip = document.querySelector('[data-task-id="B"] [data-status]');
     expect(chip?.getAttribute('data-status')).toBe('failed');

@@ -170,6 +170,9 @@ export class ArchgenPanel {
   private renderHtml(webview: Webview): string {
     const scriptUri = Uri.joinPath(this.context.extensionUri, 'media', 'webview', 'main.js');
     const cssMain = Uri.joinPath(this.context.extensionUri, 'media', 'webview', 'tokens.css');
+    // Bundled by esbuild from the webview entry's css imports
+    // (@xyflow/react style + dag.css canvas styles).
+    const cssBundle = Uri.joinPath(this.context.extensionUri, 'media', 'webview', 'main.css');
     const n = nonce();
     // CSP: scripts ONLY via nonce; styles allow the webview's own origin
     // ('unsafe-inline' required by mermaid's injected <style> in later waves);
@@ -188,6 +191,7 @@ export class ArchgenPanel {
   <meta http-equiv="Content-Security-Policy" content="${csp}">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${webview.asWebviewUri(cssMain)}">
+  <link rel="stylesheet" href="${webview.asWebviewUri(cssBundle)}">
   <title>ArchGen</title>
 </head>
 <body>

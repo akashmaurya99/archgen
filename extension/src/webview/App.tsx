@@ -1,16 +1,23 @@
-// App.tsx — webview shell (todo 7): view tabs TASKS | CODE | DOCS,
-// loading/empty/error states, theme attribute, message intake.
+// App.tsx — webview shell (todo 7) + live status intake (todo 10).
+// View tabs TASKS | CODE | DOCS, loading/empty/error states, theme attribute.
 // The webview performs ZERO direct fs/network IO — everything arrives via
 // postMessage from the host; every user intent leaves via postMessage.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+//
+// LIVE WIRING (todo 10): full snapshots ('model') rebuild the StatusStore;
+// watcher diffs ('update') flow through store.applyBatch — an rAF-batched,
+// immutable patch application — so TasksView re-renders only changed nodes
+// instead of remapping the whole tasks array on every message.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ArchgenModelMessage,
   HostToWebview,
   TaskVM,
   ThemeKind,
 } from '../shared/protocol';
+import { StatusStore } from '../host/store';
 import { getVsCodeApi } from './vscode';
-import { EmptyState, ErrorBanner, LoadingState, StatusChip, VIEW_TABS, type ViewTab } from './states';
+import { EmptyState, ErrorBanner, LoadingState, VIEW_TABS, type ViewTab } from './states';
+import { TasksView } from './TasksView';
 
 export interface AppProps {
   /** injected for tests; defaults to the real webview API */
@@ -30,6 +37,8 @@ export function App(props: AppProps) {
   const vscode = useMemo(() => props.api ?? getVsCodeApi(), [props.api]);
   const [model, setModel] = useState<ArchgenModelMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [, setStoreVersion] = useState(0);
+  const storeRef = useRef<StatusStore<TaskVM> | null>(null);
   const [tab, setTab] = useState<ViewTab>(() => {
     const persisted = vscode.getState<PersistedState>();
     return persisted?.tab ?? 'TASKS';
@@ -41,22 +50,16 @@ export function App(props: AppProps) {
       const msg = event.data;
       switch (msg.type) {
         case 'model':
+          storeRef.current = new StatusStore<TaskVM>(msg.tasks);
+          setStoreVersion((v) => v + 1);
           setModel(msg);
           setError(null);
           applyTheme(msg.themeKind);
           break;
         case 'update':
-          setModel((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  tasks: prev.tasks.map((t) => {
-                    const change = msg.changed.find((c) => c.id === t.id);
-                    return change ? { ...t, status: change.status } : t;
-                  }),
-                }
-              : prev,
-          );
+          // Batched into ONE rAF flush by the store; no setState here —
+          // subscribers (TasksView) re-render only what changed.
+          storeRef.current?.applyBatch(msg.changed.map((c) => ({ id: c.id, status: c.status })));
           break;
         case 'status':
           if (msg.kind === 'error') setError(msg.message);
@@ -118,33 +121,17 @@ export function App(props: AppProps) {
       {!hasArchgenContent ? (
         <EmptyState hasArchgenFolder={model.warnings.some((w) => w.includes('.archgen'))} />
       ) : tab === 'TASKS' ? (
-        <TasksPlaceholder tasks={model.tasks} />
+        model.tasks.length > 0 && storeRef.current ? (
+          <TasksView tasks={model.tasks} store={storeRef.current} />
+        ) : (
+          <EmptyState hasArchgenFolder />
+        )
       ) : tab === 'CODE' ? (
         <CodePlaceholder product={model.codegraph.product} reason={model.codegraph.unsupportedReason} nodeCount={model.codegraph.nodes?.length ?? 0} edgeCount={model.codegraph.edges?.length ?? 0} />
       ) : (
         <DocsPlaceholder docs={model.docs} onOpen={openFile} />
       )}
     </main>
-  );
-}
-
-function TasksPlaceholder({ tasks }: { tasks: TaskVM[] }) {
-  if (tasks.length === 0) {
-    return <EmptyState hasArchgenFolder />;
-  }
-  return (
-    <section aria-label="Task list">
-      <ul className="archgen-task-list">
-        {tasks.map((t) => (
-          <li key={t.id} className={`archgen-task-row archgen-node--${t.status}`} data-task-id={t.id}>
-            <code className="archgen-task-id">{t.id}</code>
-            <span className="archgen-task-title">{t.title}</span>
-            <StatusChip status={t.status} />
-          </li>
-        ))}
-      </ul>
-      <p className="archgen-hint">Dependency canvas lands in the DAG milestone.</p>
-    </section>
   );
 }
 
