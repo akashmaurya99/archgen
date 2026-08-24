@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# Local agent workspace (.omo) — keep evidence logs versioned
+.omo/*
+!.omo/evidence/
