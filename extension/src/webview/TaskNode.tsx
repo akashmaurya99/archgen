@@ -8,6 +8,7 @@
 // flows through --archgen-* / --vscode-* variables.
 import { memo } from 'react';
 import { Handle, NodeToolbar, Position, type Node, type NodeProps, type NodeTypes } from '@xyflow/react';
+import type { KeyboardEvent } from 'react';
 import type { TaskStatus } from '../shared/status';
 
 // Type (not interface): object literal types carry an implicit string index
@@ -21,20 +22,37 @@ export type TaskNodeData = {
 
 export type TaskFlowNode = Node<TaskNodeData, 'task'>;
 
+/** A11y label contract (todo 13): `task <id>: <title>, status <status>`. */
+export function taskAriaLabel(id: string, title: string, status: TaskStatus): string {
+  return `task ${id}: ${title}, status ${status}`;
+}
+
 function TaskNodeComponent({ data, id }: NodeProps<TaskFlowNode>) {
   const pulse = data.status === 'running' ? ' archgen-pulse' : '';
+
+  // KEYBOARD NAV (todo 13): every node is in the tab order; Enter or Space on
+  // a focused node activates the ▶ build dispatch — same path as the button.
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    data.onBuild?.(id);
+  };
+
   return (
     <div
       className={`archgen-tasknode archgen-node--${data.status}${pulse}`}
       data-task-id={id}
-      aria-label={`${id}: ${data.label} (status ${data.status})`}
+      role="button"
+      tabIndex={0}
+      aria-label={taskAriaLabel(id, data.label, data.status)}
+      onKeyDown={onKeyDown}
     >
       <NodeToolbar isVisible>
         <button
           type="button"
           className="archgen-build-btn"
           onClick={() => data.onBuild?.(id)}
-          aria-label={`Build ${id}`}
+          aria-label={`Build task ${id}`}
           title={`Dispatch harness for ${id}`}
         >
           ▶

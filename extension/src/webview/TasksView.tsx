@@ -59,6 +59,39 @@ function structureKeyOf(tasks: TaskVM[]): string {
   return tasks.map((t) => `${t.id}(${t.dependsOn.join('+')})`).join('|');
 }
 
+/**
+ * PERF BUDGET (todo 13): at most MAX_ANIMATED_EDGES edges carry the CSS
+ * `animated` class (each runs an infinite dashdraw animation on the main
+ * thread). Beyond the cap, running-target edges render as static strokes —
+ * correctness (edge exists) is preserved, only the motion is shed.
+ */
+export const MAX_ANIMATED_EDGES = 50;
+
+function deriveEdges(tasks: TaskVM[], statuses: Record<string, TaskStatus>): Edge[] {
+  let animatedCount = 0;
+  return tasks.flatMap((t) =>
+    t.dependsOn
+      .filter((d) => statuses[d] !== undefined || tasks.some((x) => x.id === d))
+      .map((d) => {
+        const targetStatus: TaskStatus = statuses[t.id] ?? 'pending';
+        const wantsAnimation = targetStatus === 'running' && animatedCount < MAX_ANIMATED_EDGES;
+        if (wantsAnimation) animatedCount++;
+        return {
+          id: `${d}->${t.id}`,
+          source: d,
+          target: t.id,
+          animated: wantsAnimation,
+          className:
+            targetStatus === 'failed'
+              ? 'archgen-edge--failed'
+              : targetStatus === 'blocked'
+                ? 'archgen-edge--blocked'
+                : undefined,
+        };
+      }),
+  );
+}
+
 export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps) {
   const [statuses, setStatuses] = useState<Record<string, TaskStatus>>(() =>
     selectStatuses(new Map(store.ids().map((id) => [id, store.getById(id) as TaskVM]))),
@@ -117,29 +150,7 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
     [laidOut, statuses, tasks],
   );
 
-  const edges = useMemo<Edge[]>(
-    () =>
-      tasks.flatMap((t) =>
-        t.dependsOn
-          .filter((d) => statuses[d] !== undefined || tasks.some((x) => x.id === d))
-          .map((d) => {
-            const targetStatus: TaskStatus = statuses[t.id] ?? 'pending';
-            return {
-              id: `${d}->${t.id}`,
-              source: d,
-              target: t.id,
-              animated: targetStatus === 'running',
-              className:
-                targetStatus === 'failed'
-                  ? 'archgen-edge--failed'
-                  : targetStatus === 'blocked'
-                    ? 'archgen-edge--blocked'
-                    : undefined,
-            };
-          }),
-      ),
-    [tasks, statuses],
-  );
+  const edges = useMemo<Edge[]>(() => deriveEdges(tasks, statuses), [tasks, statuses]);
 
   return (
     <section className="archgen-tasks-view" aria-label="Task dependency graph">
@@ -162,7 +173,12 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
         <Controls showInteractive={false} />
         <MiniMap pannable ariaLabel="Tasks minimap" nodeColor={(n) => STATUS_COLOR[(n.data as { status?: TaskStatus })?.status ?? 'pending']} />
         <Panel position="top-left">
-          <button type="button" className="archgen-start-work" onClick={() => onStartWork?.()} aria-label="Start Work">
+          <button
+            type="button"
+            className="archgen-start-work"
+            onClick={() => onStartWork?.()}
+            aria-label="Start Work: dispatch the first task wave"
+          >
             ▶ Start Work
           </button>
         </Panel>

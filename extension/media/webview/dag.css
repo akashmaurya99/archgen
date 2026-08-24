@@ -132,3 +132,80 @@ body,
 .archgen-dot--blocked { background: transparent; border: 1.5px dashed var(--archgen-status-blocked); }
 .archgen-dot--done { background: var(--archgen-status-done); }
 .archgen-dot--failed { background: var(--archgen-status-failed); }
+
+/* ---- States (todo 13) ---- */
+
+/* Error banner floats TOP-CENTER above the dimmed last-good graph. */
+.archgen-error-banner {
+  position: fixed;
+  top: var(--archgen-space-2);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: var(--archgen-space-3);
+  max-width: min(640px, calc(100% - var(--archgen-space-6)));
+  padding: var(--archgen-space-2) var(--archgen-space-3);
+  border-radius: var(--archgen-radius);
+  border: 1px solid var(--archgen-status-failed);
+  background: color-mix(in srgb, var(--archgen-status-failed) 14%, var(--archgen-surface-elevated));
+  color: var(--archgen-text);
+  font-size: var(--archgen-font-size-sm);
+}
+
+.archgen-error-banner button {
+  border: none;
+  background: transparent;
+  color: var(--archgen-text-muted);
+  font-size: var(--archgen-font-size-md);
+  cursor: pointer;
+  padding: 0 var(--archgen-space-1);
+}
+
+/* Last-good content dims while an error banner is up; pointer events off so
+   the stale view cannot be interacted with. */
+.archgen-root--dimmed > :not(.archgen-error-banner) {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Stale-data chip: seconds since the last model snapshot. */
+.archgen-stale-chip {
+  margin-left: auto;
+  padding: 2px var(--archgen-space-2);
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface);
+  color: var(--archgen-text-muted);
+  font-size: var(--archgen-font-size-xs);
+  font-family: var(--archgen-font-mono);
+}
+
+/* Empty-state install CTA: copyable command pill. */
+.archgen-install-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--archgen-space-2);
+  margin-top: var(--archgen-space-2);
+  padding: var(--archgen-space-1) var(--archgen-space-1) var(--archgen-space-1) var(--archgen-space-3);
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline-strong);
+  background: var(--archgen-surface-elevated);
+}
+
+.archgen-install-cmd {
+  font-family: var(--archgen-font-mono);
+  font-size: var(--archgen-font-size-xs);
+  color: var(--archgen-text);
+}
+
+.archgen-copy-btn {
+  border: 1px solid var(--archgen-hairline-strong);
+  border-radius: var(--archgen-radius-pill);
+  background: var(--archgen-surface);
+  color: var(--archgen-text);
+  font-size: var(--archgen-font-size-xs);
+  padding: 2px var(--archgen-space-2);
+  cursor: pointer;
+}

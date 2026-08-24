@@ -141,7 +141,12 @@ export function CodeGraphView({ vm }: CodeGraphViewProps) {
   };
 
   return (
-    <section className="archgen-code-view" aria-label="Code dependency graph">
+    <section
+      className="archgen-code-view"
+      aria-label="Code dependency graph"
+      data-testid="code-graph-view"
+      data-virtualized={shouldVirtualize(nodes.length) ? 'true' : 'false'}
+    >
       <div className="archgen-cg-toolbar">
         <input
           type="search"

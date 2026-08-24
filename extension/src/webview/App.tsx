@@ -16,7 +16,7 @@ import type {
 } from '../shared/protocol';
 import { StatusStore } from '../host/store';
 import { getVsCodeApi } from './vscode';
-import { EmptyState, ErrorBanner, LoadingState, VIEW_TABS, type ViewTab } from './states';
+import { EmptyState, ErrorBanner, LoadingState, StaleChip, VIEW_TABS, type ViewTab } from './states';
 import { TasksView } from './TasksView';
 import { CodeGraphView } from './CodeGraphView';
 import { DocsView } from './DocsView';
@@ -40,6 +40,7 @@ export function App(props: AppProps) {
   const [model, setModel] = useState<ArchgenModelMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<{ path: string; content: string } | null>(null);
+  const [lastModelAt, setLastModelAt] = useState<number>(() => Date.now());
   const [, setStoreVersion] = useState(0);
   const storeRef = useRef<StatusStore<TaskVM> | null>(null);
   const [tab, setTab] = useState<ViewTab>(() => {
@@ -56,6 +57,7 @@ export function App(props: AppProps) {
           storeRef.current = new StatusStore<TaskVM>(msg.tasks);
           setStoreVersion((v) => v + 1);
           setModel(msg);
+          setLastModelAt(Date.now());
           setError(null);
           applyTheme(msg.themeKind);
           break;
@@ -106,8 +108,12 @@ export function App(props: AppProps) {
 
   const hasArchgenContent = model.tasks.length > 0 || model.docs.length > 0 || model.codegraph.product !== 'unsupported';
 
+  // ERROR STATE (todo 13): the last-good model stays mounted and interactive
+  // content is dimmed via CSS while the dismissible top-center banner shows.
+  const dimmed = error !== null;
+
   return (
-    <main className="archgen-root" data-testid="archgen-root">
+    <main className={`archgen-root${dimmed ? ' archgen-root--dimmed' : ''}`} data-testid="archgen-root">
       <ErrorBanner message={error} onDismiss={() => setError(null)} />
       <nav className="archgen-tabs" role="tablist" aria-label="ArchGen views">
         {VIEW_TABS.map((t) => (
@@ -122,6 +128,7 @@ export function App(props: AppProps) {
             {t}
           </button>
         ))}
+        <StaleChip since={lastModelAt} />
       </nav>
 
       {!hasArchgenContent ? (

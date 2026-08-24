@@ -105,3 +105,23 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * FOCUS RINGS (todo 13, WCAG 2.4.7): one ring rule for every interactive
+ * surface, drawn from --archgen-focus-ring (→ --vscode-focusBorder). Only
+ * :focus-visible so mouse clicks stay ring-free while keyboard Tab always
+ * shows the indicator.
+ */
+.archgen-tasknode:focus-visible,
+.archgen-build-btn:focus-visible,
+.archgen-start-work:focus-visible,
+.archgen-tab:focus-visible,
+.archgen-copy-btn:focus-visible,
+.archgen-chip-btn:focus-visible,
+.archgen-doc-link:focus-visible,
+.archgen-doc-external:focus-visible,
+.archgen-error-banner button:focus-visible,
+.react-flow__controls-button:focus-visible {
+  outline: 2px solid var(--archgen-focus-ring);
+  outline-offset: 2px;
+}

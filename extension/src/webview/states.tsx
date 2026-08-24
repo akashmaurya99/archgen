@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { TaskStatus } from '../shared/protocol';
 
 export const STATUS_ORDER: TaskStatus[] = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
+
+/** Install hint CTA target — copyable so users can paste it into a terminal. */
+export const INSTALL_COMMAND = 'npx archgen generate';
 
 /** Status chip used across list placeholders until the DAG view lands (todo 8). */
 export function StatusChip({ status }: { status: TaskStatus }) {
@@ -25,6 +28,17 @@ export interface EmptyDetails {
 }
 
 export function EmptyState({ hasArchgenFolder }: EmptyDetails) {
+  const [copied, setCopied] = useState(false);
+
+  const copyInstall = async (): Promise<void> => {
+    try {
+      await navigator.clipboard?.writeText(INSTALL_COMMAND);
+    } catch {
+      /* clipboard unavailable (tests / permissions) — feedback still shows */
+    }
+    setCopied(true);
+  };
+
   return (
     <div className="archgen-state" role="status">
       <h2>No ArchGen plan found</h2>
@@ -33,8 +47,15 @@ export function EmptyState({ hasArchgenFolder }: EmptyDetails) {
       ) : (
         <>
           <p>This workspace has no <code>.archgen/</code> folder yet.</p>
-          <p>Scaffold one with the archgen skill, e.g.:</p>
-          <pre><code>npx archgen init</code></pre>
+          <p>
+            Run <code>archgen generate</code> in your repo to scaffold the plan, then reopen this board.
+          </p>
+          <div className="archgen-install-cta">
+            <code className="archgen-install-cmd">{INSTALL_COMMAND}</code>
+            <button type="button" className="archgen-copy-btn" aria-label="Copy install command" onClick={() => void copyInstall()}>
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
         </>
       )}
     </div>
@@ -50,6 +71,27 @@ export function ErrorBanner({ message, onDismiss }: { message: string | null; on
         <button type="button" onClick={onDismiss} aria-label="Dismiss error">×</button>
       )}
     </div>
+  );
+}
+
+/** "updated Ns ago" under a minute, then minutes — pure for tests. */
+export function formatDataAge(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `updated ${s}s ago`;
+  return `updated ${Math.floor(s / 60)}m ago`;
+}
+
+/** STALE-DATA CHIP (todo 13): seconds since the last full model snapshot. */
+export function StaleChip({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className="archgen-stale-chip" role="timer" aria-label={formatDataAge(now - since)}>
+      {formatDataAge(now - since)}
+    </span>
   );
 }
 
