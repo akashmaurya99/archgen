@@ -35,7 +35,7 @@ Targets (installed only when the directory already exists):
   \$HOME/.cursor/skills           Cursor
   .github/skills                 GitHub Copilot (project-local)
 
-Platforms not covered here: npx skills add akash/archgen
+Platforms not covered here: npx skills add akashmaurya99/archgen
 EOF
 }
 
@@ -211,7 +211,7 @@ printf '\nSummary: %s changed, %s unchanged, %s skipped, %s failed.\n' "$changed
 cat <<'EOF'
 
 Other platforms should use the universal installer:
-  npx skills add akash/archgen
+  npx skills add akashmaurya99/archgen
 
 Notes:
   * Zed expects the FLAT ~/.agents/skills layout — this installer maintains

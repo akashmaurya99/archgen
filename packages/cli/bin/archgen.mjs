@@ -29,7 +29,7 @@ Usage:
   npx archgen-skill uninstall         Alias for install --uninstall
   npx archgen-skill --help            This help
 
-Docs: https://github.com/akash/archgen`;
+Docs: https://github.com/akashmaurya99/archgen`;
 
 const [, , cmd, ...rest] = process.argv;
 
