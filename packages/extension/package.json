@@ -1,7 +1,7 @@
 {
   "name": "archgen-extension",
   "displayName": "ArchGen",
-  "description": "Living pictures for your .archgen/ folder: task DAG, code dependency graph, and rendered docs. Read-only window over your repo \u2014 the extension never edits anything itself.",
+  "description": "Living pictures for your .archgen/ folder: task DAG, code dependency graph, and rendered docs. Read-only window over your repo — the extension never edits anything itself.",
   "version": "0.0.1",
   "publisher": "archgen",
   "license": "MIT",
@@ -22,7 +22,7 @@
     "NOTE on `vsce package --no-dependencies`: that flag makes vsce skip node_modules ENTIRELY, which would drop the",
     "externalized native binding from the vsix. `npm run package` therefore runs plain `vsce package`; the tuned",
     ".vscodeignore excludes node_modules/** and whitelists ONLY the better-sqlite3 runtime chain (lib/ + prebuilds/),",
-    "so dependency traversal is safe \u2014 every other production dep is already esbuild-bundled into dist/media.",
+    "so dependency traversal is safe — every other production dep is already esbuild-bundled into dist/media.",
     "NO webview-ui-toolkit: the library is archived by Microsoft; UI is React 18 + @xyflow/react v12 only."
   ],
   "engines": {
@@ -54,7 +54,7 @@
             "gemini",
             "custom"
           ],
-          "description": "Agent harness invoked by the \u25b6 build button (templates applied in wave 5)."
+          "description": "Agent harness invoked by the ▶ build button (templates applied in wave 5)."
         },
         "archgen.harness.templates": {
           "type": "object",
@@ -80,6 +80,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
     "cross-mode": "node scripts/cross-mode-check.mjs",
     "package": "npx @vscode/vsce package",
     "build:fixture-db": "node scripts/build-fixture-db.mjs"
@@ -101,6 +102,7 @@
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
     "@types/vscode": "1.90.0",
+    "@vitest/coverage-v8": "4.1.11",
     "@vscode/test-electron": "3.1.0",
     "esbuild": "0.28.2",
     "jsdom": "30.0.1",
