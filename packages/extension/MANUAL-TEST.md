@@ -13,14 +13,14 @@ Setup: `npm install && npm run compile && npm test` must be green first.
 ---
 
 ## 1. Activation + panel open
-1. Open a workspace containing `.archgen/` (e.g. `fixtures/greenfield-demo` after running `archgen generate`, or any repo with `.archgen/demo/tasks.yaml`).
+1. Open a workspace containing `.archgen/` (e.g. `fixtures/greenfield-demo` after running `archgen-skill generate`, or any repo with `.archgen/demo/tasks.yaml`).
 2. Run **ArchGen: Open Task Board** from the command palette.
    - ✅ Panel opens beside the editor; TASKS tab active; task nodes render as a left→right dependency graph; no error banner.
 
 ## 2. Empty state
 1. Open an empty folder (no `.archgen/`).
 2. Run **ArchGen: Open Task Board**.
-   - ✅ "No ArchGen plan found" state shows the `archgen generate` hint and a copyable `npx archgen generate` pill; clicking **Copy** puts the command on the clipboard and the button reads `Copied!`.
+   - ✅ "No ArchGen plan found" state shows the `archgen-skill generate` hint and a copyable `npx archgen-skill generate` pill; clicking **Copy** puts the command on the clipboard and the button reads `Copied!`.
 
 ## 3. Status matrix + pulse
 1. Hand-edit statuses in `.archgen/**/tasks.yaml` to cover all six: pending, ready, running, blocked, done, failed. Save.

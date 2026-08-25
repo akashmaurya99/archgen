@@ -63,13 +63,13 @@ guarantee rather than a hope:
 pointer blocks so every harness auto-discovers it):
 
 ```bash
-npx archgen init
+npx archgen-skill init
 ```
 
 **Or install globally** into every detected harness:
 
 ```bash
-npx archgen install          # symlinks; --copy for real copies
+npx archgen-skill install          # symlinks; --copy for real copies
 ```
 
 Prefer shell? Clone this repo and run `./install.sh` (same behavior, plus
@@ -101,7 +101,7 @@ uninstalling it loses nothing.
 | Path | What | Distributed as |
 | --- | --- | --- |
 | [`skill/`](skill/) | The agent skill — `SKILL.md`, `references/`, zero-dep `scripts/`, `assets/` | vendored into npm; installed by `install.sh` |
-| [`packages/cli/`](packages/cli/) | `archgen init` / `install` / `uninstall` | npm: [`archgen`](https://www.npmjs.com/package/archgen) |
+| [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
 | [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button | `.vsix` via `vsce package` |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
 | [`fixtures/`](fixtures/) | Deterministic E2E demos + shared YAML corpus | repo-only |

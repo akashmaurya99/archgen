@@ -16,7 +16,7 @@ The extension is strictly a **window**: it reads files and spawns your agent CLI
 | Task DAG | dagre left→right layout; exact six-status enum `pending · ready · running · blocked · done · failed` (no cancelled exists); running pulse ring; edges animate only into running targets; MiniMap + Legend + zoom Controls. |
 | Live updates | FileSystemWatcher on `.archgen/**` and `.codegraph/**`, 300 ms coalesced debounce → rAF-batched immutable patches; only changed nodes re-render. |
 | Keyboard + ARIA | Tab walks task nodes; **Enter/Space** on a focused node dispatches ▶ build; nodes announce `task <id>: <title>, status <status>`; visible focus rings from the theme's focus border. |
-| States | Empty state with copyable `npx archgen generate` install CTA; errors keep the last-good graph mounted (dimmed) under a dismissible top-center banner; "updated Ns ago" stale chip. |
+| States | Empty state with copyable `npx archgen-skill generate` install CTA; errors keep the last-good graph mounted (dimmed) under a dismissible top-center banner; "updated Ns ago" stale chip. |
 | Docs | markdown-it (`html:false`) + mermaid strict mode; per-diagram error isolation; open-in-editor click-through. |
 | Code graph | colby/optave SQLite indexes read **read-only**; kind colors; edge-kind filter chips; search; impact highlight; unsupported-product banner. |
 

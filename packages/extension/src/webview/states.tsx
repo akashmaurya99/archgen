@@ -4,7 +4,7 @@ import type { TaskStatus } from '../shared/protocol';
 export const STATUS_ORDER: TaskStatus[] = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 
 /** Install hint CTA target — copyable so users can paste it into a terminal. */
-export const INSTALL_COMMAND = 'npx archgen generate';
+export const INSTALL_COMMAND = 'npx archgen-skill generate';
 
 /** Status chip used across list placeholders until the DAG view lands (todo 8). */
 export function StatusChip({ status }: { status: TaskStatus }) {

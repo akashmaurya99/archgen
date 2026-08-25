@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Skill**: archgen agent skill with 7 workflow modes, a plan-verifier gate
   (APPROVE/blocks on cycles, overlaps, unknown refs), and wave-based task
   execution (`next-tasks` / `set-status`).
-- **CLI** (`packages/cli`): `archgen init` (project-local skill copies +
+- **CLI** (`packages/cli`, published as [`archgen-skill`](https://www.npmjs.com/package/archgen-skill)): `archgen init` (project-local skill copies +
   AGENTS.md/CLAUDE.md pointer blocks), `archgen install` / `--uninstall`
   (multi-harness global installer with manifest-recorded removal).
 - **VS Code extension** (`packages/extension`): DAG view, code-graph view,

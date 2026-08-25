@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Node.js >= 18 (zero npm dependencies). Works on any agent harness that can read files and run shell commands.
 metadata:
   version: 1.0.0
-  repo: https://github.com/akash/archgen
+  repo: https://github.com/akashmaurya99/archgen
 ---
 
 # archgen — architecture generation & wave execution

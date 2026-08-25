@@ -124,11 +124,11 @@ describe('empty state install CTA', () => {
     act(() => {
       window.dispatchEvent(new MessageEvent('message', { data: { ...MODEL, tasks: [], docs: [] } }));
     });
-    expect(screen.getAllByText(/archgen generate/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/archgen-skill generate/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Copy install command' }));
     await act(async () => { await Promise.resolve(); });
     expect(writeText).toHaveBeenCalledWith(INSTALL_COMMAND);
-    expect(INSTALL_COMMAND).toContain('archgen generate');
+    expect(INSTALL_COMMAND).toContain('archgen-skill generate');
     expect(screen.getByText('Copied!')).toBeTruthy();
     void api;
   });
