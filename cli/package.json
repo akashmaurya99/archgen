@@ -1,0 +1,18 @@
+{
+  "name": "archgen",
+  "version": "1.0.0",
+  "description": "Architecture generation & autonomous task execution for coding agents - conversational requirements in, dependency-ordered tasks out, executed wave-by-wave with verifier gates. Works with Claude Code, OpenCode, Cursor, Codex, Gemini CLI and any agentskills.io harness.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "archgen": "bin/archgen.mjs" },
+  "files": ["bin/", "lib/", "vendor/", "README.md"],
+  "engines": { "node": ">=18" },
+  "keywords": ["ai", "agents", "architecture", "claude", "cursor", "opencode", "codex", "skills", "tasks", "orchestration"],
+  "repository": { "type": "git", "url": "git+https://github.com/akash/archgen.git" },
+  "//": "vendor/skills/archgen is synced from ../skills/archgen by scripts/sync-vendor.mjs (run automatically via prepublishOnly). The extension ships separately as a VS Code vsix.",
+  "scripts": {
+    "sync": "node scripts/sync-vendor.mjs",
+    "prepublishOnly": "node scripts/sync-vendor.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

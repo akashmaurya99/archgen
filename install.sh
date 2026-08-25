@@ -9,6 +9,8 @@ SOURCE="$SCRIPT_DIR/skills/archgen"
 MODE="link"
 PROJECT_ARG=""
 UNINSTALL=0
+INIT=0
+INIT_DIR=""
 
 usage() {
   cat <<EOF
@@ -20,6 +22,10 @@ Usage: install.sh [--copy] [--project <dir>] [--uninstall]
                     it already exists under the current working directory
   --uninstall       remove exactly what a previous run recorded in
                     \$HOME/.archgen-install-manifest.list (no-op exit 0 if none)
+  --init [dir]      project setup: copy the skill into <dir>/.agents/skills/archgen
+                    + <dir>/.claude/skills/archgen and generate AGENTS.md /
+                    CLAUDE.md pointer blocks so every agent harness auto-discovers
+                    archgen in that repo (default dir: current directory)
   -h, --help        show this help
 
 Targets (installed only when the directory already exists):
@@ -45,12 +51,55 @@ while [ $# -gt 0 ]; do
     --copy)      MODE="copy"; shift ;;
     --project)   [ $# -ge 2 ] || die '--project requires a path argument'; PROJECT_ARG="$2"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --init)      INIT=1; if [ $# -ge 2 ] && [ "${2-}" != "--copy" ] && [ "${2-}" != "--uninstall" ]; then INIT_DIR="$2"; shift; fi; shift ;;
     -h|--help)   usage; exit 0 ;;
     *)           die "unknown option: $1 (try --help)" ;;
   esac
 done
 
 # ---- Uninstall: remove exactly the manifest-recorded entries ----------------
+# ---- --init: project-local skill + context pointer files -------------------
+if [ "$INIT" -eq 1 ]; then
+  ROOT="$(cd -- "${INIT_DIR:-$PWD}" && pwd)" || die "cannot enter directory: ${INIT_DIR:-$PWD}"
+  mkdir -p "$ROOT/.agents/skills" "$ROOT/.claude/skills"
+  rm -rf -- "$ROOT/.agents/skills/archgen" "$ROOT/.claude/skills/archgen"
+  cp -R -- "$SOURCE" "$ROOT/.agents/skills/archgen"
+  cp -R -- "$ROOT/.agents/skills/archgen" "$ROOT/.claude/skills/archgen"
+
+  write_block() { # $1 = target file; idempotent via archgen:start guard
+    f="$1"
+    if [ -f "$f" ] && grep -q "archgen:start" "$f"; then return 0; fi
+    {
+      [ -f "$f" ] && cat "$f" && printf '\n'
+      cat <<'BLOCK'
+<!-- archgen:start (managed block - do not edit between markers) -->
+# ArchGen - Architecture Generation & Autonomous Task Execution
+
+This project uses the **archgen** skill, installed at `.agents/skills/archgen/`.
+
+**Before running any archgen workflow:** read `.agents/skills/archgen/SKILL.md` -
+it defines every mode, gate, and rule.
+
+Quick triggers:
+- "generate architecture for X" -> GENERATE mode
+- "add feature X" -> BROWNFIELD survey-first mode (analyzes this codebase)
+- "start work" -> execute pending tasks wave-by-wave
+
+Rules: artifacts live ONLY under `.archgen/<slug>/`; never hand-edit task
+statuses (use `scripts/set-status.mjs`); verifier + human gates before execution.
+<!-- archgen:end -->
+BLOCK
+    } > "$f.tmp" && mv "$f.tmp" "$f"
+  }
+  write_block "$ROOT/AGENTS.md"
+  write_block "$ROOT/CLAUDE.md"
+  echo "archgen: project initialized at $ROOT"
+  echo "  + .agents/skills/archgen  (+ mirror at .claude/skills/archgen)"
+  echo "  + AGENTS.md / CLAUDE.md pointer blocks"
+  echo 'Next: commit these files, then say "generate architecture" or "start work" in your agent.'
+  exit 0
+fi
+
 if [ "$UNINSTALL" -eq 1 ]; then
   if [ ! -f "$MANIFEST" ]; then
     printf 'Nothing to uninstall: no manifest at %s\n' "$MANIFEST"

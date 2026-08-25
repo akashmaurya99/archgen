@@ -15,3 +15,27 @@ An installable skill that turns product intent (greenfield interview) or an exis
 ## Status
 
 Scaffold in progress — see `.omo/plans/` for the execution plan.
+
+
+## Install
+
+### npm / npx (recommended, cross-platform)
+
+```bash
+# Prepare a project: skill + AGENTS.md/CLAUDE.md context pointers
+npx archgen init
+
+# Or install globally into every detected harness (Claude Code, OpenCode, Cursor, agentskills)
+npx archgen install
+```
+
+### From this repo
+
+```bash
+./install.sh              # global harness install (symlinks)
+./install.sh --init .     # project-local setup + AGENTS.md/CLAUDE.md pointers
+```
+
+### VS Code extension (separate, optional)
+
+Install `extension/archgen-extension-0.1.0.vsix` via *Extensions: Install from VSIX…*
