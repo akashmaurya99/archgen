@@ -153,7 +153,13 @@ export interface WebviewSelectFeatureMessage {
   slug: string;
 }
 
-export type WebviewToHost = WebviewReadyMessage | WebviewOpenFileMessage | WebviewBuildMessage | WebviewStartWorkMessage | WebviewOpenDocMessage | WebviewSelectFeatureMessage;
+/** Sidebar/context-menu intent: open board focused on one task node. */
+export interface WebviewRevealTaskMessage {
+  type: 'revealTask';
+  taskId: string;
+}
+
+export type WebviewToHost = WebviewReadyMessage | WebviewOpenFileMessage | WebviewBuildMessage | WebviewStartWorkMessage | WebviewOpenDocMessage | WebviewSelectFeatureMessage | WebviewRevealTaskMessage;
 
 export interface ArchgenDocContentMessage {
   type: 'docContent';
