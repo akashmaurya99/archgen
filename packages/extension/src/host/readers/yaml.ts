@@ -142,8 +142,10 @@ function parseMapping(lines: string[], pos: { i: number }, indent: number, ctx: 
     if (c.indent < indent) break;
     if (c.indent > indent) fail(ctx, pos.i + 1, 'inconsistent indentation inside mapping');
 
-    assertKeyWellFormed(ctx, pos.i + 1, matchKey(c.text!)!);
-    const keyPath: Array<string | number> = [...basePath, matchKey(c.text!)!.key];
+    const m = matchKey(c.text!);
+    if (!m) fail(ctx, pos.i + 1, `expected 'key:' mapping entry, got: ${c.bare!.slice(0, 40)}`);
+    assertKeyWellFormed(ctx, pos.i + 1, m);
+    const keyPath: Array<string | number> = [...basePath, m.key];
     const key = consumePendingAndParseKey(ctx, c, pos.i + 1, keyPath);
     pos.i++;
 
