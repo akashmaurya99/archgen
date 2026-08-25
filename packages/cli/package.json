@@ -1,6 +1,6 @@
 {
   "name": "archgen",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Architecture generation & autonomous task execution for coding agents - conversational requirements in, dependency-ordered tasks out, executed wave-by-wave with verifier gates. Works with Claude Code, OpenCode, Cursor, Codex, Gemini CLI and any agentskills.io harness.",
   "license": "MIT",
   "type": "module",
