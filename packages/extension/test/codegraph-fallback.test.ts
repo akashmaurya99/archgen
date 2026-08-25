@@ -27,7 +27,20 @@ afterAll(() => {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, 'fixtures');
 
-describe('codegraph node:sqlite fallback driver', () => {
+// The node:sqlite fallback genuinely requires Node >= 22.5 (feature-detected
+// at runtime by codegraph.ts). On older runtimes the correct product behavior
+// is UnsupportedProductError - covered by the dedicated no-driver case below.
+// Skipping (not failing) here is the honest enterprise contract.
+const nodeSqliteAvailable = (() => {
+  try {
+    const { DatabaseSync } = require('node:sqlite') as { DatabaseSync?: unknown };
+    return typeof DatabaseSync === 'function';
+  } catch {
+    return false;
+  }
+})();
+
+(nodeSqliteAvailable ? describe : describe.skip)('codegraph node:sqlite fallback driver', () => {
   it('opens the colby fixture via DatabaseSync when better-sqlite3 is unavailable', async () => {
     const mod = await import('../src/host/codegraph.js');
     const { reader, detected } = mod.openCodegraph(join(FIXTURES, 'ws-colby'));
