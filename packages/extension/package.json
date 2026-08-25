@@ -33,13 +33,47 @@
   "icon": "media/icon.png",
   "activationEvents": [
     "onCommand:archgen.openPanel",
-    "onView:archgen.launcher"
+    "onView:archgen.overview",
+    "onView:archgen.tasks",
+    "onView:archgen.docs",
+    "onCommand:archgen.startWork",
+    "onCommand:archgen.buildTask",
+    "onCommand:archgen.revealTask",
+    "onCommand:archgen.selectFeature",
+    "onCommand:archgen.openDoc"
   ],
   "contributes": {
     "commands": [
       {
         "command": "archgen.openPanel",
         "title": "ArchGen: Open Task Board",
+        "category": "ArchGen"
+      },
+      {
+        "command": "archgen.startWork",
+        "title": "Start Work",
+        "category": "ArchGen",
+        "icon": "$(play)"
+      },
+      {
+        "command": "archgen.buildTask",
+        "title": "Build This Task",
+        "category": "ArchGen",
+        "icon": "$(play)"
+      },
+      {
+        "command": "archgen.revealTask",
+        "title": "Show in Task Board",
+        "category": "ArchGen"
+      },
+      {
+        "command": "archgen.selectFeature",
+        "title": "Select Feature",
+        "category": "ArchGen"
+      },
+      {
+        "command": "archgen.openDoc",
+        "title": "Open Document",
         "category": "ArchGen"
       }
     ],
@@ -54,11 +88,34 @@
     },
     "views": {
       "archgen": [
-        {
-          "id": "archgen.launcher",
-          "name": "Task Board",
-          "type": "tree"
-        }
+        { "id": "archgen.overview", "name": "Overview" },
+        { "id": "archgen.tasks", "name": "Tasks" },
+        { "id": "archgen.docs", "name": "Docs" }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "archgen.overview",
+        "contents": "No ArchGen plan found in this workspace.\n\nRun `npx archgen-skill generate` in your terminal to scaffold `.archgen/`, then reopen this view.\n\n[Open Task Board](command:archgen.openPanel)"
+      },
+      {
+        "view": "archgen.tasks",
+        "contents": "No ArchGen plan found in this workspace.\n\nRun `npx archgen-skill generate` to create tasks.yaml artifacts."
+      },
+      {
+        "view": "archgen.docs",
+        "contents": "No ArchGen docs found. Docs appear here after `npx archgen-skill generate`."
+      }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "archgen.openPanel", "when": "view == archgen.overview", "group": "navigation" },
+        { "command": "archgen.openPanel", "when": "view == archgen.tasks", "group": "navigation" },
+        { "command": "archgen.openPanel", "when": "view == archgen.docs", "group": "navigation" },
+        { "command": "archgen.startWork", "when": "view == archgen.tasks && archgen.hasFeatures", "group": "navigation" }
+      ],
+      "view/item/context": [
+        { "command": "archgen.buildTask", "when": "view == archgen.tasks && viewItem == task", "group": "inline" }
       ]
     },
     "configuration": {
