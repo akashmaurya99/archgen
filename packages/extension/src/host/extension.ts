@@ -1,7 +1,10 @@
 // extension.ts — activation entry (host bundle: dist/extension.js).
 import { commands, ExtensionContext, OutputChannel, workspace, window } from 'vscode';
 import { ArchgenPanel, PanelHostOptions, registerBoard } from './panel';
-import { registerLauncher } from './launcher';
+import { ModelHub } from './hub';
+import { registerSidebar } from './sidebar';
+import type { SidebarActions } from './sidebar/actions';
+import { registerStatusBar } from './statusbar';
 import { createWatchPipeline, type WatchPipeline } from './watchers';
 import { detectCodegraph, openCodegraph } from './codegraph';
 import { activeFeatureKey, buildScopedModel, discoverFeatures } from './features';
@@ -25,6 +28,11 @@ const HARNESS_IDS: HarnessId[] = ['claude', 'opencode', 'codex', 'gemini', 'cust
 export function activate(context: ExtensionContext): void {
   const out: OutputChannel = window.createOutputChannel('ArchGen');
   context.subscriptions.push(out);
+
+  // ONE fan-out point: every consumer (board panel, sidebar trees, status
+  // bar) rides the same model snapshots produced by pushModel().
+  const hub = new ModelHub();
+  context.subscriptions.push(hub);
 
   let pipeline: WatchPipeline | null = null;
   let currentTasks: ArchgenModelMessage['tasks'] = [];
@@ -90,10 +98,14 @@ export function activate(context: ExtensionContext): void {
     }
   }
 
-  function pushModel(force = false): void {    const panel = ArchgenPanel.active;
+  /** Build one snapshot, fan it out through the hub, then post to the board. */
+  function pushModel(force = false): void {
+    const model = buildModel();
+    hub.fire(model);
+    const panel = ArchgenPanel.active;
     if (!panel) return;
     if (force) panel.invalidateModel();
-    panel.post(buildModel());
+    panel.post(model);
   }
 
   /** Resolve the interpolated command line for one task; surfaces typed errors. */
@@ -193,6 +205,20 @@ export function activate(context: ExtensionContext): void {
     })();
   }
 
+  // Sidebar cockpit action bag: tree providers route every click through
+  // here; extension.ts owns the real command registrations below.
+  const actions: SidebarActions = {
+    openBoard,
+    startWork: dispatchStartWork,
+    selectFeature,
+    buildTask: dispatchBuild,
+    revealTask: (taskId: string) => {
+      openBoard();
+      ArchgenPanel.active?.setPendingReveal(taskId);
+    },
+    openDoc,
+  };
+
   const panelOpts: PanelHostOptions = {
     onReady: () => {
       ensurePipeline();
@@ -223,8 +249,40 @@ export function activate(context: ExtensionContext): void {
     ArchgenPanel.createOrShow(context, panelOpts);
   }
 
-  context.subscriptions.push(commands.registerCommand('archgen.openPanel', openBoard));
-  context.subscriptions.push(registerLauncher(openBoard));
+  context.subscriptions.push(
+    commands.registerCommand('archgen.openPanel', openBoard),
+    commands.registerCommand('archgen.startWork', () => dispatchStartWork()),
+    commands.registerCommand('archgen.buildTask', (taskId?: string) => {
+      if (!taskId) return;
+      dispatchBuild(taskId);
+    }),
+    commands.registerCommand('archgen.revealTask', (taskId?: string) => {
+      if (!taskId) return;
+      actions.revealTask(taskId);
+    }),
+    commands.registerCommand('archgen.selectFeature', (slug?: string) => {
+      if (!slug) return;
+      selectFeature(slug);
+    }),
+    commands.registerCommand('archgen.openDoc', (rel?: string) => {
+      if (!rel) return;
+      openDoc(rel);
+    }),
+  );
+
+  const sidebar = registerSidebar(context, hub, actions);
+  context.subscriptions.push(sidebar);
+  context.subscriptions.push(registerStatusBar(context, hub));
+
+  // Seed the hasFeatures context key so welcome content resolves correctly
+  // before any model reaches the trees (null workspace root means none).
+  const wsRoot = root();
+  void commands.executeCommand('setContext', 'archgen.hasFeatures', wsRoot !== null && discoverFeatures(wsRoot).length > 0);
+
+  // Prime the hub so the sidebar cockpit shows data on activation even before
+  // the board panel is ever opened.
+  pushModel();
+
   registerBoard(context, panelOpts);
 }
 

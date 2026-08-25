@@ -24,6 +24,11 @@ export default defineConfig({
       //    OutputChannel and toasts to the pure modules below.
       //  - src/host/watchers.ts: hard-imports workspace/FileSystemWatcher;
       //    its entire logic IS debounce.ts (100% covered directly).
+      //  - src/host/sidebar/providers.ts + index.ts: hard-import TreeItem/
+      //    window/commands; their entire logic IS sidebar/model.ts (covered
+      //    directly by test/sidebar-model.test.ts).
+      //  - src/host/statusbar.ts: hard-imports window.createStatusBarItem;
+      //    trivial inline counting over hub snapshots, no pure core.
       //  - src/webview/main.tsx: DOM mount entry (createRoot + render App);
       //    App itself is fully jsdom-tested.
       //  - src/webview/vscode.ts: acquireVsCodeApi single-acquisition wrapper;
@@ -32,6 +37,9 @@ export default defineConfig({
         'src/host/extension.ts',
         'src/host/panel.ts',
         'src/host/watchers.ts',
+        'src/host/sidebar/providers.ts',
+        'src/host/sidebar/index.ts',
+        'src/host/statusbar.ts',
         'src/webview/main.tsx',
         'src/webview/vscode.ts',
       ],
