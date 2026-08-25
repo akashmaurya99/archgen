@@ -94,19 +94,32 @@ describe('parseWaves / loadWaves', () => {
     expect(() => parseWaves('not json')).toThrow();
   });
 
-  it('loadWaves spawns scriptsPath/next-tasks.mjs and parses stdout', async () => {
+  it('loadWaves spawns next-tasks.mjs WITH the tasks.yaml argv and parses stdout', async () => {
     const dir = scratch();
+    const tasksPath = join(dir, 'tasks.yaml');
+    writeFileSync(tasksPath, 'tasks: []\n');
+    // Real-contract stub: echoes back the argv it received so the test asserts
+    // the tasks path is actually forwarded (the old argv-ignoring stub masked
+    // a broken integration where the real script exited 4 on missing usage).
     writeFileSync(
       join(dir, 'next-tasks.mjs'),
-      `console.log(JSON.stringify({ waves: [['t1','t2'], ['t3']] }));`,
+      `const [, , file] = process.argv;\n` +
+        `if (!file) { console.error('usage: next-tasks.mjs <tasks.yaml>'); process.exit(4); }\n` +
+        `console.log(JSON.stringify({ waves: [['t1','t2'], ['t3']], argvFile: file }));`,
     );
-    await expect(loadWaves(dir)).resolves.toEqual([['t1', 't2'], ['t3']]);
+    await expect(loadWaves(dir, tasksPath)).resolves.toEqual([['t1', 't2'], ['t3']]);
+  });
+
+  it('loadWaves rejects when the tasks.yaml path is missing (contract guard)', async () => {
+    const dir = scratch();
+    writeFileSync(join(dir, 'next-tasks.mjs'), `console.log('{}');`);
+    await expect(loadWaves(dir, '')).rejects.toThrow(/tasks\.yaml path is required/);
   });
 
   it('loadWaves rejects with stderr context on non-zero exit', async () => {
     const dir = scratch();
     writeFileSync(join(dir, 'next-tasks.mjs'), `console.error('kaput'); process.exit(3);`);
-    await expect(loadWaves(dir)).rejects.toThrow(/kaput|3/);
+    await expect(loadWaves(dir, join(dir, 'tasks.yaml'))).rejects.toThrow(/kaput|3/);
   });
 });
 

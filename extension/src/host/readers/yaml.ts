@@ -24,6 +24,10 @@
 /** `path` anchors the comment to the mapping key (or sequence item index) it
  * sits above; `inline:true` means it trailed a value on the same line.
  * `path:null` = dangling comment emitted at end of document. */
+/** Dynamic YAML values: everything the subset can produce. Replaces `any`
+ * (project standard bans it) while keeping parser internals honest. */
+export type YamlValue = string | number | boolean | null | YamlValue[] | { [key: string]: YamlValue };
+
 export interface YamlComment {
   path: Array<string | number> | null;
   inline: boolean;
@@ -35,7 +39,7 @@ export interface ParseYamlOptions {
 }
 
 export interface ParsedYaml {
-  data: any;
+  data: YamlValue;
   comments: YamlComment[];
 }
 
@@ -71,7 +75,7 @@ export function parseYaml(text: string, opts: ParseYamlOptions = {}): ParsedYaml
   });
 
   const pos = { i: 0 };
-  const data = parseBlock(lines, pos, 0, ctx, /*root*/ true);
+  const data = parseBlock(lines, pos, 0, ctx, /*root*/ true, []);
   // Guard: nothing structural may survive past the root block (e.g. a sequence
   // followed by a mapping at the same indent) — silent truncation would corrupt
   // contracts, so refuse loudly instead.
@@ -108,12 +112,12 @@ function classify(raw: string): Classified {
 }
 
 /** Recursive block parser: consumes lines at >= indent belonging to this block. */
-function parseBlock(lines: string[], pos: { i: number }, indent: number, ctx: Ctx, _root = false): any {
+function parseBlock(lines: string[], pos: { i: number }, indent: number, ctx: Ctx, _root = false, basePath: Array<string | number> = []): YamlValue {
   // Decide map vs sequence by first content line at exactly this indent.
   const peek = peekContent(lines, pos, indent);
   if (!peek) return null;
-  if (peek.line.bare!.startsWith('- ') || peek.line.bare === '-') return parseSequence(lines, pos, indent, ctx);
-  return parseMapping(lines, pos, indent, ctx);
+  if (peek.line.bare!.startsWith('- ') || peek.line.bare === '-') return parseSequence(lines, pos, indent, ctx, basePath);
+  return parseMapping(lines, pos, indent, ctx, basePath);
 }
 
 function peekContent(lines: string[], pos: { i: number }, indent: number): { idx: number; line: Classified } | null {
@@ -129,8 +133,8 @@ function peekContent(lines: string[], pos: { i: number }, indent: number): { idx
   return null;
 }
 
-function parseMapping(lines: string[], pos: { i: number }, indent: number, ctx: Ctx): Record<string, any> {
-  const out: Record<string, any> = {};
+function parseMapping(lines: string[], pos: { i: number }, indent: number, ctx: Ctx, basePath: Array<string | number> = []): Record<string, YamlValue> {
+  const out: Record<string, YamlValue> = {};
   while (pos.i < lines.length) {
     const c = classify(lines[pos.i]!);
     if (c.type === 'blank') { pos.i++; continue; }
@@ -138,36 +142,37 @@ function parseMapping(lines: string[], pos: { i: number }, indent: number, ctx: 
     if (c.indent < indent) break;
     if (c.indent > indent) fail(ctx, pos.i + 1, 'inconsistent indentation inside mapping');
 
-    const key = consumePendingAndParseKey(ctx, c, pos.i + 1);
     assertKeyWellFormed(ctx, pos.i + 1, matchKey(c.text!)!);
+    const keyPath: Array<string | number> = [...basePath, matchKey(c.text!)!.key];
+    const key = consumePendingAndParseKey(ctx, c, pos.i + 1, keyPath);
     pos.i++;
 
     // Value may be inline, a nested block, or a sequence at SAME indent (common YAML style).
     const inlineVal = splitKeyValue(c.text!, ctx, pos.i);
     if (inlineVal.hasValue) {
       out[key.name] = parseScalarOrFlow(inlineVal.value, ctx, pos.i);
-      key.inlineComment(out, key.name);
+      key.inlineComment(keyPath);
       continue;
     }
     // Look ahead: nested block (deeper indent) or sequence at same indent.
     const next = nextContent(lines, pos.i);
-    if (!next || next.indent < indent) { out[key.name] = null; key.inlineComment(out, key.name); continue; }
+    if (!next || next.indent < indent) { out[key.name] = null; key.inlineComment(keyPath); continue; }
     if (next.indent > indent) {
-      out[key.name] = parseChild(lines, pos, next.indent, ctx);
+      out[key.name] = parseChild(lines, pos, next.indent, ctx, keyPath);
       continue;
     }
     // Same indent: only legal child here is a sequence ("- ...").
     if (next.bare.startsWith('- ')) {
-      out[key.name] = parseSequence(lines, pos, indent, ctx);
+      out[key.name] = parseSequence(lines, pos, indent, ctx, keyPath);
     } else {
       out[key.name] = null;
-      key.inlineComment(out, key.name);
+      key.inlineComment(keyPath);
     }
   }
   return out;
 }
 
-function parseChild(lines: string[], pos: { i: number }, childIndent: number, ctx: Ctx): any {
+function parseChild(lines: string[], pos: { i: number }, childIndent: number, ctx: Ctx, basePath: Array<string | number> = []): YamlValue {
   // Skip blanks/comments so a leading comment block never masquerades as the
   // child's first structural line (classify() of a comment has no `bare`).
   let c: Classified | null = null;
@@ -181,12 +186,12 @@ function parseChild(lines: string[], pos: { i: number }, childIndent: number, ct
     c = l; break;
   }
   if (!c) return null;
-  if (c.bare!.startsWith('- ') || c.bare === '-') return parseSequence(lines, pos, childIndent, ctx);
-  return parseMapping(lines, pos, childIndent, ctx);
+  if (c.bare!.startsWith('- ') || c.bare === '-') return parseSequence(lines, pos, childIndent, ctx, basePath);
+  return parseMapping(lines, pos, childIndent, ctx, basePath);
 }
 
-function parseSequence(lines: string[], pos: { i: number }, indent: number, ctx: Ctx): any[] {
-  const out: any[] = [];
+function parseSequence(lines: string[], pos: { i: number }, indent: number, ctx: Ctx, basePath: Array<string | number> = []): YamlValue[] {
+  const out: YamlValue[] = [];
   while (pos.i < lines.length) {
     const c = classify(lines[pos.i]!);
     if (c.type === 'blank') { pos.i++; continue; }
@@ -197,14 +202,15 @@ function parseSequence(lines: string[], pos: { i: number }, indent: number, ctx:
     if (itemText === '-' || itemText.startsWith('- ')) {
       fail(ctx, pos.i + 1, 'nested sequence items are not supported by archgen\u0027s YAML subset');
     }
-    const idx = out.length;
-    flushPendingInto(ctx.comments, ctx.pendingComments, ['\u0000seq', idx], false);
+    // Positional anchor: comments above this item bind to its exact location.
+    const itemPath: Array<string | number> = [...basePath, out.length];
+    flushPendingInto(ctx.comments, ctx.pendingComments, itemPath, false);
 
     if (itemText === '') { // nested block under bare "-"
       pos.i++;
       const next = nextContent(lines, pos.i);
       if (!next || next.indent <= indent) { out.push(null); continue; }
-      out.push(parseChild(lines, pos, next.indent, ctx));
+      out.push(parseChild(lines, pos, next.indent, ctx, itemPath));
       continue;
     }
     const isFlowMap = itemText.startsWith('{');
@@ -232,17 +238,18 @@ function parseSequence(lines: string[], pos: { i: number }, indent: number, ctx:
       }
       const subCtx: Ctx = { filename: ctx.filename, comments: ctx.comments, pendingComments: [] };
       const subPos = { i: 0 };
-      const obj = parseMapping(sub, subPos, indent + INDENT_UNIT, subCtx);
+      // Sub-mapping inherits the item's positional path so inner keys anchor
+      // as [.., itemIndex, keyName] — reviewer notes can never migrate between
+      // sibling items that share key names.
+      const obj = parseMapping(sub, subPos, indent + INDENT_UNIT, subCtx, itemPath);
       for (const pc of subCtx.pendingComments) ctx.comments.push({ path: null, inline: false, text: pc });
-      // Re-anchor seq-item comments recorded during sub-parse onto this item.
-      reanchorSeqComments(ctx.comments, out.length, idx);
       out.push(obj);
       continue;
     }
     // Plain scalar item (may include inline comment).
     const { value, inlineComment } = splitInlineComment(itemText);
     out.push(parseScalarOrFlow(value, ctx, pos.i + 1));
-    if (inlineComment) ctx.comments.push({ path: ['\u0000seq', idx], inline: true, text: inlineComment });
+    if (inlineComment) ctx.comments.push({ path: itemPath, inline: true, text: inlineComment });
     pos.i++;
   }
   return out;
@@ -288,7 +295,7 @@ function splitInlineComment(s: string): { value: string; inlineComment: string |
   return { value: s.trim(), inlineComment: null };
 }
 
-function parseScalarOrFlow(v: string, ctx: Ctx, lineNo: number): any {
+function parseScalarOrFlow(v: string, ctx: Ctx, lineNo: number): YamlValue {
   if (v === '') return null;
   if (v.startsWith('[')) {
     if (!v.endsWith(']')) fail(ctx, lineNo, `unterminated flow sequence: ${v}`);
@@ -339,7 +346,7 @@ function splitFlow(inner: string): string[] {
   return parts;
 }
 
-function parseScalar(v: string): any {
+function parseScalar(v: string): YamlValue {
   if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return unquote(v);
   if (v === 'null' || v === '~' || v === '') return null;
   if (v === 'true') return true;
@@ -374,22 +381,20 @@ function nextContent(lines: string[], from: number): { indent: number; text: str
   return null;
 }
 
-function consumePendingAndParseKey(ctx: Ctx, line: Classified, lineNo: number): { name: string; inlineComment(obj: Record<string, any>, k: string): void } {
+function consumePendingAndParseKey(ctx: Ctx, line: Classified, lineNo: number, keyPath: Array<string | number>): { name: string; inlineComment(kp: Array<string | number>): void } {
   const m = matchKey(line.text!);
   if (!m) fail(ctx, lineNo, `expected 'key:' mapping entry, got: ${line.text!.slice(0, 40)}`);
   assertKeyWellFormed(ctx, lineNo, m);
-  // Full-line comments sitting directly above this key anchor to it NOW;
-  // waiting longer would misattach them to a deeper child key.
+  // Full-line comments sitting directly above this key anchor to its FULL
+  // positional path NOW; waiting longer would misattach them to a deeper child.
   for (const t of ctx.pendingComments.splice(0)) {
-    ctx.comments.push({ path: [m.key], inline: false, text: t });
+    ctx.comments.push({ path: keyPath, inline: false, text: t });
   }
-  const name = m.key;
   return {
-    name,
-    inlineComment(obj: Record<string, any>, k: string) {
-      void obj;
+    name: m.key,
+    inlineComment(kp: Array<string | number>) {
       const { inlineComment } = splitInlineComment(line.text!.slice(line.text!.indexOf(':') + 1).trim());
-      if (inlineComment) ctx.comments.push({ path: [k], inline: true, text: inlineComment });
+      if (inlineComment) ctx.comments.push({ path: kp, inline: true, text: inlineComment });
     },
   };
 }
@@ -404,23 +409,11 @@ function flushPendingInto(comments: YamlComment[], pending: string[], path: Arra
   for (const t of pending.splice(0)) comments.push({ path, inline: false, text: t });
 }
 
-function reanchorSeqComments(comments: YamlComment[], _len: number, idx: number): void {
-  // Comments captured while parsing this sequence item were anchored with a
-  // placeholder first segment '\u0000seq'; retarget placeholder entries that
-  // were pushed AFTER the flush for this item to point at this item index.
-  for (let i = comments.length - 1; i >= 0; i--) {
-    const c = comments[i]!;
-    if (c.path && c.path[0] === '\u0000seq' && c.path[1] === undefined) {
-      c.path[1] = idx;
-      break; // only the most recent unanchored seq comment belongs to this item
-    }
-  }
-}
 
 /**
  * Serialize data back to the YAML subset, re-emitting comments positionally.
  */
-export function stringifyYaml(data: any, comments: YamlComment[] = []): string {
+export function stringifyYaml(data: YamlValue, comments: YamlComment[] = []): string {
   const out: string[] = [];
   const used = new Set<number>();
   emitValue(out, data, 0, comments, used, []);
@@ -451,24 +444,30 @@ function samePath(a: Array<string | number> | null, b: Array<string | number> | 
   return true;
 }
 
-function emitValue(out: string[], v: any, indent: number, comments: YamlComment[], used: Set<number>, path: Array<string | number>): void {
+function emitValue(out: string[], v: YamlValue, indent: number, comments: YamlComment[], used: Set<number>, path: Array<string | number>): void {
   const pad = ' '.repeat(indent);
   if (Array.isArray(v)) {
     if (v.length === 0) { out.push(pad + '[]'); return; }
-    v.forEach((item: any, idx: number) => {
-      const ipath = [...path, idx];
-      preComments(out, comments, used, ['\u0000seq', idx]); // seq pre-comments (document-level seqs)
-      if (item !== null && typeof item === 'object') {
+    v.forEach((item, idx) => {
+      const itemPath: Array<string | number> = [...path, idx];
+      // Pre-item comments keep their original indentation relative to the dash.
+      comments.forEach((c, i) => {
+        if (!used.has(i) && !c.inline && c.path && samePath(c.path, itemPath)) {
+          out.push(pad + c.text); used.add(i);
+        }
+      });
+      if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
         const entries = Object.entries(item);
         if (entries.length === 0) { out.push(pad + '- {}'); return; }
         const [k0, v0] = entries[0]!;
-        preComments(out, comments, used, [k0]);
+        const k0path: Array<string | number> = [...itemPath, k0];
+        preComments(out, comments, used, k0path);
         out.push(pad + '- ' + k0 + ': ' + encodeScalar(v0));
-        inlineCommentFor(out, comments, used, [k0]);
-        emitEntries(out, entries.slice(1), indent + INDENT_UNIT, comments, used, ipath.concat(k0));
+        inlineCommentFor(out, comments, used, k0path);
+        emitEntries(out, entries.slice(1), indent + INDENT_UNIT, comments, used, itemPath);
       } else {
         out.push(pad + '- ' + encodeScalar(item));
-        inlineCommentFor(out, comments, used, ['\u0000seq', idx]);
+        inlineCommentFor(out, comments, used, itemPath);
       }
     });
     return;
@@ -480,25 +479,25 @@ function emitValue(out: string[], v: any, indent: number, comments: YamlComment[
   out.push(pad + encodeScalar(v));
 }
 
-function emitEntries(out: string[], entries: [string, any][], indent: number, comments: YamlComment[], used: Set<number>, basePath: Array<string | number>): void {
+function emitEntries(out: string[], entries: [string, YamlValue][], indent: number, comments: YamlComment[], used: Set<number>, basePath: Array<string | number>): void {
   const pad = ' '.repeat(indent);
   for (const [k, val] of entries) {
-    const kpath = [...basePath, k];
-    preComments(out, comments, used, [k]);
+    const kpath: Array<string | number> = [...basePath, k];
+    preComments(out, comments, used, kpath);
     if (val !== null && typeof val === 'object') {
-      if (Object.keys(val).length === 0 && !Array.isArray(val)) { out.push(pad + k + ': {}'); inlineCommentFor(out, comments, used, [k]); continue; }
-      if (Array.isArray(val) && val.length === 0) { out.push(pad + k + ': []'); inlineCommentFor(out, comments, used, [k]); continue; }
+      if (Object.keys(val).length === 0 && !Array.isArray(val)) { out.push(pad + k + ': {}'); inlineCommentFor(out, comments, used, kpath); continue; }
+      if (Array.isArray(val) && val.length === 0) { out.push(pad + k + ': []'); inlineCommentFor(out, comments, used, kpath); continue; }
       out.push(pad + k + ':');
-      inlineCommentFor(out, comments, used, [k]);
+      inlineCommentFor(out, comments, used, kpath);
       emitValue(out, val, indent + INDENT_UNIT, comments, used, kpath);
     } else {
       out.push(pad + k + ': ' + encodeScalar(val));
-      inlineCommentFor(out, comments, used, [k]);
+      inlineCommentFor(out, comments, used, kpath);
     }
   }
 }
 
-function encodeScalar(v: any): string {
+function encodeScalar(v: YamlValue): string {
   if (v === null) return 'null';
   if (typeof v === 'boolean' || typeof v === 'number') return String(v);
   return quoteIfNeeded(String(v));

@@ -120,13 +120,17 @@ export interface RunResult {
 }
 
 /**
- * Run `<node> next-tasks.mjs` inside scriptsPath and parse its stdout as a
- * WavesFile. Spawned (not imported) so untrusted plan tooling never loads into
- * the extension host process.
+ * Run `<node> next-tasks.mjs <tasksYaml>` inside scriptsPath and parse its
+ * stdout as a WavesFile. Spawned (not imported) so untrusted plan tooling never
+ * loads into the extension host process. The tasks.yaml path is REQUIRED — the
+ * real script exits 4 (usage) without it.
  */
-export function loadWaves(scriptsPath: string, node = process.execPath): Promise<string[][]> {
+export function loadWaves(scriptsPath: string, tasksYamlPath: string, node = process.execPath): Promise<string[][]> {
+  if (!tasksYamlPath) {
+    return Promise.reject(new Error('loadWaves: tasks.yaml path is required'));
+  }
   return new Promise((resolve, reject) => {
-    const child = spawn(node, ['next-tasks.mjs'], { cwd: scriptsPath });
+    const child = spawn(node, ['next-tasks.mjs', tasksYamlPath], { cwd: scriptsPath });
     let stdout = '';
     let stderr = '';
     child.stdout?.on('data', (d: Buffer) => (stdout += d.toString()));

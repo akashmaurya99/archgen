@@ -35,23 +35,26 @@ export function activate(context: ExtensionContext): void {
   }
 
   /** Read .archgen/ + codegraph snapshot and build the full view model. */
-  function buildModel(): ArchgenModelMessage {
+  /** Locate the workspace's primary tasks.yaml (.archgen/<slug>/tasks.yaml). */
+function findTasksYaml(wsRoot: string): string | null {
+  const archgenDir = path.join(wsRoot, '.archgen');
+  if (!fs.existsSync(archgenDir)) return null;
+  for (const entry of fs.readdirSync(archgenDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const p = path.join(archgenDir, entry.name, 'tasks.yaml');
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function buildModel(): ArchgenModelMessage {
     const wsRoot = root();
     const warnings: string[] = [];
     let tasks: TaskVM[] = [];
     const docs: DocRef[] = [];
 
     if (wsRoot) {
-      const archgenDir = path.join(wsRoot, '.archgen');
-      const candidates: string[] = [];
-      if (fs.existsSync(archgenDir)) {
-        for (const entry of fs.readdirSync(archgenDir, { withFileTypes: true })) {
-          if (!entry.isDirectory()) continue;
-          const p = path.join(archgenDir, entry.name, 'tasks.yaml');
-          if (fs.existsSync(p)) candidates.push(p);
-        }
-      }
-      const tasksPath = candidates[0];
+      const tasksPath = findTasksYaml(wsRoot);
       if (tasksPath) {
         try {
           const model = parseTasks(fs.readFileSync(tasksPath, 'utf8'), path.basename(tasksPath));
@@ -69,7 +72,7 @@ export function activate(context: ExtensionContext): void {
           warnings.push(`tasks.yaml unreadable: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
-      collectMarkdown(archgenDir, docs, archgenDir);
+      collectMarkdown(path.join(wsRoot, '.archgen'), docs, path.join(wsRoot, '.archgen'));
     }
     currentTasks = tasks;
 
@@ -170,7 +173,9 @@ export function activate(context: ExtensionContext): void {
         const wsRoot = root();
         if (!wsRoot) throw new Error('Open a workspace folder before starting work.');
         const scripts = probeScriptsPath(wsRoot, os.homedir(), setting<string>('scriptsPath', ''));
-        const waves = await loadWaves(scripts);
+        const tasksYaml = findTasksYaml(wsRoot);
+        if (!tasksYaml) throw new Error('No .archgen/*/tasks.yaml found in this workspace.');
+        const waves = await loadWaves(scripts, tasksYaml);
         const wave1 = waves[0] ?? [];
         if (wave1.length === 0) {
           void window.showInformationMessage('ArchGen: next-tasks reports an empty first wave — nothing to start.');
