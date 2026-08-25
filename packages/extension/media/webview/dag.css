@@ -1987,10 +1987,11 @@ mark.archgen-search-hit.is-current {
   justify-content: center;
   background: var(--archgen-action-blue);
   color: var(--archgen-surface);
-  font-size: 13px;
-  line-height: 1;
-  opacity: 1;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
+}
+
+.archgen-gnode-drill svg {
+  display: block;
 }
 
 .archgen-gnode.is-inert {

@@ -239,7 +239,9 @@ function GraphNodeComponent({
       </span>
       {isFile && data.openable && (
         <span aria-hidden="true" className="archgen-gnode-drill">
-          ▸
+          <svg width="10" height="12" viewBox="0 0 10 12" style={{ marginLeft: 1 }}>
+            <path d="M1 1.5 L9 6 L1 10.5 Z" fill="currentColor" />
+          </svg>
         </span>
       )}
       <Handle type="source" position={sourcePosition} isConnectable={false} className="archgen-gnode-handle" />
