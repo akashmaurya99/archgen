@@ -4,6 +4,14 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.{ts,tsx}'],
     environment: 'node',
+    // WHY threads (not the default forks): codegraph tests load
+    // better-sqlite3, a native addon. Under the forks pool on Node 20,
+    // worker teardown after native-module use crashes with
+    // "Worker exited unexpectedly" AFTER tests have passed - a known
+    // vitest/tinypool + native-addon interaction. Worker threads tear
+    // native handles down cleanly, eliminating the false failure while
+    // keeping identical isolation semantics for our suites.
+    pool: 'threads',
     // jsdom is opted into per-file via @vitest-environment jsdom docblock.
     coverage: {
       provider: 'v8',
