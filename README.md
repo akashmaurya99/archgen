@@ -93,7 +93,9 @@ Open your project in any supported agent and talk naturally:
 
 The optional VS Code extension renders `.archgen/` as a live task DAG (running
 tasks pulse, edges animate), your real code-dependency graph, and rendered docs —
-with a ▶ button that launches your agent on any task. It is strictly a viewer:
+with a ▶ button that launches your agent on any task. An activity-bar cockpit
+complements the editor board with glanceable progress, status-grouped tasks with
+quick build, and quick-open docs. It is strictly a viewer:
 uninstalling it loses nothing.
 
 ## Monorepo map
@@ -102,7 +104,7 @@ uninstalling it loses nothing.
 | --- | --- | --- |
 | [`skill/`](skill/) | The agent skill — `SKILL.md`, `references/`, zero-dep `scripts/`, `assets/` | vendored into npm; installed by `install.sh` |
 | [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
-| [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button | `.vsix` via `vsce package` |
+| [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button · activity-bar cockpit | `.vsix` via `vsce package` |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
 | [`fixtures/`](fixtures/) | Deterministic E2E demos + shared YAML corpus | repo-only |
 | [`docs/`](docs/) | Architecture walkthrough · release process | repo-only |

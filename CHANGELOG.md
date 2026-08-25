@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Activity-bar cockpit**: the single launcher view becomes three sidebar
+  views — Overview (feature switcher + live progress summary), Tasks
+  (status-grouped live task tree with per-task ▶ build), Docs (quick-open).
+- **Start Work** and **Open Board** view-title actions on the cockpit views.
+- Native welcome states in each view when no `.archgen/` plan exists.
+- Status bar running indicator while a build is in flight.
+
 ## [0.0.3] - 2026-08-25
 
 ### Changed
