@@ -43,6 +43,8 @@ const MODEL: ArchgenModelMessage = {
   codegraph: { product: 'unsupported' },
   themeKind: 'dark',
   warnings: [],
+  features: [],
+  activeSlug: '',
 };
 
 interface FakeApi {

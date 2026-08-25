@@ -20,6 +20,7 @@ import { EmptyState, ErrorBanner, LoadingState, StaleChip, VIEW_TABS, type ViewT
 import { TasksView } from './TasksView';
 import { CodeGraphView } from './CodeGraphView';
 import { DocsView } from './DocsView';
+import { FeaturePicker } from './FeaturePicker';
 
 export interface AppProps {
   /** injected for tests; defaults to the real webview API */
@@ -130,6 +131,18 @@ export function App(props: AppProps) {
         ))}
         <StaleChip since={lastModelAt} />
       </nav>
+
+      {/* Feature picker lives in the TASKS tab header; absent with no
+          features so the empty-state UX is untouched. */}
+      {tab === 'TASKS' && model.features.length > 0 && (
+        <div className="archgen-feature-bar">
+          <FeaturePicker
+            features={model.features}
+            activeSlug={model.activeSlug}
+            onSelect={(slug) => vscode.postMessage({ type: 'selectFeature', slug })}
+          />
+        </div>
+      )}
 
       {!hasArchgenContent ? (
         <EmptyState hasArchgenFolder={model.warnings.some((w) => w.includes('.archgen'))} />

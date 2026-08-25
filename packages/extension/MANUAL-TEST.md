@@ -28,6 +28,16 @@ Setup: `npm install && npm run compile && npm test` must be green first.
 2. Check edges: edge into the running node animates (marching dashes); failed target red stroke; blocked target dashed-static.
    - ✅ Exactly that; with >50 running targets at most 50 edges animate (perf cap).
 
+## 3b. Feature picker (multi-feature repos)
+1. Open a workspace with two or more `.archgen/<slug>/` folders (e.g. copy `greenfield-demo` to a second slug).
+   - ✅ A feature dropdown appears in the TASKS header listing every slug, most-recently-modified first; the active feature's DAG renders.
+2. Switch the dropdown to the other feature.
+   - ✅ Board swaps to that slug's graph within the render budget; selection survives closing/reopening VS Code (persisted per workspace); screen reader announces "Select ArchGen feature (currently \<slug\>)".
+3. Delete one feature folder and save any remaining file.
+   - ✅ Picker drops the vanished slug; if it was active, the board falls back to the most-recent remaining feature.
+4. Single-feature workspace.
+   - ✅ No picker rendered (zero chrome when there is nothing to choose).
+
 ## 4. Keyboard navigation + ARIA
 1. Tab into the canvas from the tab bar.
    - ✅ Each task node is reachable in tab order; a visible focus ring (theme focus border color) appears on the focused node only.

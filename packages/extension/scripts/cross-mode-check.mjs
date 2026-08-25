@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EXT_ROOT = join(HERE, '..');
 const FIXTURE = process.env['ARCHGEN_FIXTURE_WS']
-  ?? join(EXT_ROOT, '..', 'fixtures', 'greenfield-demo');
+  ?? join(EXT_ROOT, '..', '..', 'fixtures', 'greenfield-demo');
 const TASKS_YAML = join(FIXTURE, '.archgen', 'demo', 'tasks.yaml');
 
 const EXPECTED_IDS = ['SCAFFOLD', 'SHARED', 'API', 'WEB', 'DOCS', 'VERIFY'];

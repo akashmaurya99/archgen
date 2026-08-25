@@ -1,9 +1,10 @@
 // extension.ts — activation entry (host bundle: dist/extension.js).
 import { commands, ExtensionContext, OutputChannel, workspace, window } from 'vscode';
 import { ArchgenPanel, PanelHostOptions, registerBoard } from './panel';
+import { registerLauncher } from './launcher';
 import { createWatchPipeline, type WatchPipeline } from './watchers';
 import { detectCodegraph, openCodegraph } from './codegraph';
-import { parseTasks } from './readers/archgen';
+import { activeFeatureKey, buildScopedModel, discoverFeatures } from './features';
 import {
   DEFAULT_TEMPLATES,
   ScriptsNotFoundError,
@@ -14,7 +15,7 @@ import {
   probeScriptsPath,
   type HarnessId,
 } from './harness';
-import type { ArchgenModelMessage, DocRef, TaskVM } from '../shared/protocol';
+import type { ArchgenModelMessage } from '../shared/protocol';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -26,7 +27,7 @@ export function activate(context: ExtensionContext): void {
   context.subscriptions.push(out);
 
   let pipeline: WatchPipeline | null = null;
-  let currentTasks: TaskVM[] = [];
+  let currentTasks: ArchgenModelMessage['tasks'] = [];
 
   const root = (): string | null => workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
 
@@ -34,51 +35,27 @@ export function activate(context: ExtensionContext): void {
     return workspace.getConfiguration('archgen').get<T>(section, fallback);
   }
 
-  /** Read .archgen/ + codegraph snapshot and build the full view model. */
-  /** Locate the workspace's primary tasks.yaml (.archgen/<slug>/tasks.yaml). */
-function findTasksYaml(wsRoot: string): string | null {
-  const archgenDir = path.join(wsRoot, '.archgen');
-  if (!fs.existsSync(archgenDir)) return null;
-  for (const entry of fs.readdirSync(archgenDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const p = path.join(archgenDir, entry.name, 'tasks.yaml');
-    if (fs.existsSync(p)) return p;
+  /** Slug persisted for this workspace, if any. */
+  function storedSlug(wsRoot: string): string | undefined {
+    return context.workspaceState.get<string>(activeFeatureKey(wsRoot));
   }
-  return null;
-}
 
-function buildModel(): ArchgenModelMessage {
+  /** Read .archgen/ (ALL features; DAG scoped to the active slug) + codegraph snapshot. */
+  function buildModel(): ArchgenModelMessage {
     const wsRoot = root();
-    const warnings: string[] = [];
-    let tasks: TaskVM[] = [];
-    const docs: DocRef[] = [];
-
-    if (wsRoot) {
-      const tasksPath = findTasksYaml(wsRoot);
-      if (tasksPath) {
-        try {
-          const model = parseTasks(fs.readFileSync(tasksPath, 'utf8'), path.basename(tasksPath));
-          tasks = model.tasks.map((t) => ({
-            id: t.id,
-            title: t.title,
-            status: t.status,
-            dependsOn: t.depends_on,
-            fileOwnership: t.file_ownership,
-            artifacts: t.artifacts,
-            parallelGroup: t.parallel_group,
-          }));
-          for (const w of model.warnings) warnings.push(`${path.basename(tasksPath)}: ${w.message}`);
-        } catch (e) {
-          warnings.push(`tasks.yaml unreadable: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-      collectMarkdown(path.join(wsRoot, '.archgen'), docs, path.join(wsRoot, '.archgen'));
-    }
-    currentTasks = tasks;
-
+    const scoped = buildScopedModel(wsRoot, wsRoot ? storedSlug(wsRoot) : undefined);
+    currentTasks = scoped.tasks;
     const codegraph = readCodegraph(wsRoot);
-
-    return { type: 'model', tasks, docs, codegraph, themeKind: 'dark', warnings };
+    return {
+      type: 'model',
+      tasks: scoped.tasks,
+      docs: scoped.docs,
+      codegraph,
+      themeKind: 'dark',
+      warnings: scoped.warnings,
+      features: scoped.features,
+      activeSlug: scoped.activeSlug,
+    };
   }
 
   function readCodegraph(wsRoot: string | null): ArchgenModelMessage['codegraph'] {
@@ -99,24 +76,7 @@ function buildModel(): ArchgenModelMessage {
     }
   }
 
-  function collectMarkdown(dir: string, outDocs: DocRef[], base: string): void {
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) collectMarkdown(p, outDocs, base);
-      else if (e.isFile() && /\.(md|markdown)$/i.test(e.name)) {
-        outDocs.push({ path: path.relative(base, p), title: e.name });
-      }
-    }
-  }
-
-  function pushModel(force = false): void {
-    const panel = ArchgenPanel.active;
+  function pushModel(force = false): void {    const panel = ArchgenPanel.active;
     if (!panel) return;
     if (force) panel.invalidateModel();
     panel.post(buildModel());
@@ -166,6 +126,14 @@ function buildModel(): ArchgenModelMessage {
     ArchgenPanel.active?.post({ type: 'status', kind: 'info', message: `Dispatched '${taskId}'.` });
   }
 
+  /** TASKS-tab feature picker: persist the slug, then re-post the scoped model. */
+  function selectFeature(slug: string): void {
+    const wsRoot = root();
+    if (!wsRoot) return;
+    if (!discoverFeatures(wsRoot).some((f) => f.slug === slug)) return;
+    void context.workspaceState.update(activeFeatureKey(wsRoot), slug).then(() => pushModel(true));
+  }
+
   /** Header "Start Work": dispatch the wave-1 set from next-tasks.mjs. */
   function dispatchStartWork(): void {
     void (async () => {
@@ -173,9 +141,10 @@ function buildModel(): ArchgenModelMessage {
         const wsRoot = root();
         if (!wsRoot) throw new Error('Open a workspace folder before starting work.');
         const scripts = probeScriptsPath(wsRoot, os.homedir(), setting<string>('scriptsPath', ''));
-        const tasksYaml = findTasksYaml(wsRoot);
-        if (!tasksYaml) throw new Error('No .archgen/*/tasks.yaml found in this workspace.');
-        const waves = await loadWaves(scripts, tasksYaml);
+        const scoped = buildScopedModel(wsRoot, storedSlug(wsRoot));
+        const active = scoped.features.find((f) => f.slug === scoped.activeSlug);
+        if (!active) throw new Error('No .archgen/*/tasks.yaml found in this workspace.');
+        const waves = await loadWaves(scripts, active.tasksPath);
         const wave1 = waves[0] ?? [];
         if (wave1.length === 0) {
           void window.showInformationMessage('ArchGen: next-tasks reports an empty first wave — nothing to start.');
@@ -218,6 +187,7 @@ function buildModel(): ArchgenModelMessage {
     onVisible: () => pushModel(true),
     onBuild: dispatchBuild,
     onOpenDoc: openDoc,
+    onSelectFeature: selectFeature,
   };
 
   function ensurePipeline(): void {
@@ -234,12 +204,13 @@ function buildModel(): ArchgenModelMessage {
     context.subscriptions.push(pipeline);
   }
 
-  context.subscriptions.push(
-    commands.registerCommand('archgen.openPanel', () => {
-      ensurePipeline();
-      ArchgenPanel.createOrShow(context, panelOpts);
-    }),
-  );
+  function openBoard(): void {
+    ensurePipeline();
+    ArchgenPanel.createOrShow(context, panelOpts);
+  }
+
+  context.subscriptions.push(commands.registerCommand('archgen.openPanel', openBoard));
+  context.subscriptions.push(registerLauncher(openBoard));
   registerBoard(context, panelOpts);
 }
 

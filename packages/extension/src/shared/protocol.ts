@@ -35,6 +35,15 @@ export interface CodegraphVM {
   unsupportedReason?: string;
 }
 
+/** One discovered `.archgen/<slug>/` feature in a multi-feature repo. */
+export interface FeatureInfo {
+  slug: string;
+  /** absolute workspace path of this feature's tasks.yaml */
+  tasksPath: string;
+  /** tasks.yaml mtime in ms — drives most-recent-first ordering */
+  updatedAt: number;
+}
+
 /** Full snapshot sent on open/refresh. */
 export interface ArchgenModelMessage {
   type: 'model';
@@ -43,6 +52,14 @@ export interface ArchgenModelMessage {
   codegraph: CodegraphVM;
   themeKind: ThemeKind;
   warnings: string[];
+  /**
+   * Every `.archgen/<slug>/tasks.yaml` discovered under the workspace root,
+   * ordered most-recently-modified FIRST. Empty when the repo has no
+   * features (empty-state UX stays untouched).
+   */
+  features: FeatureInfo[];
+  /** Slug whose DAG `tasks` currently holds — persisted choice or most-recent. */
+  activeSlug: string;
 }
 
 /** Minimal diff sent when only statuses changed (watcher pipeline). */
@@ -88,7 +105,13 @@ export interface WebviewOpenDocMessage {
   path: string;
 }
 
-export type WebviewToHost = WebviewReadyMessage | WebviewOpenFileMessage | WebviewBuildMessage | WebviewStartWorkMessage | WebviewOpenDocMessage;
+/** TASKS-tab feature picker: switch the active `.archgen/<slug>/` feature. */
+export interface WebviewSelectFeatureMessage {
+  type: 'selectFeature';
+  slug: string;
+}
+
+export type WebviewToHost = WebviewReadyMessage | WebviewOpenFileMessage | WebviewBuildMessage | WebviewStartWorkMessage | WebviewOpenDocMessage | WebviewSelectFeatureMessage;
 
 export interface ArchgenDocContentMessage {
   type: 'docContent';

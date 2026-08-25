@@ -46,11 +46,9 @@ const { MAX_ANIMATED_EDGES } = await import('../src/webview/TasksView');
 import type { ArchgenModelMessage, CodegraphVM, HostToWebview, TaskVM } from '../src/shared/protocol';
 import { resetVsCodeApiForTests } from '../src/webview/vscode';
 import { installFlowDomStubs } from './helpers/dom-stubs';
+import { RENDER_BUDGET_PER_FLIP } from './helpers/perf-budget';
 
 installFlowDomStubs();
-
-/** Documented budget — see file header. */
-const RENDER_BUDGET_PER_FLIP = 2;
 
 function task(id: string, status: TaskVM['status'], dependsOn: string[] = []): TaskVM {
   return { id, title: `Task ${id}`, status, dependsOn, fileOwnership: [], artifacts: [] };
@@ -104,6 +102,8 @@ describe('render-count budget per status flip', () => {
       codegraph: { product: 'unsupported' },
       themeKind: 'dark',
       warnings: [],
+      features: [],
+      activeSlug: '',
     });
     await flushFrame();
     const base = Object.fromEntries(taskNodeModule.__renderCounts);
@@ -134,6 +134,8 @@ describe('animated-edge cap', () => {
       codegraph: { product: 'unsupported' },
       themeKind: 'dark',
       warnings: [],
+      features: [],
+      activeSlug: '',
     });
     // Edge DOM materializes after the stubbed measurement microtask.
     await act(async () => { await Promise.resolve(); });
@@ -156,6 +158,8 @@ describe('animated-edge cap', () => {
       codegraph: { product: 'unsupported' },
       themeKind: 'dark',
       warnings: [],
+      features: [],
+      activeSlug: '',
     });
     await act(async () => { await Promise.resolve(); });
     await act(async () => { await Promise.resolve(); });
@@ -214,6 +218,8 @@ describe('CSP-violation scan across tab switches', () => {
         },
         themeKind: 'dark',
         warnings: [],
+        features: [],
+        activeSlug: '',
       });
       act(() => {
         window.dispatchEvent(new MessageEvent('message', {

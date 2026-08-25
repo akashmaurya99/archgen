@@ -38,6 +38,8 @@ const MODEL: ArchgenModelMessage = {
   codegraph: { product: 'unsupported', unsupportedReason: 'No .codegraph/ index found in this workspace.' },
   themeKind: 'dark',
   warnings: [],
+  features: [],
+  activeSlug: '',
 };
 
 function lastPosted(api: FakeApi): HostToWebview {

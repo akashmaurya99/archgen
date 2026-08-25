@@ -79,17 +79,23 @@ export function splitCommand(cmd: string): string[] {
 /**
  * Probe order for the archgen scripts directory:
  *   1. explicit archgen.scriptsPath setting (when non-empty)
- *   2. <workspace>/skills/archgen/scripts
- *   3. ~/.claude/skills/archgen/scripts
- *   4. ~/.agents/skills/archgen/scripts
+ *   2. <workspace>/.agents/skills/archgen/scripts  (canonical layout)
+ *   3. <workspace>/.claude/skills/archgen/scripts  (symlinked installs follow)
+ *   4. <workspace>/skills/archgen/scripts          (legacy bare layout)
+ *   5. ~/.agents/skills/archgen/scripts
+ *   6. ~/.claude/skills/archgen/scripts
  * Throws ScriptsNotFoundError listing every probe when all are absent.
  */
 export function probeScriptsPath(wsRoot: string | null, home: string, configured?: string): string {
   const candidates: string[] = [];
   if (configured && configured.trim() !== '') candidates.push(configured.trim());
-  if (wsRoot) candidates.push(join(wsRoot, 'skills', 'archgen', 'scripts'));
-  candidates.push(join(home, '.claude', 'skills', 'archgen', 'scripts'));
+  if (wsRoot) {
+    candidates.push(join(wsRoot, '.agents', 'skills', 'archgen', 'scripts'));
+    candidates.push(join(wsRoot, '.claude', 'skills', 'archgen', 'scripts'));
+    candidates.push(join(wsRoot, 'skills', 'archgen', 'scripts'));
+  }
   candidates.push(join(home, '.agents', 'skills', 'archgen', 'scripts'));
+  candidates.push(join(home, '.claude', 'skills', 'archgen', 'scripts'));
   for (const c of candidates) if (existsSync(c)) return c;
   throw new ScriptsNotFoundError(candidates);
 }

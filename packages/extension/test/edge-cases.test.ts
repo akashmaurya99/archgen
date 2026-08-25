@@ -273,7 +273,7 @@ describe('harness edge cases', () => {
       expect.unreachable();
     } catch (e) {
       const err = e as ScriptsNotFoundError;
-      expect(err.probed).toHaveLength(4); // configured + ws + ~/.claude + ~/.agents
+      expect(err.probed).toHaveLength(6); // configured + 3 ws tiers + ~/.agents + ~/.claude
       for (const p of err.probed) expect(err.message).toContain(p);
       expect(err.kind).toBe('scripts-not-found');
       expect(err.message).toContain('Set "archgen.scriptsPath"');

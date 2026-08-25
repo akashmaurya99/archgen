@@ -45,6 +45,8 @@ export interface PanelHostOptions {
   onBuild?: (taskId: string) => void;
   /** DOCS sidebar click — host reads the file and posts docContent back. */
   onOpenDoc?: (path: string) => void;
+  /** TASKS-tab feature picker — host persists + re-posts the scoped model. */
+  onSelectFeature?: (slug: string) => void;
 }
 
 export class ArchgenPanel {
@@ -152,6 +154,9 @@ export class ArchgenPanel {
       case 'openDoc':
         this.opts.onOpenDoc?.(msg.path);
         break;
+      case 'selectFeature':
+        this.opts.onSelectFeature?.(msg.slug);
+        break;
     }
   }
 
@@ -159,7 +164,13 @@ export class ArchgenPanel {
   post(message: HostToWebview): void {
     if (!this.panel) return;
     if (message.type === 'model') {
-      const fingerprint = JSON.stringify([message.tasks.map((t) => [t.id, t.status]), message.docs.map((d) => d.path)]);
+      // activeSlug leads the fingerprint: two features may expose identical
+      // task shapes, and dropping the scoped re-post would strand the picker.
+      const fingerprint = JSON.stringify([
+        message.activeSlug,
+        message.tasks.map((t) => [t.id, t.status]),
+        message.docs.map((d) => d.path),
+      ]);
       if (!this.forceNext && fingerprint === this.lastSentModel) return;
       this.lastSentModel = fingerprint;
       this.forceNext = false;

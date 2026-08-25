@@ -112,6 +112,8 @@ describe('App DOCS tab branch', () => {
       codegraph: { product: 'unsupported', unsupportedReason: 'none' },
       themeKind: 'dark',
       warnings: [],
+      features: [],
+      activeSlug: '',
     };
     render(createElement(App, { api }));
     act(() => {

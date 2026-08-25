@@ -63,10 +63,15 @@ describe('harness template + probe edges', () => {
     expect(splitCommand('claude -p "two words" --flag')).toEqual(['claude', '-p', 'two words', '--flag']);
   });
 
-  it('probeScriptsPath prefers workspace discovery over home fallback', () => {
+  it('probeScriptsPath prefers the canonical <ws>/.agents layout over legacy + home', () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
-    mkdirSync(join(ws, 'skills/archgen/scripts'), { recursive: true });
-    expect(probeScriptsPath(ws, '/nonexistent-home')).toBe(join(ws, 'skills/archgen/scripts'));
+    const bare = join(ws, 'skills/archgen/scripts');
+    mkdirSync(bare, { recursive: true });
+    expect(probeScriptsPath(ws, '/nonexistent-home')).toBe(bare);
+
+    const agents = join(ws, '.agents/skills/archgen/scripts');
+    mkdirSync(agents, { recursive: true });
+    expect(probeScriptsPath(ws, '/nonexistent-home')).toBe(agents);
   });
 
   it('probeScriptsPath honors a configured override that actually exists', () => {

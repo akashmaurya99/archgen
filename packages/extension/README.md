@@ -14,6 +14,7 @@ The extension is strictly a **window**: it reads files and spawns your agent CLI
 | Area | What you get |
 | --- | --- |
 | Task DAG | dagre left→right layout; exact six-status enum `pending · ready · running · blocked · done · failed` (no cancelled exists); running pulse ring; edges animate only into running targets; MiniMap + Legend + zoom Controls. |
+| Multi-feature repos | A **feature picker** in the TASKS tab header lists every `.archgen/<slug>/` feature (most-recently-modified first). The choice persists per workspace (`workspaceState`), and the default is the most-recent feature. |
 | Live updates | FileSystemWatcher on `.archgen/**` and `.codegraph/**`, 300 ms coalesced debounce → rAF-batched immutable patches; only changed nodes re-render. |
 | Keyboard + ARIA | Tab walks task nodes; **Enter/Space** on a focused node dispatches ▶ build; nodes announce `task <id>: <title>, status <status>`; visible focus rings from the theme's focus border. |
 | States | Empty state with copyable `npx archgen-skill generate` install CTA; errors keep the last-good graph mounted (dimmed) under a dismissible top-center banner; "updated Ns ago" stale chip. |
@@ -35,7 +36,7 @@ The extension is strictly a **window**: it reads files and spawns your agent CLI
 | --- | --- | --- |
 | `archgen.harness.default` | `claude` | Agent harness invoked by the ▶ build button: `claude \| opencode \| codex \| gemini \| custom`. |
 | `archgen.harness.templates` | see below | Command template per harness. Placeholders: `{{prompt}}`, `{{task}}`, `{{outfile}}`. |
-| `archgen.scriptsPath` | *(empty)* | Explicit path to the archgen scripts dir (`next-tasks.mjs`, `set-status.mjs`). Probed in order: this setting → `<ws>/skills/archgen/scripts` → `~/.claude/skills/archgen/scripts` → `~/.agents/skills/archgen/scripts`. A typed UI error appears when none resolve. |
+| `archgen.scriptsPath` | *(empty)* | Explicit path to the archgen scripts dir (`next-tasks.mjs`, `set-status.mjs`). Probed in order: this setting → `<ws>/.agents/skills/archgen/scripts` → `<ws>/.claude/skills/archgen/scripts` → `<ws>/skills/archgen/scripts` → `~/.agents/skills/archgen/scripts` → `~/.claude/skills/archgen/scripts`. A typed UI error appears when none resolve. |
 
 ### Harness template examples
 

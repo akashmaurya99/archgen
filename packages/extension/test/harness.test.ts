@@ -1,9 +1,9 @@
 // Harness dispatch tests (todo 9): template interpolation, command splitting,
 // scripts-path probing, next-tasks wave parsing, spawn exit-code handling.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   DEFAULT_TEMPLATES,
   ScriptsNotFoundError,
@@ -61,7 +61,7 @@ describe('probeScriptsPath', () => {
     expect(probeScriptsPath(scratch(), home, configured)).toBe(configured);
   });
 
-  it('falls back to <ws>/skills/archgen/scripts then ~/.claude/…', () => {
+  it('falls back to the legacy bare <ws>/skills layout when no dot-dirs exist', () => {
     const ws = scratch();
     const wsScripts = join(ws, 'skills', 'archgen', 'scripts');
     mkdirSync(wsScripts, { recursive: true });
@@ -71,6 +71,48 @@ describe('probeScriptsPath', () => {
     const homeScripts = join(home, '.claude', 'skills', 'archgen', 'scripts');
     mkdirSync(homeScripts, { recursive: true });
     expect(probeScriptsPath(scratch(), home)).toBe(homeScripts);
+  });
+
+  it('probes canonical <ws>/.agents before <ws>/.claude and the legacy bare layout', () => {
+    // tiers in ISOLATED workspaces: an existing higher tier always shadows
+    const wsAgents = scratch();
+    const agents = join(wsAgents, '.agents', 'skills', 'archgen', 'scripts');
+    mkdirSync(agents, { recursive: true });
+    expect(probeScriptsPath(wsAgents, scratch())).toBe(agents);
+
+    const wsClaude = scratch();
+    const claude = join(wsClaude, '.claude', 'skills', 'archgen', 'scripts');
+    mkdirSync(claude, { recursive: true });
+    expect(probeScriptsPath(wsClaude, scratch())).toBe(claude);
+
+    const wsBare = scratch();
+    const bare = join(wsBare, 'skills', 'archgen', 'scripts');
+    mkdirSync(bare, { recursive: true });
+    expect(probeScriptsPath(wsBare, scratch())).toBe(bare);
+  });
+
+  it('prefers workspace-level skill installs over home-level ones', () => {
+    const ws = scratch();
+    const home = scratch();
+    mkdirSync(join(home, '.claude', 'skills', 'archgen', 'scripts'), { recursive: true });
+    const homeAgents = join(home, '.agents', 'skills', 'archgen', 'scripts');
+    mkdirSync(homeAgents, { recursive: true });
+    const wsBare = join(ws, 'skills', 'archgen', 'scripts');
+    mkdirSync(wsBare, { recursive: true });
+    expect(probeScriptsPath(ws, home)).toBe(wsBare);
+
+    const wsAgents = join(ws, '.agents', 'skills', 'archgen', 'scripts');
+    mkdirSync(wsAgents, { recursive: true });
+    expect(probeScriptsPath(ws, home)).toBe(wsAgents);
+  });
+
+  it('follows a symlinked <ws>/.claude skill install (skipped on win32)', () => {
+    const ws = scratch();
+    const real = scratch();
+    const link = join(ws, '.claude', 'skills', 'archgen', 'scripts');
+    mkdirSync(dirname(link), { recursive: true });
+    symlinkSync(real, link, 'dir');
+    expect(probeScriptsPath(ws, scratch())).toBe(link);
   });
 
   it('throws ScriptsNotFoundError listing probes when nothing exists', () => {
