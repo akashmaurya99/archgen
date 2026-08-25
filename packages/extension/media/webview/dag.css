@@ -469,6 +469,7 @@ body,
   /* Card MUST fill its xyflow wrapper box exactly: dagre spaces nodes by the
      declared dims, and handles anchor at wrapper edges — an auto-sized card
      overflows both, causing overlapping nodes and arrows that stop short. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -480,6 +481,12 @@ body,
   border-radius: var(--archgen-radius-md);
   background: var(--archgen-surface-elevated);
   border: 1.5px solid color-mix(in srgb, var(--archgen-text) 38%, transparent);
+}
+
+/* Openable cards reserve the badge lane on the right. */
+.archgen-gnode.is-openable {
+  padding-right: 34px;
+}
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-xs);
@@ -1968,12 +1975,22 @@ mark.archgen-search-hit.is-current {
 }
 
 .archgen-gnode.is-openable .archgen-gnode-drill {
-  flex-shrink: 0;
-  margin-left: auto;
-  color: var(--archgen-action-blue);
-  font-size: 11px;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--archgen-action-blue);
+  color: var(--archgen-surface);
+  font-size: 13px;
   line-height: 1;
-  opacity: 0.85;
+  opacity: 1;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
 }
 
 .archgen-gnode.is-inert {
