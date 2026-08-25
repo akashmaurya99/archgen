@@ -105,7 +105,7 @@
     "@vitest/coverage-v8": "4.1.11",
     "@vscode/test-electron": "3.1.0",
     "esbuild": "0.28.2",
-    "jsdom": "30.0.1",
+    "jsdom": "26.1.0",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
   }
