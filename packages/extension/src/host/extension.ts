@@ -63,8 +63,22 @@ export function activate(context: ExtensionContext): void {
     try {
       const { reader } = openCodegraph(wsRoot);
       try {
-        const snap = reader.snapshot(1000, 2000);
-        return { product: reader.product, nodes: snap.nodes, edges: snap.edges, hasFts: snap.hasFts };
+        // Raised snapshot caps: the full constellation rides to the Canvas MAP
+        // layer; the DOM graph consumes fileRollup instead of raw nodes.
+        const snap = reader.snapshot();
+        const vm: ArchgenModelMessage['codegraph'] = {
+          product: reader.product,
+          nodes: snap.nodes,
+          edges: snap.edges,
+          hasFts: snap.hasFts,
+        };
+        try {
+          vm.fileRollup = reader.fileRollup();
+          vm.hubs = reader.topHubs(25);
+        } catch {
+          // Rollups are progressive enhancement — views tolerate absence.
+        }
+        return vm;
       } finally {
         reader.close();
       }

@@ -3,3 +3,4 @@ media/webview/main.js
 *.map
 media/webview/main.css
 *.vsix
+big-ws

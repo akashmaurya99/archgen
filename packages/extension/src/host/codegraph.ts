@@ -14,6 +14,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import type { FileRollupVM, HubVM } from '../shared/protocol';
 
 export type CodegraphProduct = 'colby' | 'optave';
 
@@ -60,6 +61,25 @@ export interface SqliteHandle {
   close(): void;
 }
 
+/** Structural slice of a driver statement we cache per SQL string (prepared statements). */
+interface CachedStatement {
+  all(...params: unknown[]): unknown[];
+  get(...params: unknown[]): unknown;
+}
+
+/** Cache prepared statements per connection — repeated BFS/aggregation rounds reuse them. */
+function statementCache(db: { prepare(sql: string): unknown }): (sql: string) => CachedStatement {
+  const cache = new Map<string, CachedStatement>();
+  return (sql: string) => {
+    let stmt = cache.get(sql);
+    if (!stmt) {
+      stmt = db.prepare(sql) as CachedStatement;
+      cache.set(sql, stmt);
+    }
+    return stmt;
+  };
+}
+
 interface DriverModule {
   openReadOnly(dbPath: string): SqliteHandle;
   name: string;
@@ -74,9 +94,10 @@ function betterSqliteDriver(): DriverModule | null {
       name: 'better-sqlite3',
       openReadOnly(dbPath: string): SqliteHandle {
         const db = new Ctor(dbPath, { readonly: true, fileMustExist: true });
+        const prep = statementCache(db);
         return {
-          all: (sql, ...params) => db.prepare(sql).all(...params),
-          get: (sql, ...params) => db.prepare(sql).get(...params),
+          all: (sql, ...params) => prep(sql).all(...params) as Array<Record<string, unknown>>,
+          get: (sql, ...params) => prep(sql).get(...params) as Record<string, unknown> | undefined,
           close: () => db.close(),
         };
       },
@@ -96,9 +117,10 @@ function nodeSqliteDriver(): DriverModule | null {
       name: 'node:sqlite',
       openReadOnly(dbPath: string): SqliteHandle {
         const db = new DatabaseSync(dbPath, { readOnly: true });
+        const prep = statementCache(db);
         return {
-          all: (sql, ...params) => db.prepare(sql).all(...params) as Record<string, unknown>[],
-          get: (sql, ...params) => db.prepare(sql).get(...params) as Record<string, unknown> | undefined,
+          all: (sql, ...params) => prep(sql).all(...params) as Array<Record<string, unknown>>,
+          get: (sql, ...params) => prep(sql).get(...params) as Record<string, unknown> | undefined,
           close: () => db.close(),
         };
       },
@@ -127,6 +149,29 @@ export function detectCodegraph(workspaceRoot: string, home = homedir()): Detect
 
 const NODE_COLUMNS = ['id', 'name', 'kind', 'file_path', 'start_line'] as const;
 const EDGE_COLUMNS = ['source', 'target', 'kind'] as const;
+
+/** IN-clause batch size — stays under conservative SQLITE_MAX_VARIABLE_NUMBER floors. */
+const NEIGHBORHOOD_PARAM_CHUNK = 400;
+
+/** Record one BFS edge and enqueue its not-yet-seen endpoint for the next round. */
+function absorbNeighbor(
+  row: Record<string, unknown>,
+  visited: Set<string>,
+  roundSeen: Set<string>,
+  discovered: string[],
+  edgeByKey: Map<string, GraphEdge>,
+): void {
+  const source = String(row['source']);
+  const target = String(row['target']);
+  const kind = String(row['kind'] ?? 'references');
+  edgeByKey.set(`${source}\u0000${target}\u0000${kind}`, { source, target, kind });
+  for (const candidate of [target, source]) {
+    if (!visited.has(candidate) && !roundSeen.has(candidate)) {
+      roundSeen.add(candidate);
+      discovered.push(candidate);
+    }
+  }
+}
 
 /** Column aliases tolerated across schema variants (colby vs optave confidence columns etc.). */
 function pickColumn(available: Set<string>, candidates: string[], fallback: string): string {
@@ -234,11 +279,196 @@ export class CodegraphReader {
     return { edges, total: Number(totalRow?.['n'] ?? edges.length) };
   }
 
-  /** Snapshot with sane caps for first render. */
-  snapshot(nodeLimit = 1000, edgeLimit = 2000): GraphSnapshot {
+  /**
+   * Snapshot caps sized for 50k-scale indexes: the full constellation rides to
+   * the Canvas MAP layer while the DOM graph renders file rollups instead.
+   * Explicit limits keep older callers working unchanged.
+   */
+  snapshot(nodeLimit = 60000, edgeLimit = 150000): GraphSnapshot {
     const n = this.listNodes(nodeLimit);
     const e = this.listEdges(edgeLimit);
     return { nodes: n.nodes, edges: e.edges, totalNodes: n.total, totalEdges: e.total, hasFts: this.hasFts() };
+  }
+
+  /** Resolved node column aliases for SELECTs (schema-variant tolerant). */
+  private nodeCols(): { id: string; label: string; kind: string; file: string; line: string } {
+    const cols = this.tableColumns('nodes');
+    return {
+      id: pickColumn(cols, ['id'], 'id'),
+      label: pickColumn(cols, ['name', 'label', 'qualified_name'], 'name'),
+      kind: pickColumn(cols, ['kind'], 'kind'),
+      file: pickColumn(cols, ['file_path', 'file', 'path'], 'file_path'),
+      line: pickColumn(cols, ['start_line', 'line'], 'start_line'),
+    };
+  }
+
+  private requireEdgesTable(): void {
+    const cols = this.tableColumns('edges');
+    if (cols.size === 0) throw new UnsupportedProductError(`${this.dbPath} has no readable 'edges' table`);
+    for (const c of EDGE_COLUMNS) {
+      if (!cols.has(c)) throw new UnsupportedProductError(`${this.dbPath} edges table is missing required column '${c}'`);
+    }
+  }
+
+  /**
+   * File-level aggregation over the whole index.
+   *  - symbols/kinds per file: single SQL GROUP BY scan of nodes;
+   *  - cross-file edges: one nodes scan builds an id→file map, one edges scan
+   *    aggregates by (source file, target file, kind) with INNER-JOIN
+   *    semantics (dangling endpoints dropped).
+   *
+   * Why not `edges JOIN nodes … GROUP BY`? Measured at 50k nodes / 125k edges:
+   * 250k TEXT-PK B-tree probes cost 410–460ms warm, blowing the <250ms budget;
+   * the two-scan shape runs ~210ms. No CREATE INDEX is ever issued — the db is
+   * read-only and must stay that way.
+   */
+  fileRollup(): FileRollupVM {
+    if (!this.handle) throw new UnsupportedProductError('reader closed');
+    this.requireEdgesTable();
+    const nc = this.nodeCols();
+
+    const kindRows = this.handle.all(
+      `SELECT ${nc.file} AS file, ${nc.kind} AS kind, COUNT(*) AS n FROM nodes GROUP BY ${nc.file}, ${nc.kind}`,
+    );
+    const byFile = new Map<string, FileRollupVM['files'][number]>();
+    const idToFile = new Map<string, string>();
+    for (const r of kindRows) {
+      const file = String(r['file'] ?? '');
+      const kind = String(r['kind'] ?? 'unknown');
+      const n = Number(r['n'] ?? 0);
+      let entry = byFile.get(file);
+      if (!entry) {
+        entry = { file, symbols: 0, kinds: {} };
+        byFile.set(file, entry);
+      }
+      entry.symbols += n;
+      entry.kinds[kind] = (entry.kinds[kind] ?? 0) + n;
+    }
+    for (const r of this.handle.all(`SELECT ${nc.id} AS id, ${nc.file} AS file FROM nodes`)) {
+      idToFile.set(String(r['id']), String(r['file'] ?? ''));
+    }
+
+    const counts = new Map<string, number>();
+    const keys: Array<{ source: string; target: string; kind: string }> = [];
+    for (const r of this.handle.all(`SELECT source, target, kind FROM edges`)) {
+      const sourceFile = idToFile.get(String(r['source']));
+      const targetFile = idToFile.get(String(r['target']));
+      if (sourceFile === undefined || targetFile === undefined) continue;
+      const kind = String(r['kind'] ?? 'references');
+      const key = `${sourceFile}\u0000${targetFile}\u0000${kind}`;
+      const prev = counts.get(key);
+      if (prev === undefined) {
+        counts.set(key, 1);
+        keys.push({ source: sourceFile, target: targetFile, kind });
+      } else {
+        counts.set(key, prev + 1);
+      }
+    }
+
+    const symbolsRow = this.handle.get(`SELECT COUNT(*) AS n FROM nodes`);
+    const edgesRow = this.handle.get(`SELECT COUNT(*) AS n FROM edges`);
+    const cmpStr = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+    return {
+      files: [...byFile.values()].sort((a, b) => cmpStr(a.file, b.file)),
+      edges: keys
+        .map((k) => ({ ...k, count: counts.get(`${k.source}\u0000${k.target}\u0000${k.kind}`) ?? 0 }))
+        .sort((a, b) => cmpStr(a.source, b.source) || cmpStr(a.target, b.target) || cmpStr(a.kind, b.kind)),
+      totals: {
+        files: byFile.size,
+        symbols: Number(symbolsRow?.['n'] ?? 0),
+        edges: Number(edgesRow?.['n'] ?? 0),
+      },
+    };
+  }
+
+  /**
+   * Highest-degree nodes (in+out) in one UNION ALL + GROUP BY query, joined
+   * back to nodes for label/kind/file. Ties break by id ASC for determinism.
+   */
+  topHubs(limit = 25): HubVM[] {
+    if (!this.handle) throw new UnsupportedProductError('reader closed');
+    this.requireEdgesTable();
+    const nc = this.nodeCols();
+    const rows = this.handle.all(
+      `SELECT n.${nc.id} AS id, n.${nc.label} AS label, n.${nc.kind} AS kind, n.${nc.file} AS file, h.degree AS degree
+       FROM (
+         SELECT id, SUM(deg) AS degree FROM (
+           SELECT source AS id, COUNT(*) AS deg FROM edges GROUP BY source
+           UNION ALL
+           SELECT target AS id, COUNT(*) AS deg FROM edges GROUP BY target
+         ) GROUP BY id
+       ) h
+       JOIN nodes n ON n.${nc.id} = h.id
+       ORDER BY h.degree DESC, n.${nc.id} ASC
+       LIMIT ?`,
+      limit,
+    );
+    return rows.map((r) => ({
+      id: String(r['id']),
+      label: String(r['label'] ?? r['id']),
+      kind: String(r['kind'] ?? 'unknown'),
+      file: String(r['file'] ?? ''),
+      degree: Number(r['degree'] ?? 0),
+    }));
+  }
+
+  /**
+   * BFS subgraph around `id` via iterative SQL rounds: per depth level, one
+   * parameter-batched `WHERE source IN (?)` + one `WHERE target IN (?)` round
+   * trip against cached prepared statements. Node budget `limit` bounds both
+   * expansion and result size; returned edges always have BOTH endpoints in
+   * the returned node set.
+   */
+  neighborhood(id: string, depth: 1 | 2, limit = 300): { nodes: GraphNode[]; edges: GraphEdge[] } {
+    if (!this.handle) throw new UnsupportedProductError('reader closed');
+    this.requireEdgesTable();
+
+    const visited = new Set<string>([id]);
+    const edgeByKey = new Map<string, GraphEdge>();
+    let frontier: string[] = [id];
+
+    for (let d = 0; d < depth && frontier.length > 0 && visited.size < limit; d++) {
+      const discovered: string[] = [];
+      const roundSeen = new Set<string>();
+      for (let i = 0; i < frontier.length; i += NEIGHBORHOOD_PARAM_CHUNK) {
+        const batch = frontier.slice(i, i + NEIGHBORHOOD_PARAM_CHUNK);
+        const placeholders = batch.map(() => '?').join(',');
+        const outgoing = this.handle.all(`SELECT source, target, kind FROM edges WHERE source IN (${placeholders})`, ...batch);
+        for (const r of outgoing) absorbNeighbor(r, visited, roundSeen, discovered, edgeByKey);
+        const incoming = this.handle.all(`SELECT source, target, kind FROM edges WHERE target IN (${placeholders})`, ...batch);
+        for (const r of incoming) absorbNeighbor(r, visited, roundSeen, discovered, edgeByKey);
+      }
+      const admitted = discovered.slice(0, Math.max(0, limit - visited.size));
+      for (const nid of admitted) visited.add(nid);
+      frontier = admitted;
+    }
+
+    const nc = this.nodeCols();
+    const nodes: GraphNode[] = [];
+    const wanted = [...visited];
+    for (let i = 0; i < wanted.length; i += NEIGHBORHOOD_PARAM_CHUNK) {
+      const batch = wanted.slice(i, i + NEIGHBORHOOD_PARAM_CHUNK);
+      const placeholders = batch.map(() => '?').join(',');
+      const rows = this.handle.all(
+        `SELECT ${nc.id} AS id, ${nc.label} AS label, ${nc.kind} AS kind, ${nc.file} AS file, ${nc.line} AS line
+         FROM nodes WHERE ${nc.id} IN (${placeholders})`,
+        ...batch,
+      );
+      for (const r of rows) {
+        nodes.push({
+          id: String(r['id']),
+          label: String(r['label'] ?? r['id']),
+          kind: String(r['kind'] ?? 'unknown'),
+          file: String(r['file'] ?? ''),
+          line: Number(r['line'] ?? 0),
+        });
+      }
+    }
+    nodes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const edges = [...edgeByKey.values()]
+      .filter((e) => visited.has(e.source) && visited.has(e.target))
+      .sort((a, b) => (a.source < b.source ? -1 : a.source > b.source ? 1 : a.target < b.target ? -1 : a.target > b.target ? 1 : 0));
+    return { nodes, edges };
   }
 
   /**

@@ -24,6 +24,41 @@ export interface DocRef {
 
 export type CodegraphProduct = 'colby' | 'optave' | 'unsupported';
 
+/** Per-file symbol rollup row: one entry per indexed file. */
+export interface FileRollupEntry {
+  file: string;
+  symbols: number;
+  /** symbol count per kind within this file (function/class/import/module/…) */
+  kinds: Record<string, number>;
+}
+
+/** Cross-file edge coalesced by (source file, target file, edge kind). */
+export interface FileRollupEdge {
+  source: string;
+  target: string;
+  kind: string;
+  count: number;
+}
+
+/**
+ * File-level aggregation of the code graph — feeds the DOM graph (which never
+ * renders >300 nodes) while the full constellation goes to the Canvas MAP layer.
+ */
+export interface FileRollupVM {
+  files: FileRollupEntry[];
+  edges: FileRollupEdge[];
+  totals: { files: number; symbols: number; edges: number };
+}
+
+/** High-degree node (in+out) anchoring the Canvas MAP constellation view. */
+export interface HubVM {
+  id: string;
+  label: string;
+  kind: string;
+  file: string;
+  degree: number;
+}
+
 export interface CodegraphVM {
   product: CodegraphProduct;
   /** present when product !== 'unsupported' */
@@ -33,6 +68,13 @@ export interface CodegraphVM {
   hasFts?: boolean;
   /** human-readable reason when unsupported */
   unsupportedReason?: string;
+  /**
+   * File-level rollup + top hubs — OPTIONAL for backward compatibility; views
+   * must tolerate absence (host leaves them undefined when computation fails
+   * or the product is unsupported).
+   */
+  fileRollup?: FileRollupVM;
+  hubs?: HubVM[];
 }
 
 /** One discovered `.archgen/<slug>/` feature in a multi-feature repo. */
