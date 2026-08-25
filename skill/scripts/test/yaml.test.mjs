@@ -114,6 +114,13 @@ test('empty collections emit usable flow form', () => {
   assert.deepEqual(data, { t: [], m: {} });
 });
 
+test('scalar-only documents fail with the clean mapping-entry error', () => {
+  for (const src of ['null\n', '42\n', 'true\n']) {
+    try { parseYaml(src, { filename: 'scalar-root' }); assert.fail('should have thrown'); }
+    catch (e) { assert.match(e.message, /expected 'key:' mapping entry/); }
+  }
+});
+
 test('fuzz: 20 malformed inputs never crash uncaught — always YamlError or clean parse', () => {
   const bad = [
     'a: [1, 2', 'key\n', '- a\nb: 1\n', 'a:\n  - x\n y: 1\n', '"unclosed: 1\n',
