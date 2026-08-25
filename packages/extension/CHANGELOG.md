@@ -3,6 +3,26 @@
 All notable changes to the ArchGen extension are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semver.
 
+## [0.0.4] - 2026-08-25
+
+### Added
+- **50k-scale architecture (Map → Explore → Inspect)**: a Canvas2D MAP constellation renders the ENTIRE codegraph (50,000+ symbols, quadtree picking, pan/zoom 0.02×–4×, dirty-flag render loop — 50k dots packed in <100ms), while the DOM graph never renders more than ~300 nodes.
+- **Size-tier auto-mode** in the CODE tab, chosen by the largest connected component: ≤60 symbols → radial ring; 61–300 → **file-hub dagre** (files as hub nodes, symbol counts as captions, click to drill into the file's symbol graph); >300 → file-hubs + focus-first. Graphs without a file rollup degrade gracefully to per-component flow blocks — never a giant ring.
+- **Zoom LOD**: below 0.35 zoom nodes collapse to kind-colored dots, labels appear only on hubs (degree ≥5), and low-degree edges hide — the tier-flip costs one class patch per node, no structural remounts.
+- Host data layer: `fileRollup()` (SQL GROUP BY file + file-pair edge coalescing), `topHubs()` (degree-ranked), `neighborhood(id, depth)` (BFS via chunked IN queries), snapshot defaults raised to 60k/150k, prepared-statement caching, and a deterministic 50k-fixture generator (`scripts/build-big-fixture.mjs`) with perf smoke tests.
+- CODE tab: radial circular layout — nodes sit on a shared circle with even spacing starting at 12 o'clock, wrapped by ring pseudo-nodes (`__ring`) drawn as SVG circles with kind-colored anchor dots and **component labels above every ring/cluster**; a **Flow** toggle switches to isolated per-component dagre blocks.
+- Component affordances: file nodes that would render a real focus graph get an accent border, pointer cursor and a ▸ drill glyph; files whose focus would be empty render inert — affordance and click behavior can never diverge.
+- Floating focus breadcrumb (‹ All files / `<file>` · N symbols) replacing the toolbar back chip.
+- `vscode:prepublish` npm hook (`npm run compile`) — vsce now always rebuilds both bundles at package time, so a vsix can never ship a stale webview bundle again.
+
+### Changed
+- Bolder default rendering for legibility at any zoom: 2px edges (3.5px highlighted, 0.75 resting opacity), 1.5px node borders, 8px kind dots; compact single-row toolbar with slimmer edge-kind chips.
+- Clicking a file hub opens its focus only when it contains ≥2 interconnected symbols (empty-open guard) — affordance, guard and tests share one `openableById` set.
+
+### Fixed
+- Node overlap and arrow-tip misalignment in the CODE graph: cards are constrained to their layout box (`100% × 100%`, overflow hidden), and every edge uses explicit per-node face anchors (`sourcePosition`/`targetPosition`) derived from the radial geometry.
+- React Flow attribution badge removed at the bundler root (esbuild strip plugin + build-time tripwire) instead of hidden via CSS.
+
 ## [0.0.3] - 2026-08-25
 
 ### Added

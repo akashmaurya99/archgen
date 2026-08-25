@@ -15,6 +15,33 @@ import { readFileSync } from 'node:fs';
 const watch = process.argv.includes('--watch');
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
+// Root-level attribution removal: xyflow's Attribution component is neutered at
+// source-load time, so the badge cannot render under ANY prop combination. The
+// post-build assertion fails the build if the class string ever reappears.
+const stripReactFlowAttribution = {
+  name: 'strip-react-flow-attribution',
+  setup(build) {
+    build.onLoad({ filter: /@xyflow[\\/]react[\\/]dist[\\/]esm[\\/]index(\.m?js)$/ }, (args) => {
+      let src = readFileSync(args.path, 'utf8');
+      if (src.includes('react-flow__attribution')) {
+        // Dist ships the Attribution return as ONE physical line; replace it wholesale.
+        src = src
+          .split('\n')
+          .map((l) => (l.includes('react-flow__attribution') && l.includes('return (jsx(Panel') ? 'return null;' : l))
+          .join('\n');
+      }
+      return { contents: src, loader: 'js' };
+    });
+  },
+};
+
+function assertAttributionGone(outfile) {
+  const out = readFileSync(outfile, 'utf8');
+  if (out.includes('react-flow__attribution')) {
+    throw new Error(`[archgen] attribution leak: '${outfile}' still contains react-flow__attribution — update stripReactFlowAttribution`);
+  }
+}
+
 /** @type {import('esbuild').BuildOptions} */
 const host = {
   entryPoints: ['src/host/extension.ts'],
@@ -43,6 +70,7 @@ const webview = {
   define: { 'process.env.NODE_ENV': '"production"' },
   sourcemap: false,
   logLevel: 'info',
+  plugins: [stripReactFlowAttribution],
 };
 
 if (watch) {
@@ -53,5 +81,6 @@ if (watch) {
 } else {
   await esbuild.build(host);
   await esbuild.build(webview);
-  console.log(`[archgen] built ${pkg.version}: dist/extension.js + media/webview/main.js`);
+  assertAttributionGone('media/webview/main.js');
+  console.log(`[archgen] built ${pkg.version}: dist/extension.js + media/webview/main.js (attribution stripped)`);
 }
