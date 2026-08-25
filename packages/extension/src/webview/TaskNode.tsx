@@ -27,7 +27,15 @@ export function taskAriaLabel(id: string, title: string, status: TaskStatus): st
   return `task ${id}: ${title}, status ${status}`;
 }
 
-function TaskNodeComponent({ data, id }: NodeProps<TaskFlowNode>) {
+function TaskNodeComponent({
+  data,
+  id,
+  // Handle sides arrive from the NODE OBJECT (TasksView sets them per layout
+  // direction): LR ⇒ target Left / source Right; TB ⇒ target Top / source
+  // Bottom. Defaults keep the historical left→right shape for bare usage.
+  sourcePosition = Position.Right,
+  targetPosition = Position.Left,
+}: NodeProps<TaskFlowNode>) {
   const pulse = data.status === 'running' ? ' archgen-pulse' : '';
 
   // KEYBOARD NAV (todo 13): every node is in the tab order; Enter or Space on
@@ -58,12 +66,12 @@ function TaskNodeComponent({ data, id }: NodeProps<TaskFlowNode>) {
           ▶
         </button>
       </NodeToolbar>
-      <Handle type="target" position={Position.Left} isConnectable={false} />
+      <Handle type="target" position={targetPosition} isConnectable={false} />
       <span className="archgen-task-id">{id}</span>
       <span className="archgen-task-title" data-status={data.status}>
         {data.label}
       </span>
-      <Handle type="source" position={Position.Right} isConnectable={false} />
+      <Handle type="source" position={sourcePosition} isConnectable={false} />
     </div>
   );
 }

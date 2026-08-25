@@ -1,17 +1,24 @@
 /*
- * dag.css — task DAG canvas styles (todo 8).
- * Consumes tokens.css variables ONLY — no new colors are defined here.
- * Loaded AFTER tokens.css (bundled main.css link order in panel.ts), so the
- * double-class status rules below intentionally outrank the base node style
- * and re-assert tokens.css's blocked treatment at higher specificity.
+ * dag.css — Task DAG canvas and webview layout styles.
+ *
+ * Implements a modern, clean, and accessible design system:
+ * - Refined typography with balanced tracking on headings.
+ * - Cohesive interactive signals across tabs, pills, and action triggers.
+ * - Frosted-glass floating panels with subtle hairline dividers.
+ * - Continuous pill buttons and utility cards.
+ * - Clean, stable hover and focus interactions without layout shifts.
+ * - Responsive breakpoints for compact, standard, and wide viewports.
  */
 
-/* ---- Canvas shell ---- */
+/* ---- Canvas Shell & Root ---- */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .archgen-root {
@@ -21,35 +28,178 @@ body,
   height: 100%;
   box-sizing: border-box;
   padding: var(--archgen-space-2);
+  background: var(--archgen-canvas);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  position: relative;
+  overflow: hidden;
 }
 
+/* ---- Frosted Top Navigation Bar ---- */
+.archgen-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-pill);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.archgen-tab {
+  border: none;
+  background: transparent;
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-sm);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  padding: 6px 16px;
+  border-radius: var(--archgen-radius-pill);
+  cursor: pointer;
+  transition: color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.archgen-tab:hover {
+  color: var(--archgen-text);
+  background: color-mix(in srgb, var(--archgen-text) 8%, transparent);
+}
+
+.archgen-tab.is-active {
+  background: var(--archgen-surface-elevated);
+  color: var(--archgen-text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), inset 0 0 0 1px var(--archgen-hairline-strong);
+  font-weight: 600;
+}
+
+/* ---- Live Pulse Status Chip ---- */
+.archgen-stale-chip {
+  margin-left: auto;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-surface) 60%, transparent);
+  color: var(--archgen-text-muted);
+  font-size: var(--archgen-font-size-xs);
+  font-family: var(--archgen-font-mono);
+  letter-spacing: -0.01em;
+}
+
+.archgen-stale-chip::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--archgen-status-ready);
+  box-shadow: 0 0 6px var(--archgen-status-ready);
+}
+
+/* ---- Feature Picker (TASKS tab header) ---- */
+.archgen-feature-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--archgen-space-2);
+  padding: 0 4px;
+}
+
+.archgen-feature-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--archgen-space-2);
+  font-size: var(--archgen-font-size-xs);
+  color: var(--archgen-text-muted);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.archgen-feature-select {
+  padding: 4px 12px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface-elevated);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-sm);
+  letter-spacing: -0.01em;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--archgen-motion-fast);
+}
+
+.archgen-feature-select:hover {
+  border-color: var(--archgen-hairline-strong);
+}
+
+/* ---- Task DAG View Container ---- */
 .archgen-tasks-view {
   flex: 1 1 auto;
   min-height: 320px;
+  position: relative;
+  border-radius: var(--archgen-radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-canvas);
 }
 
-/* ---- Task node (box must match layout.ts DEFAULT_NODE_W/H) ---- */
+/* ---- Task Node Card ---- */
 .archgen-tasknode {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  padding: var(--archgen-space-2) var(--archgen-space-3);
-  border-radius: var(--archgen-radius);
+  padding: 8px 12px;
+  border-radius: var(--archgen-radius-lg, 18px);
   background: var(--archgen-surface-elevated);
   border: 1px solid var(--archgen-hairline-strong);
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-sm);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: box-shadow var(--archgen-motion-fast), border-color var(--archgen-motion-fast);
+  cursor: pointer;
+  position: relative;
+}
+
+.archgen-tasknode:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+  border-color: var(--archgen-hairline-strong);
 }
 
 .archgen-tasknode .archgen-task-id {
   font-family: var(--archgen-font-mono);
   font-size: var(--archgen-font-size-xs);
   color: var(--archgen-text-muted);
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.archgen-tasknode .archgen-task-title {
+  font-size: var(--archgen-font-size-sm);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Status treatments — EXACTLY the six-value schema enum; no cancelled exists. */
@@ -61,17 +211,17 @@ body,
 .archgen-tasknode.archgen-node--ready {
   background: var(--archgen-fill-ready);
   border-color: var(--archgen-status-ready);
-  box-shadow: inset 0 0 0 1px var(--archgen-status-ready); /* blue outline */
+  box-shadow: inset 0 0 0 1px var(--archgen-status-ready), 0 2px 8px color-mix(in srgb, var(--archgen-status-ready) 15%, transparent);
 }
 
 .archgen-tasknode.archgen-node--running {
   background: var(--archgen-fill-running);
   border-color: var(--archgen-status-running);
+  box-shadow: inset 0 0 0 1px var(--archgen-status-running);
 }
-/* pulse ring itself comes from tokens.css `.archgen-pulse` (added by TaskNode) */
 
 .archgen-tasknode.archgen-node--blocked {
-  background: var(--archgen-fill-blocked); /* hollow by design */
+  background: var(--archgen-fill-blocked);
   border-style: dashed;
   border-color: var(--archgen-status-blocked);
 }
@@ -84,31 +234,69 @@ body,
 .archgen-tasknode.archgen-node--failed {
   background: var(--archgen-fill-failed);
   border-color: var(--archgen-status-failed);
+  box-shadow: inset 0 0 0 1px var(--archgen-status-failed);
 }
 
-/* ---- Edges ---- */
-.react-flow__edge-path {
-  stroke: var(--archgen-hairline-strong);
+/* Build action button in NodeToolbar */
+.archgen-build-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--archgen-text-on-action) 25%, transparent);
+  background: var(--archgen-action-blue);
+  color: var(--archgen-text-on-action);
+  font-size: 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: background var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
 }
 
-.react-flow__edge.archgen-edge--failed .react-flow__edge-path {
-  stroke: var(--archgen-status-failed);
+.archgen-build-btn:hover {
+  background: var(--archgen-action-blue-focus);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
-.react-flow__edge.archgen-edge--blocked .react-flow__edge-path {
-  stroke: var(--archgen-status-blocked);
-  stroke-dasharray: 5 3; /* dashed-static for blocked flows */
+/* ---- Start Work Hero Button ---- */
+.archgen-start-work {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--archgen-action-blue);
+  color: var(--archgen-text-on-action);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-sm);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 8px 18px;
+  border: none;
+  border-radius: var(--archgen-radius-pill);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--archgen-action-blue) 30%, transparent);
+  cursor: pointer;
+  transition: background var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
+  user-select: none;
 }
 
-/* ---- Legend (Panel top-right) ---- */
+.archgen-start-work:hover {
+  background: var(--archgen-action-blue-focus);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--archgen-action-blue) 40%, transparent);
+}
+
+/* ---- Status Legend Panel ---- */
 .archgen-legend {
   display: flex;
   flex-direction: column;
-  gap: var(--archgen-space-1);
-  padding: var(--archgen-space-2) var(--archgen-space-3);
-  border-radius: var(--archgen-radius);
+  gap: 5px;
+  padding: 10px 14px;
+  border-radius: var(--archgen-radius-lg);
   border: 1px solid var(--archgen-hairline);
-  background: var(--archgen-surface);
+  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   font-size: var(--archgen-font-size-xs);
   color: var(--archgen-text-muted);
 }
@@ -117,6 +305,9 @@ body,
   display: inline-flex;
   align-items: center;
   gap: var(--archgen-space-2);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-transform: capitalize;
 }
 
 .archgen-dot {
@@ -124,6 +315,7 @@ body,
   height: 8px;
   border-radius: var(--archgen-radius-pill);
   display: inline-block;
+  flex-shrink: 0;
 }
 
 .archgen-dot--pending { background: var(--archgen-status-pending); }
@@ -133,38 +325,571 @@ body,
 .archgen-dot--done { background: var(--archgen-status-done); }
 .archgen-dot--failed { background: var(--archgen-status-failed); }
 
-/* ---- Feature picker (TASKS tab header) ---- */
-.archgen-feature-bar {
-  flex: 0 0 auto;
+/* ---- Edges ---- */
+.react-flow__edge-path {
+  stroke: var(--archgen-hairline-strong);
+  stroke-width: 1.5;
+}
+
+.react-flow__edge.archgen-edge--failed .react-flow__edge-path {
+  stroke: var(--archgen-status-failed);
+}
+
+.react-flow__edge.archgen-edge--blocked .react-flow__edge-path {
+  stroke: var(--archgen-status-blocked);
+  stroke-dasharray: 5 3;
+}
+
+/* Controls & MiniMap Styling */
+.react-flow__controls {
+  border-radius: var(--archgen-radius-md) !important;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid var(--archgen-hairline) !important;
+  background: color-mix(in srgb, var(--archgen-surface) 90%, transparent) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.react-flow__controls-button {
+  background: transparent !important;
+  border-bottom: 1px solid var(--archgen-hairline) !important;
+  color: var(--archgen-text) !important;
+  transition: background var(--archgen-motion-fast);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--archgen-surface-elevated) !important;
+}
+
+.react-flow__minimap {
+  border-radius: var(--archgen-radius-md) !important;
+  overflow: hidden;
+  border: 1px solid var(--archgen-hairline) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2) !important;
+  background: color-mix(in srgb, var(--archgen-surface) 90%, transparent) !important;
+}
+
+/* ---- Code Graph View (CODE Tab) ---- */
+.archgen-code-view {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--archgen-space-2);
+  min-height: 320px;
+  position: relative;
+  border-radius: var(--archgen-radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-canvas);
+}
+
+.archgen-cg-toolbar {
   display: flex;
   align-items: center;
   gap: var(--archgen-space-2);
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--archgen-hairline);
+  flex-wrap: wrap;
+  z-index: 5;
 }
 
-.archgen-feature-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--archgen-space-2);
-  font-size: var(--archgen-font-size-xs);
-  color: var(--archgen-text-muted);
-}
-
-.archgen-feature-select {
-  padding: 2px var(--archgen-space-2);
-  border-radius: var(--archgen-radius);
-  border: 1px solid var(--archgen-hairline-strong);
+/* Search Input */
+.archgen-cg-search {
+  flex: 1 1 200px;
+  max-width: 320px;
+  padding: 6px 14px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface-elevated);
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-sm);
+  outline: none;
+  transition: border-color var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
 }
 
-/* ---- States (todo 13) ---- */
+.archgen-cg-search:focus {
+  border-color: var(--archgen-action-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--archgen-action-blue) 25%, transparent);
+}
+
+.archgen-cg-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Capsule Filter Chips */
+.archgen-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-pill);
+  background: var(--archgen-surface-elevated);
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 500;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  user-select: none;
+}
+
+.archgen-chip-btn:hover {
+  color: var(--archgen-text);
+  border-color: var(--archgen-hairline-strong);
+}
+
+.archgen-chip-btn.is-on {
+  background: color-mix(in srgb, var(--archgen-action-blue) 14%, var(--archgen-surface-elevated));
+  color: var(--archgen-text);
+  border-color: var(--archgen-action-blue);
+}
+
+.archgen-impact-badge {
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: var(--archgen-radius-pill);
+  background: var(--archgen-surface-elevated);
+  border: 1px solid var(--archgen-hairline);
+  color: var(--archgen-text);
+  font-size: var(--archgen-font-size-xs);
+  font-family: var(--archgen-font-mono);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Codegraph Node */
+.archgen-gnode {
+  /* Card MUST fill its xyflow wrapper box exactly: dagre spaces nodes by the
+     declared dims, and handles anchor at wrapper edges — an auto-sized card
+     overflows both, causing overlapping nodes and arrows that stop short. */
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 7px 13px;
+  border-radius: var(--archgen-radius-md);
+  background: var(--archgen-surface-elevated);
+  border: 1.5px solid color-mix(in srgb, var(--archgen-text) 38%, transparent);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: border-color var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
+}
+
+.archgen-gnode.is-selected {
+  border-color: var(--archgen-action-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--archgen-action-blue) 25%, transparent);
+}
+
+.archgen-gnode.is-dimmed {
+  opacity: 0.18;
+}
+
+.archgen-kind-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ==== CODE GRAPH · dependency-explorer upgrade — NEW SECTION START ====
+   Owns every --archgen-cg-* custom property plus the gnode handles,
+   captions, edge highlight/dim states and canvas toolbar buttons.
+   Edge hues are WCAG-checkable on the dark canvas and mutually distinct. */
+.archgen-code-view {
+  --archgen-cg-edge-calls: #ffa657;
+  --archgen-cg-edge-imports: #58a6ff;
+  --archgen-cg-edge-extends: #7ee787;
+  --archgen-cg-edge-implements: #d2a8ff;
+  --archgen-cg-edge-references: #9aa4ad;
+  --archgen-cg-edge-other: #b1b1b7;
+  --archgen-cg-accent: #58a6ff;
+}
+
+/* Handles: real routing anchors (xyflow v12 resolves edge endpoints from
+   rendered handle DOM). Hidden via opacity ONLY — display:none would collapse
+   them to 0×0 and break routing. Small dots surface on hover/selection. */
+.react-flow__handle.archgen-gnode-handle {
+  width: 7px;
+  height: 7px;
+  background: var(--archgen-surface-elevated);
+  border: 1px solid var(--archgen-hairline-strong);
+  opacity: 0;
+  transition: opacity var(--archgen-motion-fast, 120ms);
+  pointer-events: none;
+}
+
+.archgen-gnode:hover .archgen-gnode-handle,
+.archgen-gnode.is-selected .archgen-gnode-handle {
+  opacity: 1;
+}
+
+/* Ring lives INSIDE the flow coordinate space (as a node) so it pans/zooms
+   with the graph — a static background layer would not. */
+.archgen-ring-svg {
+  display: block;
+  pointer-events: none;
+}
+
+.archgen-cg-mode {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--archgen-radius-md);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface);
+}
+
+.archgen-cg-mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--archgen-text-muted);
+  font: inherit;
+  font-size: var(--archgen-font-size-xs);
+  padding: 4px 10px;
+  border-radius: calc(var(--archgen-radius-md) - 2px);
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.archgen-cg-mode-btn.is-active {
+  background: var(--archgen-action-blue);
+  color: var(--archgen-surface);
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* Label + file:line caption column; caption truncates when space is tight. */
+.archgen-gnode-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.archgen-gnode-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.archgen-gnode-caption {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+/* Non-neighborhood edges fade to near-invisible while highlighting. */
+.react-flow__edge.archgen-edge--dimmed {
+  opacity: 0.12;
+}
+
+.react-flow__edge.archgen-edge--highlighted .react-flow__edge-path {
+  stroke-width: 2.5px;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--archgen-cg-accent) 55%, transparent));
+}
+
+/* Canvas overlay buttons (zoom-to-fit). */
+.archgen-cg-panel {
+  display: flex;
+  gap: 6px;
+}
+
+.archgen-cg-fit-btn,
+.archgen-cg-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface-elevated);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transition: border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+}
+
+.archgen-cg-fit-btn:hover,
+.archgen-cg-clear-btn:hover {
+  border-color: var(--archgen-action-blue);
+  background: color-mix(in srgb, var(--archgen-action-blue) 10%, var(--archgen-surface-elevated));
+}
+/* ==== CODE GRAPH · dependency-explorer upgrade — NEW SECTION END ==== */
+
+/* ==== CODE GRAPH · grouped single-canvas view — NEW SECTION START ====
+   Every component lives on ONE shared canvas: radial = one kind-clustered
+   ring per component, flow = one isolated dagre block per component,
+   shelf-packed 3-per-row. Component chips (inside the canvas panel) fit-view
+   to their cluster. Flow-mode edges recede at rest. */
+
+.archgen-cg-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 420px;
+}
+
+.archgen-cg-fit-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-surface-elevated) 88%, transparent);
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-mono);
+  font-size: var(--archgen-font-size-xs);
+  cursor: pointer;
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  user-select: none;
+}
+
+.archgen-cg-fit-chip:hover {
+  color: var(--archgen-text);
+  border-color: var(--archgen-action-blue);
+  background: color-mix(in srgb, var(--archgen-action-blue) 12%, var(--archgen-surface-elevated));
+}
+
+/* Flow-mode declutter: resting edges recede (thin stroke comes from the
+   inline style; this adds the translucent opacity). Highlighted/dimmed
+   states override below — dimmed keeps its near-invisible element opacity,
+   highlighted restores full opacity + glow. */
+.archgen-code-view .react-flow__edge-path {
+  stroke-opacity: 0.75;
+}
+
+.archgen-code-view .react-flow__edge.archgen-edge--highlighted .react-flow__edge-path {
+  stroke-opacity: 1;
+}
+/* ==== CODE GRAPH · multi-canvas component view — NEW SECTION END ==== */
+
+/* ---- Documentation View (DOCS Tab) ---- */
+.archgen-docs-view {
+  flex: 1 1 auto;
+  display: flex;
+  gap: var(--archgen-space-2);
+  min-height: 320px;
+  border-radius: var(--archgen-radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-canvas);
+}
+
+.archgen-doc-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--archgen-surface) 80%, transparent);
+  border-right: 1px solid var(--archgen-hairline);
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.archgen-doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.archgen-doc-list li {
+  display: flex;
+  align-items: center;
+  border-radius: var(--archgen-radius-md);
+  transition: background var(--archgen-motion-fast);
+}
+
+.archgen-doc-list li:hover {
+  background: var(--archgen-surface-elevated);
+}
+
+.archgen-doc-list li.is-active {
+  background: color-mix(in srgb, var(--archgen-action-blue) 14%, var(--archgen-surface-elevated));
+}
+
+.archgen-doc-link {
+  flex: 1 1 auto;
+  border: none;
+  background: transparent;
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-sm);
+  text-align: left;
+  padding: 7px 10px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archgen-doc-external {
+  border: none;
+  background: transparent;
+  color: var(--archgen-text-muted);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: color var(--archgen-motion-fast);
+}
+
+.archgen-doc-external:hover {
+  color: var(--archgen-action-blue);
+}
+
+.archgen-doc-body {
+  flex: 1 1 auto;
+  padding: 24px 32px;
+  overflow-y: auto;
+  font-family: var(--archgen-font-ui);
+  font-size: 15px;
+  line-height: 1.47;
+  letter-spacing: -0.01em;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Docs Tab Empty State ---- */
+.archgen-doc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  margin: auto;
+  padding: var(--archgen-space-6) var(--archgen-space-4);
+  max-width: 360px;
+  box-sizing: border-box;
+}
+
+.archgen-doc-empty-title {
+  margin: 0 0 var(--archgen-space-1) 0;
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-md);
+  font-weight: 600;
+  color: var(--archgen-text);
+  letter-spacing: -0.01em;
+}
+
+.archgen-doc-empty-desc {
+  margin: 0;
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-sm);
+  color: var(--archgen-text-muted);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.archgen-markdown h1,
+.archgen-markdown h2,
+.archgen-markdown h3 {
+  font-family: var(--archgen-font-ui);
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  color: var(--archgen-text);
+}
+
+.archgen-markdown h1 {
+  font-size: 26px;
+  margin-top: 0;
+  border-bottom: 1px solid var(--archgen-hairline);
+  padding-bottom: 8px;
+}
+
+.archgen-markdown h2 {
+  font-size: 20px;
+  margin-top: 24px;
+}
+
+.archgen-markdown pre {
+  background: var(--archgen-surface-elevated);
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-md);
+  padding: 12px 16px;
+  overflow-x: auto;
+  font-family: var(--archgen-font-mono);
+  font-size: var(--archgen-font-size-xs);
+}
+
+.archgen-markdown code {
+  font-family: var(--archgen-font-mono);
+  font-size: 0.9em;
+  background: color-mix(in srgb, var(--archgen-text) 8%, transparent);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.archgen-diagram {
+  margin: 16px 0;
+  padding: 16px;
+  border-radius: var(--archgen-radius-lg);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface-elevated);
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+/* ---- States (Empty, Loading, Error) ---- */
+.archgen-state {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  border-radius: var(--archgen-radius-lg);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-canvas);
+}
+
+.archgen-state h2 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+  color: var(--archgen-text);
+}
+
+.archgen-state p {
+  color: var(--archgen-text-muted);
+  max-width: 480px;
+  line-height: 1.47;
+  font-size: 14px;
+}
+
+.archgen-hint {
+  color: var(--archgen-text-muted);
+  font-size: 14px;
+}
 
 /* Error banner floats TOP-CENTER above the dimmed last-good graph. */
 .archgen-error-banner {
   position: fixed;
-  top: var(--archgen-space-2);
+  top: 12px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
@@ -172,40 +897,38 @@ body,
   align-items: center;
   gap: var(--archgen-space-3);
   max-width: min(640px, calc(100% - var(--archgen-space-6)));
-  padding: var(--archgen-space-2) var(--archgen-space-3);
-  border-radius: var(--archgen-radius);
+  padding: 8px 16px;
+  border-radius: var(--archgen-radius-pill);
   border: 1px solid var(--archgen-status-failed);
-  background: color-mix(in srgb, var(--archgen-status-failed) 14%, var(--archgen-surface-elevated));
+  background: color-mix(in srgb, var(--archgen-status-failed) 18%, var(--archgen-surface-elevated));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   color: var(--archgen-text);
   font-size: var(--archgen-font-size-sm);
+  font-weight: 500;
 }
 
 .archgen-error-banner button {
   border: none;
   background: transparent;
-  color: var(--archgen-text-muted);
-  font-size: var(--archgen-font-size-md);
+  color: var(--archgen-text);
+  font-size: 16px;
   cursor: pointer;
-  padding: 0 var(--archgen-space-1);
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity var(--archgen-motion-fast);
 }
 
-/* Last-good content dims while an error banner is up; pointer events off so
-   the stale view cannot be interacted with. */
+.archgen-error-banner button:hover {
+  opacity: 1;
+}
+
+/* Dimmed state during active error */
 .archgen-root--dimmed > :not(.archgen-error-banner) {
   opacity: 0.45;
   pointer-events: none;
-}
-
-/* Stale-data chip: seconds since the last model snapshot. */
-.archgen-stale-chip {
-  margin-left: auto;
-  padding: 2px var(--archgen-space-2);
-  border-radius: var(--archgen-radius-pill);
-  border: 1px solid var(--archgen-hairline);
-  background: var(--archgen-surface);
-  color: var(--archgen-text-muted);
-  font-size: var(--archgen-font-size-xs);
-  font-family: var(--archgen-font-mono);
 }
 
 /* Empty-state install CTA: copyable command pill. */
@@ -213,11 +936,12 @@ body,
   display: inline-flex;
   align-items: center;
   gap: var(--archgen-space-2);
-  margin-top: var(--archgen-space-2);
-  padding: var(--archgen-space-1) var(--archgen-space-1) var(--archgen-space-1) var(--archgen-space-3);
+  margin-top: 16px;
+  padding: 4px 6px 4px 14px;
   border-radius: var(--archgen-radius-pill);
   border: 1px solid var(--archgen-hairline-strong);
   background: var(--archgen-surface-elevated);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .archgen-install-cmd {
@@ -227,11 +951,1091 @@ body,
 }
 
 .archgen-copy-btn {
-  border: 1px solid var(--archgen-hairline-strong);
+  border: 1px solid var(--archgen-hairline);
   border-radius: var(--archgen-radius-pill);
   background: var(--archgen-surface);
-  color: var(--archgen-text);
+  color: var(--archgen-action-blue);
+  font-family: var(--archgen-font-ui);
+  font-weight: 600;
   font-size: var(--archgen-font-size-xs);
-  padding: 2px var(--archgen-space-2);
+  padding: 4px 12px;
   cursor: pointer;
+  transition: background var(--archgen-motion-fast);
+}
+
+.archgen-copy-btn:hover {
+  background: var(--archgen-surface-elevated);
+}
+
+/* ---- Responsive Adaptations ---- */
+@media (max-width: 834px) {
+  .archgen-docs-view {
+    flex-direction: column;
+  }
+  .archgen-doc-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--archgen-hairline);
+    max-height: 140px;
+  }
+  .archgen-doc-body {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 419px) {
+  .archgen-root {
+    padding: 4px;
+    gap: 4px;
+  }
+  .archgen-tab {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+  .archgen-cg-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .archgen-cg-search {
+    max-width: 100%;
+  }
+}
+
+/* ============================================================
+   TASKS DAG ENTERPRISE ADDITIONS
+   Scope: TASKS tab only (.archgen-dag-*, .archgen-progress-chip,
+   .archgen-filter-announce, .archgen-legend-toggle/-wrap).
+   Mirrors the frosted-panel + pill language defined above.
+   ============================================================ */
+
+/* HUD column floating top-left: Start Work row + filter toolbar */
+.archgen-dag-hud {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(640px, calc(100vw - 24px));
+}
+
+.archgen-dag-hud-row {
+  display: flex;
+  align-items: center;
+  gap: var(--archgen-space-2);
+  flex-wrap: wrap;
+}
+
+/* Wave-progress chip (done/total) beside Start Work */
+.archgen-progress-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--archgen-status-done) 45%, var(--archgen-hairline));
+  background: color-mix(in srgb, var(--archgen-status-done) 12%, var(--archgen-surface-elevated));
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-mono);
+  font-size: var(--archgen-font-size-xs);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.archgen-progress-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--archgen-status-done);
+  box-shadow: 0 0 6px var(--archgen-status-done);
+}
+
+/* Layout direction toggle (LR ↔ TB) */
+.archgen-dag-layout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-surface) 60%, transparent);
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+}
+
+.archgen-dag-layout-btn:hover {
+  color: var(--archgen-text);
+  border-color: var(--archgen-hairline-strong);
+}
+
+.archgen-dag-layout-btn[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--archgen-action-blue) 14%, var(--archgen-surface-elevated));
+  color: var(--archgen-text);
+  border-color: var(--archgen-action-blue);
+}
+
+/* Status filter chip toolbar */
+.archgen-dag-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: fit-content;
+  padding: 8px 10px;
+  border-radius: var(--archgen-radius-lg);
+  border: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.archgen-dag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-pill);
+  background: var(--archgen-surface-elevated);
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  padding: 3px 10px;
+  cursor: pointer;
+  user-select: none;
+  text-transform: capitalize;
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+}
+
+.archgen-dag-chip:hover {
+  color: var(--archgen-text);
+  border-color: var(--archgen-hairline-strong);
+}
+
+.archgen-dag-chip.is-on {
+  background: color-mix(in srgb, var(--archgen-action-blue) 14%, var(--archgen-surface-elevated));
+  color: var(--archgen-text);
+  border-color: var(--archgen-action-blue);
+}
+
+.archgen-dag-chip:focus-visible,
+.archgen-dag-layout-btn:focus-visible,
+.archgen-legend-toggle:focus-visible {
+  outline: 2px solid var(--archgen-action-blue);
+  outline-offset: 1px;
+}
+
+.archgen-dag-chip-count {
+  font-family: var(--archgen-font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 0 6px;
+  border-radius: var(--archgen-radius-pill);
+  background: color-mix(in srgb, var(--archgen-text) 10%, transparent);
+}
+
+.archgen-dag-chip--reset {
+  border-style: dashed;
+}
+
+.archgen-dag-chip--reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Collapsible legend wrapper + chevron toggle */
+.archgen-legend-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.archgen-legend-toggle {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast);
+}
+
+.archgen-legend-toggle:hover {
+  color: var(--archgen-text);
+  border-color: var(--archgen-hairline-strong);
+}
+
+.archgen-legend-toggle--collapsed {
+  letter-spacing: -0.01em;
+}
+
+/* Screen-reader-only live announcer (filter emptied the board) */
+.archgen-filter-announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ================================================================
+   DOCS ENTERPRISE UPGRADE — docs-scoped additions ONLY.
+   Scope: .archgen-docs-view, .archgen-doc-*, .archgen-markdown,
+   .archgen-diagram-*, .archgen-search-hit, .archgen-back-to-top.
+   ================================================================ */
+
+/* Anchor for the floating TOC trigger / back-to-top / narrow TOC overlay. */
+.archgen-docs-view {
+  position: relative;
+}
+
+/* ---- Sidebar tools: filter box + count chip (C) ---- */
+.archgen-doc-side-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.archgen-doc-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 9px;
+  border-radius: var(--archgen-radius-md);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+}
+
+.archgen-doc-filter::placeholder {
+  color: var(--archgen-text-muted);
+}
+
+.archgen-doc-filter:focus-visible {
+  outline: 1px solid var(--archgen-action-blue);
+  outline-offset: -1px;
+}
+
+.archgen-doc-count {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  color: var(--archgen-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Top-level folder group labels (paths containing '/'). */
+.archgen-doc-group {
+  display: block;
+}
+
+.archgen-doc-group-label {
+  display: block;
+  padding: 10px 10px 3px;
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+/* ---- Doc toolbar: reading time + in-document search (B, E) ---- */
+.archgen-doc-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -24px -32px 18px;
+  padding: 10px 32px;
+  border-bottom: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-canvas) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.archgen-doc-readtime {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface-elevated);
+  color: var(--archgen-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.archgen-doc-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.archgen-doc-search-input {
+  width: 200px;
+  padding: 5px 9px;
+  border-radius: var(--archgen-radius-md);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+}
+
+.archgen-doc-search-input:focus-visible {
+  outline: 1px solid var(--archgen-action-blue);
+  outline-offset: -1px;
+}
+
+.archgen-search-count {
+  white-space: nowrap;
+  color: var(--archgen-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.archgen-search-nav {
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-sm, 4px);
+  background: var(--archgen-surface);
+  color: var(--archgen-text);
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.archgen-search-nav:hover:not(:disabled) {
+  border-color: var(--archgen-action-blue);
+  color: var(--archgen-action-blue);
+}
+
+.archgen-search-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+mark.archgen-search-hit {
+  background: color-mix(in srgb, var(--archgen-action-blue) 32%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+mark.archgen-search-hit.is-current {
+  background: var(--archgen-action-blue);
+  color: #ffffff;
+}
+
+/* ---- Table of contents rail (A): right side ≥1100px ---- */
+.archgen-doc-toc {
+  width: 220px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--archgen-hairline);
+  padding: 14px 12px;
+  overflow-y: auto;
+}
+
+.archgen-doc-toc.is-collapsed {
+  width: auto;
+}
+
+.archgen-doc-toc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--archgen-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.archgen-doc-toc-toggle,
+.archgen-doc-toc-fab {
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-md);
+  background: var(--archgen-surface);
+  color: var(--archgen-text-muted);
+  cursor: pointer;
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast);
+}
+
+.archgen-doc-toc-toggle:hover,
+.archgen-doc-toc-fab:hover {
+  color: var(--archgen-action-blue);
+  border-color: var(--archgen-action-blue);
+}
+
+.archgen-doc-toc-toggle {
+  padding: 2px 7px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.archgen-doc-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.archgen-doc-toc-link {
+  display: block;
+  padding: 4px 8px;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--archgen-radius-sm, 4px) var(--archgen-radius-sm, 4px) 0;
+  color: var(--archgen-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archgen-doc-toc li.is-sub .archgen-doc-toc-link {
+  padding-left: 20px;
+}
+
+.archgen-doc-toc-link:hover {
+  color: var(--archgen-text);
+}
+
+.archgen-doc-toc-link[aria-current='true'] {
+  border-left-color: var(--archgen-action-blue);
+  background: color-mix(in srgb, var(--archgen-action-blue) 12%, transparent);
+  color: var(--archgen-action-blue);
+  font-weight: 600;
+}
+
+/* Floating trigger — hidden on wide screens where the rail is visible. */
+.archgen-doc-toc-fab {
+  display: none;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 30;
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+@media (max-width: 1099px) {
+  /* Rail becomes a floating overlay panel; ☰ fab toggles it. */
+  .archgen-doc-toc {
+    display: none;
+    position: absolute;
+    top: 40px;
+    right: 12px;
+    z-index: 30;
+    width: min(300px, calc(100% - 24px));
+    max-height: calc(100% - 60px);
+    border: 1px solid var(--archgen-hairline-strong, var(--archgen-hairline));
+    border-radius: var(--archgen-radius-lg);
+    background: var(--archgen-surface-elevated);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+  .archgen-doc-toc:not(.is-collapsed) {
+    display: block;
+  }
+  .archgen-doc-toc-fab {
+    display: block;
+  }
+}
+
+/* ---- Code frames: language chip + copy button (E) ---- */
+.archgen-code-frame {
+  margin: 16px 0;
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-md);
+  background: var(--archgen-surface-elevated);
+  overflow: hidden;
+}
+
+.archgen-code-frame pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.archgen-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-text) 4%, transparent);
+}
+
+.archgen-code-lang {
+  font-family: var(--archgen-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--archgen-text-muted);
+}
+
+.archgen-code-copy {
+  padding: 2px 10px;
+  font-size: 11px;
+}
+
+.archgen-copy-btn.is-copied {
+  color: var(--archgen-status-done, var(--archgen-action-blue));
+}
+
+/* ---- Syntax highlighting tokens (F) — VS Code approximations.
+   Classes only (CSP-safe); colors resolve from these vars. ---- */
+.archgen-docs-view {
+  --doc-hl-keyword: #0000ff;
+  --doc-hl-string: #a31515;
+  --doc-hl-comment: #008000;
+  --doc-hl-number: #098658;
+  --doc-hl-title: #795e26;
+  --doc-hl-variable: #001080;
+  --doc-hl-type: #267f99;
+  --doc-hl-meta: #795e26;
+  --doc-hl-literal: #0000ff;
+}
+
+[data-theme='dark'] .archgen-docs-view,
+[data-theme='highContrast'] .archgen-docs-view {
+  --doc-hl-keyword: #569cd6;
+  --doc-hl-string: #ce9178;
+  --doc-hl-comment: #6a9955;
+  --doc-hl-number: #b5cea8;
+  --doc-hl-title: #dcdcaa;
+  --doc-hl-variable: #9cdcfe;
+  --doc-hl-type: #4ec9b0;
+  --doc-hl-meta: #c586c0;
+  --doc-hl-literal: #4fc1ff;
+}
+
+.archgen-markdown code.hljs {
+  background: transparent;
+  padding: 0;
+}
+
+.archgen-markdown .hljs-keyword,
+.archgen-markdown .hljs-selector-tag,
+.archgen-markdown .hljs-selector-id,
+.archgen-markdown .hljs-selector-class,
+.archgen-markdown .hljs-doctag,
+.archgen-markdown .hljs-name {
+  color: var(--doc-hl-keyword);
+}
+
+.archgen-markdown .hljs-string,
+.archgen-markdown .hljs-regexp,
+.archgen-markdown .hljs-template-tag,
+.archgen-markdown .hljs-addition {
+  color: var(--doc-hl-string);
+}
+
+.archgen-markdown .hljs-comment,
+.archgen-markdown .hljs-quote,
+.archgen-markdown .hljs-deletion {
+  color: var(--doc-hl-comment);
+  font-style: italic;
+}
+
+.archgen-markdown .hljs-number,
+.archgen-markdown .hljs-symbol,
+.archgen-markdown .hljs-bullet {
+  color: var(--doc-hl-number);
+}
+
+.archgen-markdown .hljs-title,
+.archgen-markdown .hljs-section {
+  color: var(--doc-hl-title);
+}
+
+.archgen-markdown .hljs-variable,
+.archgen-markdown .hljs-template-variable,
+.archgen-markdown .hljs-attr,
+.archgen-markdown .hljs-property,
+.archgen-markdown .hljs-params {
+  color: var(--doc-hl-variable);
+}
+
+.archgen-markdown .hljs-type,
+.archgen-markdown .hljs-built_in,
+.archgen-markdown .hljs-class .hljs-title {
+  color: var(--doc-hl-type);
+}
+
+.archgen-markdown .hljs-meta,
+.archgen-markdown .hljs-link,
+.archgen-markdown .hljs-attribute {
+  color: var(--doc-hl-meta);
+}
+
+.archgen-markdown .hljs-literal,
+.archgen-markdown .hljs-keyword.hljs-atrule {
+  color: var(--doc-hl-literal);
+}
+
+.archgen-markdown .hljs-emphasis {
+  font-style: italic;
+}
+
+.archgen-markdown .hljs-strong {
+  font-weight: 700;
+}
+
+/* ---- Diagram zoom/pan viewports (D) ---- */
+.archgen-diagram-wrap {
+  margin: 16px 0;
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-lg);
+  background: var(--archgen-surface-elevated);
+  overflow: hidden;
+}
+
+.archgen-diagram-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--archgen-hairline);
+}
+
+.archgen-diagram-toolbar button {
+  min-width: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-sm, 4px);
+  background: var(--archgen-surface);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color var(--archgen-motion-fast), color var(--archgen-motion-fast);
+}
+
+.archgen-diagram-toolbar button:hover {
+  border-color: var(--archgen-action-blue);
+  color: var(--archgen-action-blue);
+}
+
+.archgen-diagram-viewport {
+  overflow: auto;
+  max-height: 420px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.archgen-diagram-viewport:active {
+  cursor: grabbing;
+}
+
+.archgen-diagram-viewport .archgen-diagram {
+  transform-origin: top left;
+  will-change: transform;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 16px;
+}
+
+/* Failed diagram: inline alert frame with Retry (per-block isolation). */
+.archgen-diagram-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--archgen-status-failed);
+  border-radius: var(--archgen-radius-md);
+  background: color-mix(in srgb, var(--archgen-status-failed) 12%, var(--archgen-surface-elevated));
+  color: var(--archgen-text);
+  font-size: var(--archgen-font-size-sm);
+}
+
+.archgen-diagram-retry {
+  flex-shrink: 0;
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-pill);
+  background: var(--archgen-surface);
+  color: var(--archgen-action-blue);
+  font-family: var(--archgen-font-ui);
+  font-weight: 600;
+  font-size: var(--archgen-font-size-xs);
+  padding: 3px 12px;
+  cursor: pointer;
+}
+
+.archgen-diagram-retry:hover {
+  background: var(--archgen-surface-elevated);
+}
+
+/* ---- Back to top (E) ---- */
+.archgen-back-to-top {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  padding: 8px 14px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline-strong, var(--archgen-hairline));
+  background: var(--archgen-surface-elevated);
+  color: var(--archgen-action-blue);
+  font-family: var(--archgen-font-ui);
+  font-weight: 600;
+  font-size: var(--archgen-font-size-sm);
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.archgen-back-to-top:hover {
+  border-color: var(--archgen-action-blue);
+}
+
+/* ---- Responsive: toolbar wraps on narrow docs panes ---- */
+@media (max-width: 834px) {
+  .archgen-doc-toolbar {
+    flex-wrap: wrap;
+    margin: -16px -16px 14px;
+    padding: 8px 16px;
+  }
+  .archgen-doc-search-input {
+    width: 100%;
+    max-width: 220px;
+  }
+}
+
+/* Group wrapper rows are containers, not hoverable items. */
+.archgen-doc-list li.archgen-doc-group {
+  display: block;
+}
+
+.archgen-doc-list li.archgen-doc-group:hover {
+  background: transparent;
+}
+
+/* ==== CODE GRAPH · whole-repo MAP layer (Canvas2D) — NEW SECTION START ====
+   Scope: .archgen-map* ONLY. The map fills its container and layers
+   [canvas < tooltip < hud]. Cursor modes communicate affordance:
+   grab = pan-able, grabbing = panning, pointer = over a symbol.
+   Colors resolve from --archgen-* tokens; the canvas itself reads the same
+   vars at paint time with literal fallbacks (see GraphMap.tsx). */
+
+/* Container: fills its parent (drop into .archgen-code-view or any sized box). */
+.archgen-map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  overflow: hidden;
+  border-radius: var(--archgen-radius-lg);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-canvas);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.archgen-map:focus-within {
+  outline: 2px solid var(--archgen-action-blue);
+  outline-offset: -2px;
+}
+
+.archgen-map-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Cursor modes */
+.archgen-map.is-panning {
+  cursor: grabbing;
+}
+
+.archgen-map.has-hover {
+  cursor: pointer;
+}
+
+/* Hover tooltip: frosted pill following the cursor; pointer-events none so it
+   never steals hover from the canvas. Content set imperatively (CSP-safe). */
+.archgen-map-tooltip {
+  position: absolute;
+  z-index: 30;
+  max-width: 340px;
+  padding: 5px 10px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline-strong);
+  background: color-mix(in srgb, var(--archgen-surface) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--archgen-motion-fast);
+}
+
+.archgen-map-tooltip.is-visible {
+  opacity: 1;
+}
+
+.archgen-map-tooltip .archgen-map-tooltip-sub {
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-mono);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+/* HUD readout: scale %, symbol count, cluster count (+ dense-edge flag). */
+.archgen-map-hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-mono);
+  font-size: var(--archgen-font-size-xs);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.archgen-map-hud .archgen-map-dense {
+  color: var(--archgen-status-blocked, #d29922);
+}
+/* ==== CODE GRAPH · whole-repo MAP layer — NEW SECTION END ==== */
+
+/* ==== CODE GRAPH · size-tier auto-mode + zoom LOD — NEW SECTION START ====
+   Tier chrome (badge / focus banner / back chip) plus the zoom Level-of-Detail
+   ladder: data-lod on .archgen-code-view scopes every rule so tiers never leak
+   across tabs. dot <0.35 · mid ≤0.70 · full above; hubs keep their labels. */
+
+.archgen-cg-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-action-blue) 10%, var(--archgen-surface-elevated));
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.archgen-cg-focus-banner,
+.archgen-cg-back-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--archgen-action-blue) 55%, var(--archgen-hairline));
+  background: color-mix(in srgb, var(--archgen-action-blue) 14%, var(--archgen-surface-elevated));
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--archgen-motion-fast), border-color var(--archgen-motion-fast);
+}
+
+.archgen-cg-focus-banner:hover,
+.archgen-cg-back-chip:hover {
+  border-color: var(--archgen-action-blue);
+  background: color-mix(in srgb, var(--archgen-action-blue) 24%, var(--archgen-surface-elevated));
+}
+
+/* ---- LOD tier: DOT (<0.35 zoom) — card collapses to a kind-colored dot ---- */
+.archgen-gnode.is-lod-dot {
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.archgen-gnode.is-lod-dot .archgen-kind-dot {
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--archgen-surface-elevated) 80%, transparent);
+}
+
+.archgen-gnode.is-lod-dot .archgen-gnode-text {
+  display: none;
+}
+
+/* Hubs keep their label at EVERY zoom: restore the pill chrome around text. */
+.archgen-gnode.is-lod-dot.is-hub {
+  padding: 2px 10px;
+  gap: 6px;
+  justify-content: flex-start;
+  background: var(--archgen-surface-elevated);
+  border-color: var(--archgen-hairline-strong);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.archgen-gnode.is-lod-dot.is-hub .archgen-gnode-text {
+  display: flex;
+}
+
+/* ---- LOD tier: MID (0.35–0.70) — caption hidden, label stays ---- */
+.archgen-gnode.is-lod-mid .archgen-gnode-caption {
+  display: none;
+}
+
+/* ---- Edge LOD: at dot zoom remaining edges recede (scoped to this view) ---- */
+.archgen-code-view[data-lod='dot'] .react-flow__edge:not(.archgen-edge--highlighted):not(.archgen-edge--dimmed) {
+  opacity: 0.25;
+}
+/* ==== CODE GRAPH · size-tier auto-mode + zoom LOD — NEW SECTION END ==== */
+
+
+/* ==== CODE GRAPH · polish pass — labels, breadcrumb, compact chrome ==== */
+
+/* File-node affordances: openable files invite a click (drill-in); files
+   whose focus would be empty render inert so behavior == affordance. */
+.archgen-gnode.is-openable {
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--archgen-action-blue) 55%, var(--archgen-hairline-strong));
+}
+
+.archgen-gnode.is-openable:hover {
+  border-color: var(--archgen-action-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--archgen-action-blue) 25%, transparent),
+    0 4px 12px rgba(0, 0, 0, 0.25);
+  transform: translateY(-1px);
+}
+
+.archgen-gnode.is-openable .archgen-gnode-drill {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--archgen-action-blue);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.archgen-gnode.is-inert {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.archgen-gnode.is-inert .archgen-gnode-caption {
+  color: var(--archgen-text-muted);
+  opacity: 0.8;
+}
+
+/* Component labels drawn above each ring / cluster block (SVG text). */
+.archgen-ring-label {
+  font-family: var(--archgen-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--archgen-text);
+  paint-order: stroke;
+  stroke: var(--archgen-canvas);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+/* Floating focus breadcrumb: top-center overlay on the canvas. */
+.archgen-cg-breadcrumb {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--archgen-radius-pill);
+  border: 1px solid var(--archgen-hairline-strong);
+  background: color-mix(in srgb, var(--archgen-surface-elevated) 92%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.archgen-cg-back-chip {
+  border: none;
+  background: transparent;
+  color: var(--archgen-action-blue);
+  font: inherit;
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.archgen-cg-back-chip:hover {
+  text-decoration: underline;
+}
+
+.archgen-cg-breadcrumb-sep {
+  color: var(--archgen-text-muted);
+}
+
+.archgen-cg-breadcrumb-current {
+  font-family: var(--archgen-font-mono);
+  font-size: var(--archgen-font-size-xs);
+  color: var(--archgen-text);
 }

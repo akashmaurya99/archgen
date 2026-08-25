@@ -1,13 +1,19 @@
-// Code graph view tests (todo 12): kind colors, edge-kind filter chips,
-// search filtering, neighborhood highlight + impact badge, virtualization
-// switch, unsupported banner.
+// Code graph view tests (todo 12 + enterprise explorer upgrade): kind colors,
+// edge-kind filter chips WITH live counts, search filtering, transitive
+// click-to-highlight (dims non-neighbors, animates neighborhood edges),
+// Handles presence (xyflow v12 edge-endpoint contract), tooltips/captions,
+// toolbar buttons, virtualization switch, unsupported banner.
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { createElement } from 'react';
 import {
   EDGE_KINDS,
+  layoutRadial,
+  colorForEdgeKind,
   colorForKind,
+  connectedComponentOf,
+  edgeKindCounts,
   filterEdges,
   impactCount,
   matchesQuery,
@@ -36,8 +42,53 @@ const VM: CodegraphVM = {
   ],
 };
 
+// Two DISCONNECTED components + TWO singletons so every multi-canvas
+// behavior is observable: c1={a,b,c}, c2={x,y}, unlinked={z,w}. Per-canvas
+// isolation means selecting in c1 lights its whole component while sibling
+// canvases stay untouched; the shared unlinked bucket still dims internally
+// (z and w are not neighbors).
+const SPLIT_VM: CodegraphVM = {
+  product: 'colby',
+  hasFts: false,
+  nodes: [
+    { id: 'a', label: 'Alpha', kind: 'class', file: 'a.ts', line: 1 },
+    { id: 'b', label: 'Beta', kind: 'function', file: 'b.ts', line: 2 },
+    { id: 'c', label: 'Gamma', kind: 'module', file: 'c.ts', line: 3 },
+    { id: 'x', label: 'Xenon', kind: 'class', file: 'x.ts', line: 7 },
+    { id: 'y', label: 'Yankee', kind: 'interface', file: 'y.ts', line: 8 },
+    { id: 'z', label: 'Zulu', kind: 'file', file: 'z.ts', line: 9 },
+    { id: 'w', label: 'Whiskey', kind: 'variable', file: 'w.ts', line: 10 },
+  ],
+  edges: [
+    { source: 'a', target: 'b', kind: 'calls' },
+    { source: 'b', target: 'c', kind: 'imports' },
+    { source: 'x', target: 'y', kind: 'references' },
+  ],
+};
+
 function renderVm(vm: CodegraphVM = VM): void {
   render(createElement(CodeGraphView, { vm }));
+}
+
+/** Edge DOM materializes after xyflow's stubbed measurement microtasks —
+ *  wait until the rendered edge count STABILIZES so assertions never race
+ *  the last measure pass under parallel-worker load. */
+async function flushFlow(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  let prev = -1;
+  for (let i = 0; i < 20; i++) {
+    const current = document.querySelectorAll('.react-flow__edge').length;
+    if (current > 0 && current === prev) break;
+    prev = current;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+  }
 }
 
 function counts(): { nodes: number; edges: number } {
@@ -47,6 +98,14 @@ function counts(): { nodes: number; edges: number } {
   return { nodes, edges };
 }
 
+function gnodes(): HTMLElement[] {
+  return [...document.querySelectorAll('.archgen-gnode')] as HTMLElement[];
+}
+
+function dimmedCount(): number {
+  return document.querySelectorAll('.archgen-gnode.is-dimmed').length;
+}
+
 beforeEach(cleanup);
 
 describe('graph-model helpers', () => {
@@ -54,6 +113,13 @@ describe('graph-model helpers', () => {
     expect(colorForKind('class')).toMatch(/var\(|#/);
     expect(colorForKind('definitely-not-a-kind')).toBe(colorForKind('definitely-not-a-kind'));
     expect(colorForKind('x')).not.toBe(colorForKind('y'));
+  });
+
+  it('gives every edge kind a distinct accessible stroke color', () => {
+    const colors = EDGE_KINDS.map((k) => colorForEdgeKind(k));
+    expect(new Set(colors).size).toBe(EDGE_KINDS.length);
+    for (const c of colors) expect(c).toMatch(/^var\(--archgen-cg-edge-/);
+    expect(colorForEdgeKind('mystery')).toMatch(/--archgen-cg-edge-other/);
   });
 
   it('filterEdges keeps enabled kinds plus unknown kinds', () => {
@@ -81,6 +147,37 @@ describe('graph-model helpers', () => {
     expect(edgeIdx).toEqual(new Set([0, 2]));
   });
 
+  it('connectedComponentOf closes transitively over BOTH directions', () => {
+    // chain n3→n2→n1 plus independent-looking n4→n1: from n3 the closure must
+    // still reach n4 THROUGH n1's incoming edge (full component, not one hop).
+    const comp = connectedComponentOf(VM.edges ?? [], 'n3');
+    expect(comp.nodeIds).toEqual(new Set(['n3', 'n2', 'n1', 'n4']));
+    expect(comp.edgeIdx).toEqual(new Set([0, 1, 2]));
+  });
+
+  it('connectedComponentOf survives cycles and self-loops', () => {
+    const cyclic = [
+      { source: 'a', target: 'b', kind: 'calls' },
+      { source: 'b', target: 'c', kind: 'imports' },
+      { source: 'c', target: 'a', kind: 'references' },
+      { source: 'd', target: 'd', kind: 'calls' },
+    ];
+    for (const seed of ['a', 'b', 'c']) {
+      const { nodeIds, edgeIdx } = connectedComponentOf(cyclic, seed);
+      expect(nodeIds).toEqual(new Set(['a', 'b', 'c']));
+      expect(edgeIdx).toEqual(new Set([0, 1, 2]));
+    }
+    expect(connectedComponentOf(cyclic, 'd')).toEqual({ nodeIds: new Set(['d']), edgeIdx: new Set([3]) });
+  });
+
+  it('edgeKindCounts tallies per kind including unknown kinds', () => {
+    expect(edgeKindCounts([...(VM.edges ?? []), { source: 'q', target: 'r', kind: 'calls' }])).toEqual({
+      calls: 2,
+      imports: 1,
+      references: 1,
+    });
+  });
+
   it('impactCount counts direct dependents (incoming)', () => {
     expect(impactCount(VM.edges ?? [], 'n1')).toBe(2);
     expect(impactCount(VM.edges ?? [], 'n3')).toBe(0);
@@ -92,32 +189,105 @@ describe('graph-model helpers', () => {
   });
 });
 
-describe('CodeGraphView', () => {
-  it('renders all chips default-on with full counts', () => {
+describe('CodeGraphView canvas wiring', () => {
+  it('renders all chips default-on with live per-kind counts', () => {
     renderVm();
+    // fixture has calls×1, imports×1, references×1 — no extends/implements edges
+    const expected: Record<string, number> = { calls: 1, imports: 1, references: 1, extends: 0, implements: 0 };
     for (const k of EDGE_KINDS) {
-      expect(screen.getByRole('button', { name: k }).getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByRole('button', { name: `${k} ×${expected[k]}` }).getAttribute('aria-pressed')).toBe('true');
     }
-    expect(counts()).toEqual({ nodes: 4, edges: 3 });
+    expect(counts()).toEqual({ nodes: 5, edges: 3 }); // 4 cards + radial ring layer
   });
 
-  it('toggling a chip reduces the edge count', () => {
+  it('toggling a chip reduces the edge count but keeps its live count visible', () => {
     renderVm();
-    act(() => fireEvent.click(screen.getByRole('button', { name: 'imports' })));
-    expect(screen.getByRole('button', { name: 'imports' }).getAttribute('aria-pressed')).toBe('false');
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^imports ×/ })));
+    expect(screen.getByRole('button', { name: /^imports ×/ }).getAttribute('aria-pressed')).toBe('false');
     expect(counts().edges).toBe(2);
-    act(() => fireEvent.click(screen.getByRole('button', { name: 'references' })));
+    expect(screen.getByRole('button', { name: /^imports ×/ }).textContent).toContain('×1');
+    act(() => fireEvent.click(screen.getByRole('button', { name: /^references ×/ })));
     expect(counts().edges).toBe(1);
+  });
+
+  it('chip counts react to the search scope (live), not to kind toggles', () => {
+    renderVm();
+    act(() => fireEvent.change(screen.getByLabelText('Search nodes by name'), { target: { value: 'user' } }));
+    // only n1+n2 visible → only their calls edge counts; others zero out
+    expect(screen.getByRole('button', { name: 'calls ×1' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'imports ×0' })).toBeTruthy();
   });
 
   it('search box filters visible nodes by name', () => {
     renderVm();
     act(() => fireEvent.change(screen.getByLabelText('Search nodes by name'), { target: { value: 'user' } }));
-    expect(counts().nodes).toBe(2); // UserService + getUser
+    expect(counts().nodes).toBe(3); // UserService + getUser + radial ring layer
     act(() => fireEvent.change(screen.getByLabelText('Search nodes by name'), { target: { value: 'zzz-none' } }));
     expect(counts().nodes).toBe(0);
   });
 
+  it('renders Handle anchors for every node — the v12 edge-endpoint contract', async () => {
+    renderVm();
+    await flushFlow();
+    expect(document.querySelectorAll('.archgen-gnode-handle')).toHaveLength(8);
+    expect(document.querySelectorAll('.react-flow__node[data-id="__ring"] .archgen-gnode-handle')).toHaveLength(0);
+    act(() => fireEvent.click(screen.getByRole('button', { name: '⇥ Flow' })));
+    await flushFlow();
+    expect(document.querySelectorAll('.archgen-gnode-handle')).toHaveLength(8);
+    expect(document.querySelectorAll('.react-flow__handle.react-flow__handle-left')).toHaveLength(4);
+    expect(document.querySelectorAll('.react-flow__handle.react-flow__handle-right')).toHaveLength(4);
+  });
+
+  it('edges VISIBLY render as path elements wired to both endpoints', async () => {
+    renderVm();
+    await flushFlow();
+    const { appendFileSync } = await import('node:fs');
+    appendFileSync('diag.log', `edges=${document.querySelectorAll('.react-flow__edge').length} lod=${document.querySelector('[data-testid="code-graph-view"]')?.getAttribute('data-lod')}\n`);
+    expect(document.querySelectorAll('.react-flow__edge')).toHaveLength(3);
+    // The actual proof of visibility: SVG path geometry exists per edge.
+    expect(document.querySelectorAll('.react-flow__edge-path')).toHaveLength(3);
+    for (const kind of ['calls', 'imports', 'references']) {
+      expect(document.querySelector(`.react-flow__edge.archgen-edge--${kind}`)).toBeTruthy();
+    }
+  });
+
+  it('every rendered edge carries an ArrowClosed marker def', async () => {
+    renderVm();
+    await flushFlow();
+    const markers = document.querySelectorAll('marker');
+    expect(markers.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('shows tooltip title and file:line caption per node', () => {
+    renderVm();
+    const first = gnodes()[0];
+    if (!first) throw new Error('no gnode rendered');
+    expect(first.getAttribute('title')).toBe('UserService\na.ts:1 (class)');
+    const captions = [...document.querySelectorAll('.archgen-gnode-caption')].map((el) => el.textContent);
+    expect(captions).toContain('a.ts:1');
+    expect(captions).toContain('d.ts:4');
+  });
+
+  it('offers zoom-to-fit; Clear selection appears only while highlighting', async () => {
+    renderVm();
+    await flushFlow();
+    const fit = screen.getByRole('button', { name: 'Zoom to fit' });
+    expect(fit).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear selection' })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(document.querySelector('.react-flow__node') as Element);
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('status', { name: /Impact of/ })).not.toBeNull();
+    const clearBtn = screen.getByRole('button', { name: 'Clear selection' });
+    act(() => fireEvent.click(clearBtn));
+    expect(screen.queryByRole('status', { name: /Impact of/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear selection' })).toBeNull();
+  });
+});
+
+describe('click-to-highlight (transitive neighborhood isolation)', () => {
   it('selecting a node shows the impact badge; clicking again clears it', async () => {
     renderVm();
     await act(async () => {
@@ -133,10 +303,125 @@ describe('CodeGraphView', () => {
     expect(screen.queryByRole('status', { name: /Impact of/ })).toBeNull();
   });
 
+  it('highlights the FULL component; everything outside it dims (shared canvas)', async () => {
+    renderVm(SPLIT_VM);
+    await flushFlow();
+    expect(dimmedCount()).toBe(0);
+
+    // Click Alpha (first node of c1): its whole component {a,b,c} lights up…
+    await act(async () => {
+      fireEvent.click(gnodes()[0] as Element);
+      await Promise.resolve();
+    });
+    await flushFlow();
+    const pressed = gnodes().map((el) => el.getAttribute('aria-pressed'));
+    expect(pressed).toEqual(['true', 'false', 'false', 'false', 'false', 'false', 'false']);
+    // …on the SHARED canvas, every node outside the neighborhood fades —
+    // c2={x,y} and the loose singletons z,w alike (focus-mode semantics).
+    expect(dimmedCount()).toBe(4);
+    expect(gnodes()[3]?.classList.contains('is-dimmed')).toBe(true);
+    expect(gnodes()[4]?.classList.contains('is-dimmed')).toBe(true);
+    expect(gnodes()[5]?.classList.contains('is-dimmed')).toBe(true);
+    expect(gnodes()[6]?.classList.contains('is-dimmed')).toBe(true);
+
+    // c1's neighborhood edges animate + highlight; the rest recede.
+    expect(document.querySelectorAll('.react-flow__edge.animated')).toHaveLength(2);
+    expect(document.querySelectorAll('.react-flow__edge.archgen-edge--highlighted')).toHaveLength(2);
+    expect(document.querySelectorAll('.react-flow__edge.archgen-edge--dimmed')).toHaveLength(1);
+  });
+
+  it('dims non-neighbors INSIDE a canvas (unlinked bucket keeps dim behavior)', async () => {
+    renderVm(SPLIT_VM);
+    await flushFlow();
+    await act(async () => {
+      fireEvent.click(gnodes()[5] as Element); // z — singleton in the unlinked bucket
+      await Promise.resolve();
+    });
+    expect(gnodes()[5]?.getAttribute('aria-pressed')).toBe('true');
+    expect(dimmedCount()).toBe(6); // shared canvas: all 6 non-neighbors fade
+    expect(gnodes()[6]?.classList.contains('is-dimmed')).toBe(true);
+    expect(gnodes()[0]?.classList.contains('is-dimmed')).toBe(true);
+  });
+
+  it('traversal reaches upstream AND downstream transitively from any member', async () => {
+    renderVm(SPLIT_VM);
+    await flushFlow();
+    // Middle node Beta: upstream Alpha + downstream Gamma all stay lit.
+    await act(async () => {
+      fireEvent.click(gnodes()[1] as Element);
+      await Promise.resolve();
+    });
+    expect(dimmedCount()).toBe(4); // x,y + z,w fade outside the {a,b,c} component
+    expect(gnodes()[0]?.getAttribute('aria-pressed')).toBe('false');
+    expect(gnodes()[1]?.getAttribute('aria-pressed')).toBe('true');
+    expect(gnodes()[2]?.getAttribute('aria-pressed')).toBe('false');
+    expect(document.querySelectorAll('.react-flow__edge.animated')).toHaveLength(2);
+  });
+
+  it('Escape clears the highlight completely', async () => {
+    renderVm(SPLIT_VM);
+    await flushFlow();
+    await act(async () => {
+      fireEvent.click(gnodes()[0] as Element);
+      await Promise.resolve();
+    });
+    expect(dimmedCount()).toBe(4);
+    act(() => {
+      fireEvent.keyDown(window, { key: 'Escape' });
+    });
+    expect(dimmedCount()).toBe(0);
+    expect(document.querySelectorAll('.react-flow__edge.archgen-edge--dimmed')).toHaveLength(0);
+    expect(document.querySelectorAll('.react-flow__edge.animated')).toHaveLength(0);
+    expect(screen.queryByRole('status', { name: /Impact of/ })).toBeNull();
+  });
+
+  it('clicking empty canvas (pane) clears the highlight', async () => {
+    renderVm(SPLIT_VM);
+    await flushFlow();
+    await act(async () => {
+      fireEvent.click(gnodes()[0] as Element);
+      await Promise.resolve();
+    });
+    expect(dimmedCount()).toBe(4);
+    await act(async () => {
+      fireEvent.click(document.querySelector('.react-flow__pane') as Element);
+      await Promise.resolve();
+    });
+    expect(dimmedCount()).toBe(0);
+    expect(document.querySelectorAll('.react-flow__edge.animated')).toHaveLength(0);
+  });
+
   it('renders the friendly unsupported banner', () => {
     renderVm({ product: 'unsupported', unsupportedReason: 'Only workspace-local indexes are supported.' });
     expect(screen.getByText('Codegraph unavailable')).toBeTruthy();
     expect(screen.getByText(/workspace-local/)).toBeTruthy();
     expect(document.querySelector('.archgen-banner-unsupported')).toBeTruthy();
+  });
+});
+
+describe('layoutRadial — circular contract', () => {
+  const many = Array.from({ length: 6 }, (_, i) => ({ id: `n${i}`, label: `n${i}`, kind: 'file', file: 'a.ts', line: i }));
+
+  it('places nodes on a shared circle with even 360/n spacing starting at top', () => {
+    const placed = layoutRadial(many);
+    const cx = placed.reduce((s, p) => s + p.anchor.x, 0) / placed.length;
+    const cy = placed.reduce((s, p) => s + p.anchor.y, 0) / placed.length;
+    const radii = placed.map((p) => Math.hypot(p.anchor.x - cx, p.anchor.y - cy));
+    for (const r of radii) expect(Math.abs(r - radii[0]!)).toBeLessThan(0.01);
+    const first = placed[0]!;
+    expect(first.anchor.y).toBeLessThan(cy); // starts at 12 o'clock
+    for (let i = 1; i < placed.length; i++) {
+      const expected = -90 + (360 / placed.length) * i;
+      expect(placed[i]!.angle).toBeCloseTo(expected, 5);
+    }
+  });
+
+  it('is NOT collinear — positions must span both axes (the linear-layout regression guard)', () => {
+    const placed = layoutRadial(many);
+    const xs = placed.map((p) => p.position.x);
+    const ys = placed.map((p) => p.position.y);
+    const spread = (v: number[]) => Math.max(...v) - Math.min(...v);
+    expect(spread(xs)).toBeGreaterThan(100);
+    expect(spread(ys)).toBeGreaterThan(100);
   });
 });

@@ -5,27 +5,40 @@
 // → this view re-renders ONLY the changed nodes:
 //   - statuses come from ONE store index subscription (Record<id,status>);
 //     shallow-equal dedupe means no state churn on unrelated flushes.
-//   - node objects are cached per id and replaced ONLY when that node's status
-//     changed → memoized TaskNode components for untouched ids never re-render.
+//   - node objects are cached per id and replaced ONLY when that node's status,
+//     visibility (filter), handle sides (layout direction) or position changed
+//     → memoized TaskNode components for untouched ids never re-render.
 //   - edges are re-derived from the same record; `animated` flips ONLY when the
 //     TARGET node is running ("flowing into running"), blocked targets get a
-//     dashed-static class, failed targets a red-stroke class.
+//     dashed-static class, failed targets a red-stroke class, every edge gets
+//     an ArrowClosed markerEnd tinted with its target-status color.
+//
+// FILTERING: status chips toggle membership in an active-filter Set. Filtering
+// is expressed via the xyflow `hidden` flag on nodes/edges — components stay
+// MOUNTED in flow state (xyflow perf guidance), only their DOM is skipped.
+// The per-id node cache compares `hidden` alongside `status`, so toggling a
+// filter replaces objects solely for nodes whose visibility actually flipped;
+// untouched ids keep their object identity and never re-render.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   Background,
   BackgroundVariant,
   Controls,
+  MarkerType,
   MiniMap,
   Panel,
+  Position,
   ReactFlow,
   type Edge,
   type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '../../media/webview/dag.css';
+import { graphlib, layout as dagreLayout } from '@dagrejs/dagre';
 import type { TaskStatus, TaskVM } from '../shared/protocol';
 import { StatusStore } from '../host/store';
-import { layoutLeftToRight } from './layout';
+import { DEFAULT_NODE_HEIGHT, DEFAULT_NODE_WIDTH, layoutLeftToRight, type Positioned } from './layout';
 import { STATUS_ORDER } from './states';
 import { taskNodeTypes, type TaskFlowNode } from './TaskNode';
 
@@ -38,7 +51,7 @@ export interface TasksViewProps {
   onStartWork?: () => void;
 }
 
-/** MiniMap dot color per status — CSS vars keep it theme-adaptive. */
+/** MiniMap dot / edge-marker color per status — CSS vars keep it theme-adaptive. */
 const STATUS_COLOR: Record<TaskStatus, string> = {
   pending: 'var(--archgen-status-pending)',
   ready: 'var(--archgen-status-ready)',
@@ -67,7 +80,11 @@ function structureKeyOf(tasks: TaskVM[]): string {
  */
 export const MAX_ANIMATED_EDGES = 50;
 
-function deriveEdges(tasks: TaskVM[], statuses: Record<string, TaskStatus>): Edge[] {
+function deriveEdges(
+  tasks: TaskVM[],
+  statuses: Record<string, TaskStatus>,
+  isNodeVisible: (id: string) => boolean,
+): Edge[] {
   let animatedCount = 0;
   return tasks.flatMap((t) =>
     t.dependsOn
@@ -81,6 +98,10 @@ function deriveEdges(tasks: TaskVM[], statuses: Record<string, TaskStatus>): Edg
           source: d,
           target: t.id,
           animated: wantsAnimation,
+          // Orphan rule: an edge whose EITHER endpoint is filtered out hides
+          // with it — no dangling strokes pointing at invisible nodes.
+          hidden: !isNodeVisible(d) || !isNodeVisible(t.id),
+          markerEnd: { type: MarkerType.ArrowClosed, color: STATUS_COLOR[targetStatus] },
           className:
             targetStatus === 'failed'
               ? 'archgen-edge--failed'
@@ -90,6 +111,35 @@ function deriveEdges(tasks: TaskVM[], statuses: Record<string, TaskStatus>): Edg
         };
       }),
   );
+}
+
+/**
+ * Top-to-bottom variant of layoutLeftToRight (same dagre contract: pure,
+ * non-mutating, unknown-edge tolerant). Lives here — not in layout.ts — so
+ * the shared LR helper's hot path stays untouched.
+ */
+function layoutTopToBottom<T extends { id: string }>(
+  nodes: T[],
+  edges: ReadonlyArray<{ source: string; target: string }>,
+): Array<T & Positioned> {
+  const g = new graphlib.Graph();
+  g.setGraph({ rankdir: 'TB', ranksep: 48, nodesep: 28, marginx: 0, marginy: 0 });
+  g.setDefaultEdgeLabel(() => ({}));
+
+  const known = new Set(nodes.map((n) => n.id));
+  for (const n of nodes) g.setNode(n.id, { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT });
+  for (const e of edges) {
+    if (known.has(e.source) && known.has(e.target) && e.source !== e.target) {
+      g.setEdge(e.source, e.target);
+    }
+  }
+
+  dagreLayout(g);
+
+  return nodes.map((n) => {
+    const pos = g.node(n.id) as { x: number; y: number };
+    return { ...n, position: { x: pos.x - DEFAULT_NODE_WIDTH / 2, y: pos.y - DEFAULT_NODE_HEIGHT / 2 } };
+  });
 }
 
 export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps) {
@@ -107,31 +157,88 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
   buildRef.current = onBuild;
   const dispatchBuild = useCallback((id: string) => buildRef.current?.(id), []);
 
+  // LAYOUT DIRECTION (in-component state only — no host persistence surface):
+  // default stays the historical left→right rank direction.
+  const [direction, setDirection] = useState<'LR' | 'TB'>('LR');
+  const toggleDirection = useCallback(() => setDirection((d) => (d === 'LR' ? 'TB' : 'LR')), []);
+
+  // STATUS FILTERS: empty set ⇒ everything visible; otherwise the set lists
+  // the statuses that remain on the board. Chips toggle membership.
+  const [activeFilters, setActiveFilters] = useState<ReadonlySet<TaskStatus>>(() => new Set());
+  const toggleFilter = useCallback((s: TaskStatus) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  }, []);
+  const resetFilters = useCallback(() => setActiveFilters(new Set()), []);
+
+  // COLLAPSIBLE LEGEND: expanded by default; chevron folds it to a pill.
+  const [legendOpen, setLegendOpen] = useState(true);
+
   const key = useMemo(() => structureKeyOf(tasks), [tasks]);
 
-  // Layout depends only on structure — status flips never recompute it.
+  const counts = useMemo(() => {
+    const c: Record<TaskStatus, number> = { pending: 0, ready: 0, running: 0, blocked: 0, done: 0, failed: 0 };
+    for (const s of Object.values(statuses)) c[s] += 1;
+    return c;
+  }, [statuses]);
+
+  const isVisibleStatus = useMemo(
+    () => (s: TaskStatus): boolean => activeFilters.size === 0 || activeFilters.has(s),
+    [activeFilters],
+  );
+  const isNodeVisible = useMemo(
+    () => (id: string): boolean => isVisibleStatus(statuses[id] ?? 'pending'),
+    [isVisibleStatus, statuses],
+  );
+  const visibleCount = useMemo(() => tasks.reduce((acc, t) => acc + (isNodeVisible(t.id) ? 1 : 0), 0), [tasks, isNodeVisible]);
+  const filterActive = activeFilters.size > 0;
+
+  // Layout depends only on structure + direction — status/filter flips never
+  // recompute it.
   const laidOut = useMemo(() => {
     const seeds = tasks.map((t) => ({
       id: t.id,
       position: { x: 0, y: 0 },
       // Top-level width/height make nodes "initialized" without waiting for
       // DOM measurement; style mirrors the same box for the browser.
-      width: 180,
-      height: 56,
-      style: { width: 180, height: 56 },
+      width: DEFAULT_NODE_WIDTH,
+      height: DEFAULT_NODE_HEIGHT,
+      style: { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
     }));
     const edgesIn = tasks.flatMap((t) => t.dependsOn.map((d) => ({ source: d, target: t.id })));
-    return layoutLeftToRight(seeds, edgesIn);
-  }, [tasks]);
+    return direction === 'LR' ? layoutLeftToRight(seeds, edgesIn) : layoutTopToBottom(seeds, edgesIn);
+  }, [tasks, direction]);
 
-  // Per-id object cache: replace a node object ONLY when its status changed.
+  // Handle sides flip with the rank direction (TaskNode reads them off the
+  // node object — standard xyflow pattern).
+  const sourcePos = direction === 'LR' ? Position.Right : Position.Bottom;
+  const targetPos = direction === 'LR' ? Position.Left : Position.Top;
+
+  // Per-id object cache: replace a node object ONLY when something its memo
+  // cares about changed (status · hidden · handle sides · position). Filter
+  // toggles therefore leave untouched ids at their previous object identity.
   const cacheRef = useRef(new Map<string, TaskFlowNode>());
   const nodes = useMemo<TaskFlowNode[]>(
     () =>
       laidOut.map((n) => {
         const status = statuses[n.id] ?? 'pending';
+        const hidden = !isVisibleStatus(status);
         const prev = cacheRef.current.get(n.id);
-        if (prev && prev.data.status === status) return prev;
+        if (
+          prev &&
+          prev.data.status === status &&
+          prev.hidden === hidden &&
+          prev.sourcePosition === sourcePos &&
+          prev.targetPosition === targetPos &&
+          prev.position.x === n.position.x &&
+          prev.position.y === n.position.y
+        ) {
+          return prev;
+        }
         const task = tasks.find((t) => t.id === n.id);
         const next: TaskFlowNode = {
           id: n.id,
@@ -140,6 +247,9 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
           width: n.width,
           height: n.height,
           style: n.style,
+          hidden,
+          sourcePosition: sourcePos,
+          targetPosition: targetPos,
           draggable: false,
           selectable: false,
           data: { label: task?.title ?? n.id, status, onBuild: dispatchBuild },
@@ -147,49 +257,133 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
         cacheRef.current.set(n.id, next);
         return next;
       }),
-    [laidOut, statuses, tasks],
+    [laidOut, statuses, tasks, isVisibleStatus, sourcePos, targetPos, dispatchBuild],
   );
 
-  const edges = useMemo<Edge[]>(() => deriveEdges(tasks, statuses), [tasks, statuses]);
+  const edges = useMemo<Edge[]>(() => deriveEdges(tasks, statuses, isNodeVisible), [tasks, statuses, isNodeVisible]);
+
+  // ESCAPE GUARDRAIL: nodes are non-selectable, so the ring to clear is the
+  // native focus ring — blur whatever holds focus inside this view.
+  const onSectionKeyDown = useCallback((e: ReactKeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'Escape') return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) active.blur();
+  }, []);
+
+  const total = tasks.length;
+  const doneCount = counts['done'];
 
   return (
-    <section className="archgen-tasks-view" aria-label="Task dependency graph">
-      {/* key={structure}: a structural change remounts the canvas so fitView runs */}
+    <section className="archgen-tasks-view" aria-label="Task dependency graph" onKeyDown={onSectionKeyDown}>
+      {/* key={structure:direction}: a structural or direction change remounts
+          the canvas so fitView runs against the new shape */}
       <ReactFlow
-        key={key}
+        key={`${key}:${direction}`}
         nodeTypes={taskNodeTypes}
         nodes={nodes}
         edges={edges}
         fitView
         fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-        minZoom={0.25}
-        panOnScroll
+        minZoom={0.08}
+        maxZoom={4}
+        zoomOnScroll
+        zoomOnPinch
         zoomOnDoubleClick={false}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
+        proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls showInteractive={false} />
         <MiniMap pannable ariaLabel="Tasks minimap" nodeColor={(n) => STATUS_COLOR[(n.data as { status?: TaskStatus })?.status ?? 'pending']} />
         <Panel position="top-left">
-          <button
-            type="button"
-            className="archgen-start-work"
-            onClick={() => onStartWork?.()}
-            aria-label="Start Work: dispatch the first task wave"
-          >
-            ▶ Start Work
-          </button>
+          <div className="archgen-dag-hud">
+            <div className="archgen-dag-hud-row">
+              <button
+                type="button"
+                className="archgen-start-work"
+                onClick={() => onStartWork?.()}
+                aria-label="Start Work: dispatch the first task wave"
+              >
+                ▶ Start Work
+              </button>
+              <span
+                className="archgen-progress-chip"
+                role="status"
+                aria-label={`${doneCount} of ${total} tasks done`}
+                data-done={doneCount}
+                data-total={total}
+              >
+                {doneCount}/{total} done
+              </span>
+              <button
+                type="button"
+                className="archgen-dag-layout-btn"
+                aria-pressed={direction === 'TB'}
+                onClick={toggleDirection}
+                aria-label={`Toggle DAG layout direction (currently ${direction === 'LR' ? 'left-right' : 'top-down'})`}
+                title="Toggle left-right / top-down layout"
+              >
+                ⇄ {direction === 'LR' ? 'Left–right' : 'Top–down'}
+              </button>
+            </div>
+            <div className="archgen-dag-toolbar" role="group" aria-label="Filter tasks by status">
+              {STATUS_ORDER.map((s) => {
+                const on = activeFilters.has(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`archgen-dag-chip${on ? ' is-on' : ''}`}
+                    aria-pressed={on}
+                    aria-label={`Filter ${s} tasks (${counts[s]})`}
+                    onClick={() => toggleFilter(s)}
+                  >
+                    <i aria-hidden="true" className={`archgen-dot archgen-dot--${s}`} />
+                    {s}
+                    <span className="archgen-dag-chip-count">{counts[s]}</span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className="archgen-dag-chip archgen-dag-chip--reset"
+                onClick={resetFilters}
+                disabled={!filterActive}
+                aria-label="Show all tasks"
+              >
+                All
+              </button>
+            </div>
+            {/* Polite announcer: fires when filters empty the board. */}
+            <p className="archgen-filter-announce" role="status" aria-live="polite" data-testid="archgen-filter-announce">
+              {filterActive && visibleCount === 0 ? 'No tasks match the selected filters' : ''}
+            </p>
+          </div>
         </Panel>
         <Panel position="top-right">
-          <div className="archgen-legend" role="list" aria-label="Status legend">
-            {STATUS_ORDER.map((s) => (
-              <span role="listitem" key={s} className="archgen-legend-item">
-                <i aria-hidden="true" className={`archgen-dot archgen-dot--${s}`} />
-                {s}
-              </span>
-            ))}
+          <div className="archgen-legend-wrap">
+            <button
+              type="button"
+              className={`archgen-legend-toggle${legendOpen ? '' : ' archgen-legend-toggle--collapsed'}`}
+              aria-expanded={legendOpen}
+              aria-controls="archgen-legend-items"
+              aria-label={legendOpen ? 'Collapse status legend' : 'Expand status legend'}
+              onClick={() => setLegendOpen((o) => !o)}
+            >
+              {legendOpen ? '▾' : '▸ Legend'}
+            </button>
+            {legendOpen && (
+              <div className="archgen-legend" id="archgen-legend-items" role="list" aria-label="Status legend">
+                {STATUS_ORDER.map((s) => (
+                  <span role="listitem" key={s} className="archgen-legend-item">
+                    <i aria-hidden="true" className={`archgen-dot archgen-dot--${s}`} />
+                    {s}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </Panel>
       </ReactFlow>

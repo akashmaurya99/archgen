@@ -180,12 +180,17 @@ describe('virtualization switch at 501 nodes', () => {
     };
   }
 
-  it('500 nodes: virtualization OFF', () => {
+  // jsdom renders the full 501-node tree (virtualization deliberately OFF) —
+  // that mount costs ~3.5s of real DOM work standalone, and sibling vitest
+  // workers inflate it 4-5x inside the full suite. The explicit ceiling sizes
+  // the INFRASTRUCTURE to that environment; every behavioral budget above
+  // (render counts, edge caps) stays fully enforced.
+  it('500 nodes: virtualization OFF', { timeout: 30_000 }, () => {
     render(createElement(CodeGraphView, { vm: cgVm(500) }));
     expect(document.querySelector('[data-testid="code-graph-view"]')?.getAttribute('data-virtualized')).toBe('false');
   });
 
-  it('501 nodes: virtualization ON', () => {
+  it('501 nodes: virtualization ON', { timeout: 30_000 }, () => {
     render(createElement(CodeGraphView, { vm: cgVm(501) }));
     const section = document.querySelector('[data-testid="code-graph-view"]');
     expect(section?.getAttribute('data-virtualized')).toBe('true');

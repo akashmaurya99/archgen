@@ -25,8 +25,11 @@ export function installFlowDomStubs(): void {
       observe(target: Element): void {
         // Fire on a microtask: NodeWrapper observes BEFORE the container
         // effect stores `domNode`, and updateNodeInternals bails without it.
+        // Pane contentRect approximates a real webview panel (4000×3000) so
+        // small fixtures fit at zoom 1 — a tiny fake canvas would auto-fit
+        // them into the CODE view's dot LOD tier and hide minor edges.
         queueMicrotask(() => {
-          this.cb([{ target, contentRect: { width: 800, height: 600, x: 0, y: 0, top: 0, left: 0 } }]);
+          this.cb([{ target, contentRect: { width: 4000, height: 3000, x: 0, y: 0, top: 0, left: 0 } }]);
         });
       }
       unobserve(): void {}
@@ -36,16 +39,20 @@ export function installFlowDomStubs(): void {
 
   const htmlProto = HTMLElement.prototype as unknown as Record<string, unknown>;
   if (!htmlProto['__archgenOffsetPatched']) {
+    // xyflow reads pane size via getDimensions() (offsetWidth/Height), NOT the
+    // ResizeObserver entry — so flow CONTAINERS must report a realistic panel
+    // size or every fitView degenerates (24×24 pane ⇒ sub-0.35 zoom ⇒ the CODE
+    // view's dot LOD tier hides minor edges). Nodes stay card-sized.
     Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
       configurable: true,
       get(this: HTMLElement): number {
-        return this.classList.contains('react-flow__node') ? 180 : 24;
+        return this.classList.contains('react-flow__node') ? 180 : 4000;
       },
     });
     Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
       configurable: true,
       get(this: HTMLElement): number {
-        return this.classList.contains('react-flow__node') ? 56 : 24;
+        return this.classList.contains('react-flow__node') ? 56 : 3000;
       },
     });
     htmlProto['__archgenOffsetPatched'] = true;

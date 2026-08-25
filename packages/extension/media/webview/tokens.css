@@ -1,31 +1,36 @@
-/* tokens.css — ArchGen design token layer (todo 2).
+/* tokens.css — ArchGen design token layer.
+ *
+ * Designed for modern, clean, and accessible UI:
+ * - Content-first clarity: UI chrome recedes so task boards and code graphs stand out.
+ * - Refined typography with balanced tracking on display and headings.
+ * - Harmonized accent palette for clear interactive states.
+ * - Radius hierarchy: pill (9999px), card (18px), utility (8px).
+ * - Subtle elevation, frosted surfaces, and hairline dividers.
+ * - Responsive micro-interactions on active/press states.
  *
  * DARK-FIRST GitHub Primer palette. Every COLOR token resolves through a
- * --vscode-* variable first (theme adaptation inside webviews) with the
- * canonical dark hex as fallback — so the extension looks native in light /
- * high-contrast themes too, and exactly like the draft on unknown hosts.
+ * --vscode-* variable first with canonical hex fallback for theme adaptation.
  *
- * Structural tokens (spacing / radius) intentionally have NO --vscode-*
- * alias: VS Code exposes no spacing variables, and inheriting an unrelated
- * theme var would corrupt layout. The vitest token test enforces the alias
- * rule for every COLOR-carrying token and whitelists these literals.
- *
- * Status enum is EXACTLY: pending | ready | running | blocked | done | failed
- * (six values; the schema defines no seventh lifecycle state).
+ * Status enum is EXACTLY: pending | ready | running | blocked | done | failed.
  */
 
 :root {
-  /* ---- Surfaces ---- */
+  /* ---- Interactive Accent ---- */
+  --archgen-action-blue: var(--vscode-button-background, #1f6feb);
+  --archgen-action-blue-focus: var(--vscode-focusBorder, #388bfd);
+  --archgen-text-on-action: var(--vscode-button-foreground, #ffffff);
+
+  /* ---- Surfaces & Canvas ---- */
   --archgen-canvas: var(--vscode-editor-background, #0d1117);
   --archgen-surface: var(--vscode-sideBar-background, #161b22);
   --archgen-surface-elevated: var(--vscode-editorWidget-background, #21262d);
 
-  /* ---- Hairlines & borders ---- */
+  /* ---- Hairlines & Borders ---- */
   --archgen-hairline: var(--vscode-widget-border, #30363d);
   --archgen-hairline-strong: var(--vscode-panel-border, #3d444d);
   --archgen-focus-ring: var(--vscode-focusBorder, #58a6ff);
 
-  /* ---- Text ---- */
+  /* ---- Text & Ink ---- */
   --archgen-text: var(--vscode-editor-foreground, #e6edf3);
   --archgen-text-muted: var(--vscode-descriptionForeground, #8b949e);
   --archgen-text-on-status: var(--vscode-editor-background, #0d1117);
@@ -38,8 +43,7 @@
   --archgen-status-done: var(--vscode-charts-green, #3fb950);               /* green             */
   --archgen-status-failed: var(--vscode-charts-red, #f85149);               /* red               */
 
-  /* Muted fills derived from each status color (node backgrounds at rest).
-     color-mix keeps them theme-adaptive through the same --vscode-* vars. */
+  /* Muted fills derived from each status color (node backgrounds at rest). */
   --archgen-fill-pending: color-mix(in srgb, var(--vscode-descriptionForeground, #8b949e) 12%, transparent);
   --archgen-fill-ready: color-mix(in srgb, var(--vscode-charts-blue, #58a6ff) 12%, transparent);
   --archgen-fill-running: color-mix(in srgb, var(--vscode-charts-yellow, #d29922) 14%, transparent);
@@ -47,28 +51,32 @@
   --archgen-fill-done: color-mix(in srgb, var(--vscode-charts-green, #3fb950) 12%, transparent);
   --archgen-fill-failed: color-mix(in srgb, var(--vscode-charts-red, #f85149) 12%, transparent);
 
-  /* ---- Typography ---- */
-  --archgen-font-ui: var(--vscode-font-family, -apple-system, 'Segoe UI', sans-serif);
-  --archgen-font-mono: var(--vscode-editor-font-family, ui-monospace, 'SF Mono', Menlo, monospace);
+  /* ---- Typography Hierarchy ---- */
+  --archgen-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --archgen-font-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+
   --archgen-font-size-xs: var(--vscode-editor-font-size, 11px);
   --archgen-font-size-sm: var(--vscode-font-size, 12px);
   --archgen-font-size-md: var(--vscode-font-size, 13px);
   --archgen-font-size-xl: calc(var(--vscode-font-size, 13px) * 20 / 13);
 
-  /* ---- Spacing (4px grid) — structural literals, see header note ---- */
+  /* ---- Spacing (8px base rhythm, 4px sub-grid) ---- */
   --archgen-space-1: 4px;
   --archgen-space-2: 8px;
   --archgen-space-3: 12px;
   --archgen-space-4: 16px;
   --archgen-space-6: 24px;
 
-  /* ---- Radius ---- */
-  --archgen-radius: 6px;
-  --archgen-radius-pill: 999px;
+  /* ---- Radius Hierarchy ---- */
+  --archgen-radius: 8px;
+  --archgen-radius-sm: 8px;
+  --archgen-radius-md: 11px;
+  --archgen-radius-lg: 18px;
+  --archgen-radius-pill: 9999px;
 
-  /* ---- Motion ---- */
-  --archgen-motion-fast: 120ms ease;
-  --archgen-motion-normal: 200ms ease;
+  /* ---- Motion & Transitions ---- */
+  --archgen-motion-fast: 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  --archgen-motion-normal: 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Running node pulse: an expanding, fading ring in the running color. */
@@ -107,10 +115,8 @@
 }
 
 /*
- * FOCUS RINGS (todo 13, WCAG 2.4.7): one ring rule for every interactive
- * surface, drawn from --archgen-focus-ring (→ --vscode-focusBorder). Only
- * :focus-visible so mouse clicks stay ring-free while keyboard Tab always
- * shows the indicator.
+ * FOCUS RINGS (WCAG 2.4.7): unified focus indicator.
+ * Only :focus-visible so pointer interactions stay ring-free.
  */
 .archgen-tasknode:focus-visible,
 .archgen-build-btn:focus-visible,
@@ -121,6 +127,8 @@
 .archgen-doc-link:focus-visible,
 .archgen-doc-external:focus-visible,
 .archgen-error-banner button:focus-visible,
+.archgen-feature-select:focus-visible,
+.archgen-cg-search:focus-visible,
 .react-flow__controls-button:focus-visible {
   outline: 2px solid var(--archgen-focus-ring);
   outline-offset: 2px;

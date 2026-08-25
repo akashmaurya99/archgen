@@ -1,8 +1,10 @@
 // Task DAG view tests (jsdom): dagre LR ordering, 6-status class matrix,
-// edge animation rules, legend/minimap/controls presence.
+// edge animation rules, legend/minimap/controls presence, plus enterprise
+// additions: status filter chips (+ orphan-edge hiding), LR↔TB layout toggle,
+// edge arrowheads, collapsible legend, wave-progress chip, Escape blur.
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import { createElement } from 'react';
 import { App } from '../src/webview/App';
 import { layoutLeftToRight } from '../src/webview/layout';
@@ -158,5 +160,202 @@ describe('Task DAG canvas', () => {
       await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
     });
     expect(document.querySelector('[data-task-id="t-pending"] [data-status]')?.getAttribute('data-status')).toBe('done');
+  });
+});
+
+/** Chain used by filter/toggle tests: root(done) → mid(running) → end(pending). */
+const CHAIN: TaskVM[] = [
+  task('a-root', 'done'),
+  task('b-mid', 'running', ['a-root']),
+  task('c-end', 'pending', ['b-mid']),
+];
+
+const CHAIN_MODEL: ArchgenModelMessage = { ...MODEL, tasks: CHAIN };
+
+async function flushEdges(): Promise<void> {
+  // Edge DOM materializes after the stubbed measurement microtask.
+  await act(async () => { await Promise.resolve(); });
+}
+
+describe('status filter chips (A)', () => {
+  it('renders one chip per status with live counts plus an All reset', () => {
+    renderWithModel({ ...MODEL, tasks: [...SIX] });
+    for (const s of ['pending', 'ready', 'running', 'blocked', 'done', 'failed'] as const) {
+      expect(screen.getByRole('button', { name: `Filter ${s} tasks (1)` })).toBeTruthy();
+    }
+    expect(screen.getByRole('button', { name: 'Show all tasks' })).toBeTruthy();
+  });
+
+  it('counts reflect live status diffs', async () => {
+    renderWithModel({ ...MODEL, tasks: [...SIX] });
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'update', changed: [{ id: 't-pending', status: 'running' }] },
+      }));
+    });
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    });
+    expect(screen.getByRole('button', { name: 'Filter pending tasks (0)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Filter running tasks (2)' })).toBeTruthy();
+  });
+
+  it('filtering hides non-matching nodes AND their orphaned edges via the hidden flag', async () => {
+    renderWithModel(CHAIN_MODEL);
+    await flushEdges();
+    expect(document.querySelectorAll('.react-flow__edge')).toHaveLength(2);
+
+    // Show only running → a-root and c-end hide; both edges lose an endpoint.
+    fireEvent.click(screen.getByRole('button', { name: 'Filter running tasks (1)' }));
+
+    expect(document.querySelector('[data-task-id="a-root"]')).toBeNull();
+    expect(document.querySelector('[data-task-id="c-end"]')).toBeNull();
+    expect(document.querySelector('[data-task-id="b-mid"]')).toBeTruthy();
+    expect(document.querySelectorAll('.react-flow__edge')).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all tasks' }));
+    expect(document.querySelectorAll('.archgen-tasknode')).toHaveLength(3);
+    await flushEdges();
+    expect(document.querySelector('[data-id="a-root->b-mid"]')).toBeTruthy();
+    expect(document.querySelector('[data-id="b-mid->c-end"]')).toBeTruthy();
+  });
+
+  it('keeps edges between two VISIBLE nodes while hiding edges into filtered-out ones', async () => {
+    // d1(done) → d2(done) → d3(pending): filtering to 'done' keeps d1,d2 on
+    // the board, hides d3, kills the d2->d3 edge and preserves d1->d2.
+    const doubleDone: ArchgenModelMessage = {
+      ...MODEL,
+      tasks: [task('d1', 'done'), task('d2', 'done', ['d1']), task('d3', 'pending', ['d2'])],
+    };
+    renderWithModel(doubleDone);
+    await flushEdges();
+    fireEvent.click(screen.getByRole('button', { name: 'Filter done tasks (2)' }));
+    expect(document.querySelector('[data-task-id="d1"]')).toBeTruthy();
+    expect(document.querySelector('[data-task-id="d2"]')).toBeTruthy();
+    expect(document.querySelector('[data-task-id="d3"]')).toBeNull();
+    expect(document.querySelector('[data-id="d1->d2"]')).toBeTruthy();
+    expect(document.querySelector('[data-id="d2->d3"]')).toBeNull();
+  });
+
+  it('announces politely when filters empty the board', () => {
+    const pairOnly: ArchgenModelMessage = { ...MODEL, tasks: [task('x', 'pending'), task('y', 'done')] };
+    renderWithModel(pairOnly);
+    fireEvent.click(screen.getByRole('button', { name: 'Filter ready tasks (0)' }));
+    expect(screen.getByText('No tasks match the selected filters')).toBeTruthy();
+    expect(screen.getByTestId('archgen-filter-announce').getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('chips expose aria-pressed toggle state', () => {
+    renderWithModel(CHAIN_MODEL);
+    const chip = screen.getByRole('button', { name: 'Filter done tasks (1)' });
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(chip);
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(chip);
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('layout direction toggle (B)', () => {
+  it('flips Handle positions LR ↔ TB on the node objects', () => {
+    renderWithModel(CHAIN_MODEL);
+    const node = document.querySelector('[data-task-id="b-mid"]');
+    expect(node?.querySelector('.react-flow__handle-left')).toBeTruthy();
+    expect(node?.querySelector('.react-flow__handle-right')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle DAG layout direction (currently left-right)' }));
+
+    const tbNode = document.querySelector('[data-task-id="b-mid"]');
+    expect(tbNode?.querySelector('.react-flow__handle-top')).toBeTruthy();
+    expect(tbNode?.querySelector('.react-flow__handle-bottom')).toBeTruthy();
+    expect(tbNode?.querySelector('.react-flow__handle-left')).toBeNull();
+    expect(tbNode?.querySelector('.react-flow__handle-right')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle DAG layout direction (currently top-down)' }));
+    const lrNode = document.querySelector('[data-task-id="b-mid"]');
+    expect(lrNode?.querySelector('.react-flow__handle-left')).toBeTruthy();
+    expect(lrNode?.querySelector('.react-flow__handle-right')).toBeTruthy();
+  });
+
+  it('TB layout stacks a dependency chain vertically (dagre rankdir TB)', () => {
+    renderWithModel(CHAIN_MODEL);
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle DAG layout direction (currently left-right)' }));
+    const yOf = (id: string): number =>
+      Number((document.querySelector(`[data-testid="rf__node-${id}"]`) as HTMLElement | null)?.style.transform.match(/,\s*(-?[\d.]+)px\)/)?.[1] ?? NaN);
+    const rootY = yOf('a-root');
+    const endY = yOf('c-end');
+    expect(rootY).not.toBeNaN();
+    expect(endY).not.toBeNaN();
+    expect(endY).toBeGreaterThan(rootY);
+  });
+});
+
+describe('edge arrowheads (C)', () => {
+  it('every edge carries an ArrowClosed markerEnd tinted by target-status color', async () => {
+    renderWithModel(CHAIN_MODEL);
+    await flushEdges();
+    const paths = [...document.querySelectorAll<SVGPathElement>('.react-flow__edge-path')];
+    expect(paths.length).toBeGreaterThanOrEqual(2);
+    for (const p of paths) {
+      expect(p.getAttribute('marker-end') ?? '').toMatch(/^url\('/);
+    }
+    const heads = [...document.querySelectorAll<SVGPolylineElement>('polyline.arrowclosed')];
+    expect(heads.length).toBeGreaterThan(0);
+    const styles = heads.map((h) => h.getAttribute('style') ?? '');
+    // b-mid is running → at least one marker tinted with the running token.
+    expect(styles.some((s) => s.includes('--archgen-status-running'))).toBe(true);
+  });
+});
+
+describe('collapsible legend (D)', () => {
+  it('chevron collapses the legend to a pill and restores it', () => {
+    renderWithModel(CHAIN_MODEL);
+    expect(screen.getByRole('list', { name: 'Status legend' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse status legend' }));
+    expect(screen.queryByRole('list', { name: 'Status legend' })).toBeNull();
+    const expand = screen.getByRole('button', { name: 'Expand status legend' });
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(expand);
+    expect(screen.getByRole('list', { name: 'Status legend' })?.querySelectorAll('[role="listitem"]')).toHaveLength(6);
+    expect(screen.getByRole('button', { name: 'Collapse status legend' }).getAttribute('aria-expanded')).toBe('true');
+  });
+});
+
+describe('wave progress chip (E)', () => {
+  it('derives done/total from live statuses near Start Work', async () => {
+    renderWithModel({ ...MODEL, tasks: [...SIX] });
+    const chip = screen.getByRole('status', { name: '1 of 6 tasks done' });
+    expect(chip.textContent).toBe('1/6 done');
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'update', changed: [{ id: 't-pending', status: 'done' }] },
+      }));
+    });
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    });
+    expect(screen.getByRole('status', { name: '2 of 6 tasks done' }).textContent).toBe('2/6 done');
+  });
+});
+
+describe('Escape clears focus ring state (F)', () => {
+  it('blurs the focused node so no ring remains', () => {
+    renderWithModel(CHAIN_MODEL);
+    const node = document.querySelector<HTMLElement>('[data-task-id="b-mid"]');
+    node!.focus();
+    expect(document.activeElement).toBe(node);
+    fireEvent.keyDown(node!, { key: 'Escape' });
+    expect(document.activeElement).not.toBe(node);
+  });
+
+  it('leaves focus untouched for other keys', () => {
+    renderWithModel(CHAIN_MODEL);
+    const node = document.querySelector<HTMLElement>('[data-task-id="b-mid"]');
+    node!.focus();
+    fireEvent.keyDown(node!, { key: 'Enter' });
+    expect(document.activeElement).toBe(node);
   });
 });
