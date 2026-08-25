@@ -16,6 +16,8 @@ import type { TaskStatus } from '../shared/status';
 export type TaskNodeData = {
   label: string;
   status: TaskStatus;
+  /** revealTask intent — draws the focus-border spotlight ring. */
+  highlighted?: boolean;
   /** Host-injected dispatch callback; stable via ref in TasksView. */
   onBuild?: (taskId: string) => void;
 };
@@ -37,6 +39,7 @@ function TaskNodeComponent({
   targetPosition = Position.Left,
 }: NodeProps<TaskFlowNode>) {
   const pulse = data.status === 'running' ? ' archgen-pulse' : '';
+  const spotlight = data.highlighted ? ' is-highlighted' : '';
 
   // KEYBOARD NAV (todo 13): every node is in the tab order; Enter or Space on
   // a focused node activates the ▶ build dispatch — same path as the button.
@@ -48,7 +51,7 @@ function TaskNodeComponent({
 
   return (
     <div
-      className={`archgen-tasknode archgen-node--${data.status}${pulse}`}
+      className={`archgen-tasknode archgen-node--${data.status}${pulse}${spotlight}`}
       data-task-id={id}
       role="button"
       tabIndex={0}

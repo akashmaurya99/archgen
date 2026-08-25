@@ -161,6 +161,17 @@ describe('Task DAG canvas', () => {
     });
     expect(document.querySelector('[data-task-id="t-pending"] [data-status]')?.getAttribute('data-status')).toBe('done');
   });
+
+  it('revealTask spotlights exactly the requested node via is-highlighted', () => {
+    renderWithModel(CHAIN_MODEL);
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'revealTask', taskId: 'b-mid' },
+      }));
+    });
+    expect(document.querySelector('[data-task-id="b-mid"]')?.classList.contains('is-highlighted')).toBe(true);
+    expect(document.querySelectorAll('.is-highlighted')).toHaveLength(1);
+  });
 });
 
 /** Chain used by filter/toggle tests: root(done) → mid(running) → end(pending). */

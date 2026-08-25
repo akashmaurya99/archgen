@@ -32,6 +32,7 @@ import {
   ReactFlow,
   type Edge,
   type Node,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '../../media/webview/dag.css';
@@ -45,6 +46,8 @@ import { taskNodeTypes, type TaskFlowNode } from './TaskNode';
 export interface TasksViewProps {
   tasks: TaskVM[];
   store: StatusStore<TaskVM>;
+  /** revealTask intent — node to spotlight + center; null/absent clears. */
+  highlightId?: string | null;
   /** ▶ dispatch — App posts {type:'build',taskId} to the host. */
   onBuild?: (taskId: string) => void;
   /** Header "Start Work" — App posts {type:'startWork'} to the host. */
@@ -142,7 +145,12 @@ function layoutTopToBottom<T extends { id: string }>(
   });
 }
 
-export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps) {
+export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: TasksViewProps) {
+  // Staleness guard (render-time, deterministic): a model refresh may drop the
+  // revealed task — highlight falls back to none instead of a ghost id.
+  const effectiveHighlight =
+    highlightId != null && tasks.some((t) => t.id === highlightId) ? highlightId : null;
+
   const [statuses, setStatuses] = useState<Record<string, TaskStatus>>(() =>
     selectStatuses(new Map(store.ids().map((id) => [id, store.getById(id) as TaskVM]))),
   );
@@ -161,6 +169,10 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
   // default stays the historical left→right rank direction.
   const [direction, setDirection] = useState<'LR' | 'TB'>('LR');
   const toggleDirection = useCallback(() => setDirection((d) => (d === 'LR' ? 'TB' : 'LR')), []);
+
+  // BEST-EFFORT CENTERING instance handle: captured via onInit because this
+  // component renders <ReactFlow> itself (useReactFlow needs a provider).
+  const flowRef = useRef<ReactFlowInstance<TaskFlowNode> | null>(null);
 
   // STATUS FILTERS: empty set ⇒ everything visible; otherwise the set lists
   // the statuses that remain on the board. Chips toggle membership.
@@ -213,24 +225,46 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
     return direction === 'LR' ? layoutLeftToRight(seeds, edgesIn) : layoutTopToBottom(seeds, edgesIn);
   }, [tasks, direction]);
 
+  // BEST-EFFORT CENTERING: pan so the revealed node sits mid-view at the
+  // current zoom. Runs one rAF after commit (xyflow measures the fresh canvas
+  // by then) and silently no-ops when the instance isn't ready or the id is
+  // unknown — reveal is a convenience, never a hard requirement.
+  useEffect(() => {
+    if (!effectiveHighlight) return;
+    const raf = requestAnimationFrame(() => {
+      const inst = flowRef.current;
+      const placed = laidOut.find((n) => n.id === effectiveHighlight);
+      if (!inst || !placed) return;
+      void inst.setCenter(
+        placed.position.x + DEFAULT_NODE_WIDTH / 2,
+        placed.position.y + DEFAULT_NODE_HEIGHT / 2,
+        { duration: 300 },
+      );
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [effectiveHighlight, laidOut]);
+
   // Handle sides flip with the rank direction (TaskNode reads them off the
   // node object — standard xyflow pattern).
   const sourcePos = direction === 'LR' ? Position.Right : Position.Bottom;
   const targetPos = direction === 'LR' ? Position.Left : Position.Top;
 
   // Per-id object cache: replace a node object ONLY when something its memo
-  // cares about changed (status · hidden · handle sides · position). Filter
-  // toggles therefore leave untouched ids at their previous object identity.
+  // cares about changed (status · highlight · hidden · handle sides ·
+  // position). Filter toggles therefore leave untouched ids at their previous
+  // object identity.
   const cacheRef = useRef(new Map<string, TaskFlowNode>());
   const nodes = useMemo<TaskFlowNode[]>(
     () =>
       laidOut.map((n) => {
         const status = statuses[n.id] ?? 'pending';
         const hidden = !isVisibleStatus(status);
+        const highlighted = n.id === effectiveHighlight;
         const prev = cacheRef.current.get(n.id);
         if (
           prev &&
           prev.data.status === status &&
+          prev.data.highlighted === highlighted &&
           prev.hidden === hidden &&
           prev.sourcePosition === sourcePos &&
           prev.targetPosition === targetPos &&
@@ -252,12 +286,12 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
           targetPosition: targetPos,
           draggable: false,
           selectable: false,
-          data: { label: task?.title ?? n.id, status, onBuild: dispatchBuild },
+          data: { label: task?.title ?? n.id, status, onBuild: dispatchBuild, highlighted },
         };
         cacheRef.current.set(n.id, next);
         return next;
       }),
-    [laidOut, statuses, tasks, isVisibleStatus, sourcePos, targetPos, dispatchBuild],
+    [laidOut, statuses, tasks, isVisibleStatus, sourcePos, targetPos, dispatchBuild, effectiveHighlight],
   );
 
   const edges = useMemo<Edge[]>(() => deriveEdges(tasks, statuses, isNodeVisible), [tasks, statuses, isNodeVisible]);
@@ -293,6 +327,9 @@ export function TasksView({ tasks, store, onBuild, onStartWork }: TasksViewProps
         nodesConnectable={false}
         elementsSelectable={false}
         proOptions={{ hideAttribution: true }}
+        onInit={(inst) => {
+          flowRef.current = inst;
+        }}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls showInteractive={false} />

@@ -13,6 +13,7 @@ import type {
   HostToWebview,
   TaskVM,
   ThemeKind,
+  WebviewRevealTaskMessage,
 } from '../shared/protocol';
 import { StatusStore } from '../host/store';
 import { getVsCodeApi } from './vscode';
@@ -48,10 +49,25 @@ export function App(props: AppProps) {
     const persisted = vscode.getState<PersistedState>();
     return persisted?.tab ?? 'TASKS';
   });
+  // REVEAL INTENT: task id to spotlight on the TASKS canvas; null = no reveal.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // Declared ABOVE the intake effect so the revealTask case can reuse this
+  // exact persistence path (deps array evaluates during render).
+  const selectTab = useCallback(
+    (next: ViewTab) => {
+      setTab(next);
+      vscode.setState<PersistedState>({ tab: next });
+    },
+    [vscode],
+  );
 
   // Handshake + message intake.
   useEffect(() => {
-    const handler = (event: MessageEvent<HostToWebview>): void => {
+    // Host posts revealTask intents over the same channel; the protocol file
+    // groups that payload under WebviewToHost (the emitter side), so intake
+    // listens for the wider union.
+    const handler = (event: MessageEvent<HostToWebview | WebviewRevealTaskMessage>): void => {
       const msg = event.data;
       switch (msg.type) {
         case 'model':
@@ -76,20 +92,18 @@ export function App(props: AppProps) {
         case 'theme':
           applyTheme(msg.themeKind);
           break;
+        case 'revealTask':
+          // Same selectTab path as a manual click ⇒ persisted-tab behavior
+          // (vscode.setState) stays identical.
+          selectTab('TASKS');
+          setHighlightId(msg.taskId);
+          break;
       }
     };
     window.addEventListener('message', handler);
     vscode.postMessage({ type: 'ready' });
     return () => window.removeEventListener('message', handler);
-  }, [vscode]);
-
-  const selectTab = useCallback(
-    (next: ViewTab) => {
-      setTab(next);
-      vscode.setState<PersistedState>({ tab: next });
-    },
-    [vscode],
-  );
+  }, [vscode, selectTab]);
 
   const openFile = useCallback(
     (path: string) => {
@@ -139,7 +153,12 @@ export function App(props: AppProps) {
           <FeaturePicker
             features={model.features}
             activeSlug={model.activeSlug}
-            onSelect={(slug) => vscode.postMessage({ type: 'selectFeature', slug })}
+            onSelect={(slug) => {
+              // A feature swap replaces the whole DAG — clear any reveal so
+              // the spotlight never points at a node from the previous board.
+              setHighlightId(null);
+              vscode.postMessage({ type: 'selectFeature', slug });
+            }}
           />
         </div>
       )}
@@ -151,6 +170,7 @@ export function App(props: AppProps) {
           <TasksView
             tasks={model.tasks}
             store={storeRef.current}
+            highlightId={highlightId}
             onBuild={(taskId) => vscode.postMessage({ type: 'build', taskId })}
             onStartWork={() => vscode.postMessage({ type: 'startWork' })}
           />
