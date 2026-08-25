@@ -4,7 +4,7 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE="$SCRIPT_DIR/skills/archgen"
+SOURCE="$SCRIPT_DIR/skill"
 
 MODE="link"
 PROJECT_ARG=""

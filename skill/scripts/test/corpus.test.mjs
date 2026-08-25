@@ -1,6 +1,6 @@
 // Corpus parity tests — shared fixtures consumed by BOTH yaml implementations.
 // Files: <repo-root>/fixtures/yaml-corpus/*.yaml + *.expected.json
-// The VS Code extension's vitest suite (extension/test/corpus.test.ts) asserts
+// The VS Code extension's vitest suite (packages/extension/test/corpus.test.ts) asserts
 // the SAME expectations against its faithful TS port of lib/yaml.mjs. If these
 // tests fail after an edit to either parser, the two sides have diverged — fix
 // both together; never adjust expected outputs unilaterally.
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { parseYaml, stringifyYaml } from '../lib/yaml.mjs';
 
-const corpusDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'fixtures', 'yaml-corpus');
+const corpusDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'fixtures', 'yaml-corpus');
 
 for (const f of readdirSync(corpusDir).sort()) {
   if (!f.endsWith('.yaml')) continue;

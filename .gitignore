@@ -10,3 +10,11 @@ node_modules/
 # Local agent workspace (.omo) — keep evidence logs versioned
 .omo/*
 !.omo/evidence/
+
+# Build artifacts
+*.vsix
+dist/
+coverage/
+
+# Worktrees
+.worktrees/

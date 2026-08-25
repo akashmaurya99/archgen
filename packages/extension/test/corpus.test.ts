@@ -1,6 +1,6 @@
 // Corpus parity tests (extension side) — same fixtures as the skill's
 // node:test suite; asserts the TS port parses IDENTICALLY to the committed
-// expectations generated from skills/archgen/scripts/lib/yaml.mjs.
+// expectations generated from skill/scripts/lib/yaml.mjs.
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -9,7 +9,7 @@ import { parseYaml, stringifyYaml } from '../src/host/readers/yaml';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-const CORPUS_DIR = join(HERE, '..', '..', 'fixtures', 'yaml-corpus');
+const CORPUS_DIR = join(HERE, '..', '..', '..', 'fixtures', 'yaml-corpus');
 
 interface ExpectedOk { ok: true; data: unknown; comments: unknown[] }
 interface ExpectedErr { ok: false; errorMatches: string }

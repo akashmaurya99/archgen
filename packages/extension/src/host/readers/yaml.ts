@@ -1,6 +1,6 @@
 // yaml.ts — zero-dependency YAML subset parser/writer for archgen contracts.
 //
-// FAITHFUL PORT of skills/archgen/scripts/lib/yaml.mjs (todo 3): identical
+// FAITHFUL PORT of skill/scripts/lib/yaml.mjs (todo 3): identical
 // public API (parseYaml / stringifyYaml), identical semantics, identical error
 // messages — byte-for-byte where it matters. Both implementations are pinned
 // together by the shared corpus at <repo-root>/fixtures/yaml-corpus/*.yaml +

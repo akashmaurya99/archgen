@@ -1,5 +1,5 @@
 // install.js — global harness-dir installer (cross-platform port of install.sh).
-// Installs skills/archgen into every EXISTING harness skills dir; manifest
+// Installs the archgen skill into every EXISTING harness skills dir; manifest
 // records entries so --uninstall removes exactly what we put there.
 
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveSkillSource } from './init.js';
 
 // Module-anchored default: works from the npm package (cli/lib -> cli/vendor)
-// AND from a monorepo checkout (cli/lib -> ../skills) without depending on cwd.
+// AND from a monorepo checkout (packages/cli/lib -> ../../skill) without depending on cwd.
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const MANIFEST_NAME = '.archgen-install-manifest.list';

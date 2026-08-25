@@ -15,7 +15,7 @@ const CONTEXT_FILES = ['AGENTS.md', 'CLAUDE.md'];
 export function resolveSkillSource(packageRoot) {
   const candidates = [
     join(packageRoot, 'vendor', 'skills', 'archgen'),
-    join(packageRoot, '..', 'skills', 'archgen'), // dev: running from cli/ inside the monorepo
+    join(packageRoot, '..', '..', 'skill'), // dev: running from packages/cli inside the monorepo
   ];
   for (const c of candidates) if (existsSync(join(c, 'SKILL.md'))) return c;
   throw new Error('bundled archgen skill not found (expected vendor/skills/archgen)');

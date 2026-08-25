@@ -10,7 +10,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARCHGEN_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SCRIPTS="$ARCHGEN_ROOT/skills/archgen/scripts"
+SCRIPTS="$ARCHGEN_ROOT/skill/scripts"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
