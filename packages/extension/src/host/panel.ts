@@ -12,7 +12,7 @@ import {
   window,
   workspace,
 } from 'vscode';
-import type { HostToWebview, ThemeKind, WebviewToHost } from '../shared/protocol';
+import type { HostToWebview, ThemeKind, WebviewRevealTaskMessage, WebviewToHost } from '../shared/protocol';
 
 export const VIEW_TYPE = 'archgen.taskBoard';
 
@@ -55,6 +55,12 @@ export class ArchgenPanel {
   private disposables: Array<{ dispose(): void }> = [];
   private lastSentModel: string | null = null;
   private forceNext = false;
+  // Reveal-to-task intent (sidebar "Show in Task Board") parked while the
+  // webview is still loading; flushed right after the model push in the
+  // `ready` branch so ordering stays model-before-reveal.
+  private pendingReveal: string | null = null;
+  // Flips true once this webview completed its `ready` handshake.
+  private readySeen = false;
 
   private constructor(
     private readonly context: ExtensionContext,
@@ -128,10 +134,17 @@ export class ArchgenPanel {
   /** Message router: exactly one switch over the shared protocol union. */
   private route(msg: WebviewToHost): void {
     switch (msg.type) {
-      case 'ready':
+      case 'ready': {
         this.forceNext = true;
+        this.readySeen = true;
+        // onReady pushes the model synchronously BEFORE the flush below, so
+        // the webview always receives model → revealTask in channel order.
         this.opts.onReady?.();
+        const taskId = this.pendingReveal;
+        this.pendingReveal = null;
+        if (taskId !== null) this.post({ type: 'revealTask', taskId });
         break;
+      }
       case 'openFile': {
         void (async () => {
           try {
@@ -161,7 +174,7 @@ export class ArchgenPanel {
   }
 
   /** Post typed message; dedupes identical models unless invalidated. */
-  post(message: HostToWebview): void {
+  post(message: HostToWebview | WebviewRevealTaskMessage): void {
     if (!this.panel) return;
     if (message.type === 'model') {
       // activeSlug leads the fingerprint: two features may expose identical
@@ -181,6 +194,19 @@ export class ArchgenPanel {
   /** Force the next model post even if the fingerprint matches. */
   invalidateModel(): void {
     this.forceNext = true;
+  }
+
+  /**
+   * Schedule a reveal-to-task on this board. A freshly created webview has not
+   * posted `ready` yet, so the intent parks here until the handshake completes
+   * (flushed after the model push); an already-loaded board gets it at once.
+   */
+  setPendingReveal(taskId: string): void {
+    if (this.readySeen) {
+      this.post({ type: 'revealTask', taskId });
+      return;
+    }
+    this.pendingReveal = taskId;
   }
 
   private renderHtml(webview: Webview): string {
@@ -219,6 +245,7 @@ export class ArchgenPanel {
 
   private dispose(): void {
     for (const d of this.disposables.splice(0)) d.dispose();
+    this.pendingReveal = null;
     this.panel = undefined;
     if (ArchgenPanel.current === this) ArchgenPanel.current = null;
   }
