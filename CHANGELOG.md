@@ -21,4 +21,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cursor, GitHub Copilot (project-local), plus `install.sh` symlink/copy
   installer with uninstall manifest.
 
-[0.0.1]: https://github.com/akash/archgen/releases/tag/v0.0.1
+[0.0.1]: https://github.com/akashmaurya99/archgen/releases/tag/v0.0.1

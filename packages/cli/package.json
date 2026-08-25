@@ -8,7 +8,7 @@
   "files": ["bin/", "lib/", "vendor/", "README.md"],
   "engines": { "node": ">=18" },
   "keywords": ["ai", "agents", "architecture", "claude", "cursor", "opencode", "codex", "skills", "tasks", "orchestration"],
-  "repository": { "type": "git", "url": "git+https://github.com/akash/archgen.git" },
+  "repository": { "type": "git", "url": "git+https://github.com/akashmaurya99/archgen.git" },
   "//": "vendor/skills/archgen is synced from ../skills/archgen by scripts/sync-vendor.mjs (run automatically via prepublishOnly). The extension ships separately as a VS Code vsix.",
   "scripts": {
     "sync": "node scripts/sync-vendor.mjs",
