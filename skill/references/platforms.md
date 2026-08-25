@@ -23,6 +23,23 @@ confirmed. The orchestrator loads ONLY the row matching Step-0 detection.
 Universal fallback: `.agents/skills/` project + `~/.agents/skills/` user works
 across most harnesses. Primary distribution: `npx skills add <repo>` (75+ agents).
 
+## archgen installed layout
+
+`install.sh` / `npx archgen-skill install` maintain ONE canonical store plus
+thin bridges — the skill is never copied twice:
+
+| Path | Role |
+|---|---|
+| `.agents/skills/archgen/` | Canonical store — `SKILL.md`, `scripts/`, `references/`, `assets/` |
+| `.claude/skills/archgen` | Optional symlink → canonical store, for Claude Code discovery |
+| `CLAUDE.md` | One-line `@AGENTS.md` bridge only — no content of its own |
+| `AGENTS.md` | The hub every harness reads; hosts the features registry between `<!-- archgen:features:start -->` and `<!-- archgen:features:end -->` |
+
+The registry table (`| Feature | Status | Updated |`, one row per
+`.archgen/<slug>/`) is machine-maintained by `scripts/update-agents.mjs` after
+every generate/plan/wave run — never hand-edit it; edit `.archgen/` state and
+re-run the script instead.
+
 ## MCP configuration
 
 Four different top-level keys exist — NEVER assume `mcpServers`:
