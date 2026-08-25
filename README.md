@@ -59,8 +59,8 @@ guarantee rather than a hope:
 
 ## Installation
 
-**Prepare a project** (copies the skill locally + writes `AGENTS.md`/`CLAUDE.md`
-pointer blocks so every harness auto-discovers it):
+**Prepare a project** (installs ONE canonical skill copy + harness bridges —
+never duplicates; existing files are preserved and upgraded in place):
 
 ```bash
 npx archgen-skill init
@@ -110,13 +110,13 @@ uninstalling it loses nothing.
 ## Development
 
 ```sh
-# Skill suite (node:test, zero deps) — 41 tests
+# Skill suite (node:test, zero deps)
 node --test skill/scripts/test/*.test.mjs
 
-# CLI — 5 tests
+# CLI — single-store installer, doctor, uninstall --project
 cd packages/cli && npm test
 
-# Extension — 189 tests, ≥90% coverage enforced (Node 22 toolchain)
+# Extension — feature picker, probe order, ≥90% coverage enforced (Node 22 toolchain)
 cd packages/extension && npm ci && npm run typecheck && npm run compile && npm test
 
 # Deterministic end-to-end drivers (no LLM calls)

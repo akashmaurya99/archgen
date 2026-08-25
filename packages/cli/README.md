@@ -21,12 +21,26 @@ Antigravity** — and any [agentskills.io](https://agentskills.io)-compatible ha
 
 ## Install
 
-**Prepare a project** (recommended) — copies the skill locally + writes
-`AGENTS.md` / `CLAUDE.md` pointer blocks so every harness auto-discovers it:
+**Prepare a project** (recommended) — installs ONE canonical skill copy plus
+harness bridges so every agent auto-discovers it:
 
 ```bash
 npx archgen-skill init
 ```
+
+What `init` writes (nothing is ever duplicated):
+
+| Path | What |
+| --- | --- |
+| `.agents/skills/archgen/` | **The only real copy** — the agentskills.io standard location read natively by OpenCode, Cursor, Codex, Gemini CLI, Copilot and Antigravity |
+| `.claude/skills/archgen → ../../.agents/skills/archgen` | Relative symlink for Claude Code (the one harness needing it). Skipped gracefully where symlinks need privileges — Claude still works via the bridge below |
+| `AGENTS.md` | Managed hub block: skill pointer + quick triggers + a features registry that stays current as you add features |
+| `CLAUDE.md` | One-line bridge: `@AGENTS.md` (existing files keep all their content; if it already imports AGENTS.md we write nothing) |
+
+Existing projects with user content are safe: managed blocks upsert between
+markers, modified skill copies are backed up to `.archgen/.backup/<timestamp>/`
+before refresh, and legacy dual-copy layouts are migrated to symlinks
+automatically. Verify anytime with `archgen-skill doctor`.
 
 **Or install globally** into every detected harness:
 
@@ -56,9 +70,11 @@ architecture contract, docs, ADRs, plans, and a `tasks.yaml` task graph — vers
 
 | Command | What it does |
 | --- | --- |
-| `npx archgen-skill init [dir]` | Copy the skill into `.agents/skills/archgen` + `.claude/skills/archgen` and write AGENTS.md / CLAUDE.md pointer blocks |
+| `npx archgen-skill init [dir]` | Install the single canonical skill store at `.agents/skills/archgen`, add the Claude symlink adapter, write the AGENTS.md hub + CLAUDE.md `@AGENTS.md` bridge |
 | `npx archgen-skill install [--copy]` | Install into global harness skill dirs (symlinks by default, real copies with `--copy`) |
 | `npx archgen-skill uninstall` | Remove globally-installed copies (manifest-recorded, safe removal) |
+| `npx archgen-skill uninstall --project [dir]` | Remove project install: strips managed blocks, our symlink and the store **only if unmodified** — feature folders in `.archgen/` and all user content are preserved |
+| `npx archgen-skill doctor [dir] [--check]` | Verify + auto-repair an installation: store integrity, version stamp, Claude link, blocks present exactly once, manifest resolution (`--check` reports without fixing) |
 | `npx archgen-skill --help` | Help |
 
 ## Why archgen

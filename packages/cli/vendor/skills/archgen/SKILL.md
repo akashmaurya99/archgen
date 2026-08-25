@@ -34,7 +34,8 @@ Do NOT load for plain bug fixes or one-line edits that need no planning.
 1. **Everything you generate goes inside `.archgen/<project-slug>/`** at the
    target repo root. NEVER write generated artifacts anywhere else. The only
    files you may touch outside `.archgen/` are source-code edits performed by
-   worker sub-agents for approved tasks.
+   worker sub-agents for approved tasks and the `AGENTS.md` features registry,
+   maintained exclusively via `scripts/update-agents.mjs`.
 2. **Two gates before execution**: (a) the VERIFIER sub-agent must return
    APPROVE on plan+tasks, then (b) the USER must approve. Never skip either.
 3. **Right-size every generation.** Classify scope BEFORE creating files:
@@ -98,9 +99,13 @@ Pick ONE mode from the user's intent and follow its section below:
    Use templates from references/artifact-templates.md. Every task needs:
    id, title, depends_on (prerequisite ids), file_ownership (disjoint globs!),
    acceptance criteria, and status left unset (resolver derives readiness).
-4. **Self-check:** run
+   If `<slug>` already exists under `.archgen/`, pick `<slug>-2`, `<slug>-3`, …
+   — NEVER overwrite or merge into an existing feature folder.
+4. **Self-check + registry:** run
    `node <skill>/scripts/validate.mjs .archgen/<slug>/tasks.yaml`
-   Fix until exit 0.
+   Fix until exit 0. Then refresh the AGENTS.md features registry:
+   `node <skill>/scripts/update-agents.mjs <repo-root> --slug <slug> --status planned`.
+   Re-run it after ANY later artifact update so AGENTS.md never goes stale.
 5. **VERIFIER GATE.** Dispatch a verifier sub-agent (brief in
    references/orchestration.md §verifier). It must also run
    `node <skill>/scripts/verify-plan.mjs .archgen/<slug>/tasks.yaml --plan .archgen/<slug>/plans`
@@ -145,6 +150,8 @@ Run from the target repo root where `.archgen/<slug>/` exists.
      `set-status.mjs <id> done` on success (or `failed` on failure) and commit.
 4. After the wave settles: re-run next-tasks. Failed tasks are NOT retried
    automatically — surface them, propose a fix task, [wait for user].
+   Refresh the registry so AGENTS.md tracks the new statuses:
+   `node <skill>/scripts/update-agents.mjs <repo-root>`.
 5. Repeat until no actionable tasks remain.
 6. Final report: tasks done/failed/blocked, commits produced, suggested
    follow-ups. Update `.archgen/<slug>/plans/*.md` checkboxes if present.
@@ -197,6 +204,8 @@ When a task domain matches an entry in `assets/skill-registry.json`
 ## Things you must NOT do
 
 - Do NOT write artifacts outside `.archgen/<slug>/`.
+- Do NOT reuse or overwrite an existing `.archgen/<slug>/` folder — suffix
+  `-2`, `-3`, … instead (multi-feature repos must stay isolated).
 - Do NOT skip the verifier gate or the user gate — ever, even for SMALL scopes.
 - Do NOT implement features yourself; dispatch workers.
 - Do NOT put two same-wave tasks on overlapping file_ownership globs.
@@ -225,6 +234,8 @@ When a task domain matches an entry in `assets/skill-registry.json`
 scripts/next-tasks.mjs  <tasks.yaml>                       # waves JSON
 scripts/validate.mjs    <tasks.yaml> [--plan <dir>]        # exit 0/1
 scripts/set-status.mjs  <tasks.yaml> <id> <status> [--force]
+scripts/update-agents.mjs <projectRoot> [--slug <s>] [--status <s>] [--prune]
+                        # AGENTS.md features registry
 scripts/impact.mjs      <tasks.yaml> <id-or-artifactPath>  # ripple JSON
 scripts/verify-plan.mjs <tasks.yaml> --plan <dir>          # APPROVE|ISSUES
 ```

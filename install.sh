@@ -22,10 +22,12 @@ Usage: install.sh [--copy] [--project <dir>] [--uninstall]
                     it already exists under the current working directory
   --uninstall       remove exactly what a previous run recorded in
                     \$HOME/.archgen-install-manifest.list (no-op exit 0 if none)
-  --init [dir]      project setup: copy the skill into <dir>/.agents/skills/archgen
-                    + <dir>/.claude/skills/archgen and generate AGENTS.md /
-                    CLAUDE.md pointer blocks so every agent harness auto-discovers
-                    archgen in that repo (default dir: current directory)
+  --init [dir]      project setup: create the canonical skill store at
+                    <dir>/.agents/skills/archgen (the only real copy), symlink
+                    <dir>/.claude/skills/archgen -> ../../.agents/skills/archgen
+                    (skipped gracefully when symlinks are unavailable), and
+                    generate AGENTS.md / CLAUDE.md pointer blocks so every
+                    agent harness auto-discovers archgen (default dir: cwd)
   -h, --help        show this help
 
 Targets (installed only when the directory already exists):
@@ -58,13 +60,28 @@ while [ $# -gt 0 ]; do
 done
 
 # ---- Uninstall: remove exactly the manifest-recorded entries ----------------
-# ---- --init: project-local skill + context pointer files -------------------
+# ---- --init: project-local canonical store + context pointer files ----------
 if [ "$INIT" -eq 1 ]; then
   ROOT="$(cd -- "${INIT_DIR:-$PWD}" && pwd)" || die "cannot enter directory: ${INIT_DIR:-$PWD}"
-  mkdir -p "$ROOT/.agents/skills" "$ROOT/.claude/skills"
-  rm -rf -- "$ROOT/.agents/skills/archgen" "$ROOT/.claude/skills/archgen"
+
+  # Canonical store: ONE real copy at .agents/skills/archgen.
+  mkdir -p -- "$ROOT/.agents/skills"
+  rm -rf -- "$ROOT/.agents/skills/archgen"
   cp -R -- "$SOURCE" "$ROOT/.agents/skills/archgen"
-  cp -R -- "$ROOT/.agents/skills/archgen" "$ROOT/.claude/skills/archgen"
+
+  # Version stamp inside the store (CLI package.json version; best-effort).
+  CLI_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$SCRIPT_DIR/packages/cli/package.json" 2>/dev/null | head -n 1)"
+  printf '%s\n' "${CLI_VERSION:-dev}" > "$ROOT/.agents/skills/archgen/.archgen-version"
+
+  # Claude adapter: RELATIVE symlink into the store; skip gracefully on failure.
+  CLAUDE_LINK="$ROOT/.claude/skills/archgen"
+  LINK_NOTE=""
+  if [ -d "$CLAUDE_LINK" ] && [ ! -L "$CLAUDE_LINK" ]; then
+    LINK_NOTE="kept existing real directory at .claude/skills/archgen (not replaced)"
+  elif ! { mkdir -p -- "$ROOT/.claude/skills" && ln -sfn -- "../../.agents/skills/archgen" "$CLAUDE_LINK"; }; then
+    LINK_NOTE="could not create symlink at .claude/skills/archgen (skipped; store still works standalone)"
+  fi
 
   write_block() { # $1 = target file; idempotent via archgen:start guard
     f="$1"
@@ -77,25 +94,55 @@ if [ "$INIT" -eq 1 ]; then
 
 This project uses the **archgen** skill, installed at `.agents/skills/archgen/`.
 
-**Before running any archgen workflow:** read `.agents/skills/archgen/SKILL.md` -
-it defines every mode, gate, and rule.
+**Before running any archgen workflow, read its instructions:**
+read `.agents/skills/archgen/SKILL.md` first - it defines every mode, gate, and rule.
 
 Quick triggers:
-- "generate architecture for X" -> GENERATE mode
+- "generate architecture for X" -> greenfield GENERATE mode
 - "add feature X" -> BROWNFIELD survey-first mode (analyzes this codebase)
-- "start work" -> execute pending tasks wave-by-wave
+- "start work" -> execute pending tasks in `.archgen/*/tasks.yaml` wave-by-wave
+- "roll back ..." / "install mcp ..." / "fetch design skill" -> auxiliary modes
 
-Rules: artifacts live ONLY under `.archgen/<slug>/`; never hand-edit task
-statuses (use `scripts/set-status.mjs`); verifier + human gates before execution.
+Rules of the road:
+- Generated artifacts live ONLY under `.archgen/<slug>/`
+- Never hand-edit task statuses - use `scripts/set-status.mjs` (comment-safe)
+- Two gates before any execution: verifier approval, then human approval
+
+## Features registry
+
+<!-- archgen:features:start -->
+| Feature | Status | Updated |
+| --- | --- | --- |
+<!-- archgen:features:end -->
 <!-- archgen:end -->
 BLOCK
     } > "$f.tmp" && mv "$f.tmp" "$f"
   }
   write_block "$ROOT/AGENTS.md"
-  write_block "$ROOT/CLAUDE.md"
+
+  write_bridge() { # $1 = CLAUDE.md; one-line @AGENTS.md pointer inside markers
+    f="$1"
+    if [ -f "$f" ] && grep -Eq '^[[:space:]]*@AGENTS\.md[[:space:]]*$' "$f"; then return 0; fi
+    if [ -f "$f" ] && grep -q "archgen:start" "$f"; then return 0; fi
+    {
+      [ -f "$f" ] && cat "$f" && printf '\n'
+      cat <<'BLOCK'
+<!-- archgen:start (managed block - do not edit between markers) -->
+@AGENTS.md
+<!-- archgen:end -->
+BLOCK
+    } > "$f.tmp" && mv "$f.tmp" "$f"
+  }
+  write_bridge "$ROOT/CLAUDE.md"
+
   echo "archgen: project initialized at $ROOT"
-  echo "  + .agents/skills/archgen  (+ mirror at .claude/skills/archgen)"
-  echo "  + AGENTS.md / CLAUDE.md pointer blocks"
+  echo "  + .agents/skills/archgen (canonical store)"
+  if [ -n "$LINK_NOTE" ]; then
+    printf '  ! %s\n' "$LINK_NOTE"
+  elif [ -L "$CLAUDE_LINK" ]; then
+    echo '  + .claude/skills/archgen -> ../../.agents/skills/archgen'
+  fi
+  echo '  + AGENTS.md / CLAUDE.md pointer blocks'
   echo 'Next: commit these files, then say "generate architecture" or "start work" in your agent.'
   exit 0
 fi

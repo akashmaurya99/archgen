@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // archgen — npm CLI for the archgen skill.
 //
-//   npx archgen-skill init            Install skill into THIS project + write
-//                               AGENTS.md / CLAUDE.md context pointers
+//   npx archgen-skill init [dir]      ONE canonical skill store + claude symlink
+//                               adapter + AGENTS.md / CLAUDE.md context pointers
+//   npx archgen-skill doctor [dir]    Verify/repair a project install (--check = report only)
 //   npx archgen-skill install         Install skill into global harness dirs
 //                               (Claude Code, OpenCode, Cursor, agentskills)
 //   npx archgen-skill uninstall       Remove globally-installed copies (manifest-based)
+//     --project [dir]           Remove archgen from a specific project instead
 //
 // Zero dependencies. Cross-platform (Windows included — no bash required).
 
@@ -13,20 +15,32 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installGlobal, uninstallGlobal } from '../lib/install.js';
 import { initProject } from '../lib/init.js';
+import { doctorProject } from '../lib/doctor.js';
+import { uninstallProject } from '../lib/uninstall-project.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const HELP = `archgen — architecture generation & autonomous task execution for coding agents
 
 Usage:
-  npx archgen-skill init [dir]        Prepare a project: copy the skill into
-                                .agents/skills/archgen + .claude/skills/archgen
-                                and generate AGENTS.md / CLAUDE.md pointer blocks
-                                so every agent harness auto-discovers it.
+  npx archgen-skill init [dir]        Prepare a project: create the canonical skill
+                                store at .agents/skills/archgen, symlink
+                                .claude/skills/archgen -> ../../.agents/skills/archgen,
+                                and generate AGENTS.md / CLAUDE.md pointer blocks.
+    [--force]                     proceed automatically; divergent copies are
+                                  backed up to .archgen/.backup/ (never destroyed)
+  npx archgen-skill doctor [dir]      Health-check a project install: store integrity,
+                                version stamp, claude link, managed blocks,
+                                manifest. Repairs safe issues in place.
+    [--check]                     report only - change nothing
   npx archgen-skill install           Install into global harness skill dirs
     [--copy]                      real copies instead of symlinks
     [--uninstall]                 remove manifest-recorded entries
-  npx archgen-skill uninstall         Alias for install --uninstall
+  npx archgen-skill uninstall         Remove globally-installed copies (manifest-based)
+    --project [dir]               remove archgen from a project: claude link,
+                                  managed blocks, canonical store (kept when
+                                  customized) and manifest; .archgen feature
+                                  folders and backups are preserved
   npx archgen-skill --help            This help
 
 Docs: https://github.com/akashmaurya99/archgen`;
@@ -40,17 +54,38 @@ function flag(name) {
   return true;
 }
 
+function positionalDir() {
+  return rest[0] ? resolve(rest[0]) : process.cwd();
+}
+
 try {
   switch (cmd) {
     case 'init': {
-      const dir = rest[0] ? resolve(rest[0]) : process.cwd();
-      const r = initProject(dir, PACKAGE_ROOT);
-      console.log('archgen: skill installed into project');
-      for (const p of r.skillCopies) console.log('  + ' + p);
+      flag('--force');
+      const r = initProject(positionalDir(), PACKAGE_ROOT);
+      console.log('archgen: project ready (single-store layout)');
+      console.log('  + store ' + r.storePath);
+      if (r.claudeLink === 'created') console.log('  + link  .claude/skills/archgen -> ../../.agents/skills/archgen');
+      else if (r.claudeLink === 'existing') console.log('  = link  .claude/skills/archgen (already points at the store)');
+      else if (r.claudeLink === 'migrated') console.log('  ~ link  .claude/skills/archgen migrated from copy to symlink');
+      else if (r.claudeLink === 'kept-divergent') console.log('  ! kept  .claude/skills/archgen (divergent - left untouched)');
+      else console.log('  ! skip  .claude/skills/archgen (symlink unavailable)');
+      for (const b of r.backups) console.log('  ~ backup ' + b + ' (previous store moved aside)');
       for (const f of r.contextFiles) {
         console.log(`  ${r.createdContextFiles.includes(f) ? 'created' : 'updated'} ${f} (archgen pointer block)`);
       }
+      for (const w of r.warnings) console.log('  note: ' + w);
       console.log('\nNext: open this project in your agent and say "generate architecture" or "add feature X".');
+      break;
+    }
+    case 'doctor': {
+      const check = flag('--check');
+      const r = doctorProject(positionalDir(), PACKAGE_ROOT, { check });
+      console.log('archgen doctor — ' + r.root + (check ? '  (check mode: no changes made)' : ''));
+      for (const c of r.checks) console.log(`  [${c.status.toLowerCase().padEnd(9)}] ${c.msg}`);
+      const t = r.tally;
+      console.log(`Summary: ${t.OK} ok, ${t.FIXED} fixed, ${t['WOULD-FIX']} would-fix, ${t.WARN} warning(s), ${t.FAIL} failure(s)`);
+      if (r.failures > 0) process.exitCode = 1;
       break;
     }
     case 'install': {
@@ -64,7 +99,19 @@ try {
       break;
     }
     case 'uninstall': {
-      uninstall();
+      if (flag('--project')) {
+        const r = uninstallProject(positionalDir(), PACKAGE_ROOT);
+        console.log('archgen: project uninstall — ' + r.root);
+        if (r.linkRemoved) console.log('  - .claude/skills/archgen (link)');
+        if (r.strippedBlocks.length) console.log('  - managed blocks stripped from ' + r.strippedBlocks.join(', '));
+        if (r.storeRemoved) console.log('  - .agents/skills/archgen (unmodified store)');
+        if (r.storeKept) console.log('  = .agents/skills/archgen KEPT (customized)');
+        if (r.manifestRemoved) console.log('  - .archgen/.install-manifest.json');
+        for (const w of r.warnings) console.log('  note: ' + w);
+        console.log('  .archgen feature folders and backups are preserved.');
+      } else {
+        uninstall();
+      }
       break;
     }
     case '--help': case '-h': case undefined: {

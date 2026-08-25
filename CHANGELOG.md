@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.3] - 2026-08-25
+
+### Changed
+
+- **Single-store installs**: `archgen-skill init` now writes exactly ONE skill
+  copy at `.agents/skills/archgen` (the agentskills.io standard location read
+  natively by OpenCode, Cursor, Codex, Gemini CLI, Copilot and Antigravity).
+  Claude Code gets a relative symlink at `.claude/skills/archgen` — the only
+  harness needing it. No more duplicate skill folders per project.
+- **CLAUDE.md is a one-line bridge** (`@AGENTS.md`, Anthropic's documented
+  pattern). Existing files keep all user content; files already importing
+  AGENTS.md are left untouched.
+- **AGENTS.md is a living hub**: managed block now carries a features registry
+  (slug · status · updated) maintained by the new `update-agents.mjs` skill
+  script after every generate/work cycle.
+
+### Added
+
+- `archgen-skill doctor [--check]`: verifies store integrity, version stamp,
+  Claude link, block uniqueness, manifest resolution — auto-repairs what's safe.
+- `archgen-skill uninstall --project`: surgical removal — strips managed blocks,
+  our symlink and an unmodified store only; feature folders in `.archgen/` and
+  all user content are preserved.
+- Ownership verification before every mutation: divergent skill copies are
+  backed up to `.archgen/.backup/<timestamp>/` instead of overwritten; legacy
+  dual-copy layouts migrate to symlinks automatically.
+- Install manifest (`.archgen/.install-manifest.json`) records everything the
+  installer creates.
+
 ## [0.0.2] - 2026-08-25
 
 ### Fixed
