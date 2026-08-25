@@ -17,8 +17,21 @@ import { installGlobal, uninstallGlobal } from '../lib/install.js';
 import { initProject } from '../lib/init.js';
 import { doctorProject } from '../lib/doctor.js';
 import { uninstallProject } from '../lib/uninstall-project.js';
+import { compareSemver, fetchLatestVersion } from '../lib/version.js';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+function cliVersion() {
+  return JSON.parse(readFileSync(resolve(PACKAGE_ROOT, 'package.json'), 'utf8')).version;
+}
+
+function runInitAndDoctor(dir) {
+  const r = initProject(dir, PACKAGE_ROOT);
+  console.log('  = store refreshed at ' + r.storePath);
+  doctorProject(dir, PACKAGE_ROOT, {});
+}
 
 const HELP = `archgen — architecture generation & autonomous task execution for coding agents
 
@@ -41,6 +54,11 @@ Usage:
                                   managed blocks, canonical store (kept when
                                   customized) and manifest; .archgen feature
                                   folders and backups are preserved
+  npx archgen-skill update [dir]      Check npm for a newer archgen-skill, upgrade
+                                  the global install when outdated, then
+                                  re-init this project + doctor against the
+                                  new version. No-op when already latest.
+  npx archgen-skill --version         Print the running CLI version
   npx archgen-skill --help            This help
 
 Docs: https://github.com/akashmaurya99/archgen`;
@@ -112,6 +130,52 @@ try {
       } else {
         uninstall();
       }
+      break;
+    }
+    case 'update': {
+      const dir = positionalDir();
+      const current = cliVersion();
+      console.log('archgen update — running v' + current + ', checking npm registry…');
+      const latest = fetchLatestVersion('archgen-skill');
+      if (!latest) {
+        console.log('  ! could not reach the npm registry (offline?). Nothing changed.');
+        break;
+      }
+      const cmp = compareSemver(latest, current);
+      if (cmp === 0) {
+        console.log('  = already on the latest published version (' + latest + ').');
+        console.log('  Refreshing this project against it anyway…');
+        runInitAndDoctor(dir);
+        break;
+      }
+      if (cmp < 0) {
+        console.log('  ↑ running v' + current + ' is newer than npm (' + latest + ') — not published yet.');
+        console.log('  Refreshing this project against the running version…');
+        runInitAndDoctor(dir);
+        break;
+      }
+      console.log('  ↑ newer version available: ' + latest);
+      console.log('  upgrading global install: npm install -g archgen-skill@' + latest);
+      const up = spawnSync('npm', ['install', '-g', 'archgen-skill@' + latest], { stdio: 'inherit' });
+      if (up.status !== 0) {
+        console.error('  ! global upgrade failed — run it manually, then re-run: archgen-skill update');
+        process.exitCode = 1;
+        break;
+      }
+      // The running process is the OLD code; re-exec the freshly installed binary.
+      const bin = spawnSync('command', ['-v', 'archgen-skill'], { encoding: 'utf8', shell: true });
+      const freshBin = (bin.stdout || '').trim();
+      if (!freshBin) {
+        console.log('\nUpgraded to v' + latest + '. Now finish per project with:\n  npx archgen-skill@latest init');
+        break;
+      }
+      console.log('\nre-running init + doctor with the new binary (' + latest + ')…');
+      spawnSync(freshBin, ['init', dir], { stdio: 'inherit' });
+      spawnSync(freshBin, ['doctor', dir], { stdio: 'inherit' });
+      break;
+    }
+    case '--version': case '-v': {
+      console.log(cliVersion());
       break;
     }
     case '--help': case '-h': case undefined: {
