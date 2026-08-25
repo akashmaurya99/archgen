@@ -34,17 +34,16 @@ jobs:
       - run: npm test
         working-directory: packages/cli
 
+  # Extension toolchain (jsdom + better-sqlite3 + vitest pools) is only
+  # stable on Node >= 22; the shipped extension runs inside VS Code's
+  # Electron runtime, so CI node here is test tooling, not product compat.
   extension:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 22
       - run: npm ci
         working-directory: packages/extension
       - run: npm run typecheck

@@ -28,6 +28,9 @@ node --test skill/scripts/test/*.test.mjs
 cd packages/cli && npm test
 
 # VS Code extension (typecheck + vitest)
+# Extension tests require Node 22 (better-sqlite3 + vitest pools are
+# unstable on Node 20; the shipped extension runs in VS Code's Electron
+# runtime, so this constrains tooling only):
 cd packages/extension && npm run typecheck && npm test
 ```
 

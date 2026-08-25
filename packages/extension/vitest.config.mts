@@ -4,14 +4,12 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.{ts,tsx}'],
     environment: 'node',
-    // WHY threads (not the default forks): codegraph tests load
-    // better-sqlite3, a native addon. Under the forks pool on Node 20,
-    // worker teardown after native-module use crashes with
-    // "Worker exited unexpectedly" AFTER tests have passed - a known
-    // vitest/tinypool + native-addon interaction. Worker threads tear
-    // native handles down cleanly, eliminating the false failure while
-    // keeping identical isolation semantics for our suites.
-    pool: 'threads',
+    // NOTE: run this suite on Node 22 (see .github/workflows/ci.yml).
+    // better-sqlite3 (native addon) inside vitest worker pools is only
+    // stable on Node >= 22; Node 20 exhibits pool teardown/startup
+    // crashes regardless of pool type. The shipped extension itself runs
+    // inside VS Code's Electron runtime - CI node version is tooling,
+    // not product compatibility.
     // jsdom is opted into per-file via @vitest-environment jsdom docblock.
     coverage: {
       provider: 'v8',
