@@ -179,6 +179,15 @@ function pickColumn(available: Set<string>, candidates: string[], fallback: stri
   return fallback;
 }
 
+/**
+ * Quote a SQL identifier (defense in depth, todo 7): wrap in double quotes and
+ * escape embedded `"` as `""`. Every schema-derived name interpolated into SQL
+ * goes through this — values stay parameter-bound, identifiers get quoted.
+ */
+export function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
 export class CodegraphReader {
   private handle: SqliteHandle | null = null;
   private readonly driverName: string;
@@ -211,7 +220,7 @@ export class CodegraphReader {
   private tableColumns(table: string): Set<string> {
     if (!this.handle) return new Set();
     try {
-      const rows = this.handle.all(`PRAGMA table_info(${table})`);
+      const rows = this.handle.all(`PRAGMA table_info(${quoteIdent(table)})`);
       return new Set(rows.map((r) => r['name']).filter((n): n is string => typeof n === 'string'));
     } catch {
       return new Set();
@@ -244,8 +253,8 @@ export class CodegraphReader {
 
     const totalRow = this.handle.get(`SELECT COUNT(*) AS n FROM nodes`);
     const rows = this.handle.all(
-      `SELECT ${idC} AS id, ${labelC} AS label, ${kindC} AS kind, ${fileC} AS file, ${lineC} AS line
-       FROM nodes ORDER BY ${idC} LIMIT ? OFFSET ?`,
+      `SELECT ${quoteIdent(idC)} AS id, ${quoteIdent(labelC)} AS label, ${quoteIdent(kindC)} AS kind, ${quoteIdent(fileC)} AS file, ${quoteIdent(lineC)} AS line
+       FROM nodes ORDER BY ${quoteIdent(idC)} LIMIT ? OFFSET ?`,
       limit, offset,
     );
     const nodes: GraphNode[] = rows.map((r) => ({
@@ -328,7 +337,7 @@ export class CodegraphReader {
     const nc = this.nodeCols();
 
     const kindRows = this.handle.all(
-      `SELECT ${nc.file} AS file, ${nc.kind} AS kind, COUNT(*) AS n FROM nodes GROUP BY ${nc.file}, ${nc.kind}`,
+      `SELECT ${quoteIdent(nc.file)} AS file, ${quoteIdent(nc.kind)} AS kind, COUNT(*) AS n FROM nodes GROUP BY ${quoteIdent(nc.file)}, ${quoteIdent(nc.kind)}`,
     );
     const byFile = new Map<string, FileRollupVM['files'][number]>();
     const idToFile = new Map<string, string>();
@@ -344,7 +353,7 @@ export class CodegraphReader {
       entry.symbols += n;
       entry.kinds[kind] = (entry.kinds[kind] ?? 0) + n;
     }
-    for (const r of this.handle.all(`SELECT ${nc.id} AS id, ${nc.file} AS file FROM nodes`)) {
+    for (const r of this.handle.all(`SELECT ${quoteIdent(nc.id)} AS id, ${quoteIdent(nc.file)} AS file FROM nodes`)) {
       idToFile.set(String(r['id']), String(r['file'] ?? ''));
     }
 
@@ -390,7 +399,7 @@ export class CodegraphReader {
     this.requireEdgesTable();
     const nc = this.nodeCols();
     const rows = this.handle.all(
-      `SELECT n.${nc.id} AS id, n.${nc.label} AS label, n.${nc.kind} AS kind, n.${nc.file} AS file, h.degree AS degree
+      `SELECT n.${quoteIdent(nc.id)} AS id, n.${quoteIdent(nc.label)} AS label, n.${quoteIdent(nc.kind)} AS kind, n.${quoteIdent(nc.file)} AS file, h.degree AS degree
        FROM (
          SELECT id, SUM(deg) AS degree FROM (
            SELECT source AS id, COUNT(*) AS deg FROM edges GROUP BY source
@@ -398,8 +407,8 @@ export class CodegraphReader {
            SELECT target AS id, COUNT(*) AS deg FROM edges GROUP BY target
          ) GROUP BY id
        ) h
-       JOIN nodes n ON n.${nc.id} = h.id
-       ORDER BY h.degree DESC, n.${nc.id} ASC
+       JOIN nodes n ON n.${quoteIdent(nc.id)} = h.id
+       ORDER BY h.degree DESC, n.${quoteIdent(nc.id)} ASC
        LIMIT ?`,
       limit,
     );
@@ -450,8 +459,8 @@ export class CodegraphReader {
       const batch = wanted.slice(i, i + NEIGHBORHOOD_PARAM_CHUNK);
       const placeholders = batch.map(() => '?').join(',');
       const rows = this.handle.all(
-        `SELECT ${nc.id} AS id, ${nc.label} AS label, ${nc.kind} AS kind, ${nc.file} AS file, ${nc.line} AS line
-         FROM nodes WHERE ${nc.id} IN (${placeholders})`,
+        `SELECT ${quoteIdent(nc.id)} AS id, ${quoteIdent(nc.label)} AS label, ${quoteIdent(nc.kind)} AS kind, ${quoteIdent(nc.file)} AS file, ${quoteIdent(nc.line)} AS line
+         FROM nodes WHERE ${quoteIdent(nc.id)} IN (${placeholders})`,
         ...batch,
       );
       for (const r of rows) {
@@ -488,7 +497,7 @@ export class CodegraphReader {
       const lineC = pickColumn(cols, ['start_line', 'line'], 'start_line');
       try {
         const rows = this.handle.all(
-          `SELECT n.${idC} AS id, n.${labelC} AS label, n.${kindC} AS kind, n.${fileC} AS file, n.${lineC} AS line
+          `SELECT n.${quoteIdent(idC)} AS id, n.${quoteIdent(labelC)} AS label, n.${quoteIdent(kindC)} AS kind, n.${quoteIdent(fileC)} AS file, n.${quoteIdent(lineC)} AS line
            FROM nodes_fts f JOIN nodes n ON n.rowid = f.rowid
            WHERE nodes_fts MATCH ?
            LIMIT ?`,
@@ -513,8 +522,8 @@ export class CodegraphReader {
     const fileC = pickColumn(cols2, ['file_path', 'file', 'path'], 'file_path');
     const lineC = pickColumn(cols2, ['start_line', 'line'], 'start_line');
     const rows = this.handle.all(
-      `SELECT ${idC} AS id, ${labelC} AS label, ${kindC} AS kind, ${fileC} AS file, ${lineC} AS line
-       FROM nodes WHERE ${labelC} LIKE ? ESCAPE '!' LIMIT ?`,
+      `SELECT ${quoteIdent(idC)} AS id, ${quoteIdent(labelC)} AS label, ${quoteIdent(kindC)} AS kind, ${quoteIdent(fileC)} AS file, ${quoteIdent(lineC)} AS line
+       FROM nodes WHERE ${quoteIdent(labelC)} LIKE ? ESCAPE '!' LIMIT ?`,
       like, limit,
     );
     return rows.map((r) => ({

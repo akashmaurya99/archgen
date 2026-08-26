@@ -1,10 +1,12 @@
 // Codegraph reader tests against committed fixture DBs built via DDL
 // (scripts/build-fixture-db.mjs — colby schema + nodes_fts, optave variant).
 import { describe, expect, it } from 'vitest';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CodegraphReader, UnsupportedProductError, detectCodegraph, openCodegraph } from '../src/host/codegraph';
+import { CodegraphReader, UnsupportedProductError, detectCodegraph, openCodegraph, quoteIdent } from '../src/host/codegraph';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -231,5 +233,71 @@ describe('unsupported paths', () => {
 
   it('real home dir default does not accidentally match fixtures', () => {
     expect(typeof detectCodegraph(join(FIXTURES, 'empty-ws'), homedir()).product).toBe('string');
+  });
+});
+
+describe('SQL identifier quoting (todo 7)', () => {
+  it('quoteIdent wraps names in double quotes and escapes embedded quotes', () => {
+    expect(quoteIdent('name')).toBe('"name"');
+    expect(quoteIdent('a"b')).toBe('"a""b"');
+    expect(quoteIdent('x;--')).toBe('"x;--"');
+    expect(quoteIdent('a"; DROP TABLE nodes;--')).toBe('"a""; DROP TABLE nodes;--"');
+  });
+
+  it('reads a DB whose nodes table carries hostile column names without injection', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'archgen-cg7-'));
+    const dbPath = join(dir, 'codegraph.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE nodes (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL,
+        file_path TEXT, start_line INTEGER,
+        "a""b" TEXT, "x;--drop" TEXT
+      );
+      CREATE TABLE edges (source TEXT NOT NULL, target TEXT NOT NULL, kind TEXT NOT NULL);
+    `);
+    db.prepare(`INSERT INTO nodes (id, kind, name, file_path, start_line, "a""b", "x;--drop") VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run('n1', 'function', 'parseConfig', 'src/config.ts', 10, 'hostile-1', 'hostile-2');
+    db.prepare(`INSERT INTO nodes (id, kind, name, file_path, start_line) VALUES (?, ?, ?, ?, ?)`)
+      .run('n2', 'class', 'Server', 'src/server.ts', 5);
+    db.prepare(`INSERT INTO edges (source, target, kind) VALUES (?, ?, ?)`).run('n2', 'n1', 'calls');
+    db.close();
+
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      const snap = reader.snapshot();
+      expect(snap.totalNodes).toBe(2);
+      expect(snap.nodes.find((n) => n.id === 'n1')).toEqual({
+        id: 'n1', label: 'parseConfig', kind: 'function', file: 'src/config.ts', line: 10,
+      });
+      expect(snap.edges).toContainEqual({ source: 'n2', target: 'n1', kind: 'calls' });
+
+      const rollup = reader.fileRollup();
+      expect(rollup.totals).toEqual({ files: 2, symbols: 2, edges: 1 });
+
+      expect(reader.topHubs().map((h) => h.id)).toEqual(['n1', 'n2']);
+
+      const hood = reader.neighborhood('n2', 1);
+      expect(hood.nodes.map((n) => n.id)).toEqual(['n1', 'n2']);
+      expect(hood.edges).toEqual([{ source: 'n2', target: 'n1', kind: 'calls' }]);
+
+      // no nodes_fts table → LIKE fallback path, still quoting identifiers
+      expect(reader.searchNodes('parse').map((h) => h.id)).toEqual(['n1']);
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('hostile column names are readable through quoteIdent against real SQLite', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE t ("a""b" TEXT, "x""; DROP TABLE t;--" TEXT)`);
+    db.prepare(`INSERT INTO t ("a""b", "x""; DROP TABLE t;--") VALUES (?, ?)`).run('v1', 'v2');
+    const rows = db.prepare(
+      `SELECT ${quoteIdent('a"b')} AS v1, ${quoteIdent('x"; DROP TABLE t;--')} AS v2 FROM t`,
+    ).all() as Array<{ v1: string; v2: string }>;
+    expect(rows).toEqual([{ v1: 'v1', v2: 'v2' }]);
+    expect((db.prepare(`SELECT COUNT(*) AS n FROM t`).get() as { n: number }).n).toBe(1);
+    db.close();
   });
 });
