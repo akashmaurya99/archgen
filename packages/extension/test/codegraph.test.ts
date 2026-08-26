@@ -301,3 +301,211 @@ describe('SQL identifier quoting (todo 7)', () => {
     db.close();
   });
 });
+
+describe('NULL column degradation (temp DB without NOT NULL constraints)', () => {
+  function buildNullDb(): { dir: string; dbPath: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'archgen-cgnull-'));
+    const dbPath = join(dir, 'codegraph.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE nodes (id TEXT, name TEXT, kind TEXT, file_path TEXT, start_line INTEGER);
+      CREATE TABLE edges (source TEXT, target TEXT, kind TEXT);
+    `);
+    const insN = db.prepare('INSERT INTO nodes (id, name, kind, file_path, start_line) VALUES (?, ?, ?, ?, ?)');
+    insN.run('n1', 'Alpha', 'function', 'a.ts', 1);
+    insN.run('n2', null, null, null, null);
+    insN.run('n3', 'Mid', 'class', null, null);
+    const insE = db.prepare('INSERT INTO edges (source, target, kind) VALUES (?, ?, ?)');
+    insE.run('n1', 'n2', null);
+    insE.run('n2', 'n3', 'calls');
+    insE.run('ghost', 'n1', 'imports');
+    db.close();
+    return { dir, dbPath };
+  }
+
+  it('fileRollup buckets NULL files under "", coerces NULL kinds, and drops dangling-source edges', () => {
+    const { dir, dbPath } = buildNullDb();
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      const rollup = reader.fileRollup();
+      expect(rollup.files).toEqual([
+        { file: '', symbols: 2, kinds: { class: 1, unknown: 1 } },
+        { file: 'a.ts', symbols: 1, kinds: { function: 1 } },
+      ]);
+      expect(rollup.edges).toEqual([
+        { source: '', target: '', kind: 'calls', count: 1 },
+        { source: 'a.ts', target: '', kind: 'references', count: 1 },
+      ]);
+      expect(rollup.totals).toEqual({ files: 2, symbols: 3, edges: 3 });
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('topHubs falls back to id/unknown/"" for NULL label/kind/file', () => {
+    const { dir, dbPath } = buildNullDb();
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      expect(reader.topHubs()).toEqual([
+        { id: 'n1', label: 'Alpha', kind: 'function', file: 'a.ts', degree: 2 },
+        { id: 'n2', label: 'n2', kind: 'unknown', file: '', degree: 2 },
+        { id: 'n3', label: 'Mid', kind: 'class', file: '', degree: 1 },
+      ]);
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('neighborhood records NULL edge kind as "references" and defaults NULL node fields', () => {
+    const { dir, dbPath } = buildNullDb();
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      const hood = reader.neighborhood('n1', 2);
+      expect(hood.nodes).toEqual([
+        { id: 'n1', label: 'Alpha', kind: 'function', file: 'a.ts', line: 1 },
+        { id: 'n2', label: 'n2', kind: 'unknown', file: '', line: 0 },
+        { id: 'n3', label: 'Mid', kind: 'class', file: '', line: 0 },
+      ]);
+      expect(hood.edges).toEqual([
+        { source: 'ghost', target: 'n1', kind: 'imports' },
+        { source: 'n1', target: 'n2', kind: 'references' },
+        { source: 'n2', target: 'n3', kind: 'calls' },
+      ]);
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('LIKE-fallback search defaults NULL file/line on matched nodes', () => {
+    const { dir, dbPath } = buildNullDb();
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      expect(reader.searchNodes('Mid')).toEqual([
+        { id: 'n3', label: 'Mid', kind: 'class', file: '', line: 0 },
+      ]);
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('FTS search NULL column degradation', () => {
+  it('returns id/unknown/""/0 defaults when the FTS-matched node carries NULL columns', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'archgen-cgfts-'));
+    const dbPath = join(dir, 'codegraph.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE nodes (id TEXT, name TEXT, kind TEXT, file_path TEXT, start_line INTEGER);
+      CREATE VIRTUAL TABLE nodes_fts USING fts5(name);
+    `);
+    db.prepare('INSERT INTO nodes (id, name, kind, file_path, start_line) VALUES (?, ?, ?, ?, ?)')
+      .run('n9', null, null, null, null);
+    db.prepare('INSERT INTO nodes_fts (rowid, name) VALUES (?, ?)').run(1, 'zebra');
+    db.close();
+
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      expect(reader.hasFts()).toBe(true);
+      expect(reader.searchNodes('zeb')).toEqual([
+        { id: 'n9', label: 'n9', kind: 'unknown', file: '', line: 0 },
+      ]);
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('closed reader contract', () => {
+  const dbPath = join(FIXTURES, 'ws-colby', '.codegraph', 'codegraph.db');
+
+  it('aggregation methods throw typed UnsupportedProductError after close', () => {
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    reader.close();
+    expect(() => reader.fileRollup()).toThrowError(UnsupportedProductError);
+    expect(() => reader.topHubs()).toThrowError(UnsupportedProductError);
+    expect(() => reader.neighborhood('n1', 1)).toThrowError(UnsupportedProductError);
+    expect(() => reader.fileRollup()).toThrowError('reader closed');
+  });
+});
+
+describe('degenerate edge schemas', () => {
+  it('listEdges and fileRollup throw typed errors when the edges table is absent', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'archgen-cgnoedge-'));
+    const dbPath = join(dir, 'codegraph.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`CREATE TABLE nodes (id TEXT PRIMARY KEY, name TEXT, kind TEXT, file_path TEXT, start_line INTEGER)`);
+    db.prepare(`INSERT INTO nodes (id, name, kind, file_path, start_line) VALUES (?, ?, ?, ?, ?)`)
+      .run('n1', 'Alpha', 'function', 'a.ts', 1);
+    db.close();
+
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      expect(() => reader.listEdges()).toThrowError(UnsupportedProductError);
+      expect(() => reader.listEdges()).toThrowError(/no readable 'edges' table/);
+      expect(() => reader.fileRollup()).toThrowError(/no readable 'edges' table/);
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('topHubs throws a typed error naming the missing required edges column', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'archgen-cgbadedge-'));
+    const dbPath = join(dir, 'codegraph.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE nodes (id TEXT PRIMARY KEY, name TEXT, kind TEXT, file_path TEXT, start_line INTEGER);
+      CREATE TABLE edges (source TEXT, target TEXT);
+    `);
+    db.close();
+
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      expect(() => reader.topHubs()).toThrowError(UnsupportedProductError);
+      expect(() => reader.topHubs()).toThrowError(/missing required column 'kind'/);
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('neighborhood sort determinism', () => {
+  it('returns nodes id-ASC (stable across duplicate ids) and edges source-ASC regardless of row order', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'archgen-cgsort-'));
+    const dbPath = join(dir, 'codegraph.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE nodes (id TEXT, name TEXT, kind TEXT, file_path TEXT, start_line INTEGER);
+      CREATE TABLE edges (source TEXT, target TEXT, kind TEXT);
+    `);
+    const insN = db.prepare('INSERT INTO nodes (id, name, kind, file_path, start_line) VALUES (?, ?, ?, ?, ?)');
+    insN.run('n2', 'Beta', 'class', 'b.ts', 2);
+    insN.run('n0', 'Zero', 'function', 'z.ts', 0);
+    insN.run('n1', 'Alpha', 'function', 'a.ts', 1);
+    insN.run('n1', 'AlphaDup', 'function', 'a.ts', 9);
+    const insE = db.prepare('INSERT INTO edges (source, target, kind) VALUES (?, ?, ?)');
+    insE.run('n1', 'n2', 'calls');
+    insE.run('n0', 'n1', 'imports');
+    db.close();
+
+    const reader = CodegraphReader.open(dbPath, 'colby');
+    try {
+      const hood = reader.neighborhood('n1', 1);
+      expect(hood.nodes.map((n) => n.id)).toEqual(['n0', 'n1', 'n1', 'n2']);
+      expect(hood.nodes.map((n) => n.label)).toEqual(['Zero', 'Alpha', 'AlphaDup', 'Beta']);
+      expect(hood.edges).toEqual([
+        { source: 'n0', target: 'n1', kind: 'imports' },
+        { source: 'n1', target: 'n2', kind: 'calls' },
+      ]);
+    } finally {
+      reader.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

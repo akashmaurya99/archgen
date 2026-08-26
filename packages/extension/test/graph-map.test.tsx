@@ -13,23 +13,27 @@
 // the 30fps-capped selection pulse.
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/react';
+import { render, cleanup, fireEvent, act } from '@testing-library/react';
 import { createElement } from 'react';
 import {
   GraphMap,
   fitView,
+  pickNearest,
+  screenToWorld,
   worldToScreen,
   type GraphMapEdge,
   type GraphMapNode,
   type GraphMapView,
 } from '../src/webview/GraphMap';
 import { packByFile } from '../src/webview/map-layout';
+import { QuadTree } from '../src/webview/map-quadtree';
 import { colorForKind } from '../src/webview/graph-model';
 
 /* ==== local recording canvas-mock (file-local; dom-stubs.ts untouched) ==== */
 
 interface OpCall {
   op: string;
+  value?: unknown;
 }
 
 const recorder = {
@@ -40,10 +44,16 @@ const recorder = {
   count(op: string): number {
     return this.calls.reduce((n, c) => (c.op === op ? n + 1 : n), 0);
   },
+  values(op: string): unknown[] {
+    return this.calls.filter((c) => c.op === op).map((c) => c.value);
+  },
   reset(): void {
     this.calls.length = 0;
   },
 };
+
+/** Test toggles for exotic-host degradation paths (read by the ctx mock). */
+const ctxControl = { nullCtx: false, noRoundRect: false };
 
 const CTX_METHODS = [
   'setTransform',
@@ -57,7 +67,6 @@ const CTX_METHODS = [
   'arc',
   'ellipse',
   'rect',
-  'roundRect',
   'fill',
   'stroke',
   'fillText',
@@ -96,17 +105,29 @@ function installMapDomMocks(): void {
         void args;
       };
     }
+    Object.defineProperty(ctx, 'roundRect', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        if (ctxControl.noRoundRect) return undefined;
+        return (...args: unknown[]) => {
+          recorder.calls.push({ op: 'roundRect' });
+          void args;
+        };
+      },
+    });
     for (const p of CTX_PROPS) {
       Object.defineProperty(ctx, p, {
         configurable: true,
         get: () => null,
-        set: () => {
-          recorder.calls.push({ op: `${p}:set` });
+        set: (v: unknown) => {
+          recorder.calls.push({ op: `${p}:set`, value: v });
         },
       });
     }
     canvasProto['getContext'] = function (): CanvasRenderingContext2D | null {
       recorder.calls.push({ op: 'getContext' });
+      if (ctxControl.nullCtx) return null;
       return ctx as unknown as CanvasRenderingContext2D;
     };
   }
@@ -431,5 +452,564 @@ describe('GraphMap', () => {
 
     unmount();
     await new Promise<void>((r) => setTimeout(r, 80)); // cancelled loop must not throw
+  });
+});
+
+function smallNodes(count = 24, files = 8, seed = 41): GraphMapNode[] {
+  return synthNodes(count, files, seed);
+}
+
+function setDocumentHidden(hidden: boolean): () => void {
+  const prev = Object.getOwnPropertyDescriptor(document, 'hidden');
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  return () => {
+    if (prev) Object.defineProperty(document, 'hidden', prev);
+    else delete (document as unknown as Record<string, unknown>)['hidden'];
+  };
+}
+
+interface FakeMql {
+  media: string;
+  listeners: Array<() => void>;
+  addListener(cb: () => void): void;
+  removeListener(cb: () => void): void;
+  addEventListener?: (type: string, cb: () => void) => void;
+  removeEventListener?: (type: string, cb: () => void) => void;
+}
+
+function installMatchMediaFake(opts: { legacy?: boolean; throwing?: boolean } = {}): {
+  queries: string[];
+  mqls: FakeMql[];
+  restore: () => void;
+} {
+  const queries: string[] = [];
+  const mqls: FakeMql[] = [];
+  const prev = window.matchMedia;
+  window.matchMedia = ((query: string): FakeMql => {
+    queries.push(query);
+    if (opts.throwing) throw new Error('matchMedia unavailable');
+    const mql: FakeMql = {
+      media: query,
+      listeners: [],
+      addListener(cb) {
+        this.listeners.push(cb);
+      },
+      removeListener(cb) {
+        this.listeners = this.listeners.filter((l) => l !== cb);
+      },
+    };
+    // Legacy MQLs (old Safari) lack the EventTarget methods entirely; the
+    // component must feature-detect and fall back to addListener/removeListener.
+    if (opts.legacy !== true) {
+      mql.addEventListener = function (this: FakeMql, _t: string, cb: () => void) {
+        this.listeners.push(cb);
+      };
+      mql.removeEventListener = function (this: FakeMql, _t: string, cb: () => void) {
+        this.listeners = this.listeners.filter((l) => l !== cb);
+      };
+    }
+    mqls.push(mql);
+    return mql;
+  }) as unknown as typeof window.matchMedia;
+  return {
+    queries,
+    mqls,
+    restore: () => {
+      if (prev) window.matchMedia = prev;
+      else delete (window as unknown as Record<string, unknown>)['matchMedia'];
+    },
+  };
+}
+
+function setDpr(value: unknown): () => void {
+  Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value });
+  return () => Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
+}
+
+describe('pickNearest (pure)', () => {
+  it('returns null on an empty quadtree and on misses outside the hit radius', () => {
+    const empty = QuadTree.build([]);
+    expect(pickNearest(empty, { scale: 1, tx: 0, ty: 0 }, 10, 10)).toBeNull();
+
+    const tree = QuadTree.build([{ id: 'a', x: 0, y: 0 }]);
+    expect(pickNearest(tree, { scale: 1, tx: 0, ty: 0 }, 100, 0)).toBeNull();
+    expect(pickNearest(tree, { scale: 1, tx: 0, ty: 0 }, 3, 3)?.id).toBe('a');
+  });
+});
+
+describe('GraphMap color resolution + palette branches', () => {
+  it('resolves host CSS vars, passes literals through, degrades malformed var() and missing-var fallbacks', async () => {
+    const style = document.createElement('style');
+    style.textContent = '.archgen-map { --archgen-canvas: #101010; --probe-kind: #ff00ff; }';
+    document.head.appendChild(style);
+    try {
+      const nodes: GraphMapNode[] = [
+        { id: 'a', label: 'A', kind: 'class', file: 'f/one.ts', line: 1 },
+        { id: 'b', label: 'B', kind: 'function', file: 'f/two.ts', line: 2 },
+        { id: 'c', label: 'C', kind: 'module', file: 'f/three.ts', line: 3 },
+        { id: 'd', label: 'D', kind: 'variable', file: 'f/four.ts', line: 4 },
+        { id: 'e', label: 'E', kind: 'method', file: 'f/five.ts', line: 5 },
+      ];
+      const kindColorFor = (kind: string): string => {
+        switch (kind) {
+          case 'class':
+            return 'var(--probe-kind)';
+          case 'function':
+            return '#ab12cd';
+          case 'module':
+            return 'var(broken';
+          case 'variable':
+            return 'var(--definitely-unset-archgen-var)';
+          default:
+            return 'var(--also-unset-archgen-var, #112233)';
+        }
+      };
+      render(createElement(GraphMap, { nodes, kindColorFor, onSelect: () => {}, themeKind: 'dark' }));
+      await flushFrames(60);
+
+      const fills = recorder.values('fillStyle:set');
+      expect(fills).toContain('#101010'); // bg resolved from --archgen-canvas
+      expect(fills).toContain('#ff00ff'); // kind color resolved from --probe-kind
+      expect(fills).toContain('#ab12cd'); // literal passes through untouched
+      expect(fills).toContain('var(broken'); // malformed var() degrades to the raw string
+      expect(fills).toContain('#8b949e'); // var() without inner fallback → dark dotFallback
+      expect(fills).toContain('#112233'); // var() inner fallback used when the var is unset
+    } finally {
+      style.remove();
+    }
+  });
+
+  it('light theme uses the light fallback palette when CSS vars are unreadable', async () => {
+    const nodes = smallNodes(8, 4, 43);
+    render(createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'light' }));
+    await flushFrames(60);
+    expect(recorder.values('fillStyle:set')).toContain('#ffffff');
+  });
+});
+
+describe('GraphMap exotic-host degradation', () => {
+  it('draw no-ops when getContext returns null', async () => {
+    ctxControl.nullCtx = true;
+    try {
+      render(createElement(GraphMap, { nodes: smallNodes(), kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }));
+      await flushFrames(60);
+      expect(recorder.count('getContext')).toBeGreaterThan(0);
+      expect(recorder.count('fillRect')).toBe(0);
+    } finally {
+      ctxControl.nullCtx = false;
+    }
+  });
+
+  it('hulls fall back to rect() when roundRect is unavailable', async () => {
+    ctxControl.noRoundRect = true;
+    try {
+      render(createElement(GraphMap, { nodes: smallNodes(40, 20, 45), kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }));
+      await flushFrames(60);
+      expect(recorder.count('roundRect')).toBe(0);
+      expect(recorder.count('rect')).toBeGreaterThan(0);
+    } finally {
+      ctxControl.noRoundRect = false;
+    }
+  });
+
+  it('backs the canvas at dpr 1 when devicePixelRatio is not a positive number', async () => {
+    const restoreDpr = setDpr(0);
+    try {
+      const { container } = render(
+        createElement(GraphMap, { nodes: smallNodes(), kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+      );
+      await flushFrames(60);
+      const canvas = mapEl(container);
+      expect(canvas.width).toBe(800);
+      expect(canvas.height).toBe(600);
+    } finally {
+      restoreDpr();
+    }
+  });
+
+  it('schedules draws via setTimeout when requestAnimationFrame is unavailable', async () => {
+    const prevRaf = window.requestAnimationFrame;
+    const prevCaf = window.cancelAnimationFrame;
+    Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: undefined });
+    Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, value: undefined });
+    try {
+      const { unmount } = render(
+        createElement(GraphMap, { nodes: smallNodes(), kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+      );
+      await flushFrames(100);
+      expect(recorder.count('fillRect')).toBeGreaterThan(0);
+      unmount();
+      await flushFrames(40);
+    } finally {
+      Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: prevRaf });
+      Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, value: prevCaf });
+    }
+  });
+});
+
+describe('GraphMap hover/selection label + outline branches', () => {
+  it('hover draws exactly one outline arc and one label (no selection)', async () => {
+    const nodes = smallNodes(24, 8, 47);
+    const layout = packByFile(nodes);
+    const { container } = render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    const view = fitView(layout.bounds, 800, 600);
+    const target = nodes[3]!;
+    const s = worldToScreen(view, layout.positions.get(target.id)!.x, layout.positions.get(target.id)!.y);
+
+    recorder.reset();
+    fireEvent.pointerMove(canvas, { clientX: s.x, clientY: s.y });
+    await flushFrames(60);
+    expect(recorder.count('arc')).toBe(1); // hover outline only
+    expect(recorder.count('fillText')).toBe(1); // hover label only (no edges → no top labels)
+    expect(container.querySelector('.archgen-map')!.className).toContain('has-hover');
+  });
+
+  it('hover outline is culled once the hovered node pans off-viewport', async () => {
+    const nodes = smallNodes(24, 8, 49);
+    const layout = packByFile(nodes);
+    const { container } = render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    const view = fitView(layout.bounds, 800, 600);
+    const target = nodes[3]!;
+    const s = worldToScreen(view, layout.positions.get(target.id)!.x, layout.positions.get(target.id)!.y);
+
+    fireEvent.pointerMove(canvas, { clientX: s.x, clientY: s.y });
+    await flushFrames(60);
+
+    recorder.reset();
+    fireEvent.pointerDown(canvas, { clientX: 400, clientY: 300 });
+    fireEvent.pointerMove(canvas, { clientX: 400, clientY: 2300 });
+    fireEvent.pointerUp(canvas, { clientX: 400, clientY: 2300 });
+    await flushFrames(60);
+    expect(recorder.count('arc')).toBe(0); // hovered node now off-screen → outline skipped
+  });
+
+  it('hover label still draws in the dot band (labels are not LOD-gated for hover)', async () => {
+    const nodes = smallNodes(24, 8, 51);
+    const layout = packByFile(nodes);
+    const { container } = render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    // deltaY 1e9 → exp factor underflows → scale clamps to exactly MAP_MIN_SCALE.
+    fireEvent.wheel(canvas, { deltaY: 1e9, clientX: 400, clientY: 300 });
+    await flushFrames(60);
+
+    // Wheel zoom anchors at the cursor: the world point under (400,300) stays
+    // fixed, so the post-zoom view is fully determined by the fitted view.
+    const fitted = fitView(layout.bounds, 800, 600);
+    const anchor = screenToWorld(fitted, 400, 300);
+    const zoomed: GraphMapView = { scale: 0.02, tx: 400 - anchor.x * 0.02, ty: 300 - anchor.y * 0.02 };
+    const target = nodes[3]!;
+    const p = layout.positions.get(target.id)!;
+    const w = worldToScreen(zoomed, p.x, p.y);
+    recorder.reset();
+    fireEvent.pointerMove(canvas, { clientX: w.x, clientY: w.y });
+    await flushFrames(60);
+    expect(recorder.count('fillText')).toBeGreaterThanOrEqual(1);
+  });
+
+  it('selected + hovered labels dedupe when both point at the same node', async () => {
+    const nodes = smallNodes(24, 8, 53);
+    const layout = packByFile(nodes);
+    const selected = nodes[1]!;
+    const other = nodes[5]!;
+    // Hidden document parks the 30fps pulse loop, so each hover triggers
+    // exactly one dirty-frame draw and label counts stay deterministic.
+    const restoreHidden = setDocumentHidden(true);
+    try {
+      const { container } = render(
+        createElement(GraphMap, { nodes, kindColorFor: colorForKind, selectedId: selected.id, onSelect: () => {}, themeKind: 'dark' }),
+      );
+      await flushFrames();
+      const canvas = mapEl(container);
+      const view = fitView(layout.bounds, 800, 600);
+      const sOther = worldToScreen(view, layout.positions.get(other.id)!.x, layout.positions.get(other.id)!.y);
+
+      recorder.reset();
+      fireEvent.pointerMove(canvas, { clientX: sOther.x, clientY: sOther.y });
+      await flushFrames(60);
+      expect(recorder.count('fillText')).toBe(2); // selected label + different hover label
+
+      const sSel = worldToScreen(view, layout.positions.get(selected.id)!.x, layout.positions.get(selected.id)!.y);
+      recorder.reset();
+      fireEvent.pointerMove(canvas, { clientX: sSel.x, clientY: sSel.y });
+      await flushFrames(60);
+      expect(recorder.count('fillText')).toBe(1); // hover === selected → drawn once
+    } finally {
+      restoreHidden();
+    }
+  });
+
+  it('a selected id absent from the layout draws no label and no pulse ring', async () => {
+    const nodes = smallNodes(16, 6, 55);
+    render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, selectedId: 'does-not-exist', onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames(120);
+    expect(recorder.count('fillText')).toBe(0);
+    expect(recorder.count('arc')).toBe(0);
+  });
+});
+
+describe('GraphMap edge drawing branches', () => {
+  it('dangling edges are excluded from drawable pairs while valid edges draw', async () => {
+    const nodes = smallNodes(16, 6, 57);
+    const dangling: GraphMapEdge[] = [{ source: 'ghost-node', target: nodes[0]!.id }];
+    render(
+      createElement(GraphMap, { nodes, edges: dangling, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    expect(recorder.count('lineTo')).toBe(0); // dangling endpoint → no drawable pair
+    cleanup();
+
+    const valid: GraphMapEdge[] = [{ source: nodes[0]!.id, target: nodes[1]!.id }];
+    render(
+      createElement(GraphMap, { nodes, edges: valid, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    expect(recorder.count('lineTo')).toBeGreaterThan(0); // both endpoints resolve → segment drawn
+  });
+
+  it('viewport-culls edges entirely below/above the canvas and restores them on pan back', async () => {
+    const nodes = smallNodes(12, 4, 59);
+    const edges: GraphMapEdge[] = [{ source: nodes[0]!.id, target: nodes[1]!.id }];
+    const { container } = render(
+      createElement(GraphMap, { nodes, edges, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    expect(recorder.count('lineTo')).toBeGreaterThan(0);
+
+    fireEvent.pointerDown(canvas, { clientX: 400, clientY: 300 });
+    fireEvent.pointerMove(canvas, { clientX: 400, clientY: 2300 });
+    fireEvent.pointerUp(canvas, { clientX: 400, clientY: 2300 });
+    recorder.reset();
+    await flushFrames(60);
+    expect(recorder.count('lineTo')).toBe(0); // edge below the bottom edge
+
+    fireEvent.pointerDown(canvas, { clientX: 400, clientY: 300 });
+    fireEvent.pointerMove(canvas, { clientX: 400, clientY: -3700 });
+    fireEvent.pointerUp(canvas, { clientX: 400, clientY: -3700 });
+    recorder.reset();
+    await flushFrames(60);
+    expect(recorder.count('lineTo')).toBe(0); // edge above the top edge
+
+    fireEvent.pointerDown(canvas, { clientX: 400, clientY: 300 });
+    fireEvent.pointerMove(canvas, { clientX: 400, clientY: 2300 });
+    fireEvent.pointerUp(canvas, { clientX: 400, clientY: 2300 });
+    recorder.reset();
+    await flushFrames(60);
+    expect(recorder.count('lineTo')).toBeGreaterThan(0); // back in view
+  });
+});
+
+describe('GraphMap zoom-ceiling + click-vs-drag branches', () => {
+  it('wheel at the 400% ceiling schedules no redraw and keeps the viewport', async () => {
+    const nodes = smallNodes(16, 6, 61);
+    const { container } = render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    const hud = () => container.querySelector('.archgen-map-hud')!.textContent ?? '';
+
+    fireEvent.wheel(canvas, { deltaY: -1e9, clientX: 400, clientY: 300 });
+    await flushFrames(40);
+    expect(hud()).toContain('400%');
+
+    recorder.reset();
+    fireEvent.wheel(canvas, { deltaY: -1e9, clientX: 400, clientY: 300 });
+    await flushFrames(60);
+    expect(recorder.total()).toBe(0); // clamped scale unchanged → no scheduleDraw
+    expect(hud()).toContain('400%');
+  });
+
+  it('double-click at the zoom ceiling keeps the scale unchanged', async () => {
+    const nodes = smallNodes(16, 6, 63);
+    const { container } = render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    const hud = () => container.querySelector('.archgen-map-hud')!.textContent ?? '';
+    fireEvent.wheel(canvas, { deltaY: -1e9, clientX: 400, clientY: 300 });
+    await flushFrames(40);
+    expect(hud()).toContain('400%');
+    fireEvent.doubleClick(canvas, { clientX: 400, clientY: 300 });
+    await flushFrames(40);
+    expect(hud()).toContain('400%');
+  });
+
+  it('a sub-epsilon press+move still counts as a click (no pan)', async () => {
+    const nodes = smallNodes(24, 8, 65);
+    const layout = packByFile(nodes);
+    const onSelect = vi.fn();
+    const { container } = render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    const view = fitView(layout.bounds, 800, 600);
+    const target = nodes[7]!;
+    const s = worldToScreen(view, layout.positions.get(target.id)!.x, layout.positions.get(target.id)!.y);
+
+    fireEvent.pointerDown(canvas, { clientX: s.x, clientY: s.y });
+    fireEvent.pointerMove(canvas, { clientX: s.x + 1, clientY: s.y + 1 });
+    fireEvent.pointerUp(canvas, { clientX: s.x + 1, clientY: s.y + 1 });
+    expect(onSelect).toHaveBeenCalledWith(target.id);
+  });
+
+  it('pointer move over empty space clears hover state and hides the tooltip', async () => {
+    const nodes = smallNodes(24, 8, 67);
+    const layout = packByFile(nodes);
+    const { container } = render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    const host = container.querySelector('.archgen-map')!;
+    const tip = container.querySelector('.archgen-map-tooltip')!;
+    const view = fitView(layout.bounds, 800, 600);
+    const target = nodes[2]!;
+    const s = worldToScreen(view, layout.positions.get(target.id)!.x, layout.positions.get(target.id)!.y);
+
+    fireEvent.pointerMove(canvas, { clientX: s.x, clientY: s.y });
+    expect(host.className).toContain('has-hover');
+    expect(tip.classList.contains('is-visible')).toBe(true);
+
+    fireEvent.pointerMove(canvas, { clientX: 797, clientY: 597 });
+    expect(host.className).not.toContain('has-hover');
+    expect(tip.classList.contains('is-visible')).toBe(false);
+  });
+
+  it('pointerleave without an active hover is a safe no-op', async () => {
+    const { container } = render(
+      createElement(GraphMap, { nodes: smallNodes(), kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    fireEvent.pointerLeave(canvas);
+    expect(container.querySelector('.archgen-map')!.className).not.toContain('has-hover');
+    expect(container.querySelector('.archgen-map')!.className).not.toContain('is-panning');
+  });
+
+  it('pointercancel clears an active hover', async () => {
+    const nodes = smallNodes(24, 8, 69);
+    const layout = packByFile(nodes);
+    const { container } = render(
+      createElement(GraphMap, { nodes, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    const view = fitView(layout.bounds, 800, 600);
+    const target = nodes[4]!;
+    const s = worldToScreen(view, layout.positions.get(target.id)!.x, layout.positions.get(target.id)!.y);
+
+    fireEvent.pointerMove(canvas, { clientX: s.x, clientY: s.y });
+    expect(container.querySelector('.archgen-map')!.className).toContain('has-hover');
+    fireEvent.pointerCancel(canvas);
+    expect(container.querySelector('.archgen-map')!.className).not.toContain('has-hover');
+  });
+});
+
+describe('GraphMap pulse-park + dpr-watcher branches', () => {
+  it('unmounting a parked pulse loop cancels nothing (frame ref already null)', async () => {
+    const { unmount } = render(
+      createElement(GraphMap, { nodes: smallNodes(), kindColorFor: colorForKind, selectedId: 'n1', onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames(100);
+
+    const restoreHidden = setDocumentHidden(true);
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await flushFrames(150); // in-flight tick parks the loop
+
+      const cafSpy = vi.spyOn(window, 'cancelAnimationFrame');
+      unmount();
+      expect(cafSpy).not.toHaveBeenCalled();
+      cafSpy.mockRestore();
+    } finally {
+      restoreHidden();
+    }
+  });
+
+  it('dpr watcher re-arms via legacy listener APIs and removes the old listener on change', async () => {
+    const fake = installMatchMediaFake({ legacy: true });
+    try {
+      const { unmount } = render(
+        createElement(GraphMap, { nodes: smallNodes(), kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+      );
+      await flushFrames(60);
+      expect(fake.queries).toContain('(resolution: 1dppx)');
+      const first = fake.mqls[fake.mqls.length - 1]!;
+      expect(first.listeners.length).toBe(1);
+
+      const restoreDpr = setDpr(2);
+      try {
+        act(() => {
+          for (const cb of [...first.listeners]) cb();
+        });
+        await flushFrames(60);
+      } finally {
+        restoreDpr();
+      }
+      expect(first.listeners.length).toBe(0); // legacy removeListener on re-arm
+      expect(fake.queries).toContain('(resolution: 2dppx)'); // re-armed around the new dpr
+
+      unmount();
+      const last = fake.mqls[fake.mqls.length - 1]!;
+      expect(last.listeners.length).toBe(0); // cleanup detached via legacy removeListener
+    } finally {
+      fake.restore();
+    }
+  });
+
+  it('dpr watcher re-arms at fallback dpr 1 when devicePixelRatio is invalid at change time', async () => {
+    const fake = installMatchMediaFake();
+    try {
+      const { unmount } = render(
+        createElement(GraphMap, { nodes: smallNodes(), kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+      );
+      await flushFrames(60);
+      const active = fake.mqls[fake.mqls.length - 1]!;
+
+      const restoreDpr = setDpr(0);
+      try {
+        act(() => {
+          for (const cb of [...active.listeners]) cb();
+        });
+        await flushFrames(60);
+      } finally {
+        restoreDpr();
+      }
+      expect(fake.queries.filter((q) => q === '(resolution: 1dppx)').length).toBeGreaterThan(1);
+      unmount();
+    } finally {
+      fake.restore();
+    }
+  });
+
+  it('a throwing matchMedia degrades to no dpr watcher and still unmounts cleanly', async () => {
+    const fake = installMatchMediaFake({ throwing: true });
+    try {
+      const { unmount } = render(
+        createElement(GraphMap, { nodes: smallNodes(), kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+      );
+      await flushFrames(60);
+      expect(recorder.count('fillRect')).toBeGreaterThan(0); // drawing unaffected
+      unmount();
+      await flushFrames(30); // cleanup with null mql must not throw
+    } finally {
+      fake.restore();
+    }
   });
 });

@@ -17,6 +17,7 @@ import {
   UNLINKED_COMPONENT_ID,
   connectedComponents,
   layoutRadial,
+  radialRingBounds,
 } from '../src/webview/graph-model';
 import type { GraphEdgeLike, GraphNodeLike } from '../src/webview/graph-model';
 import { layoutFlowGrouped, selectSizeTier, type FileRollup } from '../src/webview/graph-grouped';
@@ -272,5 +273,55 @@ describe('layoutFlowGrouped — dagre cache eliminates the double pass (todo 13)
       expect(Number.isFinite(p.position.y)).toBe(true);
       expect(p.componentId).not.toBe('');
     }
+  });
+});
+
+describe('radialRingBounds — default + explicit opts', () => {
+  it('derives radius and pad from defaults when opts is omitted', () => {
+    const b = radialRingBounds(10);
+    expect(b.radius).toBe(Math.max(280, 10 * 34));
+    expect(b.x).toBe(0);
+    expect(b.y).toBe(0);
+    expect(b.size).toBe((b.radius + 96 + Math.max(232, 64) / 2 + 8) * 2);
+  });
+
+  it('honors explicit radius and cardOffset over the defaults', () => {
+    const b = radialRingBounds(10, { radius: 500, cardOffset: 20 });
+    expect(b.radius).toBe(500);
+    expect(b.size).toBe((500 + 20 + Math.max(232, 64) / 2 + 8) * 2);
+  });
+});
+
+describe('layoutRadial — degenerate inputs', () => {
+  it('returns [] for an empty node list', () => {
+    expect(layoutRadial([])).toEqual([]);
+  });
+
+  it('groupByKind degrades gracefully when kind/label are absent (non-string → empty key)', () => {
+    const bare = [{ id: 'b' }, { id: 'a' }] as Array<{ id: string }>;
+    const placed = layoutRadial(bare, { groupByKind: true });
+    expect(placed.map((p) => p.id)).toEqual(['a', 'b']);
+  });
+
+  it('groupByKind falls back to id order when kind AND label both tie', () => {
+    const twins = [n('z9', 'class', 'Same'), n('a1', 'class', 'Same')];
+    const placed = layoutRadial(twins, { groupByKind: true });
+    expect(placed.map((p) => p.id)).toEqual(['a1', 'z9']);
+  });
+});
+
+describe('connectedComponents — dangling edges + equal-size tie-break', () => {
+  it('drops edges whose endpoints are absent from the node set', () => {
+    const comps = connectedComponents([n('a'), n('b')], [e('a', 'b'), e('a', 'ghost'), e('phantom', 'b')]);
+    expect(comps).toHaveLength(1);
+    expect(comps[0]!.edges).toHaveLength(1);
+    expect(comps[0]!.edges[0]).toEqual({ source: 'a', target: 'b', kind: 'calls' });
+  });
+
+  it('breaks equal-size component ties by first node id ascending', () => {
+    const comps = connectedComponents([n('x'), n('y'), n('a'), n('b')], [e('x', 'y'), e('a', 'b')]);
+    expect(comps.map((c) => c.id)).toEqual(['c1', 'c2']);
+    expect(comps[0]!.nodes[0]!.id).toBe('a');
+    expect(comps[1]!.nodes[0]!.id).toBe('x');
   });
 });

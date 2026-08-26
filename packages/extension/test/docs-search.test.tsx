@@ -121,4 +121,43 @@ describe('DocsView search UI', () => {
     expect(mark?.parentElement?.tagName).toBe('P');
     expect(mark?.innerHTML).not.toContain('<img');
   });
+
+  it('Enter cycles hits forward, Shift+Enter backward, and a single match reads "1 hit"', async () => {
+    renderDoc(DOC);
+    await waitFor(() => expect(screen.getByLabelText('On this page')).toBeTruthy());
+    const input = screen.getByLabelText('Search in document') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: 'wave' } });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('2 hits'));
+    fireEvent.keyDown(input, { key: 'Enter' });
+    const marks = document.querySelectorAll('mark.archgen-search-hit');
+    expect(marks[1]?.classList.contains('is-current')).toBe(true);
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(marks[0]?.classList.contains('is-current')).toBe(true);
+
+    fireEvent.change(input, { target: { value: 'rendered' } });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('1 hit'));
+  });
+
+  it('Enter with zero matches is a safe no-op', async () => {
+    renderDoc(DOC);
+    await waitFor(() => expect(screen.getByLabelText('On this page')).toBeTruthy());
+    const input = screen.getByLabelText('Search in document') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'zzz-no-match' } });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('0 hits'));
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(input.value).toBe('zzz-no-match');
+    expect(document.querySelectorAll('mark.archgen-search-hit')).toHaveLength(0);
+  });
+
+  it('scroll-spy uses the scrollTop fallback when IntersectionObserver is unavailable', async () => {
+    renderDoc(DOC);
+    await waitFor(() => expect(screen.getByLabelText('On this page')).toBeTruthy());
+    const body = document.querySelector<HTMLElement>('.archgen-doc-body') as HTMLElement;
+    Object.defineProperty(body, 'scrollTop', { value: 250, configurable: true });
+    fireEvent.scroll(body);
+    const current = document.querySelector('.archgen-doc-toc-link[aria-current="true"]');
+    expect(current).toBeTruthy();
+  });
 });

@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   STATUS_GROUPS,
+  compactStatusSummary,
   docRows,
+  getStatusGroupRows,
+  getTasksForStatus,
   groupTasks,
   iconFor,
   overviewRows,
@@ -78,6 +81,81 @@ describe('groupTasks', () => {
     const [bare] = groupTasks([task('T2', 'pending')]).filter((r): r is Extract<TasksTreeRow, { kind: 'task' }> => r.kind === 'task');
     expect(bare?.ownership).toBe('');
   });
+
+  it('silently drops a task carrying an out-of-enum status at runtime (no crash, no phantom group)', () => {
+    // parseTasks coerces invalid statuses to 'pending' at the reader boundary,
+    // so this guard only ever fires on direct API misuse — but it must hold:
+    // an unknown status never produces a group row and never throws.
+    const rogue = { ...task('R1', 'pending'), status: 'cancelled' } as unknown as TaskVM;
+    const rows = groupTasks([task('K1', 'done'), rogue]);
+    expect(rows).toEqual([
+      { kind: 'group', status: 'done', count: 1 },
+      expect.objectContaining({ kind: 'task', taskId: 'K1' }),
+    ]);
+  });
+});
+
+describe('getStatusGroupRows', () => {
+  it('returns one GroupRow per non-empty bucket in STATUS_GROUPS order with exact counts', () => {
+    const tasks = [
+      task('p1', 'pending'),
+      task('r1', 'running'),
+      task('r2', 'running'),
+      task('d1', 'done'),
+      task('d2', 'done'),
+      task('d3', 'done'),
+    ];
+    expect(getStatusGroupRows(tasks)).toEqual([
+      { kind: 'group', status: 'running', count: 2 },
+      { kind: 'group', status: 'pending', count: 1 },
+      { kind: 'group', status: 'done', count: 3 },
+    ]);
+  });
+
+  it('returns no rows for an empty task list', () => {
+    expect(getStatusGroupRows([])).toEqual([]);
+  });
+
+  it('counts repeat occurrences within one bucket (second task in a bucket increments, not resets)', () => {
+    const rows = getStatusGroupRows([task('b1', 'blocked'), task('b2', 'blocked'), task('b3', 'blocked')]);
+    expect(rows).toEqual([{ kind: 'group', status: 'blocked', count: 3 }]);
+  });
+});
+
+describe('getTasksForStatus', () => {
+  it('filters to the requested bucket, sorts by id ASC, and maps full task fields', () => {
+    const rows = getTasksForStatus(
+      [
+        task('Z9', 'running'),
+        task('A1', 'running', { fileOwnership: ['src/x/**', 'src/y/**'], dependsOn: ['A0'], artifacts: ['a.md'], acceptance: ['ships green'] }),
+        task('A10', 'running'),
+        task('M5', 'done'),
+      ],
+      'running',
+    );
+    expect(rows.map((r) => r.taskId)).toEqual(['A1', 'A10', 'Z9']);
+    expect(rows[0]).toEqual({
+      kind: 'task',
+      taskId: 'A1',
+      title: 'Task A1',
+      status: 'running',
+      ownership: 'src/x/**',
+      dependsOn: ['A0'],
+      artifacts: ['a.md'],
+      acceptance: ['ships green'],
+    });
+  });
+
+  it('defaults ownership to empty and acceptance to [] when absent', () => {
+    const [row] = getTasksForStatus([task('B2', 'blocked')], 'blocked');
+    expect(row?.ownership).toBe('');
+    expect(row?.acceptance).toEqual([]);
+    expect(row?.dependsOn).toEqual([]);
+  });
+
+  it('returns an empty list when no task matches the bucket', () => {
+    expect(getTasksForStatus([task('C3', 'done')], 'failed')).toEqual([]);
+  });
 });
 
 describe('statusSummary', () => {
@@ -100,6 +178,37 @@ describe('statusSummary', () => {
   it('omits zero buckets for partial distributions', () => {
     expect(statusSummary([task('a', 'done'), task('b', 'pending'), task('c', 'pending')])).toBe('1 done · 2 pending');
     expect(statusSummary([task('a', 'failed')])).toBe('1 failed');
+  });
+});
+
+describe('compactStatusSummary', () => {
+  it('returns "0 tasks" for an empty list', () => {
+    expect(compactStatusSummary([])).toBe('0 tasks');
+  });
+
+  it('renders done/total with rounded percentage and NO suffix when nothing is running or failed', () => {
+    const tasks = [task('d1', 'done'), task('d2', 'done'), task('p1', 'pending'), task('r1', 'ready')];
+    expect(compactStatusSummary(tasks)).toBe('2/4 (50%)');
+  });
+
+  it('appends the running count to the suffix when tasks are running', () => {
+    const tasks = [task('d1', 'done'), task('r1', 'running'), task('r2', 'running'), task('p1', 'pending')];
+    expect(compactStatusSummary(tasks)).toBe('1/4 (25%) • 2 running');
+  });
+
+  it('appends the failed count to the suffix when tasks are failed', () => {
+    const tasks = [task('f1', 'failed'), task('p1', 'pending')];
+    expect(compactStatusSummary(tasks)).toBe('0/2 (0%) • 1 failed');
+  });
+
+  it('joins running AND failed in the suffix with " · "', () => {
+    const tasks = [task('d1', 'done'), task('r1', 'running'), task('f1', 'failed'), task('f2', 'failed')];
+    expect(compactStatusSummary(tasks)).toBe('1/4 (25%) • 1 running · 2 failed');
+  });
+
+  it('rounds the percentage to the nearest integer', () => {
+    const tasks = [task('d1', 'done'), task('p1', 'pending'), task('p2', 'pending')];
+    expect(compactStatusSummary(tasks)).toBe('1/3 (33%)');
   });
 });
 

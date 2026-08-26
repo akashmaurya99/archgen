@@ -4,7 +4,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
-import { DocsView, renderMermaidBlocks, resetMermaidForTests } from '../src/webview/DocsView';
+import {
+  DocsView,
+  renderMermaidBlocks,
+  resetMermaidForTests,
+  groupDocs,
+  readingMinutes,
+} from '../src/webview/DocsView';
 
 vi.mock('mermaid', () => ({
   default: {
@@ -248,5 +254,87 @@ describe('DocsView', () => {
     expect(vi.mocked(mod.default.initialize).mock.calls.length).toBeGreaterThan(initCallsBefore);
     view.unmount();
     document.documentElement.removeAttribute('data-theme');
+  });
+});
+
+describe('groupDocs / readingMinutes — pure helpers', () => {
+  it('groupDocs collapses two same-folder docs into ONE group and keeps root docs ungrouped', () => {
+    const groups = groupDocs(
+      [
+        { path: 'notes/a.md', title: 'a.md' },
+        { path: 'notes/b.md', title: 'b.md' },
+        { path: 'top.md', title: 'top.md' },
+      ],
+      '',
+    );
+    expect(groups).toHaveLength(2);
+    const notes = groups.find((g) => g.label === 'notes');
+    expect(notes?.items.map((d) => d.path)).toEqual(['notes/a.md', 'notes/b.md']);
+    const root = groups.find((g) => g.label === null);
+    expect(root?.items.map((d) => d.path)).toEqual(['top.md']);
+  });
+
+  it('readingMinutes floors to 1 and treats blank content as zero words', () => {
+    expect(readingMinutes('')).toBe(1);
+    expect(readingMinutes('   \n\t ')).toBe(1);
+    expect(readingMinutes('one two three')).toBe(1);
+  });
+});
+
+describe('DocsView — code frame + viewport + mermaid degradation branches', () => {
+  it('a fenced block with no language gets a "text" chip and "Copy code block" label', () => {
+    const DOC = ['# T', '', '```', 'plain fenced line', '```'].join('\n');
+    renderView({ active: { path: 'plan.md', content: DOC } });
+    expect(screen.getByText('text')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy code block' })).toBeTruthy();
+  });
+
+  it('ctrl-wheel zooms OUT on positive deltaY and a stray pointermove (no drag) is ignored', async () => {
+    renderView();
+    await waitFor(() => expect(document.querySelectorAll('.archgen-diagram-viewport')).toHaveLength(2));
+    const viewport = document.querySelector<HTMLElement>('.archgen-diagram-viewport');
+    const box = viewport?.querySelector<HTMLElement>('.archgen-diagram');
+
+    // pointermove before any pointerdown → dragging=false → early return, no pan
+    viewport?.dispatchEvent(new MouseEvent('pointermove', { clientX: 99, clientY: 99 }));
+    expect(box?.style.transform).toBe('');
+
+    viewport?.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: 100, cancelable: true }));
+    expect(box?.style.transform).toContain('scale(0.8)');
+  });
+
+  it('renderMermaidBlocks stringifies a non-Error render failure', async () => {
+    const mod = await import('mermaid');
+    resetMermaidForTests();
+    vi.mocked(mod.default.render).mockImplementationOnce(async () => {
+      throw 'raw-string-failure';
+    });
+    const host = document.createElement('div');
+    host.innerHTML = '<pre><code class="language-mermaid">graph TD; z-->w;</code></pre>';
+    document.body.appendChild(host);
+    await renderMermaidBlocks(host);
+    expect(host.querySelector('.archgen-diagram-error-msg')?.textContent).toContain('raw-string-failure');
+    host.remove();
+    resetMermaidForTests();
+  });
+
+  it('a retry that fails again rewrites the error message (Error then non-Error)', async () => {
+    const mod = await import('mermaid');
+    renderView();
+    await waitFor(() => expect(document.querySelectorAll('.archgen-diagram-error')).toHaveLength(1));
+    const renderFn = vi.mocked(mod.default.render);
+    const msg = () => document.querySelector('.archgen-diagram-error-msg')?.textContent ?? '';
+
+    renderFn.mockImplementationOnce(async () => {
+      throw new Error('still broken');
+    });
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    await waitFor(() => expect(msg()).toContain('still broken'));
+
+    renderFn.mockImplementationOnce(async () => {
+      throw 'non-error-retry';
+    });
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    await waitFor(() => expect(msg()).toContain('non-error-retry'));
   });
 });
