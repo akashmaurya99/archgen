@@ -76,8 +76,9 @@ Prefer shell? Clone this repo and run `./install.sh` (same behavior, plus
 `--init [dir]`, `--project <dir>`, `--uninstall`). Requires Node.js ≥ 18.
 The skill itself has zero npm dependencies.
 
-**VS Code extension** (optional, read-only visual layer): install
-[`packages/extension/archgen-extension-0.0.1.vsix`](packages/extension/) via
+**VS Code extension** (optional, read-only visual layer): download the latest
+`.vsix` from [GitHub Releases](https://github.com/akashmaurya99/archgen/releases)
+(built by CI on every tag — never committed to the repo) and install it via
 *Extensions: Install from VSIX…*
 
 ## Usage
@@ -104,7 +105,7 @@ uninstalling it loses nothing.
 | --- | --- | --- |
 | [`skill/`](skill/) | The agent skill — `SKILL.md`, `references/`, zero-dep `scripts/`, `assets/` | vendored into npm; installed by `install.sh` |
 | [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
-| [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button · activity-bar cockpit | `.vsix` via `vsce package` |
+| [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button · activity-bar cockpit | `.vsix` attached to [GitHub Releases](https://github.com/akashmaurya99/archgen/releases) by CI |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
 | [`fixtures/`](fixtures/) | Deterministic E2E demos + shared YAML corpus | repo-only |
 | [`docs/`](docs/) | Architecture walkthrough · release process | repo-only |

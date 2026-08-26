@@ -2,7 +2,7 @@
   "name": "archgen-extension",
   "displayName": "ArchGen",
   "description": "Living pictures for your .archgen/ folder: task DAG, code dependency graph, and rendered docs. Read-only window over your repo — the extension never edits anything itself.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "archgen",
   "license": "MIT",
   "//": [

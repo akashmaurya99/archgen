@@ -172,7 +172,7 @@ if [ "$INIT" -eq 1 ]; then
       # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
       cat <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
-<!-- archgen:block v0.0.4 -->
+<!-- archgen:block v0.0.5 -->
 # ArchGen - Architecture Generation & Autonomous Task Execution
 
 This project uses the **archgen** skill, installed at `.agents/skills/archgen/`.
@@ -218,7 +218,7 @@ BLOCK
       # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
       cat <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
-<!-- archgen:block v0.0.4 -->
+<!-- archgen:block v0.0.5 -->
 @AGENTS.md
 <!-- archgen:end -->
 BLOCK

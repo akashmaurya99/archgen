@@ -154,7 +154,7 @@ test('sync-config propagates the canonical version into SKILL.md, package.json a
   const changed = syncConfig({ root: fx });
 
   const md = readFileSync(join(fx, 'skill', 'SKILL.md'), 'utf8');
-  assert.match(md, /^  version: 0\.0\.4$/m);
+  assert.match(md, new RegExp(`^  version: ${VERSION.replaceAll('.', '\\.')}$`, 'm'));
   assert.ok(changed.some((c) => c.startsWith('skill/SKILL.md')));
 
   const pkg = JSON.parse(readFileSync(join(fx, 'packages', 'cli', 'package.json'), 'utf8'));

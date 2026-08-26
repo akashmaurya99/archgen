@@ -7,12 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-08-27
+
+Enterprise-hardening release: restore reliability, security, performance
+budgets, installer safety, and release hygiene across skill, CLI, and
+extension.
+
+### Added
+
+- **Extension restore hardening**: `onWebviewPanel:archgen.taskBoard`
+  activation event + `retainContextWhenHidden` so a quit/restart-restored
+  board re-runs its `ready` handshake and renders with zero interaction; a
+  webview watchdog re-posts `ready` (750 ms → 5 s backoff, capped at 2 min
+  with an explicit Retry card) instead of spinning forever. Locked by
+  `test/panel-restore.test.ts` + `MANUAL-TEST.md` §11 full-restart repro.
+- **Fork smoke checklist** (`MANUAL-TEST.md` §16): human-executed release gate
+  for VS Code forks (Cursor 1.4+, Windsurf) — open board, reload,
+  quit+restart, search, build→clipboard, theme switch.
+- **Accessibility scope documented**: WCAG 2.1 AA scoped commitment in the
+  extension README — keyboard navigation, theme-variable contrast, aria-live
+  for status pushes (third-party render internals explicitly out of scope).
+- **CI hardening** (`.github/workflows/ci.yml`): skill/CLI matrix on Node
+  20+22; extension typecheck/compile/test pinned to Node 22 with a HARD ≥90%
+  coverage gate; cross-mode parity; version/vendor single-source check;
+  `npm audit --audit-level=high`; gitleaks secret scan over full history;
+  vsix built by CI and uploaded as the `archgen-extension-vsix` artifact —
+  never committed to the repo.
+- **`docs/releasing.md` single-source release flow**: bump the version in
+  `archgen.config.json`, run `node packages/cli/scripts/sync-config.mjs &&
+  node packages/cli/scripts/sync-vendor.mjs`, verify with `sync:check`.
+
 ### Changed
 
 - Extension: SETUP folded out of the tab strip into a centered dialog opened by a new ⚙ header button (⋯ menu too); empty-state copy tightened; sidebar clicks (feature/task/doc) now land you on the right board view.
+- README installs point at the CI-built vsix on GitHub Releases instead of an
+  in-repo vsix file.
+- Version is single-sourced: `archgen.config.json` is now the only place the
+  version is edited; sync-config propagates it to the skill config, SKILL.md
+  frontmatter, and both package.json files (CI `vendor-check` fails on drift).
 
 ### Fixed
 
+- **Security (extension)**: markdown-it `validateLink` allowlist blocks
+  `javascript:`/`data:text/html`/other-scheme XSS in rendered docs (degrades
+  to literal text); task ids are sanitized before reaching the harness
+  `{{outfile}}` path (no tmpdir traversal); all codegraph SQL identifiers are
+  quoted; harness `spawn` delivery is refused in untrusted workspaces
+  (clipboard delivery unaffected).
+- **Security/safety (CLI installer)**: no write-through-symlink anywhere
+  (lstat-based guards incl. parent-dir escapes); copy-mode installs back up
+  foreign targets before replacing; managed-block markers normalize to exactly
+  one pair; `install.sh` parity with CLI semantics.
+- **Extension perf**: codegraph re-send gated by DB stat (unchanged index →
+  zero re-read/re-serialize); search input debounced (200 ms) with ≤2
+  relayouts per burst; dagre layouts cached per component; codegraph focus and
+  selection survive live background updates (no more ghost-selection dimming).
+- **Extension readers**: warn-don't-throw tolerance locked for dup ids,
+  invalid statuses, empty/CRLF/unicode docs; corrupt sibling features degrade
+  to a warning while the active board renders; 10k-task parse <500 ms.
 - Extension: the kickoff-prompt input was a top-center native quick-input jump; it now opens as a centered modal inside the Task Board itself (Enter copies, Esc cancels), while non-board entry points keep the native input.
 - Clicking a Docs-tree entry could update an invisible board; documents now open the board directly on their page.
 
@@ -212,5 +264,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cursor, GitHub Copilot (project-local), plus `install.sh` symlink/copy
   installer with uninstall manifest.
 
+[0.0.5]: https://github.com/akashmaurya99/archgen/releases/tag/vextension-0.0.5
+[0.0.4]: https://github.com/akashmaurya99/archgen/releases/tag/vcli-0.0.4
 [0.0.2]: https://github.com/akashmaurya99/archgen/releases/tag/vcli-0.0.2
 [0.0.1]: https://github.com/akashmaurya99/archgen/releases/tag/v0.0.1

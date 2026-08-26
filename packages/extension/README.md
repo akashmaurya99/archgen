@@ -1,6 +1,11 @@
 # ArchGen Extension
 
-A VS Code extension (works in Cursor/Windsurf and other VS Code forks) that turns your `.archgen/` folder into living pictures:
+A VS Code extension that turns your `.archgen/` folder into living pictures.
+It targets only stable webview/serializer APIs, so it works the same in VS Code
+forks — Cursor 1.4+, Windsurf, VSCodium (release gate: the human-executed fork
+smoke checklist in `MANUAL-TEST.md` §16).
+
+Views:
 
 - **TASKS** — a task board drawn as a dependency graph where running tasks pulse, done tasks glow green, failed ones red.
 - **CODE** — a map of your code's real dependencies read straight from the codegraph SQLite index.
@@ -20,6 +25,19 @@ The extension is strictly a **window**: it reads files and hands prompts to your
 | States | Empty state with copyable `npx archgen-skill init` install CTA; errors keep the last-good graph mounted (dimmed) under a dismissible top-center banner; "updated Ns ago" stale chip. |
 | Docs | markdown-it (`html:false`) + mermaid strict mode; per-diagram error isolation; open-in-editor click-through. |
 | Code graph | colby/optave SQLite indexes read **read-only**; kind colors; edge-kind filter chips; search; impact highlight; unsupported-product banner. |
+
+## Accessibility (WCAG 2.1 AA — scoped commitment)
+
+The extension commits to a **scoped** WCAG 2.1 AA subset, enforced by the
+a11y tests in `test/` and the workbench steps in `MANUAL-TEST.md` §4/§10:
+
+- **Keyboard navigation** — every task node is reachable in tab order; Enter/Space on a focused node dispatches ▶ build; visible focus rings use the theme's focus border color.
+- **Contrast** — all colors come from `--vscode-*` theme variables, so the board stays readable in Dark, Light, and High Contrast themes (verified live in `MANUAL-TEST.md` §10).
+- **aria-live for status pushes** — loading/empty states announce via `role="status"` + `aria-live="polite"`, error and waiting states via `role="alert"`; task nodes announce `task <id>: <title>, status <status>`; the stale chip carries `role="timer"`.
+
+Explicitly **out of scope**: full WCAG 2.1 AA certification of third-party
+render internals (mermaid-generated SVG, `@xyflow/react` canvas chrome) —
+these inherit the library's own a11y behavior.
 
 ## Performance budgets (enforced by tests)
 
@@ -126,7 +144,10 @@ Both assert identical `data`, identical `comments`, identical error behavior aga
 
 ## QA
 
-Manual workbench protocol with expected outcomes per step: see `MANUAL-TEST.md`. Release history: see `CHANGELOG.md`.
+Manual workbench protocol with expected outcomes per step: see `MANUAL-TEST.md`
+— including the full quit+restart restore repro (§11) and the human-executed
+fork smoke checklist for Cursor/Windsurf (§16). Release history: see
+`CHANGELOG.md`.
 
 ## Guardrails
 

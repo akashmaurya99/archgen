@@ -18,7 +18,8 @@ schemas/            JSON schema + architecture conventions
 
 ## Running tests
 
-Each package has its own suite — run all of them before opening a PR:
+Each package has its own suite — run all of them before opening a PR (CI runs
+the same set):
 
 ```sh
 # skill (node:test, no deps)
@@ -27,11 +28,18 @@ node --test skill/scripts/test/*.test.mjs
 # CLI
 cd packages/cli && npm test
 
-# VS Code extension (typecheck + vitest)
+# VS Code extension (typecheck + compile + vitest)
 # Extension tests require Node 22 (better-sqlite3 + vitest pools are
 # unstable on Node 20; the shipped extension runs in VS Code's Electron
 # runtime, so this constrains tooling only):
-cd packages/extension && npm run typecheck && npm test
+cd packages/extension && npm ci && npm run typecheck && npm run compile && npm test
+
+# Parser↔view-model parity vs the greenfield-demo fixture (CI: cross-mode job)
+cd packages/extension && npm run cross-mode
+
+# Version single-source + vendor-freshness gate (CI: vendor-check job) —
+# run after ANY skill/ or archgen.config.json edit
+npm --prefix packages/cli run sync:check
 ```
 
 ## Fixture drivers

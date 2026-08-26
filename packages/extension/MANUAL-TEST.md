@@ -9,6 +9,7 @@ the deferred half of todo 13 — the CLI-level parity half runs automatically vi
 `npm run cross-mode`.
 
 Setup: `npm install && npm run compile && npm test` must be green first.
+§16 (fork smoke) is a human-executed release checklist for VS Code forks.
 
 ---
 
@@ -77,11 +78,15 @@ Setup: `npm install && npm run compile && npm test` must be green first.
    - ✅ Board recolors live through `--vscode-*` variables; data-theme attribute flips; contrast stays readable; pulse ring uses theme yellow.
 
 ## 11. Serializer restore (reload + quit/restart)
+
+Step 2 is the full restart repro for the "board blank after quit + relaunch"
+regression: the restored webview must render with zero interaction.
+
 1. With the board open, run **Developer: Reload Window**.
    - ✅ Board restores automatically (same view state/tab) without rerunning the command.
-2. Full restart: with the board open, quit VS Code (Cmd+Q on macOS; File → Exit on Windows/Linux), then restart and reopen the same workspace — do NOT rerun the command or click anything.
+2. Quit + restart (full restart): with the board open, quit VS Code (Cmd+Q on macOS; File → Exit on Windows/Linux), then restart and reopen the same workspace — do NOT rerun the command or click anything.
    - ✅ The board tab restores automatically via the serializer; the restored webview re-runs its `ready` handshake and the host force-pushes the model, so the TASKS graph renders without interaction. No infinite loading spinner, no blank canvas, no Retry card; the stale chip starts counting from "updated 0s ago".
-3. Repeat the quit + restart on a VS Code fork (Cursor, Windsurf).
+3. Repeat the quit + restart on a VS Code fork (Cursor, Windsurf) — the full fork smoke checklist is §16.
    - ✅ Identical restore behavior — the serializer and the ready-handshake force-push ride stable webview APIs, nothing VS Code-specific.
 
 ## 12. CSP hygiene (workbench confirmation)
@@ -89,8 +94,8 @@ Setup: `npm install && npm run compile && npm test` must be green first.
    - ✅ Zero "Content Security Policy" violation reports (jsdom-level zero-violation assertion lives in `test/polish-perf.test.tsx`).
 
 ## 13. VSIX install into clean profile
-1. `npm run package` (plain `vsce package`; `--no-dependencies` would drop the externalized better-sqlite3 binding — see package.json `//` note) → `archgen-extension-0.1.0.vsix`.
-2. `code --extensions-dir /tmp/clean-ext --user-data-dir /tmp/clean-data --install-extension archgen-extension-0.1.0.vsix`, then launch with those dirs.
+1. `npm run package` (plain `vsce package`; `--no-dependencies` would drop the externalized better-sqlite3 binding — see package.json `//` note) → `archgen-extension-<version>.vsix` (or download the CI-built artifact from GitHub Releases — the vsix is never committed to the repo).
+2. `code --extensions-dir /tmp/clean-ext --user-data-dir /tmp/clean-data --install-extension archgen-extension-<version>.vsix`, then launch with those dirs.
    - ✅ Extension installs and activates; codegraph read works (better-sqlite3 prebuild loads, or node:sqlite fallback on Electron ≥ 33).
 
 ## 14. Clipboard delivery (default mode)
@@ -141,3 +146,23 @@ Setup opens as a CENTERED DIALOG inside the Task Board (⚙ button beside the �
     - ✅ The Task Board opens (or comes forward) on the DOCS tab with THAT document rendered; with the board already open the switch happens immediately. A cold board replays the request after its ready handshake, so the document never posts into an unmounted webview.
 14. From ANY board state (empty workspace included), click the **⚙** button beside the **⋯** menu at the right edge of the tab strip — or choose **⋯ → Setup & updates**.
     - ✅ The centered setup dialog opens (and the menu closes); **Copy install prompt** copies without leaving the current view; clicking elsewhere dismisses the menu. With no folder open, entry points show *Open a folder to use ArchGen.* instead of doing nothing.
+
+## 16. Fork smoke checklist (human-executed)
+
+> **Human checklist — not agent-runnable.** Run this fork smoke on each
+> supported VS Code fork before tagging a release and keep the ticked printout
+> as release evidence (plan F3). The extension targets only stable
+> webview/serializer APIs, so forks must behave identically to VS Code.
+
+Target hosts: ☐ Cursor 1.4+ · ☐ Windsurf
+
+For EACH host above, in a workspace containing `.archgen/`:
+
+1. ☐ **Open board** — run **ArchGen: Open Task Board**; the TASKS DAG renders (no blank canvas, no Retry card, no infinite spinner).
+2. ☐ **Reload** — run **Developer: Reload Window**; the board restores automatically on the same tab without rerunning the command.
+3. ☐ **Quit + restart** — quit the editor entirely (Cmd+Q / File → Exit), relaunch, reopen the workspace: the board restores and renders with zero interaction (the §11 step 2 full restart repro).
+4. ☐ **Search** — in the CODE tab, type in the search box: nodes narrow as you type; clearing the query restores the full graph.
+5. ☐ **Build → clipboard** — click ▶ on a task node: no process spawns, the *Prompt copied — paste into your agent chat and send* toast appears, and pasting into the fork's chat input yields exactly `Implement task <id>: <title>. Follow the .archgen plan; only touch files you own.`
+6. ☐ **Theme switch** — flip Dark ↔ Light ↔ High Contrast: the board recolors live through `--vscode-*` variables, pulse ring stays visible, contrast stays readable in all three.
+
+Result: ☐ pass on all hosts · ☐ fail (host + failing step): \_\_\_\_\_\_\_\_\_\_
