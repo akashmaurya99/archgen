@@ -16,7 +16,7 @@ import {
   type GraphNodeLike,
   type RadialPlacement,
 } from './graph-model';
-import { layoutLeftToRight } from './layout';
+import { layoutLeftToRight, type Positioned } from './layout';
 
 const GROUP_GAP = 320;
 const GROUPS_PER_ROW = 3;
@@ -199,6 +199,11 @@ export function layoutFlowGrouped(
   edges: readonly GraphEdgeLike[],
 ): GroupedFlowResult {
   const comps = connectedComponents(nodes, edges);
+  // ONE dagre pass per component: the sizing pass caches each layout + bounds
+  // keyed by component id, and the placement pass reuses them. Same inputs,
+  // same output — dagre is deterministic, so re-running it (former behavior)
+  // was pure waste: 2× the layout cost on every search/filter relayout.
+  const dagreByComp = new Map<string, { laid: Array<GraphNodeLike & Positioned>; bounds: Bounds }>();
   const packed = shelfPack(
     comps.map((c) => {
       if (c.id === UNLINKED_COMPONENT_ID) return unlinkedBox(c.nodes.length);
@@ -208,8 +213,9 @@ export function layoutFlowGrouped(
         rankSep: CODE_FLOW_LAYOUT.rankSep,
         nodeSep: CODE_FLOW_LAYOUT.nodeSep,
       });
-      const b = boundsOf(laid);
-      return { width: b.width + 80, height: b.height + 80 };
+      const bounds = boundsOf(laid);
+      dagreByComp.set(c.id, { laid, bounds });
+      return { width: bounds.width + 80, height: bounds.height + 80 };
     }),
     GROUP_GAP,
   );
@@ -235,16 +241,19 @@ export function layoutFlowGrouped(
         });
       });
     } else {
-      const laid = layoutLeftToRight(comp.nodes, comp.edges, {
-        nodeWidth: CODE_NODE_WIDTH,
-        nodeHeight: CODE_NODE_HEIGHT,
-        rankSep: CODE_FLOW_LAYOUT.rankSep,
-        nodeSep: CODE_FLOW_LAYOUT.nodeSep,
-      });
-      const b = boundsOf(laid);
-      const shifted = shift(laid, box.x + (box.width - b.width) / 2, box.y + (box.height - b.height) / 2);
-      for (const p of shifted) {
-        placements.push(Object.assign(p, { componentId: comp.id }));
+      const cached = dagreByComp.get(comp.id);
+      // Populated by the sizing pass above for EVERY non-unlinked component
+      // before this loop starts — a miss is impossible; guard keeps TS honest.
+      // shift() copies, so the cached layouts are never mutated by componentId.
+      if (cached) {
+        const shifted = shift(
+          cached.laid,
+          box.x + (box.width - cached.bounds.width) / 2,
+          box.y + (box.height - cached.bounds.height) / 2,
+        );
+        for (const p of shifted) {
+          placements.push(Object.assign(p, { componentId: comp.id }));
+        }
       }
     }
     labels.push({ x: box.x + 12, y: box.y + 2, text: comp.id === UNLINKED_COMPONENT_ID ? `loose · ${comp.nodes.length}` : `${comp.id} · ${comp.nodes.length}` });

@@ -56,6 +56,7 @@ import {
   CODE_NODE_HEIGHT,
   CODE_NODE_WIDTH,
   EDGE_KINDS,
+  SEARCH_DEBOUNCE_MS,
   colorForEdgeKind,
   colorForKind,
   connectedComponents,
@@ -444,6 +445,8 @@ export interface CodeGraphViewProps {
 }
 
 export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
+  // rawQuery = what the input shows (urgent); query = debounced filter input.
+  const [rawQuery, setRawQuery] = useState('');
   const [query, setQuery] = useState('');
   const [enabledKinds, setEnabledKinds] = useState<Set<string>>(() => new Set(EDGE_KINDS));
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -559,6 +562,15 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
       setSelectedId(null);
     }
   }, [metaById, selectedId]);
+
+  // SEARCH DEBOUNCE — every keystroke resets the timer, so a typing burst
+  // triggers ONE matchesQuery + connectedComponents + dagre relayout after
+  // the window settles instead of one per key. Cleanup clears the pending
+  // timer on unmount. Deps are the primitive itself — never object identity.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(rawQuery), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [rawQuery]);
 
   // Radial rings only scale to the tier budget; a larger component (or a
   // missing rollup on a huge graph) degrades to isolated per-component flow
@@ -791,8 +803,8 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
           className="archgen-cg-search"
           placeholder={vm.hasFts ? 'Search symbols (FTS-backed index)…' : 'Search symbols…'}
           aria-label="Search nodes by name"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={rawQuery}
+          onChange={(e) => setRawQuery(e.target.value)}
         />
         {tier === 'radial' ? (
           <div className="archgen-cg-mode" role="group" aria-label="Graph layout mode">

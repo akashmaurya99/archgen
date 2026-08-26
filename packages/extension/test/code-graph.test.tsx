@@ -4,11 +4,12 @@
 // Handles presence (xyflow v12 edge-endpoint contract), tooltips/captions,
 // toolbar buttons, virtualization switch, unsupported banner.
 // @vitest-environment jsdom
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { createElement } from 'react';
 import {
   EDGE_KINDS,
+  SEARCH_DEBOUNCE_MS,
   layoutRadial,
   colorForEdgeKind,
   colorForKind,
@@ -23,6 +24,21 @@ import {
 import { CodeGraphView } from '../src/webview/CodeGraphView';
 import type { CodegraphVM } from '../src/shared/protocol';
 import { installFlowDomStubs } from './helpers/dom-stubs';
+
+// Spies (behavior-preserving wrappers over the real implementations) so the
+// todo-12 perf budgets can count relayouts + dagre passes without stubbing.
+vi.mock('../src/webview/graph-grouped', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/webview/graph-grouped')>();
+  return { ...actual, layoutFlowGrouped: vi.fn(actual.layoutFlowGrouped) };
+});
+
+vi.mock('../src/webview/layout', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/webview/layout')>();
+  return { ...actual, layoutLeftToRight: vi.fn(actual.layoutLeftToRight) };
+});
+
+import { layoutFlowGrouped } from '../src/webview/graph-grouped';
+import { layoutLeftToRight } from '../src/webview/layout';
 
 installFlowDomStubs();
 
@@ -211,19 +227,33 @@ describe('CodeGraphView canvas wiring', () => {
   });
 
   it('chip counts react to the search scope (live), not to kind toggles', () => {
-    renderVm();
-    act(() => fireEvent.change(screen.getByLabelText('Search nodes by name'), { target: { value: 'user' } }));
-    // only n1+n2 visible → only their calls edge counts; others zero out
-    expect(screen.getByRole('button', { name: 'calls ×1' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'imports ×0' })).toBeTruthy();
+    vi.useFakeTimers();
+    try {
+      renderVm();
+      act(() => fireEvent.change(screen.getByLabelText('Search nodes by name'), { target: { value: 'user' } }));
+      act(() => { vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS); });
+      // only n1+n2 visible → only their calls edge counts; others zero out
+      expect(screen.getByRole('button', { name: 'calls ×1' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'imports ×0' })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('search box filters visible nodes by name', () => {
-    renderVm();
-    act(() => fireEvent.change(screen.getByLabelText('Search nodes by name'), { target: { value: 'user' } }));
-    expect(counts().nodes).toBe(3); // UserService + getUser + radial ring layer
-    act(() => fireEvent.change(screen.getByLabelText('Search nodes by name'), { target: { value: 'zzz-none' } }));
-    expect(counts().nodes).toBe(0);
+  it('search box filters visible nodes by name once the debounce settles', () => {
+    vi.useFakeTimers();
+    try {
+      renderVm();
+      const input = screen.getByLabelText('Search nodes by name');
+      act(() => fireEvent.change(input, { target: { value: 'user' } }));
+      act(() => { vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS); });
+      expect(counts().nodes).toBe(3); // UserService + getUser + radial ring layer
+      act(() => fireEvent.change(input, { target: { value: 'zzz-none' } }));
+      act(() => { vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS); });
+      expect(counts().nodes).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders Handle anchors for every node — the v12 edge-endpoint contract', async () => {
@@ -286,6 +316,65 @@ describe('CodeGraphView canvas wiring', () => {
     act(() => fireEvent.click(clearBtn));
     expect(screen.queryByRole('status', { name: /Impact of/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Clear selection' })).toBeNull();
+  });
+});
+
+describe('search debounce + layout perf (todo 12)', () => {
+  it('rapid typing (5 keystrokes in 100ms) triggers ≤2 flow layouts', () => {
+    vi.useFakeTimers();
+    try {
+      renderVm();
+      act(() => fireEvent.click(screen.getByRole('button', { name: '⇥ Flow' })));
+      const layoutSpy = vi.mocked(layoutFlowGrouped);
+      layoutSpy.mockClear();
+      expect(counts().nodes).toBe(4); // flow mode: 4 cards, no ring layer
+
+      const input = screen.getByLabelText('Search nodes by name');
+      // 5 DISTINCT values (each resets the debounce timer), 20ms apart = 100ms burst
+      for (const value of ['f', 'fo', 'foo', 'foo!', 'foo']) {
+        act(() => {
+          fireEvent.change(input, { target: { value } });
+          vi.advanceTimersByTime(20);
+        });
+      }
+      // window never settled mid-burst → no filter pass, no relayout yet
+      expect(layoutSpy.mock.calls.length).toBe(0);
+      expect(counts().nodes).toBe(4);
+
+      act(() => { vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS); });
+      expect(layoutSpy.mock.calls.length).toBeLessThanOrEqual(2);
+      expect(counts().nodes).toBe(0); // final value 'foo' matches nothing
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clearing the search within the debounce window still restores all nodes', () => {
+    vi.useFakeTimers();
+    try {
+      renderVm();
+      const input = screen.getByLabelText('Search nodes by name');
+      act(() => fireEvent.change(input, { target: { value: 'user' } }));
+      act(() => { vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS); });
+      expect(counts().nodes).toBe(3); // UserService + getUser + ring
+
+      act(() => fireEvent.change(input, { target: { value: '' } }));
+      act(() => { vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS); });
+      expect(counts().nodes).toBe(5); // all 4 cards + ring restored
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('layoutFlowGrouped runs dagre exactly once per linked component (sizing pass cached)', () => {
+    const dagreSpy = vi.mocked(layoutLeftToRight);
+    dagreSpy.mockClear();
+    const result = layoutFlowGrouped(SPLIT_VM.nodes ?? [], SPLIT_VM.edges ?? []);
+    // c1={a,b,c} + c2={x,y} are linked; {z,w} sit in the unlinked grid (no dagre).
+    // Pre-cache this was 4 calls (sizing pass + placement pass per component).
+    expect(dagreSpy).toHaveBeenCalledTimes(2);
+    expect(result.placements).toHaveLength(7);
+    expect(result.regions.map((r) => r.id)).toEqual(['c1', 'c2', 'unlinked']);
   });
 });
 

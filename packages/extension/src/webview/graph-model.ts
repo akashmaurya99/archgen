@@ -45,6 +45,13 @@ export function filterEdges<E extends GraphEdgeLike>(edges: readonly E[], enable
   return edges.filter((e) => !EDGE_KINDS.includes(e.kind as EdgeKind) || enabled.has(e.kind));
 }
 
+/**
+ * Search debounce window for the CODE tab input: filtering (and the
+ * connectedComponents + dagre relayout it triggers) runs on the DEBOUNCED
+ * query, so a burst of keystrokes costs one relayout, not one per key.
+ */
+export const SEARCH_DEBOUNCE_MS = 200;
+
 /** Case-insensitive substring match on label + id + file. */
 export function matchesQuery(n: GraphNodeLike, query: string): boolean {
   const q = query.trim().toLowerCase();
