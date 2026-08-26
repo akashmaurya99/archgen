@@ -12,6 +12,10 @@ vitest.config.mts
 .gitignore
 MANUAL-TEST.md
 
+# --- local artifacts: never ship inside the vsix ---
+*.log
+coverage/**
+
 # --- NATIVE MODULE STRATEGY (see package.json "//" decision) ---
 # The esbuild HOST bundle keeps better-sqlite3 EXTERNAL, so its runtime files
 # must ship inside the vsix. better-sqlite3 >= 13 is self-contained: the

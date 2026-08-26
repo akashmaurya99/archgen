@@ -12,12 +12,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22]
+        node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: ${{ matrix.node-version }}
       - run: node --test skill/scripts/test/*.test.mjs
 
   cli:
@@ -25,28 +25,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22]
+        node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
-      - run: npm test
-        working-directory: packages/cli
-      # Version single-source gate: every derived version field (skill config,
-      # SKILL.md frontmatter, cli + extension package.json) must already match
-      # archgen.config.json. Fails with an explicit drift report BEFORE the
-      # auto-sync below could mask it.
-      - run: npm --prefix packages/cli run sync:check
-      # Vendor-freshness gate: derived copies (SKILL.md frontmatter, skill config,
-      # vendored package) must match archgen.config.json. A dirty tree after sync
-      # means someone shipped a version bump without `npm --prefix packages/cli run sync`.
-      - run: npm --prefix packages/cli run sync
-      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/extension/package.json
+          node-version: ${{ matrix.node-version }}
+      - run: npm --prefix packages/cli test
 
   # Extension toolchain (jsdom + better-sqlite3 + vitest pools) is only
   # stable on Node >= 22; the shipped extension runs inside VS Code's
   # Electron runtime, so CI node here is test tooling, not product compat.
+  # README mandates Node 22 for the native-addon pool — pinned, NOT matrixed.
   extension:
     runs-on: ubuntu-latest
     steps:
@@ -62,3 +52,90 @@ jobs:
         working-directory: packages/extension
       - run: npm test
         working-directory: packages/extension
+      # Packaging smoke: vsce must produce a vsix from the esbuild bundles
+      # + the .vscodeignore-whitelisted better-sqlite3 runtime chain. The
+      # vsix is a build artifact — uploaded here, NEVER committed (see
+      # .gitignore *.vsix).
+      - run: npm run package
+        working-directory: packages/extension
+      - run: ls archgen-extension-*.vsix
+        working-directory: packages/extension
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archgen-extension-vsix
+          path: packages/extension/*.vsix
+          if-no-files-found: error
+
+  # Coverage HARD GATE: vitest.config.mts thresholds fail the run if any
+  # metric (lines/branches/functions/statements) drops below 90%.
+  # Node 22 only — same native-addon constraint as the extension job.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: packages/extension
+      - run: npm run coverage
+        working-directory: packages/extension
+
+  # Model↔view parity: the extension's own parser must read the
+  # greenfield-demo fixture into exactly the view model the DAG renders.
+  cross-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: packages/extension
+      - run: npm run cross-mode
+        working-directory: packages/extension
+
+  # Version single-source + vendor-freshness gate: every derived version
+  # field (skill config, SKILL.md frontmatter, cli + extension package.json)
+  # and vendored copy must already match archgen.config.json. sync:check
+  # fails with an explicit drift report; sync + git diff catches any
+  # derived file someone shipped without running `npm --prefix packages/cli run sync`.
+  vendor-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm --prefix packages/cli run sync:check
+      - run: npm --prefix packages/cli run sync
+      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/extension/package.json
+
+  # Supply-chain gate: fail on high+ severity advisories.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Extension has a committed lockfile — audit it directly.
+      - run: npm audit --audit-level=high
+        working-directory: packages/extension
+      # CLI is zero-dep with no lockfile; generate one in the CI workspace
+      # (never committed) so npm audit can resolve the tree.
+      - run: npm install --package-lock-only --no-audit --no-fund
+        working-directory: packages/cli
+      - run: npm audit --audit-level=high
+        working-directory: packages/cli
+
+  # Supply-chain gate: gitleaks scans full history and fails on any secret.
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
