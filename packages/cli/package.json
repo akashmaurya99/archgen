@@ -38,9 +38,10 @@
   "bugs": {
     "url": "https://github.com/akashmaurya99/archgen/issues"
   },
-  "//": "vendor/skills/archgen is synced from ../skills/archgen by scripts/sync-vendor.mjs (run automatically via prepublishOnly). The extension ships separately as a VS Code vsix.",
+  "//": "vendor/skills/archgen is a full mirror of ../../skill synced by scripts/sync-vendor.mjs (run automatically via prepublishOnly). The extension ships separately as a VS Code vsix.",
   "scripts": {
     "sync:config": "node scripts/sync-config.mjs",
+    "sync:check": "node scripts/sync-config.mjs --check",
     "sync": "node scripts/sync-config.mjs && node scripts/sync-vendor.mjs",
     "prepublishOnly": "node scripts/sync-config.mjs && node scripts/sync-vendor.mjs",
     "test": "node --test test/*.test.mjs"

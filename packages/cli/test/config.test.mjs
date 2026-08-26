@@ -15,7 +15,7 @@ import { configCandidates, loadConfig, loadConfigFrom, parseConfig } from '../li
 import { START, END, FEATURES_START, FEATURES_END, renderManagedBlockText, renderClaudeBridgeText } from '../lib/block.js';
 import { VERSION_FILE, MANIFEST_REL, BACKUP_ROOT_REL } from '../lib/store.js';
 import { MANIFEST_NAME } from '../lib/install.js';
-import { syncConfig, setFrontmatterVersion } from '../scripts/sync-config.mjs';
+import { syncConfig, setFrontmatterVersion, setPackageVersion } from '../scripts/sync-config.mjs';
 import { syncVendor } from '../scripts/sync-vendor.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 /** Minimal fake checkout: <fx>/archgen.config.json + skill/ + packages/cli/. */
-function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion } = {}) {
+function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, extVersion } = {}) {
   const cfgText = JSON.stringify(canonical, null, 2) + '\n';
   writeFileSync(join(fx, 'archgen.config.json'), cfgText);
   mkdirSync(join(fx, 'skill'), { recursive: true });
@@ -66,6 +66,13 @@ function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion } = {}) {
     join(fx, 'packages', 'cli', 'package.json'),
     JSON.stringify({ name: 'archgen-skill', version: pkgVersion ?? '0.0.0' }, null, 2) + '\n',
   );
+  if (extVersion !== undefined) {
+    mkdirSync(join(fx, 'packages', 'extension'), { recursive: true });
+    writeFileSync(
+      join(fx, 'packages', 'extension', 'package.json'),
+      JSON.stringify({ name: 'archgen-extension', version: extVersion }, null, 2) + '\n',
+    );
+  }
   return libDir;
 }
 
@@ -188,6 +195,62 @@ test('sync-config is idempotent: a second run rewrites nothing', () => {
   assert.equal(readFileSync(join(fx, 'packages', 'cli', 'package.json'), 'utf8'), before.pkg);
 });
 
+test('sync-config propagates the canonical version into the extension package.json when present', () => {
+  fixtureRepo({ extVersion: '0.0.0' });
+  const changed = syncConfig({ root: fx });
+  assert.ok(changed.some((c) => c.startsWith('packages/extension/package.json')));
+  const ext = JSON.parse(readFileSync(join(fx, 'packages', 'extension', 'package.json'), 'utf8'));
+  assert.equal(ext.version, VERSION);
+  // Second run is a no-op for the extension target too.
+  assert.deepEqual(syncConfig({ root: fx }), []);
+});
+
+test('setPackageVersion edits only the version line: hand-formatted manifests are never reflowed', () => {
+  // Mirrors the real packages/extension/package.json style: compact one-line
+  // objects that a JSON.stringify round-trip would explode into many lines.
+  const raw = [
+    '{',
+    '  "name": "archgen-extension",',
+    '  "version": "0.0.0",',
+    '  "contributes": {',
+    '    "views": {',
+    '      "archgen": [',
+    '        { "id": "archgen.tasks", "name": "Tasks", "icon": "media/icons/tasks.svg" }',
+    '      ]',
+    '    }',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+  const out = setPackageVersion(raw, VERSION);
+  assert.ok(out.includes(`"version": "${VERSION}"`));
+  // Exactly one line moved; every other byte untouched.
+  const diff = raw.split('\n').filter((l, i) => l !== out.split('\n')[i]);
+  assert.deepEqual(diff, ['  "version": "0.0.0",']);
+  // Nested keys named version at deeper indent are never touched.
+  const nested = '{\n  "name": "x",\n  "version": "1.1.1",\n  "deep": {\n    "version": "2.2.2"\n  }\n}\n';
+  assert.ok(setPackageVersion(nested, '9.9.9').includes('"version": "9.9.9"'));
+  assert.ok(setPackageVersion(nested, '9.9.9').includes('"version": "2.2.2"'));
+  // CRLF files survive too.
+  const crlf = '{\r\n  "name": "x",\r\n  "version": "0.0.1"\r\n}\r\n';
+  assert.ok(setPackageVersion(crlf, VERSION).includes(`"version": "${VERSION}"\r\n`));
+});
+
+test('sync-config check mode reports drift without writing anything', () => {
+  fixtureRepo({ extVersion: '0.0.1' });
+  const beforeMd = readFileSync(join(fx, 'skill', 'SKILL.md'), 'utf8');
+  const drift = syncConfig({ root: fx, check: true });
+  assert.ok(drift.some((c) => c.startsWith('skill/SKILL.md')), 'frontmatter drift reported');
+  assert.ok(drift.some((c) => c.startsWith('packages/cli/package.json')), 'cli version drift reported');
+  assert.ok(drift.some((c) => c.startsWith('packages/extension/package.json')), 'extension version drift reported');
+  // Nothing was written.
+  assert.equal(readFileSync(join(fx, 'skill', 'SKILL.md'), 'utf8'), beforeMd);
+  assert.equal(JSON.parse(readFileSync(join(fx, 'packages', 'extension', 'package.json'), 'utf8')).version, '0.0.1');
+  // After a real sync, check mode is clean.
+  syncConfig({ root: fx });
+  assert.deepEqual(syncConfig({ root: fx, check: true }), []);
+});
+
 test('setFrontmatterVersion preserves BOM and CRLF conventions around the edited line', () => {
   const crlf = '---\r\nname: archgen\r\nmetadata:\r\n  version: 0.0.0\r\n---\r\n\r\nbody\r\n';
   const out = setFrontmatterVersion(crlf, VERSION);
@@ -227,10 +290,12 @@ test('repo consistency guard: canonical == SKILL.md frontmatter == package.json 
   assert.ok(mdVersion, 'frontmatter carries metadata.version');
 
   const pkg = JSON.parse(readFileSync(join(REPO, 'packages', 'cli', 'package.json'), 'utf8'));
+  const extPkg = JSON.parse(readFileSync(join(REPO, 'packages', 'extension', 'package.json'), 'utf8'));
   const vendorCfg = JSON.parse(readFileSync(join(REPO, 'packages', 'cli', 'vendor', 'skills', 'archgen', 'archgen.config.json'), 'utf8'));
 
   assert.equal(mdVersion[1], VERSION, 'SKILL.md frontmatter must equal archgen.config.json version');
   assert.equal(pkg.version, VERSION, 'packages/cli/package.json must equal archgen.config.json version');
+  assert.equal(extPkg.version, VERSION, 'packages/extension/package.json must equal archgen.config.json version');
   assert.equal(vendorCfg.version, VERSION, 'vendored config must equal archgen.config.json version');
 });
 

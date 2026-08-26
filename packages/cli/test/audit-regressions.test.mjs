@@ -115,8 +115,8 @@ test('BUG-INST1 // AUDIT-REGRESSION global install does not record a FOREIGN sym
     'foreign target disturbed');
 });
 
-// BUG-SYNC1: sync-vendor copies everything under skill/ except .gitkeep and
-// scripts/test — OS junk like .DS_Store rides into the published npm tarball.
+// BUG-SYNC1: sync-vendor mirrors everything under skill/ into the published
+// vendor tree — OS junk like .DS_Store must NOT ride along.
 test('BUG-SYNC1 // AUDIT-REGRESSION sync-vendor does not copy OS junk (.DS_Store) into the published vendor tree', () => {
   const sandbox = mkdtempSync(join(tmpdir(), 'archgen-sync-'));
   try {
@@ -134,6 +134,11 @@ test('BUG-SYNC1 // AUDIT-REGRESSION sync-vendor does not copy OS junk (.DS_Store
     const names = readdirSync(vendor);
     assert.ok(!names.includes('.DS_Store'),
       `sync-vendor copied .DS_Store into vendor: ${names.join(', ')}`);
+    // Full-mirror guarantee: the skill's own suite ships verbatim, so the
+    // drift gate `diff -r skill vendor --exclude=.DS_Store
+    // --exclude=.archgen-version` can never be defeated by silent pruning.
+    assert.ok(existsSync(join(vendor, 'scripts', 'test')),
+      'sync-vendor pruned skill/scripts/test out of the vendor mirror');
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }

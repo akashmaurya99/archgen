@@ -33,11 +33,16 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm test
         working-directory: packages/cli
+      # Version single-source gate: every derived version field (skill config,
+      # SKILL.md frontmatter, cli + extension package.json) must already match
+      # archgen.config.json. Fails with an explicit drift report BEFORE the
+      # auto-sync below could mask it.
+      - run: npm --prefix packages/cli run sync:check
       # Vendor-freshness gate: derived copies (SKILL.md frontmatter, skill config,
       # vendored package) must match archgen.config.json. A dirty tree after sync
       # means someone shipped a version bump without `npm --prefix packages/cli run sync`.
       - run: npm --prefix packages/cli run sync
-      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen
+      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/extension/package.json
 
   # Extension toolchain (jsdom + better-sqlite3 + vitest pools) is only
   # stable on Node >= 22; the shipped extension runs inside VS Code's
