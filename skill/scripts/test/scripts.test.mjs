@@ -214,3 +214,34 @@ test('verify-plan: three poisoned plans are rejected with specific issues', () =
   out = JSON.parse(r.stdout);
   assert.ok(out.issues.some((i) => /TASK-999/.test(i)));
 });
+
+// --- Provenance stamp tolerance -------------------------------------------
+// `archgen migrate` backfills a three-line YAML comment header onto artifacts:
+//   # schema_version: 1 / # generator: archgen vX.Y.Z / # generated_at: <ISO>
+// Comments are inert by contract — these tests lock that in so a parser change
+// can never silently start treating the stamp as data.
+
+const STAMP = `# schema_version: 1\n# generator: archgen v0.0.4\n# generated_at: 2026-08-26T09:00:00.000Z\n`;
+
+test('set-status: provenance stamp comments are inert and preserved verbatim', () => {
+  const p = writeTasks(STAMP + ABC);
+  const r = run('set-status.mjs', [p, 'C', 'running']);
+  assert.equal(r.status, 0, r.stderr);
+  const after = readFileSync(p, 'utf8');
+  const ls = after.split('\n');
+  assert.equal(ls[0], '# schema_version: 1', 'stamp stays at top, byte-identical');
+  assert.equal(ls[1], '# generator: archgen v0.0.4');
+  assert.equal(ls[2], '# generated_at: 2026-08-26T09:00:00.000Z');
+  assert.match(after, /status: running/, 'status mutation still lands');
+});
+
+test('verify-plan: stamped corpus fixture APPROVEs (comments never become data)', () => {
+  const corpusTasks = readFileSync(
+    join(SCRIPTS, '..', '..', 'fixtures', 'yaml-corpus', 'tasks-block.yaml'), 'utf8');
+  const p = writeTasks(STAMP + corpusTasks);
+  mkdirSync(join(dir, 'plans'));
+  writeFileSync(join(dir, 'plans', 'plan.md'), '# Plan\nDo C first, then B, then A.\n');
+  const r = run('verify-plan.mjs', [p, '--plan', join(dir, 'plans')]);
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(JSON.parse(r.stdout).verdict, 'APPROVE');
+});

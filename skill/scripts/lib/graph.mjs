@@ -113,16 +113,46 @@ export function computeWaves(byId, prerequisites) {
 }
 
 /** First ownership conflict inside a single wave, or null.
- * Ownership globs are treated as opaque strings for equality here — two tasks
- * in the same wave must not claim the SAME literal glob (conservative rule that
- * needs no glob-engine dependency). */
+ * Two rules, both conservative:
+ *  1. Literal equality — two tasks must never claim the SAME glob string.
+ *  2. Glob intersection — when a '**' is involved, patterns whose non-glob
+ *     prefix segments overlap compatibly are flagged (e.g. "src/**" vs a
+ *     TypeScript-scoped variant of it). When segment comparison is uncertain
+ *     (wildcards), the pair IS flagged: false positives merely force a rename;
+ *     false negatives let parallel workers corrupt each other's files.
+ */
 export function findOwnershipConflict(wave) {
   const seen = new Map();
+  const claimed = [];
   for (const t of wave) {
     for (const g of t.file_ownership ?? []) {
       if (seen.has(g)) return { glob: g, a: seen.get(g), b: t.id };
+      for (const prev of claimed) {
+        if (globsMayOverlap(prev.glob, g)) return { glob: g, a: prev.id, b: t.id };
+      }
       seen.set(g, t.id);
+      claimed.push({ glob: g, id: t.id });
     }
   }
   return null;
+}
+
+/** Conservative may-intersect test for two ownership globs. */
+function globsMayOverlap(a, b) {
+  if (a === b) return true;
+  // Deepen the check only when a recursive '**' is involved; plain literal
+  // globs keep the cheap equality rule above.
+  if (!a.includes('**') && !b.includes('**')) return false;
+  const as = a.split('/');
+  const bs = b.split('/');
+  const n = Math.min(as.length, bs.length);
+  for (let i = 0; i < n; i++) {
+    const x = as[i];
+    const y = bs[i];
+    if (x === y) continue;
+    if (x === '**' || y === '**') return true; // '**' swallows any divergence below it
+    if (x.includes('*') || y.includes('*') || x.includes('?') || y.includes('?')) return true; // uncertain -> flag
+    return false; // both segments literal and different: paths diverge here
+  }
+  return true; // one pattern is a segment-prefix of the other
 }

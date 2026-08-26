@@ -32,7 +32,11 @@ const INDENT_UNIT = 2;
  */
 export function parseYaml(text, opts = {}) {
   const filename = opts.filename ?? '<input>';
-  const lines = text.split('\n');
+  // Normalize CRLF: split on '\n' leaves a stray '\r' at the end of every line
+  // in Windows-authored files; stripping it here keeps scalar values and
+  // comment texts free of carriage returns so stringify can never double them
+  // up when re-emitting with the file's dominant EOL (see stringifyYaml eol).
+  const lines = text.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
   // Strip a single trailing newline artifact so the last real line is processed.
   if (lines.length && lines[lines.length - 1] === '') lines.pop();
 
@@ -120,6 +124,11 @@ function parseMapping(lines, pos, indent, ctx, basePath = []) {
     const m = matchKey(c.text);
     if (!m) fail(ctx, pos.i + 1, `expected 'key:' mapping entry, got: ${c.bare.slice(0, 40)}`);
     assertKeyWellFormed(ctx, pos.i + 1, m);
+    // Duplicate keys are a corruption class (real YAML parsers reject them):
+    // silent last-wins hides data from every downstream check.
+    if (Object.prototype.hasOwnProperty.call(out, m.key)) {
+      fail(ctx, pos.i + 1, `duplicate key '${m.key}' in mapping`);
+    }
     const keyPath = [...basePath, m.key];
     const key = consumePendingAndParseKey(ctx, c, pos.i + 1, keyPath);
     pos.i++;
@@ -295,6 +304,9 @@ function parseScalarOrFlow(v, ctx, lineNo) {
       const m = matchKey(part);
       if (!m) fail(ctx, lineNo, `flow mapping entry must be 'key: value', got: ${part}`);
       assertKeyWellFormed(ctx, lineNo, m);
+      if (Object.prototype.hasOwnProperty.call(obj, m.key)) {
+        fail(ctx, lineNo, `duplicate key '${m.key}' in flow mapping`);
+      }
       const val = part.slice(m.end).trim();
       if (val.startsWith('{')) fail(ctx, lineNo, `nested flow mappings are not supported: ${val}`);
       obj[m.key] = parseScalarOrFlow(val, ctx, lineNo);
@@ -384,8 +396,12 @@ function flushPendingInto(comments, pending, path, _inline) {
  * Serialize data back to the YAML subset, re-emitting comments positionally.
  * @param {any} data
  * @param {YamlComment[]} [comments]
+ * @param {{eol?: string}} [opts] `eol` joins lines with the given line ending
+ *   (default '\n'); callers that detected a CRLF source pass '\r\n' so the
+ *   rewrite preserves the file's dominant convention byte-for-byte.
  */
-export function stringifyYaml(data, comments = []) {
+export function stringifyYaml(data, comments = [], opts = {}) {
+  const eol = opts.eol ?? '\n';
   const out = [];
   const used = new Set();
   emitValue(out, data, 0, comments, used, []);
@@ -393,7 +409,7 @@ export function stringifyYaml(data, comments = []) {
   for (let i = 0; i < comments.length; i++) {
     if (!used.has(i) && comments[i].path === null) out.push(comments[i].text);
   }
-  return out.join('\n') + '\n';
+  return out.join(eol) + eol;
 }
 
 function preComments(out, comments, used, path) {

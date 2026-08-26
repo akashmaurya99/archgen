@@ -11,7 +11,7 @@ import { checkPlanCoverage } from './lib/plan-coverage.mjs';
 
 const [, , file, ...rest] = process.argv;
 const planIdx = rest.indexOf('--plan');
-if (!file || planIdx < 0) {
+if (!file || planIdx < 0 || !rest[planIdx + 1]) {
   console.error('usage: verify-plan.mjs <tasks.yaml> --plan <plans-dir>');
   process.exit(2);
 }
@@ -35,10 +35,13 @@ if (issues.length === 0) {
     if (cycle.length) issues.push(`dependency cycle: ${cycle.join(' -> ')}`);
 
     // Every task must carry acceptance criteria — the verifier refuses work
-    // that cannot be objectively checked later.
+    // that cannot be objectively checked later. Entries must be non-blank
+    // strings: whitespace-only or empty entries are placeholders, not criteria.
     for (const t of tasks) {
       if (!Array.isArray(t.acceptance) || t.acceptance.length === 0) {
         issues.push(`task '${t.id}' has no acceptance criteria`);
+      } else if (t.acceptance.some((a) => typeof a !== 'string' || a.trim() === '')) {
+        issues.push(`task '${t.id}' has empty or whitespace-only acceptance criteria`);
       }
       if (!Array.isArray(t.file_ownership) || t.file_ownership.length === 0) {
         issues.push(`task '${t.id}' has empty file_ownership`);
@@ -55,8 +58,10 @@ if (issues.length === 0) {
 
     issues.push(...checkPlanCoverage(planDir, tasks));
   } catch (e) {
+    // Exotic inputs must surface as a clean ISSUES verdict, never a raw stack:
+    // the verifier is a gate, and gates report findings, not crashes.
     if (e instanceof GraphError) issues.push(e.message);
-    else throw e;
+    else issues.push(`internal check failure: ${e?.message ?? String(e)}`);
   }
 }
 
