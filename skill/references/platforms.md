@@ -81,3 +81,22 @@ Claude Code project-scope servers.
 2. Prefer official vendor domains over blog posts; note the date of sources.
 3. Present findings + proposed config diff to the user. [approval gate]
 4. Apply, verify, and offer to append findings to this table upstream.
+
+## Codegraph indexing scope
+
+Current mainstream codegraph indexers extract SOURCE symbols only
+(functions/classes/imports) — they do not index markdown headings, and YAML
+support ranges from absent to file-level config tracking; none can graph
+tasks.yaml dependencies (audited 8 codegraph-family tools Aug 2026; local
+binary v1.0.1 empirically confirms). Generic code indexers verifiably do not
+extract markdown headings or YAML task semantics, so archgen ships its own
+deterministic graph tools:
+
+- Source navigation → codegraph MCP when configured (offered at Step 0).
+- YAML plan graphs → exclusively `scripts/plan-graph.mjs`.
+- Markdown artifact navigation → `scripts/doc-index.mjs`.
+
+If the harness exposes a markdown-heading indexer (e.g. a
+`codegraph_index_markdown`-style tool), prefer it for general repo docs but
+still use `doc-index.mjs` inside `.archgen/` — it understands TASK/FR
+reference semantics. Brownfield surveys prefer codegraph once present.
