@@ -21,7 +21,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, r
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { importsAgents, renderBlock, START, END, upsertManagedFile } from './block.js';
-import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, cliVersion, hashDir, moveToBackup } from './store.js';
+import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackup } from './store.js';
 import { writeStamp } from './version-stamp.js';
 
 const CONTEXT_FILES = ['AGENTS.md', 'CLAUDE.md'];
@@ -80,6 +80,9 @@ function installClaudeAdapter(root, source, warnings) {
     return 'kept-divergent';
   }
 
+  // Escape check: a symlinked .claude/.claude/skills parent must not redirect
+  // the adapter creation outside the project root.
+  assertWithinRoot(root, claudeAbs);
   try {
     mkdirSync(dirname(claudeAbs), { recursive: true });
     symlinkSync('../../.agents/skills/archgen', claudeAbs);
@@ -115,6 +118,12 @@ export function initProject(projectDir, packageRoot, opts = {}) {
   const backups = [];
 
   const storeAbs = join(root, relJoin(STORE_REL));
+
+  // Supply-chain guards BEFORE any mutation: a symlinked store (a malicious
+  // clone can ship .agents/skills/archgen as a link to an unrelated dir) is
+  // refused, and the resolved real path must stay inside the project root.
+  assertNotSymlink(storeAbs);
+  assertWithinRoot(root, storeAbs);
 
   // 1. Canonical store — fingerprint before mutating (ownership check).
   const prev = lstatSafe(storeAbs);

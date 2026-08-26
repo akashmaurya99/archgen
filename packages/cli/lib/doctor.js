@@ -7,7 +7,7 @@
 // reported and counted in the summary but do NOT fail the run: the process
 // exits non-zero only when a repair operation itself throws.
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { globalTargets } from './install.js';
@@ -146,8 +146,10 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
   if (!existsSync(agentsAbs)) {
     if (checkOnly) add('WOULD-FIX', 'AGENTS.md missing -> created with managed block');
     else {
-      writeFileSync(agentsAbs, renderBlock(STORE_REL) + '\n');
-      add('FIXED', 'AGENTS.md created with managed block');
+      // Through the guarded upsert (not raw writeFileSync): existsSync follows
+      // symlinks, so a dangling symlink would otherwise be written through.
+      attempt(() => upsertManagedFile(agentsAbs, renderBlock(STORE_REL).split('\n')), 'FIXED',
+        'AGENTS.md created with managed block', 'cannot create AGENTS.md managed block');
     }
   } else {
     let raw = readFileSync(agentsAbs, 'utf8');

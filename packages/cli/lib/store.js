@@ -11,7 +11,11 @@
 // - hashDir() fingerprints a tree (stable-order walk of relpaths + contents,
 //   sha256) so mutations only ever happen after verifying ownership/divergence;
 // - GUARDED_RELPATHS (.claude, .agents, .claude/skills, .agents/skills) are
-//   never deleted: parent pruning stops before touching those levels.
+//   never deleted: parent pruning stops before touching those levels;
+// - assertNotSymlink()/assertWithinRoot() lstat BEFORE every write: a
+//   symlinked target (supply-chain attack: a malicious clone shipping
+//   .agents/skills/archgen or AGENTS.md as a link to an unrelated directory)
+//   is refused instead of written through.
 
 import { createHash } from 'node:crypto';
 import {
@@ -22,11 +26,12 @@ import {
   readFileSync,
   readdirSync,
   readlinkSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { loadConfig } from './config.js';
 
 export const STORE_REL = '.agents/skills/archgen';
@@ -40,6 +45,50 @@ export const BACKUP_ROOT_REL = '.archgen/' + CONFIG_FILES.backupDir;
 export const VERSION_FILE = CONFIG_FILES.stamp;
 
 const GUARDED_RELPATHS = new Set(['.claude', '.agents', '.claude/skills', '.agents/skills']);
+
+/** Canonical refusal message for every symlink-write guard (CLI + install.sh). */
+export function refuseSymlinkMessage(absPath) {
+  return 'Refusing to write through symlink at ' + absPath + ' — use --copy or remove symlink';
+}
+
+/**
+ * Supply-chain guard: lstat (never stat — the LINK itself, not its target) a
+ * path before writing it. Absent paths pass (safe to create); a symlink at
+ * the target throws so no write can ever be redirected through the link.
+ */
+export function assertNotSymlink(absPath) {
+  let st = null;
+  try { st = lstatSync(absPath); } catch { return; }
+  if (st.isSymbolicLink()) throw new Error(refuseSymlinkMessage(absPath));
+}
+
+/**
+ * Realpath-escape guard: resolve `absPath` (climbing to the nearest existing
+ * ancestor when it does not exist yet, so a symlinked PARENT dir is caught
+ * before anything is created beneath it) and refuse when the real location
+ * lands outside `rootAbs`. Catches `.agents -> /elsewhere` style redirects
+ * that a final-component lstat cannot see.
+ */
+export function assertWithinRoot(rootAbs, absPath) {
+  let rootReal;
+  try { rootReal = realpathSync(rootAbs); } catch { return; }
+  let probe = absPath;
+  for (;;) {
+    let exists = true;
+    try { lstatSync(probe); } catch { exists = false; }
+    if (exists) {
+      let real;
+      try { real = realpathSync(probe); } catch { return; } // broken chain: nothing writable through it
+      if (real !== rootReal && !real.startsWith(rootReal + sep)) {
+        throw new Error(refuseSymlinkMessage(absPath));
+      }
+      return;
+    }
+    const parent = dirname(probe);
+    if (parent === probe) return;
+    probe = parent;
+  }
+}
 
 /** Version string of this CLI package (used for the in-store stamp). */
 export function cliVersion(packageRoot) {
@@ -91,6 +140,7 @@ export function loadManifest(root) {
 export function saveManifest(root, manifest) {
   const p = join(root, ...MANIFEST_REL.split('/'));
   mkdirSync(dirname(p), { recursive: true });
+  assertNotSymlink(p);
   writeFileSync(p, JSON.stringify(manifest, null, 2) + '\n');
 }
 
@@ -121,7 +171,13 @@ export function moveToBackupInto(root, relPath, backupRootRel, ts = new Date().t
   const srcAbs = join(root, ...relPath.split('/'));
   try {
     renameSync(srcAbs, destAbs);
-  } catch {
+  } catch (err) {
+    // Fallback copy+remove must NEVER run on a symlinked source: cpSync would
+    // read through the link and rmSync would remove it — rethrow instead so
+    // the caller refuses the replace rather than touching the link's target.
+    let st = null;
+    try { st = lstatSync(srcAbs); } catch { /* vanished mid-move */ }
+    if (st && st.isSymbolicLink()) throw err;
     cpSync(srcAbs, destAbs, { recursive: true });
     rmSync(srcAbs, { recursive: true, force: true });
   }

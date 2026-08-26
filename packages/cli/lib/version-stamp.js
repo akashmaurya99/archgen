@@ -13,7 +13,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { VERSION_FILE } from './store.js';
+import { VERSION_FILE, assertNotSymlink } from './store.js';
 
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
@@ -42,6 +42,8 @@ export function readStamp(skillRoot) {
  */
 export function writeStamp(skillRoot, version) {
   const p = join(skillRoot, VERSION_FILE);
+  assertNotSymlink(skillRoot);
   mkdirSync(dirname(p), { recursive: true });
+  assertNotSymlink(p);
   writeFileSync(p, version + '\n', 'utf8');
 }

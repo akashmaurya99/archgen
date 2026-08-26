@@ -44,6 +44,29 @@ EOF
 warn() { printf 'install.sh: %s\n' "$*" >&2; }
 die()  { warn "$*"; exit 1; }
 
+# ---- Installer safety helpers (parity with packages/cli/lib/store.js) -------
+# lstat-style refusal: [ -L ] inspects the link itself, never its target. A
+# pre-existing symlink at a write target (supply-chain attack: a malicious
+# clone plants a link at the target) aborts the install instead of writing
+# through it.
+refuse_symlink() { # $1 = path
+  [ -L "$1" ] || return 0
+  die "Refusing to write through symlink at $1 — use --copy or remove symlink"
+}
+
+# Physical (all symlinks resolved) path of an existing directory.
+phys_of() { (cd -- "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"; }
+
+# Realpath-escape check: refuse when $1 resolves outside base dir $2.
+refuse_escape() { # $1 = path, $2 = base dir
+  [ -e "$1" ] || [ -L "$1" ] || return 0
+  base_phys="$(phys_of "$2")"
+  case "$(phys_of "$1")" in
+    "$base_phys" | "$base_phys"/*) return 0 ;;
+    *) die "Refusing to write through symlink at $1 — use --copy or remove symlink" ;;
+  esac
+}
+
 [ -n "${HOME:-}" ] || die '$HOME is not set; cannot resolve target directories.'
 MANIFEST="$HOME/.archgen-install-manifest.list"
 [ -d "$SOURCE" ] || die "skill source not found: $SOURCE"
@@ -67,8 +90,15 @@ if [ "$INIT" -eq 1 ]; then
   # Canonical store: ONE real copy at .agents/skills/archgen.
   # Safety (CLI parity): stamp-only differences refresh in place; a divergent
   # store moves to .archgen/.backup/<timestamp>/ before replacement.
-  mkdir -p -- "$ROOT/.agents/skills"
+  # Symlink safety (CLI parity with lib/init.js): a symlinked store — or a
+  # symlinked parent dir escaping the project root — aborts the install, and
+  # a divergent store is NEVER replaced unless its backup succeeded.
   STORE="$ROOT/.agents/skills/archgen"
+  refuse_symlink "$STORE"
+  refuse_escape "$ROOT/.agents" "$ROOT"
+  refuse_escape "$ROOT/.agents/skills" "$ROOT"
+  refuse_escape "$ROOT/.claude" "$ROOT"
+  mkdir -p -- "$ROOT/.agents/skills"
   BACKUP_NOTE=""
   if [ -e "$STORE" ] || [ -L "$STORE" ]; then
     if [ -d "$STORE" ] && [ ! -L "$STORE" ] && \
@@ -81,8 +111,7 @@ if [ "$INIT" -eq 1 ]; then
       if mv -- "$STORE" "$BACKUP_DEST" 2>/dev/null; then
         BACKUP_NOTE="previous divergent store moved to .archgen/.backup/$TS/.agents/skills/archgen"
       else
-        warn "could not back up divergent store at .agents/skills/archgen; replacing without backup"
-        rm -rf -- "$STORE"
+        die "could not back up divergent store at .agents/skills/archgen - refusing to replace without backup"
       fi
     fi
   fi
@@ -97,17 +126,46 @@ if [ "$INIT" -eq 1 ]; then
   printf '%s\n' "${CONFIG_VERSION:-${CLI_VERSION:-dev}}" > "$STORE/.archgen-version"
 
   # Claude adapter: RELATIVE symlink into the store; skip gracefully on failure.
+  # CLI parity (lib/init.js): a foreign live symlink is kept untouched, a
+  # dangling one is repaired — never silently replaced via ln -sfn.
   CLAUDE_LINK="$ROOT/.claude/skills/archgen"
   LINK_NOTE=""
   if [ -d "$CLAUDE_LINK" ] && [ ! -L "$CLAUDE_LINK" ]; then
     LINK_NOTE="kept existing real directory at .claude/skills/archgen (not replaced)"
-  elif ! { mkdir -p -- "$ROOT/.claude/skills" && ln -sfn -- "../../.agents/skills/archgen" "$CLAUDE_LINK"; }; then
+  elif [ -L "$CLAUDE_LINK" ]; then
+    if [ "$(readlink -- "$CLAUDE_LINK")" = "../../.agents/skills/archgen" ] && [ -e "$CLAUDE_LINK" ]; then
+      : # ours and resolving — reported by the summary below
+    elif [ -e "$CLAUDE_LINK" ]; then
+      LINK_NOTE="kept foreign symlink at .claude/skills/archgen (left untouched)"
+    elif ! { rm -f -- "$CLAUDE_LINK" && ln -s -- "../../.agents/skills/archgen" "$CLAUDE_LINK"; }; then
+      LINK_NOTE="could not repair dangling symlink at .claude/skills/archgen (skipped)"
+    fi
+  elif ! { mkdir -p -- "$ROOT/.claude/skills" && ln -s -- "../../.agents/skills/archgen" "$CLAUDE_LINK"; }; then
     LINK_NOTE="could not create symlink at .claude/skills/archgen (skipped; store still works standalone)"
   fi
 
+  strip_managed_blocks() { # stdout = $1 minus every complete managed block
+    awk '/archgen:start/ && !skip { skip=1; next } /archgen:end/ && skip { skip=0; next } !skip { print }' "$1"
+  }
+
+  normalize_duplicates() { # $1 = file with >1 start markers (balanced counts)
+    f="$1"
+    starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
+    [ "$starts" -gt 1 ] || return 0
+    ends=$(grep -c "archgen:end" -- "$f" 2>/dev/null); ends=${ends:-0}
+    [ "$starts" -eq "$ends" ] || die "corrupted archgen markers in $f ($starts start / $ends end) - fix or remove them manually"
+    warn "normalizing $starts duplicated archgen blocks in $f to a single block"
+    strip_managed_blocks "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  }
+
   write_block() { # $1 = target file; idempotent via archgen:start guard
     f="$1"
-    if [ -f "$f" ] && grep -q "archgen:start" "$f"; then return 0; fi
+    refuse_symlink "$f"
+    if [ -f "$f" ]; then
+      starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
+      if [ "$starts" -eq 1 ]; then return 0; fi
+      normalize_duplicates "$f"
+    fi
     {
       [ -f "$f" ] && cat "$f" && printf '\n'
       # Content mirrors packages/cli lib/block.js renderManagedBlockText() — regenerate when block format changes.
@@ -147,8 +205,13 @@ BLOCK
 
   write_bridge() { # $1 = CLAUDE.md; one-line @AGENTS.md pointer inside markers
     f="$1"
+    refuse_symlink "$f"
     if [ -f "$f" ] && grep -Eq '^[[:space:]]*@AGENTS\.md[[:space:]]*$' "$f"; then return 0; fi
-    if [ -f "$f" ] && grep -q "archgen:start" "$f"; then return 0; fi
+    if [ -f "$f" ]; then
+      starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
+      if [ "$starts" -eq 1 ]; then return 0; fi
+      normalize_duplicates "$f"
+    fi
     {
       [ -f "$f" ] && cat "$f" && printf '\n'
       # Content mirrors packages/cli lib/block.js renderClaudeBridgeText() — regenerate when block format changes.
@@ -252,26 +315,71 @@ while IFS= read -r tdir; do
     failed=$((failed+1)); continue
   fi
 
+  # Realpath-escape guard (CLI parity with lib/install.js): a symlinked
+  # harness dir must not redirect the install outside its base dir.
+  case "$tdir" in
+    "$HOME"/*) tbase="$HOME" ;;
+    *) tbase="${PROJ:-$PWD}" ;;
+  esac
+  tdir_phys="$(phys_of "$tdir")"
+  tbase_phys="$(phys_of "$tbase")"
+  case "$tdir_phys" in
+    "$tbase_phys" | "$tbase_phys"/*) ;;
+    *)
+      printf '%-8s %-5s %s\n' FAILED - "$tdir (refusing: resolves outside $tbase via symlink)"
+      failed=$((failed+1)); continue ;;
+  esac
+
   if [ "$MODE" = "link" ]; then
-    if [ -L "$dest" ] && [ "$(readlink -- "$dest")" = "$SOURCE" ]; then
-      printf '%-8s %-5s %s\n' SAME link "$dest"; same=$((same+1)); continue
+    if [ -L "$dest" ]; then
+      if [ "$(readlink -- "$dest")" = "$SOURCE" ]; then
+        printf '%-8s %-5s %s\n' SAME link "$dest"; same=$((same+1)); continue
+      elif [ -e "$dest" ]; then
+        # Live foreign symlink: belongs to the user — kept untouched and NOT
+        # recorded in the uninstall manifest (CLI parity: KEPT, never ln -sfn).
+        printf '%-8s %-5s %s\n' KEPT - "$dest (foreign symlink, not recorded)"
+        skipped=$((skipped+1)); continue
+      else
+        # Dangling link (npx cache eviction): recreate against current source.
+        if rm -f -- "$dest" && ln -s -- "$SOURCE" "$dest"; then
+          printf '%-8s %-5s %s -> %s\n' REPAIRED link "$dest" "$SOURCE"; changed=$((changed+1))
+          have_entry "$(printf 'link\t%s' "$dest")" || printf 'link\t%s\n' "$dest" >> "$MANIFEST"
+        else
+          printf '%-8s %-5s %s\n' FAILED link "$dest (symlink repair failed)"; failed=$((failed+1))
+        fi
+        continue
+      fi
     fi
-    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    if [ -e "$dest" ]; then
       printf '%-8s %-5s %s\n' FAILED - "$dest exists and is not a symlink; run --uninstall first"
       failed=$((failed+1)); continue
     fi
-    if ln -sfn -- "$SOURCE" "$dest"; then
+    if ln -s -- "$SOURCE" "$dest"; then
       printf '%-8s %-5s %s -> %s\n' OK link "$dest" "$SOURCE"; changed=$((changed+1))
       have_entry "$(printf 'link\t%s' "$dest")" || printf 'link\t%s\n' "$dest" >> "$MANIFEST"
     else
       printf '%-8s %-5s %s\n' FAILED link "$dest (symlink failed)"; failed=$((failed+1))
     fi
   else
+    if [ -L "$dest" ] && [ "$(readlink -- "$dest")" != "$SOURCE" ]; then
+      # Foreign symlink at dest: refuse instead of replacing it (CLI parity).
+      printf '%-8s %-5s %s\n' FAILED - "Refusing to write through symlink at $dest — use --copy or remove symlink"
+      failed=$((failed+1)); continue
+    fi
     if [ -d "$dest" ] && [ ! -L "$dest" ] && diff -rq -- "$SOURCE" "$dest" >/dev/null 2>&1; then
       printf '%-8s %-5s %s\n' SAME copy "$dest"; same=$((same+1)); continue
     fi
     if [ -e "$dest" ] || [ -L "$dest" ]; then
-      rm -rf -- "$dest" || { printf '%-8s %-5s %s\n' FAILED copy "$dest (cannot replace)"; failed=$((failed+1)); continue; }
+      # Backup-before-replace (CLI parity: <tdir>/.archgen-backups/<ts>/archgen);
+      # a replace that cannot be backed up is refused, never forced.
+      TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+      BACKUP="$tdir/.archgen-backups/$TS/archgen"
+      if mkdir -p -- "$(dirname -- "$BACKUP")" && mv -- "$dest" "$BACKUP" 2>/dev/null; then
+        printf '%-8s %-5s %s\n' BACKED-UP - "$BACKUP"
+      else
+        printf '%-8s %-5s %s\n' FAILED copy "$dest (could not back up - refusing to replace without backup)"
+        failed=$((failed+1)); continue
+      fi
     fi
     if cp -R -- "$SOURCE" "$dest"; then
       printf '%-8s %-5s %s\n' OK copy "$dest"; changed=$((changed+1))

@@ -193,7 +193,14 @@ try {
         break;
       }
       console.log('\nre-running init + doctor with the new binary (' + latest + ')…');
-      spawnSync(freshBin, ['init', dir], { stdio: 'inherit' });
+      const upInit = spawnSync(freshBin, ['init', dir], { stdio: 'inherit' });
+      if (upInit.status !== 0) {
+        // An aborted init (e.g. symlink refusal) must surface as a failure —
+        // running doctor over a half-finished install would mask it.
+        console.error('  ! init failed during update - doctor skipped (see message above)');
+        process.exitCode = upInit.status ?? 1;
+        break;
+      }
       spawnSync(freshBin, ['doctor', dir], { stdio: 'inherit' });
       break;
     }

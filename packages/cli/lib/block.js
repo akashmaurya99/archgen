@@ -18,6 +18,7 @@
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { loadConfig } from './config.js';
+import { assertNotSymlink } from './store.js';
 
 // Markers + block-format version come from the single source of truth.
 // Module-level load is safe: config resolution is module-relative and
@@ -127,8 +128,31 @@ export function renderClaudeBridgeText() {
   return [START, provenanceLine(), '@AGENTS.md', END].join('\n');
 }
 
+function countOccurrences(haystack, needle) {
+  let n = 0;
+  for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) n++;
+  return n;
+}
+
+function stripCompleteBlocks(text) {
+  let out = text;
+  for (;;) {
+    const s = out.indexOf(START);
+    if (s === -1) break;
+    const e = out.indexOf(END, s + START.length);
+    if (e === -1) break;
+    out = out.slice(0, s) + out.slice(e + END.length);
+  }
+  return out;
+}
+
 /**
  * Insert or replace the managed block inside existing file content.
+ * Corrupted input with DUPLICATED markers (more than one START or END, e.g. a
+ * twice-appended block) is normalized: the first complete block is replaced
+ * in place, every later complete block is removed, and anything outside the
+ * markers survives — the result carries exactly one block. Orphan markers
+ * left over after normalization still throw, as does a single orphan marker.
  * @param {string} existing file contents ('' when creating new)
  * @param {string} block rendered block
  * @param {string} eol line ending used when appending to empty/missing files
@@ -138,6 +162,22 @@ export function upsertBlock(existing, block, eol = '\n') {
   // caller rendered — this is what upgrades legacy unversioned blocks in place.
   const fresh = injectProvenance(block);
   const trimmed = existing ?? '';
+  const starts = countOccurrences(trimmed, START);
+  const ends = countOccurrences(trimmed, END);
+
+  if (starts > 1 || ends > 1) {
+    const s = trimmed.indexOf(START);
+    const e = s === -1 ? -1 : trimmed.indexOf(END, s + START.length);
+    if (s === -1 || e === -1) {
+      throw new Error('found only one archgen marker - fix or remove it manually');
+    }
+    const tail = stripCompleteBlocks(trimmed.slice(e + END.length));
+    if (tail.includes(START) || tail.includes(END)) {
+      throw new Error('found only one archgen marker - fix or remove it manually');
+    }
+    return trimmed.slice(0, s) + fresh + tail;
+  }
+
   const startIdx = trimmed.indexOf(START);
   const endIdx = trimmed.indexOf(END);
   if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
@@ -152,18 +192,16 @@ export function upsertBlock(existing, block, eol = '\n') {
 }
 
 /**
- * Strip the managed block from file contents.
+ * Strip EVERY managed block from file contents (duplicated markers normalize
+ * to zero blocks, matching upsertBlock's one-block guarantee).
  * @returns {{content: string, hadBlock: boolean}}
  */
 export function stripBlock(existing) {
   const trimmed = existing ?? '';
-  const startIdx = trimmed.indexOf(START);
-  const endIdx = trimmed.indexOf(END);
-  if (startIdx === -1 || endIdx === -1) return { content: trimmed, hadBlock: false };
-  let out = trimmed.slice(0, startIdx) + trimmed.slice(endIdx + END.length);
+  const out = stripCompleteBlocks(trimmed);
+  if (out === trimmed) return { content: trimmed, hadBlock: false };
   // Collapse whitespace left behind; drop file if nothing else remains.
-  out = out.replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
-  return { content: out, hadBlock: true };
+  return { content: out.replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n'), hadBlock: true };
 }
 
 function splitBom(raw) {
@@ -174,18 +212,24 @@ function splitBom(raw) {
 /** Write via sibling temp file + rename so readers never observe partial content. */
 function atomicWrite(absPath, data) {
   const tmp = absPath + '.tmp-' + process.pid + '-' + Date.now();
-  writeFileSync(tmp, data);
+  // 'wx' (O_CREAT|O_EXCL): if the tmp name already exists — e.g. an attacker
+  // planted a symlink there to redirect the write — fail instead of following.
+  writeFileSync(tmp, data, { flag: 'wx' });
   renameSync(tmp, absPath);
 }
 
 /**
  * BOM/EOL-aware upsert of a managed block directly into a file.
  * Preserves a leading UTF-8 BOM and the file's CRLF/LF convention.
+ * Refuses (throws) when the target is a symlink: managed files must never be
+ * written through a link (the final rename replaces the link itself, but the
+ * read+upsert would otherwise operate on attacker-chosen content).
  * @param {string} absPath target file (created when missing)
  * @param {string[]} blockLines lines between the managed markers
  * @returns {boolean} whether the file existed before the call
  */
 export function upsertManagedFile(absPath, blockLines) {
+  assertNotSymlink(absPath);
   const existed = existsSync(absPath);
   const raw = existed ? readFileSync(absPath, 'utf8') : '';
   const { bom, body } = splitBom(raw);
@@ -208,6 +252,7 @@ export function importsAgents(absPath) {
 
 /** Strip the managed block from a file on disk, preserving BOM. */
 export function stripManagedFile(absPath) {
+  assertNotSymlink(absPath);
   let raw = '';
   try { raw = readFileSync(absPath, 'utf8'); } catch { return { hadBlock: false }; }
   const { bom, body } = splitBom(raw);
@@ -233,6 +278,7 @@ function renderRow(row) {
  * @returns {string} the new file content
  */
 export function upsertFeaturesRegistry(fileAbsPath, rows = []) {
+  assertNotSymlink(fileAbsPath);
   const raw = readFileSync(fileAbsPath, 'utf8');
   const table = [
     '| Feature | Status | Updated |',

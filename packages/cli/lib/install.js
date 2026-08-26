@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSkillSource } from './init.js';
-import { cliVersion, hashDir, moveToBackupInto } from './store.js';
+import { assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackupInto, refuseSymlinkMessage } from './store.js';
 import { writeStamp } from './version-stamp.js';
 import { loadConfig } from './config.js';
 
@@ -36,6 +36,7 @@ export function globalTargets(home = homedir()) {
 }
 
 function record(manifest, kind, path) {
+  assertNotSymlink(manifest);
   const line = `${kind}\t${path}`;
   let dup = false;
   if (existsSync(manifest)) {
@@ -73,17 +74,31 @@ export function installGlobal(opts = {}) {
   const backups = [];
   let failures = 0;
 
-  const targets = [...globalTargets(home), join(process.cwd(), '.github', 'skills')];
-  for (const tdir of targets) {
+  const targets = [
+    ...globalTargets(home).map((d) => [d, home]),
+    [join(process.cwd(), '.github', 'skills'), process.cwd()],
+  ];
+  for (const [tdir, base] of targets) {
     const dest = join(tdir, 'archgen');
     if (!existsSync(tdir)) { rows.push(['SKIP', '-', tdir + ' (does not exist)']); continue; }
     try {
+      // Realpath-escape guard: a symlinked harness dir (e.g. ~/.claude -> /etc)
+      // must not redirect the install outside the base it belongs to.
+      assertWithinRoot(base, tdir);
       mkdirSync(tdir, { recursive: true }); // no-op when present
       if (opts.copy) {
         // Safety invariant: fingerprint dest BEFORE mutating; identical
         // (stamp-ignoring) skips like link mode, divergent moves into the
         // vault first — nothing is rmSync'd without a prior backup of it.
         const prev = lstatSafe(dest);
+        if (prev && prev.isSymbolicLink()) {
+          // A symlink at dest is only ours when it points at this source (a
+          // previous link-mode install). Any other link is foreign: replacing
+          // it would let a planted symlink steer the copy, so refuse.
+          let linkTarget = null;
+          try { linkTarget = resolve(dirname(dest), readlinkSync(dest)); } catch { /* unreadable */ }
+          if (linkTarget !== source) throw new Error(refuseSymlinkMessage(dest));
+        }
         let identical = false;
         if (prev && prev.isDirectory() && !prev.isSymbolicLink()) {
           try { identical = hashDir(dest) === hashDir(source); } catch { identical = false; }
@@ -100,6 +115,7 @@ export function installGlobal(opts = {}) {
             rows.push(['BACKED-UP', '-', abs]);
           }
           rmSync(dest, { force: true, recursive: true }); // no-op after a move; guards exotic-FS fallbacks
+          assertNotSymlink(dest); // TOCTOU re-check: nothing may have re-linked dest between backup and copy
           cpSync(source, dest, { recursive: true });
           stampNote(rows, dest, () => writeStamp(dest, version));
           record(manifest, 'copy', dest);
