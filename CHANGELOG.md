@@ -7,8 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-08-26
+
 ### Added
 
+- **Artifact intelligence layer** — two zero-dependency graph tools ship inside
+  the skill, because audited codegraph-family indexers extract source symbols
+  only (no markdown headings, no YAML task semantics):
+  `scripts/plan-graph.mjs` queries the task DAG (`--node <id>` transitive
+  neighborhood with distances, `--mermaid [--status]` flowcharts,
+  `--module <name>` filter), and `scripts/doc-index.mjs` indexes markdown
+  artifacts (heading tree, `--refs-to` backlinks across TASK/FR/ADR/path
+  references, `--validate` broken-reference gate, `--stale` freshness audit,
+  `--diagrams` inventory). Both are scope-hardened to `.archgen/<slug>/`
+  (symlink and look-alike escapes refused), dedup-guaranteed
+  (`duplicatesCollapsed` / realpath file inventory / unique-ref counting /
+  duplicate FR-definition detection), scale-guarded (iterative traversals,
+  800-task stress-tested, whole-graph renders refuse >250 nodes with scoping
+  hints, deterministic truncation markers past 100 files), and surface a
+  non-fatal `quality:{selfDeps,emptyOwnership,blankAcceptance}` facts block.
+- **No-fallback dispatch policy**: tasks go to the platform's native sub-agent
+  mechanism; when sub-agents are unavailable or fail (including missing tool
+  permissions) the main agent executes the task itself. Switching to another
+  harness/platform requires telling you the concrete issue and getting your
+  explicit approval first — automatic headless-CLI worker fallbacks are gone.
+- **PLAN-REVIEW stage**: the gate sequence is now verifier → plan-review →
+  user. After verifier APPROVE, reviewer sub-agent(s) sized by scope class
+  audit edge cases, task ordering, cross-module contracts and documentation
+  completeness; artifacts iterate until zero findings or explicit waiver.
+- **Root-cause investigation protocol**: recurring post-implementation issues
+  trigger complexity-sized investigators (main agent for small scopes, 1–3
+  split by subsystem otherwise) producing root cause, evidence and blast
+  radius before any fix task is written — patch-fixing without a root cause
+  is forbidden.
+- **Mandatory capability-skill loading**: registry entries carry a `policy`
+  field; UI/design/frontend work requires the design skills fetched and
+  followed before planning and dispatch, with a one-line compliance note in
+  every affected worker completion report.
+- **Professional plan depth**: interviews classify intent (GREENFIELD-SYSTEM
+  through BROWNFIELD-CHANGE) with survey-before-questioning for brownfield;
+  greenfield systems get PRD-grade artifacts — requirements with stable
+  FR-ids, naming/data/API contracts, environment matrix, per-module Mermaid
+  diagrams, and edge-case matrices wired to acceptance criteria — under
+  self-containment rules that pin every path verbatim so no session
+  hallucinates file names after context summarization.
+- **Status discipline (non-negotiable)**: every completed task updates
+  tasks.yaml, the todo tracker and the AGENTS.md registry timestamp in the
+  same turn; batching status writes to session end is forbidden.
+- **MCP installs discover their method via web search** when the current
+  command/config shape is not known with confidence, then apply it at the
+  correct scope — that specific harness's config, or global for npx-style
+  servers — behind the existing approval gate.
 - **Proactive setup UX**: the extension now wakes on startup even before a plan
   exists and detects three states — archgen skill missing, skill installed but
   no `.archgen/` plan yet, and installed-but-outdated skill (via a new
