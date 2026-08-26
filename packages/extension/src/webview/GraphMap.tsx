@@ -519,6 +519,46 @@ export function GraphMap(props: GraphMapProps): React.ReactElement {
     return () => window.removeEventListener('resize', scheduleDraw);
   }, [scheduleDraw]);
 
+  // devicePixelRatio change (window moved across monitors, browser zoom) →
+  // redraw so the backing store is re-sized at the new dpr. matchMedia is the
+  // only notification channel: arm `(resolution: <current>dppx)` and RE-ARM
+  // around the new dpr on every change, so any crossing fires — a fixed
+  // `(resolution: 2dppx)` query would only catch the 1x↔2x boundary. Guarded:
+  // jsdom and exotic hosts lack matchMedia entirely.
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    let disposed = false;
+    let mql: MediaQueryList | null = null;
+    const onChange = () => {
+      scheduleDraw();
+      arm();
+    };
+    const arm = () => {
+      if (disposed) return;
+      if (mql) {
+        if (typeof mql.removeEventListener === 'function') mql.removeEventListener('change', onChange);
+        else mql.removeListener(onChange);
+      }
+      const dpr =
+        typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+      try {
+        mql = window.matchMedia(`(resolution: ${dpr}dppx)`);
+      } catch {
+        mql = null;
+        return;
+      }
+      if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onChange);
+      else mql.addListener(onChange);
+    };
+    arm();
+    return () => {
+      disposed = true;
+      if (!mql) return;
+      if (typeof mql.removeEventListener === 'function') mql.removeEventListener('change', onChange);
+      else mql.removeListener(onChange);
+    };
+  }, [scheduleDraw]);
+
   // Wheel zoom around cursor — native listener so preventDefault works
   // (React attaches wheel passively).
   useEffect(() => {
@@ -543,22 +583,46 @@ export function GraphMap(props: GraphMapProps): React.ReactElement {
   }, [scheduleDraw]);
 
   // Selection pulse — the ONLY continuous loop, and only while something is
-  // selected; hard-capped at 30fps; fully cancelled on cleanup.
+  // selected; hard-capped at 30fps; fully cancelled on cleanup. Pauses
+  // entirely (ZERO rAF churn) while the document is hidden or the host has no
+  // size, and resumes via visibilitychange / resize. The host — not the
+  // canvas — is the size probe: the canvas fills the host and its backing
+  // store is derived from host dimensions in draw().
   useEffect(() => {
     if (!selectedId) return;
     let alive = true;
     let last = 0;
+    const canPulse = (): boolean => {
+      const host = hostRef.current;
+      return !document.hidden && !!host && host.clientWidth > 0 && host.clientHeight > 0;
+    };
     const tick = (now: number) => {
       if (!alive) return;
+      if (!canPulse()) {
+        // Parked — resume() re-arms the loop once the tab/host is live again.
+        pulseRafRef.current = null;
+        return;
+      }
       if (now - last >= PULSE_MIN_INTERVAL_MS) {
         last = now;
         drawRef.current();
       }
       pulseRafRef.current = nextFrame(tick);
     };
+    const resume = () => {
+      if (!alive || pulseRafRef.current !== null || !canPulse()) return;
+      pulseRafRef.current = nextFrame(tick);
+    };
+    const onVisibility = () => {
+      if (!document.hidden) resume();
+    };
     pulseRafRef.current = nextFrame(tick);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('resize', resume);
     return () => {
       alive = false;
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('resize', resume);
       if (pulseRafRef.current !== null) cancelFrame(pulseRafRef.current);
       pulseRafRef.current = null;
     };
@@ -660,6 +724,16 @@ export function GraphMap(props: GraphMapProps): React.ReactElement {
     hideTooltip();
   };
 
+  // System gesture interruption (browser zoom, OS modal, touch stolen by
+  // scroll) — pointerup never arrives, so reset exactly like pointer-leave
+  // or the board stays stuck in pan mode.
+  const onPointerCancel = () => {
+    dragRef.current = null;
+    setIsPanning(false);
+    if (hoveredId) setHoveredId(null);
+    hideTooltip();
+  };
+
   const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const { mx, my } = localXY(e);
     const cur = viewRef.current;
@@ -688,6 +762,7 @@ export function GraphMap(props: GraphMapProps): React.ReactElement {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerLeave}
+        onPointerCancel={onPointerCancel}
         onDoubleClick={onDoubleClick}
       />
       <div ref={tipRef} className="archgen-map-tooltip" />

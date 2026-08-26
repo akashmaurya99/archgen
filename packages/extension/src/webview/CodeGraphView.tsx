@@ -158,7 +158,9 @@ export function reconcileCachedNodes(
   extras: ReconcileExtras = {},
 ): GraphFlowNode[] {
   const { lodById, hubIds, captionById, titleById, openableById } = extras;
-  return laidOut.map((n) => {
+  const placedIds = new Set<string>();
+  const out = laidOut.map((n) => {
+    placedIds.add(n.id);
     const meta = metaById.get(n.id);
     const label = meta?.label ?? n.id;
     const kind = meta?.kind ?? 'unknown';
@@ -209,6 +211,12 @@ export function reconcileCachedNodes(
     cache.set(n.id, next);
     return next;
   });
+  // Prune stale entries: ids that left the current layout (model swap,
+  // filter, search) must not keep holding cached node objects.
+  for (const id of cache.keys()) {
+    if (!placedIds.has(id)) cache.delete(id);
+  }
+  return out;
 }
 
 function GraphNodeComponent({
