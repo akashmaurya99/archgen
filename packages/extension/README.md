@@ -37,7 +37,7 @@ The extension is strictly a **window**: it reads files and hands prompts to your
 | `archgen.harness.default` | `claude` | Agent harness invoked by the ▶ build button: `claude \| opencode \| codex \| gemini \| custom`. |
 | `archgen.harness.templates` | see below | Command template per harness. Placeholders: `{{prompt}}`, `{{task}}`, `{{outfile}}`. |
 | `archgen.scriptsPath` | *(empty)* | Explicit path to the archgen scripts dir (`next-tasks.mjs`, `set-status.mjs`). Probed in order: this setting → `<ws>/.agents/skills/archgen/scripts` → `<ws>/.claude/skills/archgen/scripts` → `<ws>/skills/archgen/scripts` → `~/.agents/skills/archgen/scripts` → `~/.claude/skills/archgen/scripts`. A typed UI error appears when none resolve. |
-| `archgen.delivery.mode` | `clipboard` | How ▶ Build This Task / ▶ Start Work deliver work: `clipboard` copies the composed prompt for you to paste into any agent chat (works everywhere); `spawn` runs the legacy headless CLI harness. |
+| `archgen.delivery.mode` | `clipboard` | How ▶ Build This Task / ▶ Start Work deliver work: `clipboard` copies the composed prompt for you to paste into any agent chat (works everywhere); `spawn` runs the legacy headless CLI harness. `spawn` requires a [trusted workspace](https://code.visualstudio.com/api/extension-guides/workspace-trust) — in an untrusted workspace it is refused with a warning (the dispatched scripts come from the repo itself), while `clipboard` keeps working. |
 | `archgen.delivery.autoFillChat` | `true` | After copying, best-effort pre-fill of the IDE's native chat input (ignored where unsupported). |
 
 ### Harness template examples
@@ -135,3 +135,4 @@ Manual workbench protocol with expected outcomes per step: see `MANUAL-TEST.md`.
 - No JetBrains target. No telemetry. No marketplace publishing automation.
 - No RocksDB parsing (codegraph-ai product shows the unsupported banner).
 - The webview performs ZERO direct fs/network IO — all IO is host-side.
+- `spawn` delivery is gated on VS Code workspace trust: in an untrusted workspace the harness is never launched and a warning is shown instead; `clipboard` delivery stays allowed (it starts no process).

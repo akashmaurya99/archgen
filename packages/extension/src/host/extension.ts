@@ -195,11 +195,28 @@ export function activate(context: ExtensionContext): void {
     });
   }
 
+  // ---- Workspace-trust gate (enterprise security, todo 5) ------------------
+  // Spawn mode executes repo-contained skill scripts (next-tasks.mjs via
+  // loadWaves, plus the harness CLI it dispatches) — arbitrary code straight
+  // off a freshly cloned repo — so it requires workspace trust. Clipboard
+  // mode stays allowed when untrusted: copying a prompt spawns nothing.
+  // Distinct from maybeNotifySetup's isTrusted check, which only mutes toasts.
+  const UNTRUSTED_SPAWN_WARNING = 'ArchGen: workspace is untrusted — enable trust to dispatch agents';
+
+  /** Refuse spawn dispatch in an untrusted workspace (warning + audit line); clipboard is never blocked. */
+  function spawnBlockedByTrust(what: string): boolean {
+    if (workspace.isTrusted || setting<DeliveryMode>('delivery.mode', 'clipboard') !== 'spawn') return false;
+    out.appendLine(`[harness] ${what} blocked: workspace is untrusted`);
+    void window.showWarningMessage(UNTRUSTED_SPAWN_WARNING);
+    return true;
+  }
+
   /**
    * Dispatch one task. Clipboard mode (default) copies the composed prompt —
    * zero processes; "spawn" runs the legacy headless harness verbatim.
    */
   function dispatchBuild(taskId: string): void {
+    if (spawnBlockedByTrust(`dispatch '${taskId}'`)) return;
     // Fail-safe: anything but an explicit "spawn" stays process-free.
     if (setting<DeliveryMode>('delivery.mode', 'clipboard') !== 'spawn') {
       const wsRoot = root();
@@ -255,6 +272,9 @@ export function activate(context: ExtensionContext): void {
       try {
         const wsRoot = root();
         if (!wsRoot) throw new Error('Open a workspace folder before starting work.');
+        // Before ANY process work: the spawn branch runs next-tasks.mjs (loadWaves)
+        // plus one harness per wave-1 task.
+        if (spawnBlockedByTrust('start-work')) return;
         if (setting<DeliveryMode>('delivery.mode', 'clipboard') !== 'spawn') {
           const scoped = buildScopedModel(wsRoot, storedSlug(wsRoot));
           const active = scoped.features.find((f) => f.slug === scoped.activeSlug);
