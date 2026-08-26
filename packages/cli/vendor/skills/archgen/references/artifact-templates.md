@@ -1,5 +1,35 @@
 # Artifact templates — copy, fill, never invent structure
 
+## Provenance header (SHOULD on every NEW tasks.yaml / architecture.yaml)
+
+Begin both files with three YAML comment lines. Comments are ignored by every
+consumer (skill scripts, VS Code extension, any YAML toolchain), so this is
+purely additive metadata — it can never break a parser:
+
+```yaml
+# schema_version: 1
+# generator: archgen v0.0.4
+# generated_at: 2026-08-26T09:00:00.000Z
+```
+
+Version token rules — code-defensive, NEVER guess:
+
+1. If a `.archgen-version` stamp sits next to `SKILL.md` (the installed skill
+   root) and reads as exact `MAJOR.MINOR.PATCH`, write `generator: archgen vX.Y.Z`.
+2. Else if an adjacent `archgen.config.json` carries a semver-shaped
+   `"version"` field, use that value the same way.
+3. Else omit the version token entirely: plain `# generator: archgen`.
+
+`generated_at` is one ISO-8601 timestamp per generation run (all files written
+by the same run share it). Keep the header at the very top of the file; never
+place content above it and never encode meaning anywhere except these three
+lines.
+
+Older artifacts without the header are backfilled by
+`npx archgen-skill migrate --apply` (dry-run `--check` is the default), which
+snapshots each file into `.archgen/.backup/<ts>/migrate/` before touching it
+and skips already-stamped files, so re-running is always safe.
+
 ## architecture.yaml (LARGE scope)
 
 ```yaml
