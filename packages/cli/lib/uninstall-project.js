@@ -69,9 +69,12 @@ export function uninstallProject(projectDir, packageRoot) {
   let storeKept = false;
   if (lstatSafe(storeAbs)) {
     const st = lstatSafe(storeAbs);
-    const mine = st.isDirectory() && !st.isSymbolicLink()
-      ? hashDir(storeAbs, { ignore: [VERSION_FILE] })
-      : null;
+    let mine = null;
+    if (st.isDirectory() && !st.isSymbolicLink()) {
+      // An unreadable/diverging-mid-walk tree must degrade to "kept", never
+      // crash the uninstall.
+      try { mine = hashDir(storeAbs, { ignore: [VERSION_FILE] }); } catch { mine = null; }
+    }
     let vendor = null;
     try { vendor = hashDir(resolveSkillSource(packageRoot)); } catch { vendor = null; }
     if (vendor !== null && mine === vendor) {

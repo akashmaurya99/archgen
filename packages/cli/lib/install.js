@@ -2,19 +2,31 @@
 // Installs the archgen skill into every EXISTING harness skills dir; manifest
 // records entries so --uninstall removes exactly what we put there.
 
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSkillSource } from './init.js';
+import { cliVersion, hashDir, moveToBackupInto } from './store.js';
+import { writeStamp } from './version-stamp.js';
+import { loadConfig } from './config.js';
 
 // Module-anchored default: works from the npm package (cli/lib -> cli/vendor)
 // AND from a monorepo checkout (packages/cli/lib -> ../../skill) without depending on cwd.
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const MANIFEST_NAME = '.archgen-install-manifest.list';
+export const MANIFEST_NAME = loadConfig().files.globalManifest;
 
-function globalTargets(home = homedir()) {
+// Global backup vault: global installs live OUTSIDE any project, so there is
+// no project root to host `.archgen/.backup/`. Convention chosen instead: each
+// harness skills dir keeps its own sibling vault at
+//   <skills-dir>/.archgen-backups/<ISO-timestamp>/archgen/
+// — a dot-prefixed sibling (never scanned as a skill by harnesses), colocated
+// with what it protects, and discovered by lib/restore.js alongside the
+// project vault.
+export const GLOBAL_BACKUP_REL = '.archgen-backups';
+
+export function globalTargets(home = homedir()) {
   return [
     join(home, '.claude', 'skills'),
     join(home, '.agents', 'skills'),
@@ -32,15 +44,33 @@ function record(manifest, kind, path) {
   if (!dup) writeFileSync(manifest, (existsSync(manifest) ? readFileSync(manifest, 'utf8').replace(/\n*$/, '\n') : '') + line + '\n');
 }
 
+function lstatSafe(p) {
+  try { return lstatSync(p); } catch { return null; }
+}
+
+/** Collision-free timestamp for `<tdir>/.archgen-backups/<ts>/` (ms clock can tick twice). */
+function nextBackupTs(tdir) {
+  for (;;) {
+    const ts = new Date().toISOString().replace(/:/g, '-');
+    if (!existsSync(join(tdir, GLOBAL_BACKUP_REL, ts))) return ts;
+  }
+}
+
 /**
- * @param {{copy?: boolean, home?: string}} opts
+ * @param {{copy?: boolean, home?: string, packageRoot?: string}} opts
+ * @returns {{rows: Array<[string, string, string]>, failures: number, manifest: string,
+ *            backups: string[]}} rows are [STATUS, MODE, PATH]; `backups` lists
+ *            absolute vault locations written by this run.
  */
 export function installGlobal(opts = {}) {
   const home = opts.home ?? homedir();
   if (!home) throw new Error('$HOME is not set; cannot resolve target directories.');
-  const source = resolve(resolveSkillSource(opts.packageRoot ?? PACKAGE_ROOT));
+  const packageRoot = opts.packageRoot ?? PACKAGE_ROOT;
+  const source = resolve(resolveSkillSource(packageRoot));
+  const version = cliVersion(packageRoot);
   const manifest = join(home, MANIFEST_NAME);
   const rows = [];
+  const backups = [];
   let failures = 0;
 
   const targets = [...globalTargets(home), join(process.cwd(), '.github', 'skills')];
@@ -50,23 +80,84 @@ export function installGlobal(opts = {}) {
     try {
       mkdirSync(tdir, { recursive: true }); // no-op when present
       if (opts.copy) {
-        rmSync(dest, { force: true, recursive: true });
-        cpSync(source, dest, { recursive: true });
-        record(manifest, 'copy', dest);
-        rows.push(['OK', 'copy', dest]);
+        // Safety invariant: fingerprint dest BEFORE mutating; identical
+        // (stamp-ignoring) skips like link mode, divergent moves into the
+        // vault first — nothing is rmSync'd without a prior backup of it.
+        const prev = lstatSafe(dest);
+        let identical = false;
+        if (prev && prev.isDirectory() && !prev.isSymbolicLink()) {
+          try { identical = hashDir(dest) === hashDir(source); } catch { identical = false; }
+        }
+        if (identical) {
+          stampNote(rows, dest, () => writeStamp(dest, version));
+          record(manifest, 'copy', dest);
+          rows.push(['SAME', 'copy', dest]);
+        } else {
+          if (prev) {
+            const loc = moveToBackupInto(tdir, 'archgen', GLOBAL_BACKUP_REL, nextBackupTs(tdir));
+            const abs = join(tdir, ...loc.split('/'));
+            backups.push(abs);
+            rows.push(['BACKED-UP', '-', abs]);
+          }
+          rmSync(dest, { force: true, recursive: true }); // no-op after a move; guards exotic-FS fallbacks
+          cpSync(source, dest, { recursive: true });
+          stampNote(rows, dest, () => writeStamp(dest, version));
+          record(manifest, 'copy', dest);
+          rows.push(['OK', 'copy', dest]);
+        }
       } else {
-        let same = false;
-        try { same = lstatSync(dest).isSymbolicLink(); } catch { /* absent */ }
-        if (!same) symlinkSync(source, dest, 'dir');
+        let status = 'OK';
+        const prev = lstatSafe(dest);
+        if (prev && prev.isSymbolicLink()) {
+          if (existsSync(dest)) {
+            // A live link resolving anywhere but our source belongs to the
+            // user: leave it untouched and OUT of the uninstall manifest, or
+            // `uninstall` would later delete their link. (install.sh replaces
+            // foreign links via ln -sfn — that destructive semantic is
+            // deliberately NOT copied here.)
+            const linkTarget = resolve(dirname(dest), readlinkSync(dest));
+            if (linkTarget !== source) {
+              rows.push(['KEPT', '-', dest + ' (foreign symlink, not recorded)']);
+              continue;
+            }
+            status = 'SAME';
+          } else {
+            // Dangling (npx cache eviction): recreate against the current
+            // source instead of leaving users broken while reporting SAME.
+            unlinkSync(dest); // removes the link itself, never any target
+            symlinkSync(source, dest, 'dir');
+            status = 'REPAIRED';
+          }
+        } else if (!prev) {
+          symlinkSync(source, dest, 'dir');
+        } else {
+          // Real directory/file at dest is NEVER clobbered: symlinkSync fails
+          // with EEXIST and surfaces as FAILED below (historical behavior).
+          symlinkSync(source, dest, 'dir');
+        }
+        // The link itself holds no bytes: the stamp must live INSIDE the real
+        // directory the link resolves to (the shared copy) so a read of
+        // <link>/.archgen-version sees it — true for symlinks and Windows
+        // junctions alike.
+        stampNote(rows, dest, () => writeStamp(source, version));
         record(manifest, 'link', dest);
-        rows.push([same ? 'SAME' : 'OK', 'link', dest]);
+        rows.push([status, 'link', dest]);
       }
     } catch (e) {
       failures++;
       rows.push(['FAILED', '-', dest + ' (' + e.message + ')']);
     }
   }
-  return { rows, failures, manifest };
+  return { rows, failures, manifest, backups };
+}
+
+/** Install succeeded even when the stamp could not be written (e.g. read-only vendor); surface it without failing. */
+function stampNote(rows, dest, write) {
+  try {
+    write();
+  } catch (e) {
+    rows.push(['WARN', '-', dest + ' (installed; version stamp not written: ' + e.message + ')']);
+  }
 }
 
 export function uninstallGlobal(home = homedir()) {

@@ -27,12 +27,17 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { loadConfig } from './config.js';
 
 export const STORE_REL = '.agents/skills/archgen';
 export const CLAUDE_LINK_REL = '.claude/skills/archgen';
-export const MANIFEST_REL = '.archgen/.install-manifest.json';
-export const BACKUP_ROOT_REL = '.archgen/.backup';
-export const VERSION_FILE = '.archgen-version';
+
+// Filenames routed through the canonical config (STORE_REL/CLAUDE_LINK_REL
+// stay literal: they are path semantics, not config).
+const CONFIG_FILES = loadConfig().files;
+export const MANIFEST_REL = '.archgen/' + CONFIG_FILES.projectManifest;
+export const BACKUP_ROOT_REL = '.archgen/' + CONFIG_FILES.backupDir;
+export const VERSION_FILE = CONFIG_FILES.stamp;
 
 const GUARDED_RELPATHS = new Set(['.claude', '.agents', '.claude/skills', '.agents/skills']);
 
@@ -48,17 +53,20 @@ function byName(a, b) {
 /**
  * Stable-order directory fingerprint: sha256 over sorted relpaths plus file
  * contents (symlinks hashed via their targets). Deterministic across machines.
+ * The version stamp is ALWAYS ignored on both sides of a comparison: it is
+ * CLI metadata written at destination time (global symlink installs stamp the
+ * shared real copy), never skill content, so it must not read as divergence.
  * @param {string} dir absolute directory to hash
- * @param {{ignore?: string[]}} opts relpaths to skip (e.g. our version stamp)
+ * @param {{ignore?: string[]}} opts EXTRA relpaths to skip
  */
 export function hashDir(dir, opts = {}) {
-  const ignore = opts.ignore ?? [];
+  const ignore = new Set([VERSION_FILE, ...(opts.ignore ?? [])]);
   const hash = createHash('sha256');
   (function walk(abs, rel) {
     const entries = readdirSync(abs, { withFileTypes: true }).sort((a, b) => byName(a.name, b.name));
     for (const ent of entries) {
       const r = rel ? rel + '/' + ent.name : ent.name;
-      if (ignore.includes(r)) continue;
+      if (ignore.has(r)) continue;
       const p = join(abs, ent.name);
       if (ent.isSymbolicLink()) hash.update('l ' + r + ' -> ' + readlinkSync(p) + '\n');
       else if (ent.isDirectory()) { hash.update('d ' + r + '\n'); walk(p, r); }
@@ -99,13 +107,15 @@ export function appendEntry(root, kind, relPath) {
 }
 
 /**
- * Move an existing project-relative path into `.archgen/.backup/<ts>/<rel>`.
- * Preserves the relative layout so backups restore unambiguously.
- * @returns {string} backup location relative to the project root
+ * Move an existing path into `<root>/<backupRootRel>/<ts>/<relPath>`, preserving
+ * the relative layout so backups restore unambiguously. Generalized core shared
+ * by the project vault (.archgen/.backup) and the global vault
+ * (<skills-dir>/.archgen-backups); `ts` can be injected so one operation lands
+ * every entry under a single timestamp.
+ * @returns {string} backup location relative to `root`
  */
-export function moveToBackup(root, relPath) {
-  const ts = new Date().toISOString().replace(/:/g, '-');
-  const destRel = BACKUP_ROOT_REL + '/' + ts + '/' + relPath;
+export function moveToBackupInto(root, relPath, backupRootRel, ts = new Date().toISOString().replace(/:/g, '-')) {
+  const destRel = backupRootRel + '/' + ts + '/' + relPath;
   const destAbs = join(root, ...destRel.split('/'));
   mkdirSync(dirname(destAbs), { recursive: true });
   const srcAbs = join(root, ...relPath.split('/'));
@@ -116,6 +126,11 @@ export function moveToBackup(root, relPath) {
     rmSync(srcAbs, { recursive: true, force: true });
   }
   return destRel;
+}
+
+/** Project-root flavor: move `relPath` under `.archgen/.backup/<ts>/<relPath>`. */
+export function moveToBackup(root, relPath) {
+  return moveToBackupInto(root, relPath, BACKUP_ROOT_REL);
 }
 
 export function rmIfExists(absPath) {
