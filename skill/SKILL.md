@@ -4,7 +4,7 @@ description: Enterprise architecture generation and autonomous task execution fo
 license: MIT
 compatibility: Requires Node.js >= 18 (zero npm dependencies). Works on any agent harness that can read files and run shell commands.
 metadata:
-  version: 1.0.0
+  version: 0.0.4
   repo: https://github.com/akashmaurya99/archgen
 ---
 

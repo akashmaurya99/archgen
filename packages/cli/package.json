@@ -1,20 +1,48 @@
 {
   "name": "archgen-skill",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Architecture generation & autonomous task execution for coding agents - conversational requirements in, dependency-ordered tasks out, executed wave-by-wave with verifier gates. Works with Claude Code, OpenCode, Cursor, Codex, Gemini CLI and any agentskills.io harness.",
   "license": "MIT",
   "type": "module",
-  "bin": { "archgen-skill": "bin/archgen.mjs" },
-  "files": ["bin/", "lib/", "vendor/", "README.md"],
-  "engines": { "node": ">=18" },
-  "keywords": ["ai", "agents", "claude", "codex", "cursor", "opencode", "gemini", "architecture", "skills", "orchestration", "task-graph", "planning"],
-  "repository": { "type": "git", "url": "git+https://github.com/akashmaurya99/archgen.git" },
+  "bin": {
+    "archgen-skill": "bin/archgen.mjs"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "vendor/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "claude",
+    "codex",
+    "cursor",
+    "opencode",
+    "gemini",
+    "architecture",
+    "skills",
+    "orchestration",
+    "task-graph",
+    "planning"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akashmaurya99/archgen.git"
+  },
   "homepage": "https://github.com/akashmaurya99/archgen#readme",
-  "bugs": { "url": "https://github.com/akashmaurya99/archgen/issues" },
+  "bugs": {
+    "url": "https://github.com/akashmaurya99/archgen/issues"
+  },
   "//": "vendor/skills/archgen is synced from ../skills/archgen by scripts/sync-vendor.mjs (run automatically via prepublishOnly). The extension ships separately as a VS Code vsix.",
   "scripts": {
-    "sync": "node scripts/sync-vendor.mjs",
-    "prepublishOnly": "node scripts/sync-vendor.mjs",
+    "sync:config": "node scripts/sync-config.mjs",
+    "sync": "node scripts/sync-config.mjs && node scripts/sync-vendor.mjs",
+    "prepublishOnly": "node scripts/sync-config.mjs && node scripts/sync-vendor.mjs",
     "test": "node --test test/*.test.mjs"
   }
 }

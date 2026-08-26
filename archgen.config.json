@@ -1,0 +1,16 @@
+{
+  "version": "0.0.4",
+  "skillName": "archgen",
+  "markers": {
+    "start": "<!-- archgen:start (managed block - do not edit between markers) -->",
+    "end": "<!-- archgen:end -->",
+    "featuresStart": "<!-- archgen:features:start -->",
+    "featuresEnd": "<!-- archgen:features:end -->"
+  },
+  "files": {
+    "stamp": ".archgen-version",
+    "projectManifest": ".install-manifest.json",
+    "globalManifest": ".archgen-install-manifest.list",
+    "backupDir": ".backup"
+  }
+}
