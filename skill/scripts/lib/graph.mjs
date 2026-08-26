@@ -2,16 +2,26 @@
 // WHY a lib: validate.mjs, next-tasks.mjs and verify-plan.mjs must agree on
 // cycle detection and wave semantics; three copies would drift (Metis finding).
 
+/** True iff `t` is a mapping object (not null, not an array, not a scalar). */
+function isTaskMapping(t) {
+  return t !== null && typeof t === 'object' && !Array.isArray(t);
+}
+
 /** Build adjacency (prerequisite → dependents) + reverse maps from tasks.
  * Normative semantics: depends_on lists PREREQUISITE ids; a task is ready iff
- * every prerequisite is done; wave 1 = empty depends_on. */
+ * every prerequisite is done; wave 1 = empty depends_on.
+ * Entries must be mappings with a non-empty string id — anything else is a
+ * GraphError naming the index, so consumers exit with a clean contract code
+ * instead of an uncaught TypeError on malformed tasks.yaml shapes. */
 export function buildGraph(tasks) {
   /** @type {Map<string, string[]>} prereq -> [dependent ids] */
   const dependents = new Map();
   /** @type {Map<string, string[]>} id -> prerequisite ids */
   const prerequisites = new Map();
   const byId = new Map();
-  for (const t of tasks) {
+  for (const [i, t] of tasks.entries()) {
+    if (!isTaskMapping(t)) throw new GraphError(`tasks[${i}]: not a mapping (task entries must be 'key: value' mappings)`);
+    if (typeof t.id !== 'string' || t.id.length === 0) throw new GraphError(`tasks[${i}]: missing string 'id' (every task needs a non-empty string id)`);
     if (byId.has(t.id)) throw new GraphError(`duplicate task id: ${t.id}`);
     byId.set(t.id, t);
     prerequisites.set(t.id, Array.isArray(t.depends_on) ? t.depends_on : []);
@@ -169,7 +179,9 @@ function globsMayOverlap(a, b) {
 export function dedupeDependencies(tasks) {
   let duplicatesCollapsed = 0;
   const normalized = tasks.map((t) => {
-    if (!Array.isArray(t.depends_on)) return t;
+    // Malformed entries pass through untouched; buildGraph owns reporting them
+    // (touching t.depends_on here would throw before the contract check runs).
+    if (!isTaskMapping(t) || !Array.isArray(t.depends_on)) return t;
     const seen = new Set();
     const deps = [];
     for (const d of t.depends_on) {
@@ -197,6 +209,9 @@ export function computeQualityStats(tasks) {
   let emptyOwnership = 0;
   let blankAcceptance = 0;
   for (const t of tasks) {
+    // Malformed entries are buildGraph's to report; counting them here would
+    // throw on property access before any consumer sees a contract error.
+    if (!isTaskMapping(t)) continue;
     if (Array.isArray(t.depends_on) && t.depends_on.includes(t.id)) selfDeps++;
     const own = t.file_ownership;
     if (!Array.isArray(own) || own.length === 0) emptyOwnership++;

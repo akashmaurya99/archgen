@@ -9,7 +9,7 @@
 // disappeared are pruned by default (--prune is accepted as the explicit
 // no-op spelling of the same behavior). Writes atomically via temp + rename.
 // Exit codes: 0 ok · 2 no .archgen/ dir · 4 usage/IO/marker errors.
-import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml } from './lib/yaml.mjs';
 
@@ -194,9 +194,18 @@ for (const r of ordered) {
   else unchanged++;
 }
 
+// O_EXCL ('wx') guarantees the temp path is freshly created; the original
+// AGENTS.md stays byte-intact until the rename lands (crash mid-write leaves
+// at worst an orphaned .tmp- sibling, never a half-written registry).
 const tmp = `${agentsPath}.tmp-${process.pid}-${Date.now()}`;
-writeFileSync(tmp, out);
-renameSync(tmp, agentsPath); // atomic on POSIX: readers observe old-or-new, never partial
+try {
+  writeFileSync(tmp, out, { flag: 'wx' });
+  renameSync(tmp, agentsPath); // atomic on POSIX: readers observe old-or-new, never partial
+} catch (e) {
+  try { unlinkSync(tmp); } catch { /* original intact; leftover tmp is harmless */ }
+  console.error(`${agentsPath}: atomic write failed (${e?.code ?? e?.message ?? e}) — original left untouched`);
+  process.exit(4);
+}
 
 console.log(banner);
 for (const n of notes) console.log(n);

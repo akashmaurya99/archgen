@@ -3,7 +3,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -231,4 +231,34 @@ test('update-agents: outer archgen:block provenance line survives registry rewri
   assert.ok(after.includes(prov + '\n# Guide'), 'provenance line preserved verbatim in place');
   assert.ok(after.includes(`| alpha | planned | ${ymd(tp)} |`));
   assert.ok(!after.includes('ghost'));
+});
+
+// --- Todo 21 (enterprise hardening): atomic write contract ------------------
+
+test('update-agents: atomic temp+rename leaves zero temp leftovers', () => {
+  makeFeature('alpha', tasksYaml(task('A1')));
+  makeFeature('beta', tasksYaml(task('B1', 'done')));
+  const r = run([dir]);
+  assert.equal(r.status, 0, r.stderr);
+  const leftovers = readdirSync(dir).filter((f) => f.includes('.tmp-'));
+  assert.deepEqual(leftovers, [], `temp leftovers: ${leftovers}`);
+});
+
+test('update-agents: write failure exits 4 and leaves AGENTS.md byte-intact (backup contract)', (t) => {
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    return t.skip('root ignores directory permissions; cannot simulate write failure');
+  }
+  makeFeature('alpha', tasksYaml(task('A1')));
+  assert.equal(run([dir]).status, 0); // first run creates the registry
+  const before = agents();
+  chmodSync(dir, 0o555); // temp file can no longer be created next to AGENTS.md
+  try {
+    const r = run([dir]);
+    assert.equal(r.status, 4, r.stdout + r.stderr);
+    assert.match(r.stderr, /atomic write failed/);
+    assert.equal(agents(), before, 'registry must survive the failed write byte-for-byte');
+    assert.ok(!readdirSync(dir).some((f) => f.includes('.tmp-')), 'failed write must not leak a temp file');
+  } finally {
+    chmodSync(dir, 0o755); // restore so afterEach cleanup can remove the tree
+  }
 });

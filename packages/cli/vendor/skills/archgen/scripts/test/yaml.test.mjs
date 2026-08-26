@@ -139,3 +139,42 @@ test('fuzz: 20 malformed inputs never crash uncaught — always YamlError or cle
   }
   assert.ok(thrown >= 15, `expected most malformed inputs to throw, got ${thrown}`);
 });
+
+// Todo 21 (enterprise hardening): the fuzz test above asserts "throws at all";
+// this table locks the SUBSET LIMITS contract — every unsupported YAML class is
+// REJECTED (never guessed) with its specific documented reason and location, so
+// a parser refactor can never silently start accepting (or mis-parsing) them.
+test('subset limits: every rejected YAML class fails with its documented reason + line', () => {
+  const cases = [
+    ['a: [1, 2\n', /:1: unterminated flow sequence/],
+    ['a: {k: v\n', /:1: unterminated flow mapping/],
+    ['a: {k: {n: 1}}\n', /nested flow mappings are not supported/],
+    ['a: {1}\n', /flow mapping entry must be 'key: value'/],
+    ['a: {k: 1, k: 2}\n', /duplicate key 'k' in flow mapping/],
+    ['a: 1\na: 2\n', /:2: duplicate key 'a' in mapping/],
+    ['{k: v}: 1\n', /flow collections cannot be keys/],
+    ['"unterminated: 1\n', /unterminated double-quoted key/],
+    ["'unterminated: 1\n", /unterminated single-quoted key/],
+    ['a: "unclosed\n', /unterminated quoted string/],
+    ['a: b: c\n', /plain values cannot contain ': '/],
+    ['- - nested\n', /nested sequence items are not supported/],
+    ['desc: |\n  line\n', /block scalars are not supported/],
+    ['desc: >\n  line\n', /block scalars are not supported/],
+    ['a: &anchor 1\n', /anchors\/tags are not supported/],
+    ['a: *ref\n', /anchors\/tags are not supported/],
+    ['a: !tag v\n', /anchors\/tags are not supported/],
+    ['a: 1\n\tb: 2\n', /:2: tab characters are not allowed/],
+    ['a: 1\n    b: 2\n', /:2: inconsistent indentation/],
+    ['- a\nb: 1\n', /:2: unexpected content outside the document block/],
+    ['---\na: 1\n', /:1: expected 'key:' mapping entry/],
+  ];
+  for (const [src, re] of cases) {
+    try {
+      parseYaml(src, { filename: 'limits.yaml' });
+      assert.fail(`subset limit accepted malformed input: ${JSON.stringify(src)}`);
+    } catch (e) {
+      assert.match(e.message, /^limits\.yaml:\d+: /, `error must carry file:line location for ${JSON.stringify(src)}`);
+      assert.match(e.message, re, `wrong rejection reason for ${JSON.stringify(src)}: got "${e.message}"`);
+    }
+  }
+});

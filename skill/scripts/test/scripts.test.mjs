@@ -2,11 +2,12 @@
 // Run: node --test scripts/test/
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, writeFileSync, readFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseYaml } from '../lib/yaml.mjs';
 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '..');
 let dir;
@@ -153,6 +154,100 @@ test('set-status: 10 concurrent invocations -> last-write-wins, zero temp leftov
   const final = readFileSync(p, 'utf8');
   assert.match(final, /status: (running|blocked)/);
   assert.equal(final.match(/id: W/g)?.length, 1); // no duplication
+});
+
+// Todo 21 (enterprise hardening): the test above serializes via spawnSync; the
+// same-wave parallel-worker scenario needs REAL overlap — async spawn, all
+// processes alive at once, racing on one tasks.yaml.
+function spawnAsync(script, args) {
+  return new Promise((resolve) => {
+    const proc = spawn(process.execPath, [join(SCRIPTS, script), ...args]);
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d) => { stdout += d; });
+    proc.stderr.on('data', (d) => { stderr += d; });
+    proc.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+test('set-status: truly parallel writers on one file -> every write atomic, zero corruption', async () => {
+  const p = writeTasks(`tasks:
+  - {id: W, title: w, status: pending, depends_on: [], file_ownership: ["w/**"], acceptance: ["x"]}
+  - {id: V, title: v, status: pending, depends_on: [W], file_ownership: ["v/**"], acceptance: ["x"]}
+`);
+  const statuses = ['running', 'blocked', 'ready', 'pending'];
+  // 8 overlapping processes, half racing on the SAME task id, half on its
+  // dependent — the exact same-wave contention the atomic rename must survive.
+  const results = await Promise.all(Array.from({ length: 8 }, (_, i) =>
+    spawnAsync('set-status.mjs', [p, i % 2 ? 'W' : 'V', statuses[i % statuses.length]])));
+  for (const r of results) assert.equal(r.status, 0, r.stderr);
+  const leftovers = readdirSync(dir).filter((f) => f.includes('.tmp-'));
+  assert.deepEqual(leftovers, [], `temp leftovers: ${leftovers}`);
+  // The file must parse (no reader ever observed a partial write) and keep
+  // exactly one copy of each task with exactly one status line each.
+  const { data } = parseYaml(readFileSync(p, 'utf8'));
+  assert.deepEqual(data.tasks.map((t) => t.id).sort(), ['V', 'W']);
+  for (const t of data.tasks) assert.ok(statuses.includes(t.status), `task ${t.id} has torn status: ${t.status}`);
+});
+
+test('set-status: write failure leaves the original byte-intact (crash-mid-write contract)', (t) => {
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    return t.skip('root ignores directory permissions; cannot simulate write failure');
+  }
+  const p = writeTasks(`tasks:\n  - {id: C, title: c, status: pending, depends_on: [], file_ownership: ["c/**"], acceptance: ["x"]}\n`);
+  const before = readFileSync(p, 'utf8');
+  chmodSync(dir, 0o555); // temp file can no longer be created next to the target
+  try {
+    const r = run('set-status.mjs', [p, 'C', 'running']);
+    assert.equal(r.status, 4, r.stdout + r.stderr);
+    assert.match(r.stderr, /cannot write temp file/);
+    assert.equal(readFileSync(p, 'utf8'), before, 'original must survive the failed write byte-for-byte');
+    assert.ok(!readdirSync(dir).some((f) => f.includes('.tmp-')), 'failed write must not leak a temp file');
+  } finally {
+    chmodSync(dir, 0o755); // restore so afterEach cleanup can remove the tree
+  }
+});
+
+test('next-tasks: malformed task shapes exit 4 with a clean contract error (no stack dump)', () => {
+  // Null entry (bare "- ") used to crash buildGraph with an uncaught TypeError.
+  let p = writeTasks(`tasks:\n  -\n  - {id: A, title: a, depends_on: [], file_ownership: ["a/**"], acceptance: ["x"]}\n`);
+  let r = run('next-tasks.mjs', [p]);
+  assert.equal(r.status, 4, r.stdout + r.stderr);
+  assert.match(r.stderr, /tasks\[0\]: not a mapping/);
+  assert.ok(!r.stderr.includes('TypeError'), 'no uncaught stack dump');
+  assert.equal(r.stdout, '', 'errors go to stderr only — stdout stays machine-clean');
+
+  // Scalar entry used to pass silently and emit a wave containing {}.
+  p = writeTasks(`tasks:\n  - just a scalar\n`);
+  r = run('next-tasks.mjs', [p]);
+  assert.equal(r.status, 4, r.stdout + r.stderr);
+  assert.match(r.stderr, /not a mapping/);
+  assert.equal(r.stdout, '');
+
+  // Missing string id.
+  p = writeTasks(`tasks:\n  - {title: no id here, depends_on: [], file_ownership: ["n/**"], acceptance: ["x"]}\n`);
+  r = run('next-tasks.mjs', [p]);
+  assert.equal(r.status, 4, r.stdout + r.stderr);
+  assert.match(r.stderr, /missing string 'id'/);
+  assert.equal(r.stdout, '');
+});
+
+test('next-tasks: JSON purity on failure exits — cycle(2)/conflict(3) emit nothing on stdout', () => {
+  let p = writeTasks(`tasks:
+  - {id: X, title: x, depends_on: [Y], file_ownership: ["x/**"], acceptance: ["x"]}
+  - {id: Y, title: y, depends_on: [X], file_ownership: ["y/**"], acceptance: ["y"]}
+`);
+  let r = run('next-tasks.mjs', [p]);
+  assert.equal(r.status, 2);
+  assert.equal(r.stdout, '', 'cycle diagnostic must not pollute the JSON channel');
+
+  p = writeTasks(`tasks:
+  - {id: P, title: p, depends_on: [], file_ownership: ["shared/**"], acceptance: ["x"]}
+  - {id: Q, title: q, depends_on: [], file_ownership: ["shared/**"], acceptance: ["x"]}
+`);
+  r = run('next-tasks.mjs', [p]);
+  assert.equal(r.status, 3);
+  assert.equal(r.stdout, '', 'conflict diagnostic must not pollute the JSON channel');
 });
 
 test('impact: chain A<-B<-C, impact of C reaches B and A', () => {
