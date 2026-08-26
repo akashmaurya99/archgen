@@ -2,7 +2,7 @@
 // active-slug resolution, workspaceState persistence round-trip (mocked
 // Memento), and the scoped model build (per-feature warnings).
 import { afterAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -200,8 +200,82 @@ describe('buildScopedModel', () => {
     expect(scoped.warnings.some((w) => w.startsWith('bad: tasks.yaml unreadable:'))).toBe(true);
   });
 
+  it('per-feature isolation: a CORRUPT INACTIVE feature never kills the active board', () => {
+    const ws = scratch();
+    // good is NEWEST → active; corrupt is older → inactive. The corrupt sibling
+    // must degrade to a prefixed warning while the active DAG renders fully.
+    makeFeature(ws, 'corrupt', '\ttabs are illegal\n::: nope\n', 1000);
+    makeFeature(ws, 'good', ALPHA_YAML, 2000);
+    const scoped = buildScopedModel(ws, undefined);
+    expect(scoped.activeSlug).toBe('good');
+    expect(scoped.features.map((f) => f.slug)).toEqual(['good', 'corrupt']);
+    expect(scoped.tasks.map((t) => t.id)).toEqual(['A1', 'A2']);
+    expect(scoped.warnings.some((w) => w.startsWith('corrupt: tasks.yaml unreadable:'))).toBe(true);
+    // warnings from the healthy feature's own parse (dangling GHOST) still surface
+    expect(scoped.warnings.some((w) => w.startsWith('good:') && /GHOST/.test(w))).toBe(true);
+  });
+
   it('returns an empty scope for missing workspace or absent .archgen', () => {
     expect(buildScopedModel(null, undefined)).toEqual({ features: [], activeSlug: '', tasks: [], docs: [], warnings: [] });
     expect(buildScopedModel(scratch(), undefined)).toEqual({ features: [], activeSlug: '', tasks: [], docs: [], warnings: [] });
+  });
+});
+
+describe('symlinked tasks.yaml inside the workspace (todo 9)', () => {
+  function trySymlink(target: string, dest: string): boolean {
+    try {
+      symlinkSync(target, dest);
+      return true;
+    } catch {
+      return false; // platform without symlink privileges — caller skips
+    }
+  }
+
+  it('a tasks.yaml that is a symlink to a real file is discovered, read, and parsed', (ctx) => {
+    const ws = scratch();
+    const sharedDir = join(ws, 'shared-plans');
+    mkdirSync(sharedDir, { recursive: true });
+    const realPath = join(sharedDir, 'tasks.yaml');
+    writeFileSync(realPath, BETA_YAML);
+
+    mkdirSync(join(ws, '.archgen', 'linked'), { recursive: true });
+    if (!trySymlink(realPath, join(ws, '.archgen', 'linked', 'tasks.yaml'))) ctx.skip();
+
+    const features = discoverFeatures(ws);
+    expect(features.map((f) => f.slug)).toEqual(['linked']);
+    // stat follows the link: the feature carries the TARGET's mtime
+    expect(features[0]?.updatedAt).toBeGreaterThan(0);
+
+    const scoped = buildScopedModel(ws, undefined);
+    expect(scoped.activeSlug).toBe('linked');
+    expect(scoped.tasks.map((t) => t.id)).toEqual(['B1']);
+    expect(scoped.warnings).toEqual([]);
+  });
+
+  it('a DANGLING tasks.yaml symlink is silently skipped — no crash, no phantom feature', (ctx) => {
+    const ws = scratch();
+    makeFeature(ws, 'real', BETA_YAML, 1000);
+    mkdirSync(join(ws, '.archgen', 'dangling'), { recursive: true });
+    if (!trySymlink(join(ws, 'nowhere', 'missing.yaml'), join(ws, '.archgen', 'dangling', 'tasks.yaml'))) ctx.skip();
+
+    const scoped = buildScopedModel(ws, undefined);
+    expect(scoped.features.map((f) => f.slug)).toEqual(['real']);
+    expect(scoped.activeSlug).toBe('real');
+    expect(scoped.tasks.map((t) => t.id)).toEqual(['B1']);
+    expect(scoped.warnings).toEqual([]);
+  });
+
+  it('a SYMLINKED FEATURE DIRECTORY is not discovered — features cannot escape the workspace', (ctx) => {
+    const ws = scratch();
+    const outside = join(ws, 'outside-feature');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'tasks.yaml'), BETA_YAML);
+    mkdirSync(join(ws, '.archgen'), { recursive: true });
+    if (!trySymlink(outside, join(ws, '.archgen', 'alias'))) ctx.skip();
+
+    // Dirent.isDirectory() is false for symlinks, so the alias never enters
+    // discovery — .archgen/ stays the hard containment boundary.
+    expect(discoverFeatures(ws)).toEqual([]);
+    expect(buildScopedModel(ws, undefined).features).toEqual([]);
   });
 });
