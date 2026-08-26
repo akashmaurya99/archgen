@@ -32,15 +32,7 @@
   "main": "./dist/extension.js",
   "icon": "media/icon.png",
   "activationEvents": [
-    "onCommand:archgen.openPanel",
-    "onView:archgen.overview",
-    "onView:archgen.tasks",
-    "onView:archgen.docs",
-    "onCommand:archgen.startWork",
-    "onCommand:archgen.buildTask",
-    "onCommand:archgen.revealTask",
-    "onCommand:archgen.selectFeature",
-    "onCommand:archgen.openDoc"
+    "workspaceContains:.archgen"
   ],
   "contributes": {
     "commands": [
@@ -88,9 +80,9 @@
     },
     "views": {
       "archgen": [
-        { "id": "archgen.overview", "name": "Overview" },
-        { "id": "archgen.tasks", "name": "Tasks" },
-        { "id": "archgen.docs", "name": "Docs" }
+        { "id": "archgen.overview", "name": "Overview", "icon": "media/icons/overview.svg" },
+        { "id": "archgen.tasks", "name": "Tasks", "icon": "media/icons/tasks.svg" },
+        { "id": "archgen.docs", "name": "Docs", "icon": "media/icons/docs.svg" }
       ]
     },
     "viewsWelcome": [
@@ -100,11 +92,11 @@
       },
       {
         "view": "archgen.tasks",
-        "contents": "No ArchGen plan found in this workspace.\n\nRun `npx archgen-skill generate` to create tasks.yaml artifacts."
+        "contents": "No tasks found.\n\nRun `npx archgen-skill generate` to create task graph artifacts."
       },
       {
         "view": "archgen.docs",
-        "contents": "No ArchGen docs found. Docs appear here after `npx archgen-skill generate`."
+        "contents": "No documentation found.\n\nArchitecture ADRs and specifications in `.archgen/` will appear here automatically."
       }
     ],
     "menus": {
