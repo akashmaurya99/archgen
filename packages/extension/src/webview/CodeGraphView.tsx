@@ -51,6 +51,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import '../../media/webview/dag.css';
 import type { CodegraphVM } from '../shared/protocol';
+import { ArchGenIcon } from './states';
 import {
   CODE_NODE_HEIGHT,
   CODE_NODE_WIDTH,
@@ -749,7 +750,8 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
 
   if (vm.product === 'unsupported') {
     return (
-      <div className="archgen-state archgen-banner-unsupported" role="status">
+      <div className="archgen-state archgen-state--empty archgen-banner-unsupported" role="status">
+        <ArchGenIcon />
         <h2>Codegraph unavailable</h2>
         <p>{vm.unsupportedReason ?? 'No supported codegraph index found in this workspace.'}</p>
       </div>

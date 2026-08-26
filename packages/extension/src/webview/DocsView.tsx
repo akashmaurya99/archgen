@@ -28,6 +28,7 @@ import xmlLang from 'highlight.js/lib/languages/xml';
 import pythonLang from 'highlight.js/lib/languages/python';
 import yamlLang from 'highlight.js/lib/languages/yaml';
 import type { DocRef, ThemeKind } from '../shared/protocol';
+import { ArchGenIcon } from './states';
 
 /* ------------------------------------------------------------------ */
 /* Syntax highlighting (F): highlight.js CORE + consciously chosen     */
@@ -748,8 +749,9 @@ export function DocsView({ docs, active, onSelect, onOpenInEditor, themeKind }: 
           </>
         ) : (
           <div className="archgen-doc-empty" role="region" aria-label="No document selected">
-            <h3 className="archgen-doc-empty-title">No Document Selected</h3>
-            <p className="archgen-hint archgen-doc-empty-desc">Select a document to preview it here.</p>
+            <ArchGenIcon />
+            <h2 className="archgen-doc-empty-title">No Document Selected</h2>
+            <p className="archgen-hint archgen-doc-empty-desc">Select a document from the sidebar to preview it here.</p>
           </div>
         )}
       </article>
