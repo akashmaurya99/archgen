@@ -65,14 +65,36 @@ if [ "$INIT" -eq 1 ]; then
   ROOT="$(cd -- "${INIT_DIR:-$PWD}" && pwd)" || die "cannot enter directory: ${INIT_DIR:-$PWD}"
 
   # Canonical store: ONE real copy at .agents/skills/archgen.
+  # Safety (CLI parity): stamp-only differences refresh in place; a divergent
+  # store moves to .archgen/.backup/<timestamp>/ before replacement.
   mkdir -p -- "$ROOT/.agents/skills"
-  rm -rf -- "$ROOT/.agents/skills/archgen"
-  cp -R -- "$SOURCE" "$ROOT/.agents/skills/archgen"
+  STORE="$ROOT/.agents/skills/archgen"
+  BACKUP_NOTE=""
+  if [ -e "$STORE" ] || [ -L "$STORE" ]; then
+    if [ -d "$STORE" ] && [ ! -L "$STORE" ] && \
+       diff -rq -x '.archgen-version' -- "$SOURCE" "$STORE" >/dev/null 2>&1; then
+      rm -rf -- "$STORE"
+    else
+      TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+      BACKUP_DEST="$ROOT/.archgen/.backup/$TS/.agents/skills/archgen"
+      mkdir -p -- "$(dirname -- "$BACKUP_DEST")"
+      if mv -- "$STORE" "$BACKUP_DEST" 2>/dev/null; then
+        BACKUP_NOTE="previous divergent store moved to .archgen/.backup/$TS/.agents/skills/archgen"
+      else
+        warn "could not back up divergent store at .agents/skills/archgen; replacing without backup"
+        rm -rf -- "$STORE"
+      fi
+    fi
+  fi
+  cp -R -- "$SOURCE" "$STORE"
 
-  # Version stamp inside the store (CLI package.json version; best-effort).
+  # Version stamp inside the store. Canonical source: archgen.config.json at
+  # the repo root; falls back to the CLI package.json scrape, then "dev".
+  CONFIG_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$SCRIPT_DIR/archgen.config.json" 2>/dev/null | head -n 1)"
   CLI_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
     "$SCRIPT_DIR/packages/cli/package.json" 2>/dev/null | head -n 1)"
-  printf '%s\n' "${CLI_VERSION:-dev}" > "$ROOT/.agents/skills/archgen/.archgen-version"
+  printf '%s\n' "${CONFIG_VERSION:-${CLI_VERSION:-dev}}" > "$STORE/.archgen-version"
 
   # Claude adapter: RELATIVE symlink into the store; skip gracefully on failure.
   CLAUDE_LINK="$ROOT/.claude/skills/archgen"
@@ -88,8 +110,11 @@ if [ "$INIT" -eq 1 ]; then
     if [ -f "$f" ] && grep -q "archgen:start" "$f"; then return 0; fi
     {
       [ -f "$f" ] && cat "$f" && printf '\n'
+      # Content mirrors packages/cli lib/block.js renderManagedBlockText() — regenerate when block format changes.
+      # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
       cat <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
+<!-- archgen:block v0.0.4 -->
 # ArchGen - Architecture Generation & Autonomous Task Execution
 
 This project uses the **archgen** skill, installed at `.agents/skills/archgen/`.
@@ -126,8 +151,11 @@ BLOCK
     if [ -f "$f" ] && grep -q "archgen:start" "$f"; then return 0; fi
     {
       [ -f "$f" ] && cat "$f" && printf '\n'
+      # Content mirrors packages/cli lib/block.js renderClaudeBridgeText() — regenerate when block format changes.
+      # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
       cat <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
+<!-- archgen:block v0.0.4 -->
 @AGENTS.md
 <!-- archgen:end -->
 BLOCK
@@ -137,6 +165,9 @@ BLOCK
 
   echo "archgen: project initialized at $ROOT"
   echo "  + .agents/skills/archgen (canonical store)"
+  if [ -n "$BACKUP_NOTE" ]; then
+    printf '  ! %s\n' "$BACKUP_NOTE"
+  fi
   if [ -n "$LINK_NOTE" ]; then
     printf '  ! %s\n' "$LINK_NOTE"
   elif [ -L "$CLAUDE_LINK" ]; then
