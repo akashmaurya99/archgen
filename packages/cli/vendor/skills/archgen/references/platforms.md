@@ -69,23 +69,10 @@ Claude Code project-scope servers.
 |---|---|---|---|
 | Claude Code | `Agent` tool + subagent_type; `.claude/agents/*.md` | Yes (default since v2.1.198; cap ~20) | BEST: `isolation: worktree` frontmatter; `/batch` |
 | OpenCode | task/subagent tool + subagent_type | Yes (fg + background) | None in core → use file-ownership discipline or team-mode plugin worktrees |
-| Codex CLI | model-mediated `spawn_agent`; max_depth=1 | Yes but children can't nest | None → prefer top-level parallel `codex exec` + manual git worktrees |
+| Codex CLI | model-mediated `spawn_agent`; max_depth=1 | Yes but children can't nest | None built-in → flatten plans into top-level `spawn_agent` calls (children cannot nest); add manual git worktrees if edits collide |
 | Gemini CLI | subagents-as-tools; `@agent-name` | Yes BUT strictly hub-and-spoke (no nested calls) | None → restrict parallel workers to read-only roles unless given external worktrees |
 | Cursor | Subagents w/ `is_background` frontmatter; `/multitask` | Yes | Opt-in per-subagent worktree or cloud VM |
 | Antigravity | `invoke_subagent` (async by design); `/fork` | Yes | `/fork` workspace separation; per-subagent worktrees UNVERIFIED |
-
-## Headless invocation templates (fallback workers)
-
-```
-claude    claude -p "<prompt>" --output-format json --permission-mode acceptEdits
-opencode  opencode run "<prompt>" --auto --format json
-codex     codex exec --sandbox workspace-write --json -o <out-file> "<prompt>"
-gemini    gemini --output-format json "<prompt>"
-agy       agy -p --output-format json --print-timeout 15m "<prompt>"
-```
-
-Completion signal = process exit (Claude documents 0/non-zero contract).
-NEVER pass secrets as arguments. Feature-detect old binaries via `--version`.
 
 ## Unknown platform procedure
 

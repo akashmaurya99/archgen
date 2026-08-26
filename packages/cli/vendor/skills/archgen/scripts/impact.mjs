@@ -8,7 +8,20 @@ import { parseYaml } from './lib/yaml.mjs';
 const [, , file, target] = process.argv;
 if (!file || !target) { console.error('usage: impact.mjs <tasks.yaml> <taskId-or-artifactPath>'); process.exit(4); }
 
-const { data } = parseYaml(readFileSync(file, 'utf8'), { filename: file });
+let raw;
+try {
+  raw = readFileSync(file, 'utf8');
+} catch {
+  console.error(`cannot read ${file} (missing or unreadable)`);
+  process.exit(4);
+}
+let data;
+try {
+  ({ data } = parseYaml(raw, { filename: file }));
+} catch (e) {
+  console.error(`${file}: unparseable YAML (${String(e?.message ?? e).replace(/^[^:]*:\d+:\s*/, '')})`);
+  process.exit(4);
+}
 const tasks = data?.tasks;
 if (!Array.isArray(tasks)) { console.error(`${file}: missing 'tasks:' sequence`); process.exit(4); }
 

@@ -39,9 +39,63 @@ Dispatch AFTER artifacts exist and validate.mjs passes. The verifier:
 Orchestrator fixes issues (edits artifacts) and re-dispatches. Loop until
 APPROVE — never present to the user before verifier approval.
 
+## §plan-review — post-plan review stage
+
+Run AFTER verify-plan returns APPROVE and BEFORE the user gate. Dispatch one
+or more REVIEWER sub-agents; count scales with the right-sizing class:
+
+- SMALL: main-agent self-review acceptable if no reviewer mechanism exists.
+- MEDIUM: 1 reviewer.
+- LARGE: 2–3 reviewers split by concern (correctness / ordering / docs).
+
+```
+TASK: Review the plan in .archgen/<slug>/ READ-ONLY.
+EXAMINE:
+  - edge cases per module
+  - task ordering / parallelization sanity (waves vs real dependencies)
+  - cross-module contract mismatches (interfaces, paths, naming)
+  - enhancement recommendations
+  - documentation completeness
+DELIVERABLE: numbered findings list; each finding = what + where + why.
+You NEVER edit files. Report only.
+```
+
+Reviewers are read-only and report-only — they never edit artifacts or code.
+The orchestrator fixes the artifacts itself, re-runs validate.mjs + re-dispatches
+the verifier gate after every change, and loops until zero findings remain or
+findings are explicitly waived by the user.
+
+## §investigate — root-cause protocol
+
+Triggered when the USER reports repetitive/recurring issues AFTER implementation
+waves completed. Do NOT patch-fix under this protocol. Complexity-sized dispatch:
+
+- SMALL scope: main agent investigates directly.
+- MEDIUM/LARGE: 1–3 investigator sub-agents split by suspected subsystem.
+
+Investigators produce ALL four:
+
+1. Root cause statement — one sentence naming the actual defect.
+2. Evidence — files/lines/repro steps.
+3. Blast radius — which tasks/artifacts are affected.
+4. Remediation plan — routed through the normal gates: new fix tasks get fresh
+   ids inheriting the affected task's ownership globs.
+
+Token discipline: investigators read narrowly around evidence, not whole-repo
+sweeps. Patch-fixes without a root-cause statement are forbidden under this
+protocol.
+
 ## §dispatch — wave execution
 
-### Tier 1: native sub-agents (preferred where strong)
+Dispatch policy: dispatch each task to the harness's NATIVE sub-agent mechanism
+when available AND functional. If sub-agents do not exist on this platform, or
+the sub-agent fails, or lacks required tool permissions (read/write/etc.), the
+MAIN AGENT executes the task ITSELF — sequentially, respecting waves and
+ownership globs. Cross-harness/platform delegation is allowed ONLY through an
+explicit user gate (below). There is NO automatic fallback to other harnesses,
+platforms, or CLIs — ever.
+
+### Native sub-agents (preferred)
 
 - Claude Code: background Agent tool per task; add worktree isolation for
   tasks whose ownership might brush shared files.
@@ -51,55 +105,64 @@ APPROVE — never present to the user before verifier approval.
 - Gemini CLI: parallel @agents are hub-and-spoke only AND have no isolation →
   use them ONLY for read-only/research waves unless wrapping in worktrees.
 
-### Tier 2: bash fallback workers (universal floor)
+### When sub-agents are unavailable or fail
 
-```bash
-#!/usr/bin/env bash
-set -uo pipefail
-SLUG="<slug>"; ROOT="$(pwd)"; SKILL="<abs-path-to-skills/archgen>"
-run_task() { # $1=id  $2=prompt-file
-  local id="$1" pf="$2" log=".archgen/$SLUG/results/$id.log"
-  mkdir -p "$(dirname "$log")"
-  local body; body="$(cat "$pf")
+Detect first — one of:
 
-You own exactly the file_ownership globs listed for this task in tasks.yaml. Follow archgen code-standards. On success run: node \"$SKILL/scripts/set-status.mjs\" .archgen/$SLUG/tasks.yaml \"$id\" done ; on failure set-status failed."
-  case "$ARCHGEN_HARNESS" in
-    claude)    claude -p "$body" --output-format json --permission-mode acceptEdits > "$log" 2>&1 ;;
-    opencode)  opencode run "$body" --auto --format json > "$log" 2>&1 ;;
-    codex)     codex exec --sandbox workspace-write --json -o "$log.final" "$body" > "$log" 2>&1 ;;
-    gemini)    gemini --output-format json "$body" > "$log" 2>&1 ;;
-    agy)       agy -p --output-format json --print-timeout 15m "$body" > "$log" 2>&1 ;;
-    *) echo "unknown harness: $ARCHGEN_HARNESS" >&2; return 9 ;;
-  esac
+- mechanism missing on this platform;
+- spawn failure (sub-agent never started / crashed at launch);
+- tool-permission gaps (sub-agent runs but cannot read/write/edit files).
 
-You own exactly: $(node "$SKILL/scripts/impact.mjs" .archgen/$SLUG/tasks.yaml "$id" >/dev/null 2>&1 && echo 'see tasks.yaml file_ownership'). Follow archgen code-standards. On success run: node "$SKILL/scripts/set-status.mjs" .archgen/$SLUG/tasks.yaml "$id" done ; on failure set-status failed." \
-}
-# Wave N: launch all frontier tasks in parallel…
-for t in $(node "$SKILL/scripts/next-tasks.mjs" .archgen/$SLUG/tasks.yaml \
-           | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).waves[0].map(t=>t.id).join(" ")))'); do
-  run_task "$t" ".archgen/$SLUG/results/$t.prompt" & pids="$pids $!"
-done
-fail=0; for p in $pids; do wait "$p" || fail=1; done
-exit $fail   # orchestrator inspects statuses before next wave
-```
+Then, in order:
 
-Isolation upgrade for Tier 2 when ownership borders are tight:
+1. DEFAULT — main agent executes the task itself, sequentially, respecting
+   waves and file_ownership globs. No user permission needed for this.
+2. USER GATE — cross-harness/platform delegation ONLY. When the sub-agent
+   problem looks platform-specific, STOP and tell the user the concrete issue,
+   propose using another platform/harness for that specific task (name the
+   harness + its command shape), and proceed ONLY after the user explicitly
+   allows it. Log the user's choice in the final report.
+
+Never silently switch harnesses. Never ask permission to fall back for routine
+failures the main agent can simply do itself.
+
+A sub-agent MECHANISM failure (missing/spawn/permissions) is not a TASK
+failure — run the diagnose-and-ask flow above first. Mark a task failed only
+after execution was actually attempted (by sub-agent or main agent) and did
+not complete.
+
+Isolation for native sub-agents when ownership borders are tight:
 
 ```bash
 git worktree add ".worktrees/$id" -b "task-$id"
-# run worker with cwd=.worktrees/$id, then merge task-$id on success
+# point the sub-agent's cwd at .worktrees/$id, then merge task-$id on success
 ```
 
-### Worker prompt contract (both tiers)
+### Worker prompt contract
 
-Every worker receives: task id+title, its acceptance criteria verbatim, its
-file_ownership globs ("edit NOTHING outside these"), the code-standards
-reference, and the done/failed status-update command. Workers do NOT talk to
-each other; coordination happens only through tasks.yaml state.
+Every worker receives ALL of:
+
+- task id + title;
+- its acceptance criteria VERBATIM;
+- its file_ownership globs ("edit NOTHING outside these");
+- the code-standards reference (`references/code-standards.md`);
+- instruction to run set-status done/failed immediately upon finishing:
+  `node <skill>/scripts/set-status.mjs .archgen/<slug>/tasks.yaml <id> done|failed`;
+- commit guidance: commit completed work scoped to the owned files;
+- BEFORE writing code run
+  `node <skill>/scripts/plan-graph.mjs --node <task-id> --tasks <tasks.yaml>`
+  and honor every connected dependency shown;
+- all file paths come from tasks.yaml/architecture.yaml VERBATIM — never
+  reconstruct paths from memory.
+
+Workers do NOT talk to each other; coordination happens only through
+tasks.yaml state.
 
 ## Failure policy
 
-- Worker exit ≠ 0 OR status=failed → leave it failed. NEVER auto-retry.
+- Sub-agent mechanism failure (missing/spawn/permissions) → §dispatch
+  diagnose-and-ask flow FIRST. It is not yet a task failure.
+- Task exit ≠ 0 OR status=failed → leave it failed. NEVER auto-retry.
 - Downstream tasks stay blocked by the resolver (blockedByFailure).
 - Report to user: failed id, log path, proposed fix-task description.
   [wait for user] A fix task gets fresh id, depends_on=[], ownership of the

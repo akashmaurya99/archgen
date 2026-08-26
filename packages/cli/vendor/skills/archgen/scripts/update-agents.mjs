@@ -75,8 +75,9 @@ function fmtDate(d) {
 /**
  * Derive the one-word registry status from a parsed tasks.yaml `tasks`
  * sequence. Precedence: unreadable -> unknown; any blocked -> blocked; all
- * done -> done; all pending/ready -> planned; everything else (any running,
- * or a done/pending/failed mix) -> in progress.
+ * failed -> blocked (dead work is never "in progress"); all done -> done;
+ * all pending/ready -> planned; everything else (any running, or a
+ * done/pending/failed mix) -> in progress.
  */
 function deriveStatus(tasks) {
   if (!Array.isArray(tasks)) return 'unknown';
@@ -89,6 +90,7 @@ function deriveStatus(tasks) {
   }
   if (statuses.length === 0) return 'planned'; // scaffolded folder, no entries yet
   if (statuses.includes('blocked')) return 'blocked';
+  if (statuses.every((s) => s === 'failed')) return 'blocked'; // all-failed feature: nothing is progressing
   if (statuses.every((s) => s === 'done')) return 'done';
   if (statuses.every((s) => s === 'pending' || s === 'ready')) return 'planned';
   return 'in progress';
