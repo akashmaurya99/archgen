@@ -33,6 +33,11 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm test
         working-directory: packages/cli
+      # Vendor-freshness gate: derived copies (SKILL.md frontmatter, skill config,
+      # vendored package) must match archgen.config.json. A dirty tree after sync
+      # means someone shipped a version bump without `npm --prefix packages/cli run sync`.
+      - run: npm --prefix packages/cli run sync
+      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen
 
   # Extension toolchain (jsdom + better-sqlite3 + vitest pools) is only
   # stable on Node >= 22; the shipped extension runs inside VS Code's
