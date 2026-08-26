@@ -13,7 +13,7 @@ import {
   workspace,
 } from 'vscode';
 import { assertNever } from '../shared/protocol';
-import type { HostToWebview, ThemeKind, WebviewCopyInitPlanMessage, WebviewToHost } from '../shared/protocol';
+import type { ArchgenModelMessage, HostToWebview, ThemeKind, WebviewCopyInitPlanMessage, WebviewToHost } from '../shared/protocol';
 
 export const VIEW_TYPE = 'archgen.taskBoard';
 
@@ -79,6 +79,11 @@ export class ArchgenPanel {
   private panel: WebviewPanel | undefined;
   private disposables: Array<{ dispose(): void }> = [];
   private lastSentModel: string | null = null;
+  // Codegraph digest cached by OBJECT IDENTITY (todo 6): the host reuses one
+  // slice object while the codegraph DB stat is unchanged, so the multi-MB
+  // JSON.stringify runs only when the slice object actually changes.
+  private lastCodegraphSlice: ArchgenModelMessage['codegraph'] | null = null;
+  private lastCodegraphDigest = '';
   private forceNext = false;
   // Reveal-to-task intent (sidebar "Show in Task Board") parked while the
   // webview is still loading; flushed right after the model push in the
@@ -248,10 +253,17 @@ export class ArchgenPanel {
   post(message: HostToWebview): void {
     if (!this.panel) return;
     if (message.type === 'model') {
-      // FULL-PAYLOAD fingerprint: the hashed object carries every model field
-      // (activeSlug, tasks incl. acceptance, docs, warnings, codegraph, …), so
-      // ANY mutation reaches the webview — not just id/status/doc deltas.
-      const fingerprint = fnv1a(JSON.stringify(message));
+      // FULL-PAYLOAD fingerprint: every model field (activeSlug, tasks incl.
+      // acceptance, docs, warnings, codegraph, …) reaches the webview — but
+      // the codegraph slice rides through its identity-cached digest (todo 6),
+      // so an unchanged slice is never re-serialized for the comparison.
+      if (message.codegraph !== this.lastCodegraphSlice) {
+        this.lastCodegraphSlice = message.codegraph;
+        this.lastCodegraphDigest = fnv1a(JSON.stringify(message.codegraph));
+      }
+      const fingerprint = fnv1a(
+        JSON.stringify({ ...message, codegraph: null }) + '#' + this.lastCodegraphDigest,
+      );
       if (!this.forceNext && fingerprint === this.lastSentModel) return;
       this.lastSentModel = fingerprint;
       this.forceNext = false;

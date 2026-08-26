@@ -323,6 +323,85 @@ describe('full-payload model fingerprint (dedupe)', () => {
   });
 });
 
+describe('codegraph digest caching (todo 6: DB-stat gate, no multi-MB re-stringify)', () => {
+  // The host reuses ONE codegraph slice object while the DB stat is unchanged
+  // (extension.ts stat gate); the panel must hash that slice exactly once and
+  // dedupe on identity afterwards — never re-run JSON.stringify over it.
+  function bigCodegraph(n: number): ArchgenModelMessage['codegraph'] {
+    return {
+      product: 'colby',
+      hasFts: false,
+      nodes: Array.from({ length: n }, (_, i) => ({
+        id: `n${i}`, label: `sym${i}`, kind: 'function', file: `f${i % 100}.ts`, line: i,
+      })),
+      edges: Array.from({ length: n - 1 }, (_, i) => ({ source: `n${i}`, target: `n${i + 1}`, kind: 'calls' })),
+    };
+  }
+
+  function sliceStringifyCount(
+    spy: { mock: { calls: ReadonlyArray<ReadonlyArray<unknown>> } },
+    slice: unknown,
+  ): number {
+    return spy.mock.calls.filter((c) => c[0] === slice).length;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reused slice object: identical re-post is deduped (0 postMessage) and the 50k-node slice is stringified exactly once', () => {
+    const panel = createPanel();
+    const slice = bigCodegraph(50_000);
+    const model: ArchgenModelMessage = { ...MODEL_A, codegraph: slice };
+    const stringifySpy = vi.spyOn(JSON, 'stringify');
+
+    panel.post(model);
+    expect(state.sent).toHaveLength(1);
+    expect(sliceStringifyCount(stringifySpy, slice)).toBe(1);
+
+    // Second push with the SAME slice object (stat unchanged → host reuse):
+    // deduped away, and the multi-MB slice is NOT serialized again.
+    panel.post({ ...model });
+    expect(state.sent).toHaveLength(1);
+    expect(sliceStringifyCount(stringifySpy, slice)).toBe(1);
+  });
+
+  it('task/status mutation still posts even when the codegraph slice is reused (dedupe stays un-broken)', () => {
+    const panel = createPanel();
+    const slice = bigCodegraph(50_000);
+    const model: ArchgenModelMessage = { ...MODEL_A, codegraph: slice };
+    panel.post(model);
+    const stringifySpy = vi.spyOn(JSON, 'stringify');
+
+    panel.post({
+      ...model,
+      tasks: model.tasks.map((t) => (t.id === 'B' ? { ...t, status: 'running' as const } : t)),
+    });
+
+    expect(state.sent).toHaveLength(2);
+    expect((state.sent[1] as ArchgenModelMessage).tasks.find((t) => t.id === 'B')?.status).toBe('running');
+    // The post rode the cached digest — zero re-serialization of the slice.
+    expect(sliceStringifyCount(stringifySpy, slice)).toBe(0);
+  });
+
+  it('a fresh slice object (DB moved) is re-serialized and reaches the webview', () => {
+    const panel = createPanel();
+    const model: ArchgenModelMessage = { ...MODEL_A, codegraph: bigCodegraph(50_000) };
+    panel.post(model);
+    const stringifySpy = vi.spyOn(JSON, 'stringify');
+
+    const refreshed: ArchgenModelMessage = {
+      ...model,
+      codegraph: { ...model.codegraph, nodes: model.codegraph.nodes?.slice(0, 10) },
+    };
+    panel.post(refreshed);
+
+    expect(state.sent).toHaveLength(2);
+    expect((state.sent[1] as ArchgenModelMessage).codegraph.nodes).toHaveLength(10);
+    expect(sliceStringifyCount(stringifySpy, refreshed.codegraph)).toBe(1);
+  });
+});
+
 describe('onSetupSync replay (snapshot-on-ready)', () => {
   const SETUP_REPLAY = {
     type: 'setup' as const,

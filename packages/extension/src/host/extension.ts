@@ -13,7 +13,7 @@ import type { SidebarActions } from './sidebar/actions';
 import { registerSetupStatusBar, registerStatusBar } from './statusbar';
 import { createWatchPipeline, type WatchPipeline } from './watchers';
 import { createSingleFollowup, createThrottle } from './debounce';
-import { detectCodegraph, openCodegraph } from './codegraph';
+import { codegraphDbStat, detectCodegraph, openCodegraph } from './codegraph';
 import { activeFeatureKey, buildScopedModel, discoverFeatures } from './features';
 import {
   composeInitPlanPrompt,
@@ -111,6 +111,19 @@ export function activate(context: ExtensionContext): void {
     return context.workspaceState.get<string>(activeFeatureKey(wsRoot));
   }
 
+  // DB-STAT GATE for codegraph snapshots (todo 6): snapshotting 60k–150k nodes
+  // is O(MB) of SQLite work, and visible/focus/watcher events fire pushModel
+  // constantly. The index is re-read ONLY when its file moved (mtimeMs+size);
+  // otherwise the cached slice object is reused VERBATIM — panel.post digests
+  // codegraph by object identity, so reuse also skips the multi-MB
+  // JSON.stringify the fingerprint used to run per event. `force` deliberately
+  // does NOT bypass this gate (it only invalidates the panel's dedupe): any
+  // real DB write moves the stat, and the .codegraph/** watcher re-pushes on
+  // exactly that signal, so freshness never depends on forced re-reads.
+  let lastCodegraphDbPath: string | null = null;
+  let lastCodegraphStat: { mtimeMs: number; size: number } | null = null;
+  let lastCodegraphSlice: ArchgenModelMessage['codegraph'] | null = null;
+
   /** Read .archgen/ (ALL features; DAG scoped to the active slug) + codegraph snapshot. */
   function buildModel(): ArchgenModelMessage {
     const wsRoot = root();
@@ -131,6 +144,20 @@ export function activate(context: ExtensionContext): void {
 
   function readCodegraph(wsRoot: string | null): ArchgenModelMessage['codegraph'] {
     if (!wsRoot) return { product: 'unsupported', unsupportedReason: 'No workspace folder open.' };
+    // Stat check BEFORE any SQLite work; detectCodegraph is existsSync-cheap.
+    const detected = detectCodegraph(wsRoot);
+    const stat = detected.dbPath !== null ? codegraphDbStat(detected.dbPath) : null;
+    if (
+      stat !== null &&
+      stat.exists &&
+      lastCodegraphSlice !== null &&
+      lastCodegraphDbPath === detected.dbPath &&
+      lastCodegraphStat !== null &&
+      lastCodegraphStat.mtimeMs === stat.mtimeMs &&
+      lastCodegraphStat.size === stat.size
+    ) {
+      return lastCodegraphSlice;
+    }
     try {
       const { reader } = openCodegraph(wsRoot);
       try {
@@ -149,11 +176,22 @@ export function activate(context: ExtensionContext): void {
         } catch {
           // Rollups are progressive enhancement — views tolerate absence.
         }
+        if (stat !== null && stat.exists) {
+          // Cache against the stat captured BEFORE the read: a write racing
+          // the snapshot then misses the gate on the next push and re-reads.
+          lastCodegraphDbPath = detected.dbPath;
+          lastCodegraphStat = { mtimeMs: stat.mtimeMs, size: stat.size };
+          lastCodegraphSlice = vm;
+        }
         return vm;
       } finally {
         reader.close();
       }
     } catch (e) {
+      // A failed read must never serve a stale slice afterwards.
+      lastCodegraphDbPath = null;
+      lastCodegraphStat = null;
+      lastCodegraphSlice = null;
       return {
         product: 'unsupported' as const,
         unsupportedReason: e instanceof Error ? e.message : String(e),
@@ -161,7 +199,11 @@ export function activate(context: ExtensionContext): void {
     }
   }
 
-  /** Build one snapshot, fan it out through the hub, then post to the board. */
+  /**
+   * Build one snapshot, fan it out through the hub, then post to the board.
+   * `force` invalidates ONLY the panel's fingerprint dedupe (re-send); the
+   * codegraph DB stat gate above decides whether the index is re-read.
+   */
   function pushModel(force = false): void {
     const model = buildModel();
     hub.fire(model);
