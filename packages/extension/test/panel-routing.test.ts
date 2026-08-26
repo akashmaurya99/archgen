@@ -94,6 +94,17 @@ function createPanel(opts: Parameters<typeof ArchgenPanel.createOrShow>[1] = {})
   return ArchgenPanel.createOrShow(ctx, opts);
 }
 
+const SETUP_SYNC = {
+  type: 'setup' as const,
+  state: {
+    skill: { installed: true, path: '/ws/.agents/skills/archgen/scripts', version: '0.0.4' },
+    planInitialized: false,
+    upToDate: true,
+  },
+  actions: ['initPlan'] as import('../src/shared/protocol').SetupAction[],
+  extVersion: '0.0.4',
+};
+
 function receive(msg: Msg): void {
   if (!state.onWebviewMessage) throw new Error('webview message handler was never registered');
   state.onWebviewMessage(msg);
@@ -114,7 +125,7 @@ describe('panel message routing', () => {
     expect(onStartWork).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps routing build/openDoc/selectFeature to their callbacks', () => {
+  it('keeps routing build/openDoc/selectFeature to their callbacks (host adapter board-open on selectFeature/openDoc: MANUAL coverage)', () => {
     const onBuild = vi.fn();
     const onOpenDoc = vi.fn();
     const onSelectFeature = vi.fn();
@@ -146,6 +157,24 @@ describe('panel message routing', () => {
     }
   });
 
+  describe('copyInitPlan idea passthrough (board kickoff modal)', () => {
+    it('routes the FULL message so the host delivers immediately when the board collected an idea', () => {
+      const onCopyInitPlan = vi.fn();
+      createPanel({ onCopyInitPlan });
+      receive({ type: 'copyInitPlan', idea: 'auth service' });
+      expect(onCopyInitPlan).toHaveBeenCalledTimes(1);
+      expect(onCopyInitPlan).toHaveBeenCalledWith({ type: 'copyInitPlan', idea: 'auth service' });
+    });
+
+    it('routes bare copyInitPlan unchanged — host decides InputBox vs deliver (adapter note: MANUAL coverage)', () => {
+      const onCopyInitPlan = vi.fn();
+      createPanel({ onCopyInitPlan });
+      receive({ type: 'copyInitPlan' });
+      expect(onCopyInitPlan).toHaveBeenCalledTimes(1);
+      expect(onCopyInitPlan.mock.calls[0]?.[0]).toEqual({ type: 'copyInitPlan' });
+    });
+  });
+
   it('posts revealTask over the HostToWebview direction after ready', () => {
     const panel = createPanel();
     receive({ type: 'ready' });
@@ -169,7 +198,7 @@ describe('panel message routing', () => {
     expect(state.sent).toEqual([{ type: 'revealSetup' }]);
   });
 
-  it('flushes parked intents in channel order: model → revealTask → revealSetup', () => {
+  it('flushes parked intents in channel order: model → revealTask → revealSetup → revealDoc → docContent → setup', () => {
     let pushedModel = false;
     const panel = createPanel({
       onReady: () => {
@@ -178,11 +207,57 @@ describe('panel message routing', () => {
           panel.post(MODEL_A);
         }
       },
+      onSetupSync: () => {
+        panel.post(SETUP_SYNC);
+      },
+      // Mirror extension.ts revealDoc: read the file, then post the pair.
+      onRevealDoc: (p) => {
+        panel.post({ type: 'revealDoc', path: p });
+        panel.post({ type: 'docContent', path: p, content: '# demo' });
+      },
     });
     panel.setPendingReveal('B');
     panel.setPendingRevealSetup();
+    panel.setPendingDoc('plans/demo.md');
     receive({ type: 'ready' });
-    expect(state.sent.map((m) => m.type)).toEqual(['model', 'revealTask', 'revealSetup']);
+    expect(state.sent.map((m) => m.type)).toEqual([
+      'model',
+      'revealTask',
+      'revealSetup',
+      'revealDoc',
+      'docContent',
+      'setup',
+    ]);
+  });
+
+  it('parks setPendingDoc before ready (nothing sent) and flushes via onRevealDoc after the handshake', () => {
+    const onRevealDoc = vi.fn();
+    const panel = createPanel({ onRevealDoc });
+    panel.setPendingDoc('plans/demo.md');
+    expect(state.sent).toEqual([]); // parked — webview never posted ready
+    receive({ type: 'ready' });
+    expect(onRevealDoc).toHaveBeenCalledTimes(1);
+    expect(onRevealDoc).toHaveBeenCalledWith('plans/demo.md');
+  });
+
+  it('delivers setPendingDoc at once on an already-ready board', () => {
+    const onRevealDoc = vi.fn();
+    const panel = createPanel({ onRevealDoc });
+    receive({ type: 'ready' });
+    state.sent.length = 0;
+    panel.setPendingDoc('docs/adr-1.md');
+    expect(onRevealDoc).toHaveBeenCalledTimes(1);
+    expect(onRevealDoc).toHaveBeenCalledWith('docs/adr-1.md');
+    // No HostToWebview traffic from the panel itself — the HOST posts the pair.
+    expect(state.sent).toEqual([]);
+  });
+
+  it('drops a parked doc when the panel disposes before ready (no stale flush)', () => {
+    const onRevealDoc = vi.fn();
+    const panel = createPanel({ onRevealDoc });
+    panel.setPendingDoc('plans/demo.md');
+    for (const d of state.disposeCallbacks.splice(0)) d();
+    expect(onRevealDoc).not.toHaveBeenCalled();
   });
 });
 

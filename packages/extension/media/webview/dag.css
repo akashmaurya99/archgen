@@ -114,6 +114,35 @@ body,
   display: inline-flex;
 }
 
+/* Gear settings button — sized to sit flush beside the ⋯ menu summary. */
+.archgen-gear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--archgen-radius-pill, 9999px);
+  background: transparent;
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-md);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+}
+
+.archgen-gear-btn:hover {
+  color: var(--archgen-text);
+  background: color-mix(in srgb, var(--archgen-text) 8%, transparent);
+}
+
+.archgen-gear-btn:focus-visible {
+  outline: 2px solid var(--archgen-focus-ring);
+  outline-offset: 2px;
+}
+
 .archgen-menu summary {
   display: inline-flex;
   align-items: center;
@@ -1169,10 +1198,6 @@ body,
 }
 
 /* Empty-state bridge into the SETUP tab (secondary action under the CTA). */
-.archgen-empty-setup-btn {
-  margin-top: 10px;
-}
-
 /* ---- TASKS DAG HUD & TOOLBARS ---- */
 .archgen-dag-hud {
   display: flex;
@@ -2272,6 +2297,104 @@ mark.archgen-search-hit.is-current {
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface);
   color: var(--archgen-text-muted);
+}
+
+/* ---- KICKOFF MODAL (in-board centered quick-input replacement) ---- */
+/* Native Quick Input has no positioning API — the fixed inset-0 flex overlay
+   centers the card vertically AND horizontally inside the board itself. */
+.archgen-kickoff-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 100;
+}
+
+.archgen-kickoff-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--archgen-space-2, 8px);
+  width: min(420px, calc(100vw - 48px));
+  padding: var(--archgen-space-4, 16px);
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-md, 11px);
+  background: var(--archgen-surface-elevated);
+  box-shadow: var(--archgen-shadow-floating, 0 12px 36px rgba(0, 0, 0, 0.35));
+}
+
+.archgen-kickoff-title {
+  margin: 0;
+  font-size: var(--archgen-font-size-md);
+  font-weight: 600;
+  color: var(--archgen-text);
+}
+
+.archgen-kickoff-input {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--archgen-hairline-strong);
+  border-radius: var(--archgen-radius-sm, 8px);
+  background: var(--archgen-canvas);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-sm);
+}
+
+.archgen-kickoff-input:focus-visible {
+  outline: 2px solid var(--archgen-focus-ring);
+  outline-offset: 2px;
+}
+
+.archgen-kickoff-hint {
+  margin: 0;
+  color: var(--archgen-text-muted);
+  font-size: var(--archgen-font-size-xs);
+}
+
+.archgen-kickoff-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--archgen-space-2, 8px);
+  margin-top: var(--archgen-space-1, 4px);
+}
+
+/* ---- SETUP DIALOG (shares the kickoff overlay pattern) ---- */
+.archgen-setup-dialog-card {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.archgen-setup-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--archgen-space-2, 8px);
+}
+
+.archgen-setup-close {
+  border: none;
+  border-radius: var(--archgen-radius-sm, 8px);
+  background: transparent;
+  color: var(--archgen-text-muted);
+  font-size: var(--archgen-font-size-md);
+  line-height: 1;
+  padding: 3px 7px;
+  cursor: pointer;
+  transition: color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+}
+
+.archgen-setup-close:hover {
+  color: var(--archgen-text);
+  background: color-mix(in srgb, var(--archgen-text) 8%, transparent);
+}
+
+.archgen-setup-close:focus-visible {
+  outline: 2px solid var(--archgen-focus-ring);
+  outline-offset: 2px;
 }
 
 /* ---- RESPONSIVE BREAKPOINTS ---- */

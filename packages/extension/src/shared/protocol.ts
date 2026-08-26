@@ -142,9 +142,15 @@ export interface ArchgenSetupMessage {
   extVersion: string;
 }
 
-/** Parked-navigation intent: make the SETUP tab active once the board is up. */
+/** Parked-navigation intent: open the centered setup dialog once the board is up. */
 export interface WebviewRevealSetupMessage {
   type: 'revealSetup';
+}
+
+/** Parked-navigation intent: land the DOCS tab on one document (path matches the following docContent). */
+export interface WebviewRevealDocMessage {
+  type: 'revealDoc';
+  path: string;
 }
 
 /** SETUP-tab card button: copy the install prompt for any agent chat. */
@@ -155,6 +161,8 @@ export interface WebviewCopyInstallMessage {
 /** SETUP-tab card button: ask for an idea, then copy the plan-kickoff prompt. */
 export interface WebviewCopyInitPlanMessage {
   type: 'copyInitPlan';
+  /** Board-collected idea (kickoff modal); absent = host falls back to its native InputBox. */
+  idea?: string;
 }
 
 /** SETUP-tab card button: copy the skill-update prompt. */
@@ -162,7 +170,7 @@ export interface WebviewCopyUpdateMessage {
   type: 'copyUpdate';
 }
 
-export type HostToWebview = ArchgenModelMessage | ArchgenUpdateMessage | ArchgenStatusMessage | ArchgenDocContentMessage | ArchgenSetupMessage | WebviewRevealTaskMessage | WebviewRevealSetupMessage | { type: 'theme'; themeKind: ThemeKind };
+export type HostToWebview = ArchgenModelMessage | ArchgenUpdateMessage | ArchgenStatusMessage | ArchgenDocContentMessage | ArchgenSetupMessage | WebviewRevealTaskMessage | WebviewRevealSetupMessage | WebviewRevealDocMessage | { type: 'theme'; themeKind: ThemeKind };
 
 export interface WebviewReadyMessage {
   type: 'ready';

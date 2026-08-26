@@ -13,7 +13,7 @@ import {
   workspace,
 } from 'vscode';
 import { assertNever } from '../shared/protocol';
-import type { HostToWebview, ThemeKind, WebviewToHost } from '../shared/protocol';
+import type { HostToWebview, ThemeKind, WebviewCopyInitPlanMessage, WebviewToHost } from '../shared/protocol';
 
 export const VIEW_TYPE = 'archgen.taskBoard';
 
@@ -56,15 +56,17 @@ export interface PanelHostOptions {
   onBuild?: (taskId: string) => void;
   /** Header "Start Work" — dispatches wave-1 of next-tasks.mjs via the harness. */
   onStartWork?: () => void;
-  /** DOCS sidebar click — host reads the file and posts docContent back. */
+  /** DOCS sidebar click — host parks it so the board lands on that document. */
   onOpenDoc?: (path: string) => void;
+  /** Parked-doc flush — host reads .archgen/<path> (traversal-guarded) then posts revealDoc + docContent. */
+  onRevealDoc?: (path: string) => void;
   /** TASKS-tab feature picker — host persists + re-posts the scoped model. */
   onSelectFeature?: (slug: string) => void;
-  /** SETUP-tab install card — host composes + delivers the install prompt. */
+  /** Setup-dialog install card — host composes + delivers the install prompt. */
   onCopyInstall?: () => void;
-  /** SETUP-tab plan card — host asks for an idea, then delivers the kickoff. */
-  onCopyInitPlan?: () => void;
-  /** SETUP-tab update card — host composes + delivers the update prompt. */
+  /** Setup-dialog plan intent — host delivers at once when the board collected an idea, else asks via native InputBox. */
+  onCopyInitPlan?: (msg: WebviewCopyInitPlanMessage) => void;
+  /** Setup-dialog update card — host composes + delivers the update prompt. */
   onCopyUpdate?: () => void;
   /** Ready handshake — host replays its latest setup snapshot for late-opened boards. */
   onSetupSync?: () => void;
@@ -80,10 +82,14 @@ export class ArchgenPanel {
   // webview is still loading; flushed right after the model push in the
   // `ready` branch so ordering stays model-before-reveal.
   private pendingReveal: string | null = null;
-  // SETUP-tab navigation intent (status bar / notifications / command) parked
-  // the same way; flushed after the revealTask slot so a combined
-  // reveal+setup request lands on the SETUP tab deterministically.
+  // SETUP-dialog navigation intent (status bar / notifications / command)
+  // parked the same way; flushed after the revealTask slot so a combined
+  // reveal+setup request opens the dialog deterministically.
   private pendingRevealSetup = false;
+  // DOCS-navigation intent parked like the reveals; flushed AFTER them so a
+  // cold-open lands model → reveals → revealDoc+docContent in channel order
+  // (the webview must hold the model before the DOCS tab can render a doc).
+  private pendingDoc: string | null = null;
   // Flips true once this webview completed its `ready` handshake.
   private readySeen = false;
 
@@ -164,8 +170,9 @@ export class ArchgenPanel {
         this.readySeen = true;
         // onReady pushes the model synchronously BEFORE the flushes below, so
         // the webview always receives model → revealTask → revealSetup →
-        // setupSync in channel order: by the time paint settles it holds both
-        // the full model AND current setup truth, never either alone.
+        // revealDoc/docContent → setupSync in channel order: by the time paint
+        // settles it holds both the full model AND current setup truth, never
+        // either alone.
         this.opts.onReady?.();
         const taskId = this.pendingReveal;
         this.pendingReveal = null;
@@ -174,6 +181,9 @@ export class ArchgenPanel {
           this.pendingRevealSetup = false;
           this.post({ type: 'revealSetup' });
         }
+        const docPath = this.pendingDoc;
+        this.pendingDoc = null;
+        if (docPath !== null) this.opts.onRevealDoc?.(docPath);
         this.opts.onSetupSync?.();
         break;
       }
@@ -209,7 +219,7 @@ export class ArchgenPanel {
         this.opts.onCopyInstall?.();
         break;
       case 'copyInitPlan':
-        this.opts.onCopyInitPlan?.();
+        this.opts.onCopyInitPlan?.(msg);
         break;
       case 'copyUpdate':
         this.opts.onCopyUpdate?.();
@@ -267,6 +277,19 @@ export class ArchgenPanel {
     this.pendingRevealSetup = true;
   }
 
+  /**
+   * Schedule a DOCS reveal on this board — same parking contract as
+   * setPendingReveal: parks until the `ready` handshake on a freshly created
+   * webview, flushes at once on an already-loaded board.
+   */
+  setPendingDoc(path: string): void {
+    if (this.readySeen) {
+      this.opts.onRevealDoc?.(path);
+      return;
+    }
+    this.pendingDoc = path;
+  }
+
   private renderHtml(webview: Webview): string {
     const scriptUri = Uri.joinPath(this.context.extensionUri, 'media', 'webview', 'main.js');
     const cssMain = Uri.joinPath(this.context.extensionUri, 'media', 'webview', 'tokens.css');
@@ -305,6 +328,7 @@ export class ArchgenPanel {
     for (const d of this.disposables.splice(0)) d.dispose();
     this.pendingReveal = null;
     this.pendingRevealSetup = false;
+    this.pendingDoc = null;
     this.panel = undefined;
     if (ArchgenPanel.current === this) ArchgenPanel.current = null;
   }

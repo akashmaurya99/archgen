@@ -18,12 +18,13 @@ import type {
 } from '../shared/protocol';
 import { StatusStore } from '../host/store';
 import { getVsCodeApi } from './vscode';
-import { EmptyState, ErrorBanner, LoadingState, StaleChip, VIEW_TABS, type ViewTab } from './states';
+import { EmptyState, ErrorBanner, LoadingState, StaleChip, VIEW_TABS, initialTab, type ViewTab } from './states';
 import { TasksView } from './TasksView';
 import { CodeGraphView } from './CodeGraphView';
 import { DocsView } from './DocsView';
-import { SetupView } from './SetupView';
+import { SetupDialog } from './SetupDialog';
 import { FeaturePicker } from './FeaturePicker';
+import { KickoffModal } from './KickoffModal';
 
 export interface AppProps {
   /** injected for tests; defaults to the real webview API */
@@ -48,12 +49,14 @@ export function App(props: AppProps) {
   const [lastModelAt, setLastModelAt] = useState<number>(() => Date.now());
   const [, setStoreVersion] = useState(0);
   const storeRef = useRef<StatusStore<TaskVM> | null>(null);
-  const [tab, setTab] = useState<ViewTab>(() => {
-    const persisted = vscode.getState<PersistedState>();
-    return persisted?.tab ?? 'TASKS';
-  });
+  const [tab, setTab] = useState<ViewTab>(() => initialTab(vscode.getState<PersistedState>()?.tab));
   // REVEAL INTENT: task id to spotlight on the TASKS canvas; null = no reveal.
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  // Kickoff modal: owned here so every in-board entry point (TASKS empty
+  // state) shares one centered prompt instance.
+  const [kickoffOpen, setKickoffOpen] = useState(false);
+  // Centered setup dialog (⚙ button / ⋯ menu / parked revealSetup intent).
+  const [setupOpen, setSetupOpen] = useState(false);
   // Header ⋯ menu: ref lets item clicks close the native <details> directly.
   const menuRef = useRef<HTMLDetailsElement | null>(null);
 
@@ -105,11 +108,14 @@ export function App(props: AppProps) {
           break;
         case 'setup':
           // Latest snapshot wins; the host re-posts on every evaluation so
-          // the SETUP tab can never render stale cards.
+          // the setup dialog can never render stale cards.
           setSetup(msg);
           break;
         case 'revealSetup':
-          selectTab('SETUP');
+          setSetupOpen(true);
+          break;
+        case 'revealDoc':
+          selectTab('DOCS');
           break;
         case 'update':
           // Batched into ONE rAF flush by the store; no setState here —
@@ -140,6 +146,16 @@ export function App(props: AppProps) {
   const openFile = useCallback(
     (path: string) => {
       vscode.postMessage({ type: 'openFile', path });
+    },
+    [vscode],
+  );
+
+  const openKickoffDraft = useCallback((): void => setKickoffOpen(true), []);
+  const cancelKickoff = useCallback((): void => setKickoffOpen(false), []);
+  const submitKickoff = useCallback(
+    (idea: string) => {
+      vscode.postMessage({ type: 'copyInitPlan', idea });
+      setKickoffOpen(false);
     },
     [vscode],
   );
@@ -176,6 +192,16 @@ export function App(props: AppProps) {
           </button>
         ))}
         <StaleChip since={lastModelAt} />
+        {/* Gear sits hard beside ⋯ so settings stay one click from the tab strip. */}
+        <button
+          type="button"
+          className="archgen-gear-btn"
+          aria-label="Open ArchGen settings"
+          title="Open ArchGen settings"
+          onClick={() => setSetupOpen(true)}
+        >
+          ⚙
+        </button>
         <details className="archgen-menu" ref={menuRef}>
           <summary aria-label="More actions" title="More actions">⋯</summary>
           <div className="archgen-menu-items">
@@ -184,7 +210,7 @@ export function App(props: AppProps) {
               className="archgen-menu-item"
               onClick={() => {
                 closeMenu();
-                selectTab('SETUP');
+                setSetupOpen(true);
               }}
             >
               Setup &amp; updates
@@ -220,28 +246,11 @@ export function App(props: AppProps) {
         </div>
       )}
 
-      {/* GATING ORDER: SETUP is evaluated BEFORE the hasArchgenContent
-          fallback — the empty-state branch used to short-circuit every tab,
-          so in an empty workspace (where setup matters most) selecting or
-          revealing SETUP re-rendered the "No ArchGen plan found" state and
-          read as a dead button. */}
-      {tab === 'SETUP' ? (
-        setup !== null ? (
-          <SetupView
-            state={setup.state}
-            actions={setup.actions}
-            extVersion={setup.extVersion}
-            post={(msg) => vscode.postMessage(msg)}
-          />
-        ) : (
-          <p className="archgen-hint">Setup status arrives with the next evaluation…</p>
-        )
-      ) : !hasArchgenContent ? (
+      {!hasArchgenContent ? (
         <EmptyState
           hasArchgenFolder={model.warnings.some((w) => w.includes('.archgen'))}
-          onSelectSetup={() => selectTab('SETUP')}
           setup={setup?.state ?? null}
-          post={(msg) => vscode.postMessage(msg)}
+          onOpenKickoffDraft={openKickoffDraft}
         />
       ) : tab === 'TASKS' ? (
         model.tasks.length > 0 && storeRef.current ? (
@@ -255,9 +264,8 @@ export function App(props: AppProps) {
         ) : (
           <EmptyState
             hasArchgenFolder
-            onSelectSetup={() => selectTab('SETUP')}
             setup={setup?.state ?? null}
-            post={(msg) => vscode.postMessage(msg)}
+            onOpenKickoffDraft={openKickoffDraft}
           />
         )
       ) : tab === 'CODE' ? (
@@ -268,6 +276,17 @@ export function App(props: AppProps) {
           active={docContent}
           onSelect={(path) => vscode.postMessage({ type: 'openDoc', path })}
           onOpenInEditor={openFile}
+        />
+      )}
+
+      {kickoffOpen && <KickoffModal onSubmit={submitKickoff} onCancel={cancelKickoff} />}
+      {setupOpen && setup !== null && (
+        <SetupDialog
+          state={setup.state}
+          actions={setup.actions}
+          extVersion={setup.extVersion}
+          post={(msg) => vscode.postMessage(msg)}
+          onClose={() => setSetupOpen(false)}
         />
       )}
     </main>

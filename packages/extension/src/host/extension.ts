@@ -34,7 +34,7 @@ import {
   probeScriptsPath,
   type HarnessId,
 } from './harness';
-import type { ArchgenModelMessage, ArchgenSetupMessage } from '../shared/protocol';
+import type { ArchgenModelMessage, ArchgenSetupMessage, WebviewCopyInitPlanMessage } from '../shared/protocol';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -231,12 +231,15 @@ export function activate(context: ExtensionContext): void {
     ArchgenPanel.active?.post({ type: 'status', kind: 'info', message: `Dispatched '${taskId}'.` });
   }
 
-  /** TASKS-tab feature picker: persist the slug, then re-post the scoped model. */
+  /** Sidebar feature row / TASKS picker: persist the slug, re-post the scoped model, land on the board. */
   function selectFeature(slug: string): void {
     const wsRoot = root();
     if (!wsRoot) return;
     if (!discoverFeatures(wsRoot).some((f) => f.slug === slug)) return;
-    void context.workspaceState.update(activeFeatureKey(wsRoot), slug).then(() => pushModel(true));
+    void context.workspaceState.update(activeFeatureKey(wsRoot), slug).then(() => {
+      pushModel(true);
+      openBoard();
+    });
   }
 
   /**
@@ -309,8 +312,18 @@ export function activate(context: ExtensionContext): void {
       });
   }
 
+  // Board modal already collected the idea → deliver immediately; bare messages
+  // (notification action, legacy callers) keep the native InputBox.
+  function handleCopyInitPlan(msg: WebviewCopyInitPlanMessage): void {
+    if (typeof msg.idea === 'string') {
+      void delivery.deliver('setupInitPlan', composeInitPlanPrompt(msg.idea));
+      return;
+    }
+    promptInitPlan();
+  }
+
   /**
-   * SETUP lives as the board's fourth tab — no second window anywhere.
+   * Setup opens as the board's centered dialog — no second window anywhere.
    * openBoard() first so a cold panel exists to receive the parked reveal;
    * setPendingRevealSetup() flushes after the ready handshake (or at once on
    * an already-loaded board).
@@ -403,7 +416,7 @@ export function activate(context: ExtensionContext): void {
       planInitialized: (hub.snapshot()?.features.length ?? 0) > 0,
     });
     setupStatus.apply(latestSetup);
-    // The board's SETUP tab rides the same live pipeline as the model;
+    // The board's setup dialog rides the same live pipeline as the model;
     // pendingActions is recomputed per post so it NEVER renders stale cards.
     // Non-model messages bypass the panel's fingerprint dedupe entirely.
     ArchgenPanel.active?.post(setupSnapshot());
@@ -412,8 +425,19 @@ export function activate(context: ExtensionContext): void {
     await maybeNotifySetup(latestSetup);
   }
 
-  /** DOCS sidebar click → read .archgen/<path> and post its content back. */
+  /**
+   * DOCS sidebar click → open the board ON that document. The read+post pair
+   * parks on the panel (setPendingDoc) so a cold board replays it after the
+   * ready handshake instead of posting into an unmounted webview.
+   */
   function openDoc(rel: string): void {
+    if (!requireWorkspaceFolder()) return;
+    openBoard();
+    ArchgenPanel.active?.setPendingDoc(rel);
+  }
+
+  /** Flush one parked/opened doc request: traversal guard, then revealDoc + docContent. */
+  function revealDoc(rel: string): void {
     void (async () => {
       const wsRoot = root();
       if (!wsRoot) return;
@@ -424,7 +448,9 @@ export function activate(context: ExtensionContext): void {
       }
       try {
         const content = await fs.promises.readFile(abs, 'utf8');
-        ArchgenPanel.active?.post({ type: 'docContent', path: rel, content });
+        const panel = ArchgenPanel.active;
+        panel?.post({ type: 'revealDoc', path: rel });
+        panel?.post({ type: 'docContent', path: rel, content });
       } catch (e) {
         ArchgenPanel.active?.post({ type: 'status', kind: 'error', message: `Cannot read ${rel}: ${e instanceof Error ? e.message : String(e)}` });
       }
@@ -453,13 +479,14 @@ export function activate(context: ExtensionContext): void {
     onBuild: dispatchBuild,
     onStartWork: dispatchStartWork,
     onOpenDoc: openDoc,
+    onRevealDoc: revealDoc,
     onSelectFeature: selectFeature,
-    // SETUP-tab card buttons → the EXISTING delivery flows (identical to the
-    // notification/status-bar paths; no second composition anywhere).
+    // Setup-dialog card buttons → the EXISTING delivery flows (identical to
+    // the notification/status-bar paths; no second composition anywhere).
     onCopyInstall: () => {
       void delivery.deliver('setupInstall', composeInstallPrompt());
     },
-    onCopyInitPlan: () => promptInitPlan(),
+    onCopyInitPlan: handleCopyInitPlan,
     onCopyUpdate: () => {
       void delivery.deliver('setupUpdate', composeUpdatePrompt(latestSetup.skill.version, extVersion));
     },

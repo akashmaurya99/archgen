@@ -95,15 +95,15 @@
     "viewsWelcome": [
       {
         "view": "archgen.overview",
-        "contents": "No ArchGen plan found in this workspace.\n\n1) Ensure the skill is installed once: `npx archgen-skill init`\n2) Then tell your coding agent: \"generate architecture for <your idea>\".\n3) Reopen this view — the board tracks progress live.\n\n[Open Task Board](command:archgen.openPanel)"
+        "contents": "No plan yet. Open the board to get started.\n\n[Open Task Board](command:archgen.openPanel)"
       },
       {
         "view": "archgen.tasks",
-        "contents": "No tasks found.\n\n1) Ensure the skill is installed once: `npx archgen-skill init`\n2) Then tell your coding agent: \"generate architecture for <your idea>\" — task graph artifacts appear here automatically."
+        "contents": "Tasks appear here once an architecture is generated.\n\n[Open Task Board](command:archgen.openPanel)"
       },
       {
         "view": "archgen.docs",
-        "contents": "No documentation found.\n\n1) Ensure the skill is installed once: `npx archgen-skill init`\n2) Then tell your coding agent: \"generate architecture for <your idea>\" — architecture ADRs and specifications in `.archgen/` will appear here automatically."
+        "contents": "Docs appear here once an architecture is generated.\n\n[Open Task Board](command:archgen.openPanel)"
       }
     ],
     "menus": {

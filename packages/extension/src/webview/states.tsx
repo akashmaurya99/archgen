@@ -49,15 +49,13 @@ export function LoadingState({ label = 'Loading ArchGen model…' }: { label?: s
 
 export interface EmptyDetails {
   hasArchgenFolder: boolean;
-  /** Bridge into the board's SETUP tab; omit to hide the button. */
-  onSelectSetup?: () => void;
   /** Latest host setup snapshot; null/undefined = unknown ⇒ legacy install guidance. */
   setup?: SetupStateLike | null;
-  /** Ready-variant kickoff CTA target; posts the exact copyInitPlan wire message. */
-  post?: (msg: { type: 'copyInitPlan' }) => void;
+  /** Ready-variant kickoff CTA target; opens the board's centered kickoff modal. */
+  onOpenKickoffDraft?: () => void;
 }
 
-export function EmptyState({ hasArchgenFolder, onSelectSetup, setup, post }: EmptyDetails) {
+export function EmptyState({ hasArchgenFolder, setup, onOpenKickoffDraft }: EmptyDetails) {
   const [copied, setCopied] = useState(false);
 
   const copyInstall = async (): Promise<void> => {
@@ -79,19 +77,11 @@ export function EmptyState({ hasArchgenFolder, onSelectSetup, setup, post }: Emp
         </>
       ) : setup?.skill.installed === true ? (
         <>
-          <h2>ArchGen skill is ready.</h2>
-          <p>
-            This workspace has no plan yet. Tell your coding agent: "generate architecture for &lt;your idea&gt;" — or copy a kickoff prompt below.
-          </p>
-          <div className="archgen-setup-routes">
-            <button type="button" className="archgen-setup-primary" onClick={() => post?.({ type: 'copyInitPlan' })}>
-              Copy kickoff prompt
-            </button>
-            <span className="archgen-setup-manual">
-              <span>To verify the installation: </span>
-              <code>npx archgen-skill doctor</code>
-            </span>
-          </div>
+          <h2>Ready to build.</h2>
+          <p>Tell your coding agent: "generate architecture for &lt;your idea&gt;"</p>
+          <button type="button" className="archgen-setup-primary" onClick={() => onOpenKickoffDraft?.()}>
+            Copy kickoff prompt
+          </button>
         </>
       ) : (
         <>
@@ -107,11 +97,6 @@ export function EmptyState({ hasArchgenFolder, onSelectSetup, setup, post }: Emp
             </button>
           </div>
         </>
-      )}
-      {onSelectSetup && (
-        <button type="button" className="archgen-copy-btn archgen-empty-setup-btn" onClick={onSelectSetup}>
-          Open Setup &amp; updates
-        </button>
       )}
     </div>
   );
@@ -151,8 +136,14 @@ export function StaleChip({ since }: { since: number }) {
 }
 
 /** Tab definition shared by App shell. */
-export type ViewTab = 'TASKS' | 'CODE' | 'DOCS' | 'SETUP';
-export const VIEW_TABS: ViewTab[] = ['TASKS', 'CODE', 'DOCS', 'SETUP'];
+export type ViewTab = 'TASKS' | 'CODE' | 'DOCS';
+export const VIEW_TABS: ViewTab[] = ['TASKS', 'CODE', 'DOCS'];
+
+// Webviews restored from an older build can carry the removed 'SETUP' tab in
+// persisted state — sanitize on read so a dead value never blanks the board.
+export function initialTab(persisted: unknown): ViewTab {
+  return VIEW_TABS.find((t) => t === persisted) ?? 'TASKS';
+}
 
 export function useTabState(initial: ViewTab = 'TASKS'): [ViewTab, (t: ViewTab) => void] {
   return useState<ViewTab>(initial);
