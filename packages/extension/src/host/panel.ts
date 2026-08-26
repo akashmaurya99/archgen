@@ -70,6 +70,8 @@ export interface PanelHostOptions {
   onCopyUpdate?: () => void;
   /** Ready handshake — host replays its latest setup snapshot for late-opened boards. */
   onSetupSync?: () => void;
+  /** Optional log sink (wired to the ArchGen OutputChannel); falls back to console.error. */
+  log?: (line: string) => void;
 }
 
 export class ArchgenPanel {
@@ -109,7 +111,10 @@ export class ArchgenPanel {
     const panel = window.createWebviewPanel(VIEW_TYPE, 'ArchGen Task Board', ViewColumn.Beside, {
       enableScripts: true,
       localResourceRoots: [webviewRoot],
-      retainContextWhenHidden: false,
+      // KEEP-ALIVE: retaining context while hidden prevents the webview from
+      // reloading (and re-running the `ready` handshake) on every tab switch —
+      // a reload race was one root cause of the blank-board restore bug.
+      retainContextWhenHidden: true,
     });
     inst.adopt(panel);
     ArchgenPanel.current = inst;
@@ -173,7 +178,15 @@ export class ArchgenPanel {
         // revealDoc/docContent → setupSync in channel order: by the time paint
         // settles it holds both the full model AND current setup truth, never
         // either alone.
-        this.opts.onReady?.();
+        try {
+          this.opts.onReady?.();
+        } catch (e) {
+          // A throw inside onReady must never strand the handshake: the flushes
+          // below still run and the webview's watchdog can retry the push.
+          const line = `[panel] onReady failed: ${e instanceof Error ? e.message : String(e)}`;
+          if (this.opts.log) this.opts.log(line);
+          else console.error(`[archgen] ${line}`);
+        }
         const taskId = this.pendingReveal;
         this.pendingReveal = null;
         if (taskId !== null) this.post({ type: 'revealTask', taskId });

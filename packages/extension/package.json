@@ -33,7 +33,8 @@
   "icon": "media/icon.png",
   "activationEvents": [
     "onStartupFinished",
-    "workspaceContains:.archgen"
+    "workspaceContains:.archgen",
+    "onWebviewPanel:archgen.taskBoard"
   ],
   "contributes": {
     "commands": [

@@ -475,6 +475,9 @@ export function activate(context: ExtensionContext): void {
       ensurePipeline();
       pushModel(true);
     },
+    // Error-containment sink for the panel's `ready` handler (and any future
+    // panel diagnostics) — keeps throws visible in the ArchGen OutputChannel.
+    log: (line) => out.appendLine(line),
     onVisible: () => pushModel(true),
     onBuild: dispatchBuild,
     onStartWork: dispatchStartWork,
