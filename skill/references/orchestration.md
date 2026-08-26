@@ -29,12 +29,16 @@ Dispatch AFTER artifacts exist and validate.mjs passes. The verifier:
 1. Runs `node <skill>/scripts/verify-plan.mjs .archgen/<slug>/tasks.yaml --plan .archgen/<slug>/plans`
    — deterministic floor: cycles, dangling refs, same-wave ownership overlap,
    missing acceptance criteria, plan↔task coverage.
-2. Reads plans + tasks.yaml and judges what scripts cannot:
+2. When markdown artifacts exist under `.archgen/<slug>/`, runs
+   `node <skill>/scripts/doc-index.mjs .archgen/<slug> --validate` — must be
+   clean (zero broken references, exit 0) alongside verify-plan APPROVE;
+   broken references block APPROVAL.
+3. Reads plans + tasks.yaml and judges what scripts cannot:
    - Are wave boundaries sensible (no artificial serialization)?
    - Do acceptance criteria objectively verify (command or observable)?
    - Edge cases covered per SKILL.md right-sizing class?
    - Code-standards compliance plausible for the planned structure?
-3. Returns EXACTLY one line verdict: `APPROVE` or `ISSUES:` + numbered list.
+4. Returns EXACTLY one line verdict: `APPROVE` or `ISSUES:` + numbered list.
 
 Orchestrator fixes issues (edits artifacts) and re-dispatches. Loop until
 APPROVE — never present to the user before verifier approval.
@@ -150,7 +154,7 @@ Every worker receives ALL of:
   `node <skill>/scripts/set-status.mjs .archgen/<slug>/tasks.yaml <id> done|failed`;
 - commit guidance: commit completed work scoped to the owned files;
 - BEFORE writing code run
-  `node <skill>/scripts/plan-graph.mjs --node <task-id> --tasks <tasks.yaml>`
+  `node <skill>/scripts/plan-graph.mjs <slug-dir-or-tasks.yaml> --node <task-id>`
   and honor every connected dependency shown;
 - all file paths come from tasks.yaml/architecture.yaml VERBATIM — never
   reconstruct paths from memory.
