@@ -8,6 +8,8 @@
 //                               (Claude Code, OpenCode, Cursor, agentskills)
 //   npx archgen-skill uninstall       Remove globally-installed copies (manifest-based)
 //     --project [dir]           Remove archgen from a specific project instead
+//   npx archgen-skill restore          List/restore archgen backups (project + global vaults)
+//   npx archgen-skill migrate [dir]    Evolve generated-artifact formats (--check default)
 //
 // Zero dependencies. Cross-platform (Windows included — no bash required).
 
@@ -17,6 +19,8 @@ import { installGlobal, uninstallGlobal } from '../lib/install.js';
 import { initProject } from '../lib/init.js';
 import { doctorProject } from '../lib/doctor.js';
 import { uninstallProject } from '../lib/uninstall-project.js';
+import { restoreMain } from '../lib/restore.js';
+import { migrateMain } from '../lib/migrate.js';
 import { compareSemver, fetchLatestVersion } from '../lib/version.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -54,6 +58,14 @@ Usage:
                                   managed blocks, canonical store (kept when
                                   customized) and manifest; .archgen feature
                                   folders and backups are preserved
+  npx archgen-skill restore           List backup snapshots across the project and
+                                  global vaults; nothing is restored by default
+    [--snapshot <ts>]             restore that snapshot (current state is backed
+                                  up first); --project <dir> / --global scope it
+  npx archgen-skill migrate [dir]     Evolve generated-artifact formats in place;
+                                  --check (default) lists pending migrations
+    [--apply]                     apply them (every touched file is backed up)
+    [--migration <id>]            target a single migration
   npx archgen-skill update [dir]      Check npm for a newer archgen-skill, upgrade
                                   the global install when outdated, then
                                   re-init this project + doctor against the
@@ -130,6 +142,17 @@ try {
       } else {
         uninstall();
       }
+      break;
+    }
+    case 'restore': {
+      // restoreMain parses its own flags and returns its own exit code.
+      process.exitCode = await restoreMain(rest);
+      break;
+    }
+    case 'migrate': {
+      // migrateMain parses its own args and returns its own exit code
+      // (0 ok, 1 apply failure, 2 usage error).
+      process.exitCode = await migrateMain(rest);
       break;
     }
     case 'update': {
