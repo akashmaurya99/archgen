@@ -31,13 +31,76 @@ export function createUriDebouncer(delayMs: number, flush: (uris: Set<string>) =
         if (batch.size > 0) flush(batch);
       }, delayMs);
     },
-    get pending(): boolean {
-      return timer !== null;
+  get pending(): boolean {
+    return timer !== null;
+  },
+  dispose(): void {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    pendingUris.clear();
+  },
+};
+}
+
+/**
+ * ONE trailing follow-up: every trigger (re)starts the window, so a burst of
+ * events yields exactly one fn() call ~delayMs after the LAST trigger. This is
+ * the scaffold-race absorber — files written milliseconds after `mkdir -p`
+ * chains land inside the window and are still seen by the single re-probe.
+ */
+export interface SingleFollowup {
+  trigger(): void;
+  dispose(): void;
+}
+
+export function createSingleFollowup(delayMs: number, fn: () => void): SingleFollowup {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return {
+    trigger(): void {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        fn();
+      }, delayMs);
     },
     dispose(): void {
       if (timer !== null) clearTimeout(timer);
       timer = null;
-      pendingUris.clear();
+    },
+  };
+}
+
+/**
+ * Leading-edge throttle: fn runs at most once per minIntervalMs; calls inside
+ * the window are dropped (not queued). The focus-reconcile safety net uses it
+ * so alt-tab bursts cannot hammer the filesystem probe.
+ */
+export interface Throttle {
+  run(): void;
+  dispose(): void;
+}
+
+export function createThrottle(minIntervalMs: number, fn: () => void): Throttle {
+  let lastRun = Number.NEGATIVE_INFINITY;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return {
+    run(): void {
+      if (timer !== null) return;
+      const elapsed = Date.now() - lastRun;
+      if (elapsed >= minIntervalMs) {
+        lastRun = Date.now();
+        fn();
+        return;
+      }
+      timer = setTimeout(() => {
+        timer = null;
+        lastRun = Date.now();
+        fn();
+      }, minIntervalMs - elapsed);
+    },
+    dispose(): void {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
     },
   };
 }
