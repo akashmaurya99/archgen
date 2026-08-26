@@ -51,6 +51,7 @@ Setup: `npm install && npm run compile && npm test` must be green first.
    - ✅ One refresh on reveal; final state correct; no duplicated dispatches.
 
 ## 6. ▶ Build / Start Work (harness spawn)
+> Legacy path — requires `archgen.delivery.mode` = `"spawn"` (see §14 for the default clipboard flow).
 1. Set `archgen.scriptsPath` to a dir with stub scripts (`next-tasks.mjs` printing `{"waves":[["TASK_A"]]}`, `set-status.mjs` no-op).
 2. Click ▶ on a node; then click **▶ Start Work**.
    - ✅ Node dispatch spawns the configured harness with cwd = workspace root; stdout tail appears in the *ArchGen* output channel; exit 0 → info toast, non-zero → error toast. The extension itself never writes repo files.
@@ -87,3 +88,50 @@ Setup: `npm install && npm run compile && npm test` must be green first.
 1. `npm run package` (plain `vsce package`; `--no-dependencies` would drop the externalized better-sqlite3 binding — see package.json `//` note) → `archgen-extension-0.1.0.vsix`.
 2. `code --extensions-dir /tmp/clean-ext --user-data-dir /tmp/clean-data --install-extension archgen-extension-0.1.0.vsix`, then launch with those dirs.
    - ✅ Extension installs and activates; codegraph read works (better-sqlite3 prebuild loads, or node:sqlite fallback on Electron ≥ 33).
+
+## 14. Clipboard delivery (default mode)
+1. Fresh profile, defaults (`archgen.delivery.mode` = `clipboard`). Click ▶ on a task node.
+   - ✅ No process spawns. Toast appears: *Prompt copied — paste into your agent chat and send*. Board chip shows `Copied '<id>' prompt to clipboard.`; *ArchGen* output channel logs `[delivery] intent=buildTask chars=<n>`.
+2. Paste into an agent chat input (Copilot Chat / Cursor chat / any box).
+   - ✅ Text is exactly `Implement task <id>: <title>. Follow the .archgen plan; only touch files you own.` — identical to what spawn mode would inject.
+3. Pick **Open Chat** on VS Code with Copilot Chat signed in.
+   - ✅ Native chat opens with the prompt pre-filled but NOT auto-sent. On hosts without the API: no error surfaces; channel logs `[delivery] openChat unavailable`.
+4. Pick **Copy Again**.
+   - ✅ Clipboard rewritten with the same prompt.
+5. Set `archgen.delivery.autoFillChat` = `false`; click ▶ then **Open Chat**.
+   - ✅ Only chat-input focus is attempted; no text enters the chat.
+6. With the skill installed (`.agents/skills/archgen/` present), click **▶ Start Work**.
+   - ✅ Clipboard receives ONE short trigger line: `Start work on <slug>.`
+7. Temporarily rename `.agents/` so probes fail; click **▶ Start Work** again.
+   - ✅ Clipboard receives the self-contained brief: references `.archgen/<slug>/tasks.yaml`, file_ownership globs, status updates, wave continuation — no scripts-dir path mentioned. Restore `.agents/`.
+8. Set `archgen.delivery.mode` = `"spawn"` and repeat steps 1–2 of §6.
+   - ✅ Byte-for-byte legacy behavior: headless spawn per task, exit-code toasts, zero clipboard writes.
+
+## 15. Setup UX (skill missing · plan missing · outdated skill)
+Setup lives as the board's FOURTH tab (TASKS | CODE | DOCS | SETUP) — there is no separate setup window anywhere.
+1. Open a fresh workspace with **no** `.agents/skills/archgen` and **no** `.archgen/` (extension must activate via *onStartupFinished* even though `workspaceContains:.archgen` is false).
+   - ✅ One info toast appears exactly once: *ArchGen skill not found in this workspace…* with **Fix now** / **Do not show again**. Status bar shows `$(cloud-download) ArchGen: install skill` (hidden when no action pending). Reloading the window does NOT repeat the toast (signature-keyed dismissal persists in workspaceState).
+2. Click the status-bar item or run **ArchGen: Open Setup**.
+   - ✅ The Task Board opens with the SETUP tab active: summary rows with ✓/⚠ glyphs (Skill not found · Plan not initialized · Up to date —) and an install card with **Copy prompt for my agent** plus the manual route `npx archgen-skill init` with its own Copy pill.
+3. Click **Copy prompt for my agent**, paste into any agent chat.
+   - ✅ Clipboard holds the multi-line install prompt (`npx archgen-skill init`, verify SKILL.md, then GENERATE flow incl. both gates).
+4. In an EMPTY workspace, run `npx archgen-skill init` from a terminal WITHOUT touching the extension (board closed or open, either way).
+   - ✅ Within ~a second of the scaffold landing, state flips everywhere: the root-entry watcher on `{.archgen,.agents,.claude}` fires immediately (their parent — the workspace root — always exists), evaluateSetupNow probes the filesystem directly, and ONE trailing re-eval ~600ms after the last scaffold event absorbs files written during `mkdir -p` chains. Status-bar item switches to `$(add) … initialize plan`; the SETUP tab summary flips to installed v0.0.4+ with an *Initialize a plan* card; output channel logs `[watch] scaffold root changed` and eventually `[setup] resolved`.
+5. Keep the SETUP tab open and run `npx archgen-skill update` (or touch files inside `.agents/skills/archgen/`).
+   - ✅ Deep-glob watchers keep intra-tree content changes flowing: the update card disappears once the stamp reaches the extension version — no reload, no focus change needed.
+6. Worst-case convergence: alt-tab AWAY, run `npx archgen-skill init` in an EXTERNAL terminal (pretend every watcher event was lost), alt-tab back.
+   - ✅ The window-focus reconcile (min interval ~3s) runs BOTH the setup probe and a forced board-model push: SETUP truth and the TASKS board converge with zero delivered watch events.
+7. With skill present but no `.archgen/`: click the plan card's **Copy prompt for my agent**.
+   - ✅ InputBox asks for a one-line idea (cancel-safe; empty ⇒ generic kickoff prompt). Composed kickoff lands on the clipboard referencing `.agents/skills/archgen/SKILL.md`, the idea, and GENERATE-mode gates.
+8. Simulate legacy/outdated skill: remove `.archgen-version` from the skill root (or write `9.9.9` then restore an older value); reload.
+   - ✅ Toast variant mentions the old version (or unknown legacy) and everything still works — plan/board features unaffected (update = recommended, never blocking). The update card shows the version-aware body (*The installed skill predates version stamping…* for legacy, *Installed skill vX is older than this extension (vY)* otherwise), the reassurance line "Everything keeps working on older versions — updating is recommended.", and manual route `npx archgen-skill update`.
+9. Stamp newer than the extension (`9.9.9`).
+   - ✅ No warning anywhere; up-to-date row reads ✓ yes; with every action resolved the SETUP tab renders the compact "ArchGen is set up." row instead of cards.
+10. Dismiss a toast with **Do not show again**; reload.
+    - ✅ That action+version signature never toasts again (persisted in workspaceState); the SETUP tab remains reachable via status bar / command and keeps showing live truth.
+11. Late-open proof: complete `npx archgen-skill init` in a workspace where the Task Board has NEVER been opened (or close the board tab first), then open the board.
+    - ✅ Without any focus change or reload, BOTH the TASKS empty state and the SETUP tab show the ready variant ("ArchGen skill is ready." + **Copy kickoff prompt**) — the board replays the setup snapshot during its ready handshake, so a late-opened board is immediately state-aware.
+12. In that ready empty state, click **Copy kickoff prompt**.
+    - ✅ InputBox asks for a one-line idea (cancel-safe; empty ⇒ generic kickoff). Clipboard receives the composed kickoff referencing `.agents/skills/archgen/SKILL.md` and GENERATE-mode gates (verifier + approval) — identical to the SETUP-tab plan-card flow.
+11. From ANY board state (empty workspace included), click the **⋯** button at the right edge of the tab strip — or the **Open Setup & updates** button under the empty-state install CTA.
+    - ✅ The ⋯ menu lists **Setup & updates** and **Copy install prompt**: choosing Setup & updates activates the SETUP tab and closes the menu; Copy install prompt copies the install prompt without leaving the current tab; clicking elsewhere dismisses the menu. In an empty workspace the SETUP tab shows live setup truth (summary rows + install card) instead of the "No ArchGen plan found" empty state. With no folder open, entry points show *Open a folder to use ArchGen.* instead of doing nothing.

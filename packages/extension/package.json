@@ -32,6 +32,7 @@
   "main": "./dist/extension.js",
   "icon": "media/icon.png",
   "activationEvents": [
+    "onStartupFinished",
     "workspaceContains:.archgen"
   ],
   "contributes": {
@@ -67,6 +68,12 @@
         "command": "archgen.openDoc",
         "title": "Open Document",
         "category": "ArchGen"
+      },
+      {
+        "command": "archgen.openSetup",
+        "title": "Open Setup",
+        "category": "ArchGen",
+        "icon": "$(gear)"
       }
     ],
     "viewsContainers": {
@@ -88,20 +95,21 @@
     "viewsWelcome": [
       {
         "view": "archgen.overview",
-        "contents": "No ArchGen plan found in this workspace.\n\nRun `npx archgen-skill generate` in your terminal to scaffold `.archgen/`, then reopen this view.\n\n[Open Task Board](command:archgen.openPanel)"
+        "contents": "No ArchGen plan found in this workspace.\n\n1) Ensure the skill is installed once: `npx archgen-skill init`\n2) Then tell your coding agent: \"generate architecture for <your idea>\".\n3) Reopen this view — the board tracks progress live.\n\n[Open Task Board](command:archgen.openPanel)"
       },
       {
         "view": "archgen.tasks",
-        "contents": "No tasks found.\n\nRun `npx archgen-skill generate` to create task graph artifacts."
+        "contents": "No tasks found.\n\n1) Ensure the skill is installed once: `npx archgen-skill init`\n2) Then tell your coding agent: \"generate architecture for <your idea>\" — task graph artifacts appear here automatically."
       },
       {
         "view": "archgen.docs",
-        "contents": "No documentation found.\n\nArchitecture ADRs and specifications in `.archgen/` will appear here automatically."
+        "contents": "No documentation found.\n\n1) Ensure the skill is installed once: `npx archgen-skill init`\n2) Then tell your coding agent: \"generate architecture for <your idea>\" — architecture ADRs and specifications in `.archgen/` will appear here automatically."
       }
     ],
     "menus": {
       "view/title": [
         { "command": "archgen.openPanel", "when": "view == archgen.overview", "group": "navigation" },
+        { "command": "archgen.openSetup", "when": "view == archgen.overview", "group": "navigation" },
         { "command": "archgen.openPanel", "when": "view == archgen.tasks", "group": "navigation" },
         { "command": "archgen.openPanel", "when": "view == archgen.docs", "group": "navigation" },
         { "command": "archgen.startWork", "when": "view == archgen.tasks && archgen.hasFeatures", "group": "navigation" }
@@ -139,6 +147,24 @@
           "type": "string",
           "default": "",
           "description": "Explicit path to the archgen scripts directory (next-tasks.mjs, set-status.mjs). Probed in order: this setting, <workspace>/.agents/skills/archgen/scripts, <workspace>/.claude/skills/archgen/scripts, <workspace>/skills/archgen/scripts, ~/.agents/skills/archgen/scripts, ~/.claude/skills/archgen/scripts."
+        },
+        "archgen.delivery.mode": {
+          "type": "string",
+          "default": "clipboard",
+          "enum": [
+            "clipboard",
+            "spawn"
+          ],
+          "enumDescriptions": [
+            "Copy the composed prompt to the clipboard for you to paste into any agent chat — works everywhere, no CLI required.",
+            "Legacy headless CLI harness dispatch (spawns the configured agent process)."
+          ],
+          "markdownDescription": "How ▶ **Build This Task** / ▶ **Start Work** deliver work to your agent. `clipboard` copies the composed prompt for you to paste into any agent chat (works everywhere); `spawn` runs the legacy headless CLI harness."
+        },
+        "archgen.delivery.autoFillChat": {
+          "type": "boolean",
+          "default": true,
+          "description": "After copying, best-effort pre-fill of the IDE's native chat input (ignored where unsupported)."
         }
       }
     }

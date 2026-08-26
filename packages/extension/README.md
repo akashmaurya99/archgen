@@ -5,9 +5,9 @@ A VS Code extension (works in Cursor/Windsurf and other VS Code forks) that turn
 - **TASKS** — a task board drawn as a dependency graph where running tasks pulse, done tasks glow green, failed ones red.
 - **CODE** — a map of your code's real dependencies read straight from the codegraph SQLite index.
 - **DOCS** — rendered docs with mermaid diagrams, click-through to source.
-- **▶ Build / Start Work** — launch your coding agent (Claude, OpenCode, Codex, Gemini, or a custom command) on any task or on the whole first wave.
+- **▶ Build / Start Work** — copies the composed prompt to your clipboard for any agent chat (Copilot Chat, Cursor, Cascade, terminal CLIs…) with best-effort pre-fill of native chat inputs; legacy headless CLI dispatch (`claude`/`opencode`/`codex`/`gemini`/custom) remains available via `archgen.delivery.mode`.
 
-The extension is strictly a **window**: it reads files and spawns your agent CLI — it never edits anything itself. Uninstalling it loses nothing.
+The extension is strictly a **window**: it reads files and hands prompts to your agent — clipboard-first by default, optional headless spawn — and never edits anything itself. Uninstalling it loses nothing.
 
 ## Features
 
@@ -17,7 +17,7 @@ The extension is strictly a **window**: it reads files and spawns your agent CLI
 | Multi-feature repos | A **feature picker** in the TASKS tab header lists every `.archgen/<slug>/` feature (most-recently-modified first). The choice persists per workspace (`workspaceState`), and the default is the most-recent feature. |
 | Live updates | FileSystemWatcher on `.archgen/**` and `.codegraph/**`, 300 ms coalesced debounce → rAF-batched immutable patches; only changed nodes re-render. |
 | Keyboard + ARIA | Tab walks task nodes; **Enter/Space** on a focused node dispatches ▶ build; nodes announce `task <id>: <title>, status <status>`; visible focus rings from the theme's focus border. |
-| States | Empty state with copyable `npx archgen-skill generate` install CTA; errors keep the last-good graph mounted (dimmed) under a dismissible top-center banner; "updated Ns ago" stale chip. |
+| States | Empty state with copyable `npx archgen-skill init` install CTA; errors keep the last-good graph mounted (dimmed) under a dismissible top-center banner; "updated Ns ago" stale chip. |
 | Docs | markdown-it (`html:false`) + mermaid strict mode; per-diagram error isolation; open-in-editor click-through. |
 | Code graph | colby/optave SQLite indexes read **read-only**; kind colors; edge-kind filter chips; search; impact highlight; unsupported-product banner. |
 
@@ -37,6 +37,8 @@ The extension is strictly a **window**: it reads files and spawns your agent CLI
 | `archgen.harness.default` | `claude` | Agent harness invoked by the ▶ build button: `claude \| opencode \| codex \| gemini \| custom`. |
 | `archgen.harness.templates` | see below | Command template per harness. Placeholders: `{{prompt}}`, `{{task}}`, `{{outfile}}`. |
 | `archgen.scriptsPath` | *(empty)* | Explicit path to the archgen scripts dir (`next-tasks.mjs`, `set-status.mjs`). Probed in order: this setting → `<ws>/.agents/skills/archgen/scripts` → `<ws>/.claude/skills/archgen/scripts` → `<ws>/skills/archgen/scripts` → `~/.agents/skills/archgen/scripts` → `~/.claude/skills/archgen/scripts`. A typed UI error appears when none resolve. |
+| `archgen.delivery.mode` | `clipboard` | How ▶ Build This Task / ▶ Start Work deliver work: `clipboard` copies the composed prompt for you to paste into any agent chat (works everywhere); `spawn` runs the legacy headless CLI harness. |
+| `archgen.delivery.autoFillChat` | `true` | After copying, best-effort pre-fill of the IDE's native chat input (ignored where unsupported). |
 
 ### Harness template examples
 
