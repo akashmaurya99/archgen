@@ -44,6 +44,15 @@ describe('extractToc', () => {
     expect(host.querySelectorAll('h2')[1]?.id).toBe('architecture-1');
   });
 
+  it('keeps ids unique when a heading slug collides with an earlier suffixed id', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<h2>A</h2><h2>A</h2><h2>A 1</h2>';
+    const ids = extractToc(host).map((t) => t.id);
+    expect(ids).toEqual(['a', 'a-1', 'a-1-1']);
+    expect(new Set(ids).size).toBe(3);
+    expect([...host.querySelectorAll('h2')].map((h) => h.id)).toEqual(ids);
+  });
+
   it('falls back to a stable id for punctuation-only headings', () => {
     const host = document.createElement('div');
     host.innerHTML = '<h2>??? !!!</h2>';

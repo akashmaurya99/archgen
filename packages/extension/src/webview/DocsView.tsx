@@ -309,14 +309,18 @@ function slugify(text: string): string {
 
 /** Assign stable ids to h2/h3 and return the TOC model. */
 export function extractToc(root: HTMLElement): TocEntry[] {
-  const used = new Map<string, number>();
+  const used = new Set<string>();
   const entries: TocEntry[] = [];
   root.querySelectorAll('h2, h3').forEach((h) => {
     const text = h.textContent ?? '';
     const base = slugify(text);
-    const n = used.get(base) ?? 0;
-    used.set(base, n + 1);
-    const id = n === 0 ? base : `${base}-${n}`;
+    // Loop until the id is free: a counter alone collides when a later
+    // heading's own slug equals an earlier heading's suffixed id
+    // ("A","A","A 1" → a, a-1, then "a-1" again).
+    let id = base;
+    let n = 1;
+    while (used.has(id)) id = `${base}-${n++}`;
+    used.add(id);
     h.id = id;
     entries.push({ id, text, level: h.tagName === 'H2' ? 2 : 3 });
   });
