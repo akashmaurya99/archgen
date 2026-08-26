@@ -276,7 +276,9 @@ describe('CodeGraphView canvas wiring', () => {
     expect(screen.queryByRole('button', { name: 'Clear selection' })).toBeNull();
 
     await act(async () => {
-      fireEvent.click(document.querySelector('.react-flow__node') as Element);
+      // a real graph card, not the first .react-flow__node (that's the __ring
+      // decoration layer — not selectable since todo 11)
+      fireEvent.click(gnodes()[0] as Element);
       await Promise.resolve();
     });
     expect(screen.queryByRole('status', { name: /Impact of/ })).not.toBeNull();
@@ -293,7 +295,9 @@ describe('click-to-highlight (transitive neighborhood isolation)', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    const nodeEl = document.querySelector('.react-flow__node');
+    // a real graph card, not the first .react-flow__node (that's the __ring
+    // decoration layer — not selectable since todo 11)
+    const nodeEl = gnodes()[0];
     expect(nodeEl).toBeTruthy();
     expect(screen.queryByRole('status', { name: /Impact of/ })).toBeNull();
     act(() => fireEvent.click(nodeEl as Element));
@@ -396,6 +400,139 @@ describe('click-to-highlight (transitive neighborhood isolation)', () => {
     expect(screen.getByText('Codegraph unavailable')).toBeTruthy();
     expect(screen.getByText(/workspace-local/)).toBeTruthy();
     expect(document.querySelector('.archgen-banner-unsupported')).toBeTruthy();
+  });
+});
+
+describe('focus/selection lifecycle across live vm updates (todo 11)', () => {
+  // File-hub-tier fixture: one 70-node chain (largest component > 60 → the
+  // rollup escalates past the radial tier). a.ts holds n0+n1 wired with an
+  // intra-file edge so its file node is OPENABLE (drill target). Every call
+  // builds FRESH objects — the same identity churn the host's rAF-batched
+  // immutable live patches produce.
+  function fileHubVm(opts: { withoutATs?: boolean; tag?: string } = {}): CodegraphVM {
+    const nodes: NonNullable<CodegraphVM['nodes']> = [];
+    const edges: NonNullable<CodegraphVM['edges']> = [];
+    const start = opts.withoutATs ? 2 : 0;
+    for (let i = start; i < 70; i++) {
+      nodes.push({
+        id: `n${i}`,
+        label: opts.tag && i === 69 ? `n69-${opts.tag}` : `n${i}`,
+        kind: 'function',
+        file: i < 2 ? 'a.ts' : 'b.ts',
+        line: i,
+      });
+    }
+    for (let i = start + 1; i < 70; i++) edges.push({ source: `n${i}`, target: `n${i - 1}`, kind: 'calls' });
+    const files = opts.withoutATs
+      ? [{ file: 'b.ts', symbols: 68, kinds: { function: 68 } }]
+      : [
+          { file: 'a.ts', symbols: 2, kinds: { function: 2 } },
+          { file: 'b.ts', symbols: 68, kinds: { function: 68 } },
+        ];
+    const rollupEdges = opts.withoutATs
+      ? [{ source: 'b.ts', target: 'b.ts', kind: 'calls', count: 67 }]
+      : [
+          { source: 'a.ts', target: 'a.ts', kind: 'calls', count: 1 },
+          { source: 'b.ts', target: 'a.ts', kind: 'calls', count: 1 },
+          { source: 'b.ts', target: 'b.ts', kind: 'calls', count: 67 },
+        ];
+    return {
+      product: 'colby',
+      hasFts: false,
+      nodes,
+      edges,
+      fileRollup: {
+        files,
+        edges: rollupEdges,
+        totals: { files: files.length, symbols: nodes.length, edges: edges.length },
+      },
+    };
+  }
+
+  async function drillIntoATs(): Promise<void> {
+    const fileNode = gnodes().find((el) => el.textContent?.includes('a.ts'));
+    if (!fileNode) throw new Error('a.ts file node not rendered');
+    await act(async () => {
+      fireEvent.click(fileNode);
+      await Promise.resolve();
+    });
+  }
+
+  it('retains drill focus across a live vm patch that keeps the focused file', async () => {
+    const view = render(createElement(CodeGraphView, { vm: fileHubVm() }));
+    await flushFlow();
+    expect(screen.getByTestId('code-graph-view').getAttribute('data-tier')).toBe('file-hub');
+    expect(screen.queryByTestId('cg-back-chip')).toBeNull();
+
+    await drillIntoATs();
+    await flushFlow();
+    expect(screen.getByTestId('cg-back-chip')).toBeTruthy();
+    expect(screen.getByText('a.ts · 2 symbols')).toBeTruthy();
+
+    // live update: NEW vm identity, same product, a.ts still in the rollup
+    view.rerender(createElement(CodeGraphView, { vm: fileHubVm({ tag: 'patch' }) }));
+    await flushFlow();
+    expect(screen.getByTestId('cg-back-chip')).toBeTruthy(); // focus RETAINED
+    expect(screen.getByText('a.ts · 2 symbols')).toBeTruthy();
+    expect(gnodes().some((el) => el.textContent?.includes('n0'))).toBe(true);
+  });
+
+  it('clears drill focus when the focused file disappears from the live rollup', async () => {
+    const view = render(createElement(CodeGraphView, { vm: fileHubVm() }));
+    await flushFlow();
+    await drillIntoATs();
+    expect(screen.getByTestId('cg-back-chip')).toBeTruthy();
+
+    view.rerender(createElement(CodeGraphView, { vm: fileHubVm({ withoutATs: true }) }));
+    await flushFlow();
+    expect(screen.queryByTestId('cg-back-chip')).toBeNull(); // focus CLEARED
+    // …and the view lands back on the file universe (only b.ts remains)
+    expect(gnodes().some((el) => el.textContent?.includes('b.ts'))).toBe(true);
+    expect(gnodes().some((el) => el.textContent?.includes('a.ts'))).toBe(false);
+  });
+
+  it('retains selection across a live vm patch that keeps the selected node', async () => {
+    const view = render(createElement(CodeGraphView, { vm: SPLIT_VM }));
+    await flushFlow();
+    await act(async () => {
+      fireEvent.click(gnodes()[0] as Element); // Alpha
+      await Promise.resolve();
+    });
+    expect(dimmedCount()).toBe(4);
+    expect(screen.queryByRole('status', { name: /Impact of/ })).not.toBeNull();
+
+    const patched: CodegraphVM = {
+      ...SPLIT_VM,
+      nodes: (SPLIT_VM.nodes ?? []).map((n) => (n.id === 'w' ? { ...n, label: 'Whiskey!' } : n)),
+    };
+    view.rerender(createElement(CodeGraphView, { vm: patched }));
+    await flushFlow();
+    expect(dimmedCount()).toBe(4); // selection RETAINED across identity churn
+    expect(screen.queryByRole('status', { name: /Impact of/ })).not.toBeNull();
+  });
+
+  it('clears a stale selection when the node leaves the graph — no ghost dimming', async () => {
+    const view = render(createElement(CodeGraphView, { vm: SPLIT_VM }));
+    await flushFlow();
+    await act(async () => {
+      fireEvent.click(gnodes()[0] as Element); // Alpha
+      await Promise.resolve();
+    });
+    expect(dimmedCount()).toBe(4);
+
+    // live update deletes Alpha from the index
+    const patched: CodegraphVM = {
+      ...SPLIT_VM,
+      nodes: (SPLIT_VM.nodes ?? []).filter((n) => n.id !== 'a'),
+      edges: (SPLIT_VM.edges ?? []).filter((e) => e.source !== 'a' && e.target !== 'a'),
+    };
+    view.rerender(createElement(CodeGraphView, { vm: patched }));
+    await flushFlow();
+    expect(screen.queryByRole('status', { name: /Impact of/ })).toBeNull(); // badge reset
+    expect(screen.queryByRole('button', { name: 'Clear selection' })).toBeNull();
+    expect(dimmedCount()).toBe(0); // no ghost dimming of the entire graph
+    expect(document.querySelectorAll('.react-flow__edge.archgen-edge--dimmed')).toHaveLength(0);
+    expect(document.querySelectorAll('.react-flow__edge.animated')).toHaveLength(0);
   });
 });
 

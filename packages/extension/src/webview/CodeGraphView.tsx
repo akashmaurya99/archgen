@@ -457,10 +457,6 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
 
   const tier: GraphSizeTier = useMemo(() => selectSizeTier(nodes, edges, rollup), [nodes, edges, rollup]);
 
-  useEffect(() => {
-    setFocusFile(null);
-  }, [vm]);
-
   const handleZoomChange = useCallback((z: number): void => setZoomStep(z), []);
   const flowInstRef = useRef<ReactFlowInstance | null>(null);
   const didMountFitRef = useRef(false);
@@ -544,6 +540,25 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
     }
     return new Map(nodes.map((n) => [n.id, n as GraphNodeMeta]));
   }, [active, nodes]);
+
+  // LIVE-UPDATE LIFECYCLE — the host pushes a NEW vm object on every
+  // rAF-batched patch, so keying these resets to vm identity would wipe
+  // drill/selection state on every background refresh. Clear focus ONLY when
+  // the focused file disappeared from the file universe (deleted file / gone
+  // rollup / product swap / tier back to radial), and selection ONLY when the
+  // node left the active universe — clearing selectedId also resets the
+  // neighborhood/impact badge (both derive from it). Never re-key on `vm`.
+  useEffect(() => {
+    if (focusFile !== null && (!fileUniverse || !fileUniverse.symbolsByFile.has(focusFile))) {
+      setFocusFile(null);
+    }
+  }, [vm.product, fileUniverse, focusFile]);
+
+  useEffect(() => {
+    if (selectedId !== null && !metaById.has(selectedId)) {
+      setSelectedId(null);
+    }
+  }, [metaById, selectedId]);
 
   // Radial rings only scale to the tier budget; a larger component (or a
   // missing rollup on a huge graph) degrades to isolated per-component flow
@@ -733,6 +748,9 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
 
   const handleNodeClick = useCallback(
     (_: ReactMouseEvent, node: Node): void => {
+      // Only real graph cards are selectable — clicking the __ring decoration
+      // would select a ghost id absent from metaById, dimming the whole graph.
+      if (node.type !== 'gnode') return;
       if (fileUniverse && (node.data as GraphNodeData | undefined)?.kind === 'file') {
         // Affordance == behavior: only nodes flagged openable open focus.
         if (!openableById.has(node.id)) return;
