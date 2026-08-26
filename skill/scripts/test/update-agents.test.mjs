@@ -210,3 +210,25 @@ test('update-agents: start marker without end marker exits 4 with guidance', () 
   assert.equal(r.status, 4);
   assert.match(r.stderr, /end marker|END_MARKER|features:end/);
 });
+
+test('update-agents: outer archgen:block provenance line survives registry rewrite', () => {
+  // The CLI renders a versioned managed block whose provenance line sits
+  // between archgen:start and the features sub-markers. The registry rewrite
+  // must touch ONLY the features-marker span and leave it byte-identical.
+  const tp = makeFeature('alpha', tasksYaml(task('A1')));
+  const prov = '<!-- archgen:block v0.0.4 -->';
+  writeFileSync(
+    join(dir, 'AGENTS.md'),
+    '<!-- archgen:start (managed block - do not edit between markers) -->\n'
+      + prov + '\n'
+      + '# Guide\n\n'
+      + START + '\n| Feature | Status | Updated |\n| --- | --- | --- |\n| ghost | done | 2020-01-01 |\n'
+      + END + '\n',
+  );
+  const r = run([dir]);
+  assert.equal(r.status, 0, r.stderr);
+  const after = agents();
+  assert.ok(after.includes(prov + '\n# Guide'), 'provenance line preserved verbatim in place');
+  assert.ok(after.includes(`| alpha | planned | ${ymd(tp)} |`));
+  assert.ok(!after.includes('ghost'));
+});
