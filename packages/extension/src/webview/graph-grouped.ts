@@ -98,13 +98,6 @@ function shift<T extends { position: { x: number; y: number } }>(items: readonly
   return items.map((it) => ({ ...it, position: { x: it.position.x + dx, y: it.position.y + dy } }));
 }
 
-export interface GroupRegion extends Bounds {
-  id: string;
-  x: number;
-  y: number;
-  nodeCount: number;
-}
-
 export interface GroupedLayout {
   placements: Array<
     GraphNodeLike & {
@@ -264,7 +257,8 @@ export function layoutFlowGrouped(
 }
 
 /* ==== CODE GRAPH · size-tier auto-mode + zoom LOD — NEW SECTION START ====
-   Scale tiers chosen by the LARGEST connected component's symbol count:
+   Scale tiers chosen by the LARGEST LINKED connected component's symbol
+   count (the 'unlinked' singleton bucket never escalates the tier):
    ≤60 → radial rings (unchanged default), 61–300 → file-hub dagre,
    >300 → file-hub focused on the top hub's file neighborhood. When the host
    has not supplied a fileRollup the view falls back to legacy behavior
@@ -320,8 +314,11 @@ export function basename(path: string): string {
 
 /**
  * Size-tier selection. `rollup` absent → 'radial' (legacy behavior for ANY
- * size). Otherwise the largest component's node count decides:
- * ≤60 radial · ≤300 file-hub · else focus-first.
+ * size). Otherwise the largest LINKED component's node count decides:
+ * ≤60 radial · ≤300 file-hub · else focus-first. The 'unlinked' singleton
+ * bucket is SKIPPED — loose symbols render as a compact grid (never a ring)
+ * at every tier, so counting them faked huge components: 301 isolated nodes
+ * must stay radial, not escalate to focus-first.
  */
 export function selectSizeTier(
   nodes: readonly GraphNodeLike[],
@@ -331,6 +328,7 @@ export function selectSizeTier(
   if (!rollup || rollup.files.length === 0 || nodes.length === 0) return 'radial';
   let largest = 0;
   for (const comp of connectedComponents(nodes, edges)) {
+    if (comp.id === UNLINKED_COMPONENT_ID) continue;
     if (comp.nodes.length > largest) largest = comp.nodes.length;
   }
   if (largest <= RADIAL_TIER_MAX_NODES) return 'radial';

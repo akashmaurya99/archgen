@@ -1,6 +1,7 @@
 // CODE tab scale tests: size-tier auto-mode (radial ≤60 / file-hub 61–300 /
-// focus-first >300, decided by the LARGEST component's symbol count) and the
-// zoom Level-of-Detail ladder (dot <0.35 · mid ≤0.70 · full above; hubs keep
+// focus-first >300, decided by the LARGEST LINKED component's symbol count —
+// the unlinked singleton bucket never escalates the tier) and the zoom
+// Level-of-Detail ladder (dot <0.35 · mid ≤0.70 · full above; hubs keep
 // labels; minor edges hide at dot zoom). Also proves the perf guardrail: a
 // full quantized zoom sweep replaces each node object ≤2 times and ONLY when
 // its lod tier flips.
@@ -188,18 +189,19 @@ describe('tier-matrix — selectSizeTier by LARGEST component', () => {
     expect(selectSizeTier(chain(301).nodes, chain(301).edges, rollupFor(chain(301).nodes, chain(301).edges))).toBe('focus-first');
   });
 
-  it('counts the LARGEST decomposed bucket — including the unlinked bucket', () => {
-    // 40-chain + 40 singletons: total 80 but largest bucket is 40 → radial.
+  it('ignores the unlinked bucket — loose singletons never escalate the tier (todo 13)', () => {
+    // 40-chain + 40 singletons: largest LINKED component is 40 → radial.
     const nodes: Sym[] = Array.from({ length: 40 }, (_, i) => ({ id: `iso${i}`, label: `i${i}`, kind: 'file', file: `i${i}.ts`, line: 1 }));
     const { nodes: chainNodes, edges } = chain(40);
     const all = [...chainNodes, ...nodes];
     expect(selectSizeTier(all, edges, rollupFor(all, edges))).toBe('radial');
     // The decomposition collapses ALL singletons into one 'unlinked' bucket,
-    // so hundreds of loose symbols legitimately aggregate: 500 loose + small
-    // chain → unlinked bucket of 500 drives focus-first.
+    // which renders as a compact grid (never a ring) at every tier — so it
+    // must NOT escalate: 500 loose + 10-chain stays radial. (Pre-fix this
+    // returned 'focus-first' because the 500-node bucket was counted.)
     const manyLoose = Array.from({ length: 500 }, (_, i) => ({ id: `loose${i}`, label: `l${i}`, kind: 'file', file: `l${i}.ts`, line: 1 }));
     const mixed = [...chain(10).nodes, ...manyLoose];
-    expect(selectSizeTier(mixed, [], rollupFor(mixed, []))).toBe('focus-first');
+    expect(selectSizeTier(mixed, [], rollupFor(mixed, []))).toBe('radial');
   });
 });
 

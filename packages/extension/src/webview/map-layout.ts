@@ -67,6 +67,9 @@ interface Blob {
 /**
  * Pack every symbol onto the whole-repo map. See module docblock for the
  * pipeline. Pure: `nodes` is never mutated; returned Maps/arrays are fresh.
+ * Duplicate symbol ids OVERWRITE in `positions` (Map keyed by id, last
+ * occurrence wins) — repeated ids share the last packed point, so callers
+ * must dedupe ids before packing if distinct dots are required.
  */
 export function packByFile(nodes: ReadonlyArray<MapNodeLike>): MapPackResult {
   const positions = new Map<string, MapPoint>();

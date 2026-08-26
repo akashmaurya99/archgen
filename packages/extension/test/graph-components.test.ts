@@ -1,8 +1,17 @@
 // Per-component model tests: connectedComponents decomposition (one canvas per
 // cluster + single 'unlinked' singleton bucket), layoutRadial groupByKind ring
 // clustering, and the CODE_FLOW_LAYOUT dagre tuning constants. Pure node env —
-// no jsdom, no React.
-import { describe, expect, it } from 'vitest';
+// no jsdom, no React. Todo 13 adds the selectSizeTier boundary/unlinked-bucket
+// contract and the layoutFlowGrouped dagre-cache spy.
+import { describe, expect, it, vi } from 'vitest';
+
+// Behavior-preserving spy (same pattern as todo 12's code-graph.test.tsx):
+// counts dagre passes inside layoutFlowGrouped without stubbing layout math.
+vi.mock('../src/webview/layout', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/webview/layout')>();
+  return { ...actual, layoutLeftToRight: vi.fn(actual.layoutLeftToRight) };
+});
+
 import {
   CODE_FLOW_LAYOUT,
   UNLINKED_COMPONENT_ID,
@@ -10,6 +19,8 @@ import {
   layoutRadial,
 } from '../src/webview/graph-model';
 import type { GraphEdgeLike, GraphNodeLike } from '../src/webview/graph-model';
+import { layoutFlowGrouped, selectSizeTier, type FileRollup } from '../src/webview/graph-grouped';
+import { layoutLeftToRight } from '../src/webview/layout';
 
 const n = (id: string, kind = 'function', label = id): GraphNodeLike => ({ id, label, kind, file: `${id}.ts`, line: 1 });
 const e = (source: string, target: string, kind = 'calls'): GraphEdgeLike => ({ source, target, kind });
@@ -177,5 +188,89 @@ describe('CODE_FLOW_LAYOUT — flow declutter tuning', () => {
     expect(CODE_FLOW_LAYOUT.nodeSep).toBe(56);
     expect(Object.keys(CODE_FLOW_LAYOUT).sort()).toEqual(['nodeSep', 'rankSep']);
     expect(CODE_FLOW_LAYOUT).toEqual({ rankSep: 140, nodeSep: 56 });
+  });
+});
+
+/* ==== todo 13 — selectSizeTier boundaries + unlinked bucket ==== */
+
+const chain = (k: number): { nodes: GraphNodeLike[]; edges: GraphEdgeLike[] } => ({
+  nodes: Array.from({ length: k }, (_, i) => n(`c${i}`)),
+  edges: Array.from({ length: Math.max(0, k - 1) }, (_, i) => e(`c${i}`, `c${i + 1}`)),
+});
+
+/** Minimal host rollup — selectSizeTier only needs a non-empty `files` list. */
+const rollupOf = (nodes: readonly GraphNodeLike[]): FileRollup => {
+  const symbols = new Map<string, number>();
+  for (const node of nodes) symbols.set(node.file, (symbols.get(node.file) ?? 0) + 1);
+  return {
+    files: [...symbols.entries()].map(([file, count]) => ({ file, symbols: count, kinds: {} })),
+    edges: [],
+    totals: { files: symbols.size, symbols: nodes.length, edges: 0 },
+  };
+};
+
+describe('selectSizeTier — tier boundaries + unlinked bucket (todo 13)', () => {
+  it('no rollup → radial at ANY size (legacy fallback)', () => {
+    const big = chain(400);
+    expect(selectSizeTier(big.nodes, big.edges, null)).toBe('radial');
+    expect(selectSizeTier(big.nodes, big.edges, undefined)).toBe('radial');
+  });
+
+  it.each([
+    [60, 'radial'],
+    [61, 'file-hub'],
+    [300, 'file-hub'],
+    [301, 'focus-first'],
+  ] as const)('linked chain of %s symbols → %s', (k, tier) => {
+    const { nodes, edges } = chain(k);
+    expect(selectSizeTier(nodes, edges, rollupOf(nodes))).toBe(tier);
+  });
+
+  it('301 ISOLATED nodes (one unlinked bucket of 301) → still radial', () => {
+    const nodes = Array.from({ length: 301 }, (_, i) => n(`iso${i}`));
+    expect(selectSizeTier(nodes, [], rollupOf(nodes))).toBe('radial');
+  });
+
+  it('loose singletons never escalate: 500 isolated + 10-chain → radial, 500 isolated + 61-chain → file-hub', () => {
+    const loose = Array.from({ length: 500 }, (_, i) => n(`loose${i}`));
+    const small = chain(10);
+    expect(selectSizeTier([...small.nodes, ...loose], small.edges, rollupOf([...small.nodes, ...loose]))).toBe('radial');
+    const mid = chain(61);
+    expect(selectSizeTier([...mid.nodes, ...loose], mid.edges, rollupOf([...mid.nodes, ...loose]))).toBe('file-hub');
+  });
+});
+
+describe('layoutFlowGrouped — dagre cache eliminates the double pass (todo 13)', () => {
+  it('runs dagre exactly once per LINKED component (halved), never for the unlinked bucket', () => {
+    const dagreSpy = vi.mocked(layoutLeftToRight);
+    dagreSpy.mockClear();
+
+    // c1={a1..a4} chain, c2={b1..b3} chain, c3={d1,d2} pair, + s1,s2 singletons.
+    const nodes = [
+      n('a1'), n('a2'), n('a3'), n('a4'),
+      n('b1'), n('b2'), n('b3'),
+      n('d1'), n('d2'),
+      n('s1'), n('s2'),
+    ];
+    const edges = [
+      e('a1', 'a2'), e('a2', 'a3'), e('a3', 'a4'),
+      e('b1', 'b2'), e('b2', 'b3'),
+      e('d1', 'd2'),
+    ];
+    const result = layoutFlowGrouped(nodes, edges);
+
+    // Pre-cache behavior ran dagre TWICE per linked component (sizing pass +
+    // placement pass) = 6 calls here; the sizing pass now caches → exactly 3.
+    expect(dagreSpy).toHaveBeenCalledTimes(3);
+
+    expect(result.placements).toHaveLength(11);
+    expect(result.regions.map((r) => r.id)).toEqual(['c1', 'c2', 'c3', UNLINKED_COMPONENT_ID]);
+    // Cached layouts are reused by COPY — placements carry componentId without
+    // mutating the cache, and every node lands at finite coordinates.
+    for (const p of result.placements) {
+      expect(Number.isFinite(p.position.x)).toBe(true);
+      expect(Number.isFinite(p.position.y)).toBe(true);
+      expect(p.componentId).not.toBe('');
+    }
   });
 });

@@ -21,6 +21,7 @@ import {
   worldToScreen,
   type GraphMapEdge,
   type GraphMapNode,
+  type GraphMapView,
 } from '../src/webview/GraphMap';
 import { packByFile } from '../src/webview/map-layout';
 import { colorForKind } from '../src/webview/graph-model';
@@ -314,6 +315,51 @@ describe('GraphMap', () => {
 
     fireEvent.wheel(canvas, { deltaY: 2e9, clientX: 400, clientY: 300 });
     expect(hud()).toContain('2%');
+  });
+
+  it('model swap (new nodes identity) refits the viewport; same-identity rerender keeps user zoom (todo 13)', async () => {
+    // Two corpora whose fitted scales differ visibly on the 800×600 test host.
+    const nodesA = synthNodes(2000, 100, 29);
+    const nodesB: GraphMapNode[] = [];
+    for (let f = 0; f < 3; f++) {
+      for (let i = 0; i < 300; i++) {
+        nodesB.push({ id: `b${f}-${i}`, label: `B${f}:${i}`, kind: 'function', file: `big/f${f}.ts`, line: i + 1 });
+      }
+    }
+    const fitA = fitView(packByFile(nodesA).bounds, 800, 600);
+    const fitB = fitView(packByFile(nodesB).bounds, 800, 600);
+    const pct = (v: GraphMapView) => `${Math.round(v.scale * 100)}%`;
+    expect(fitA.scale).not.toBeCloseTo(fitB.scale, 1); // sanity: distinct fits
+
+    const { container, rerender } = render(
+      createElement(GraphMap, { nodes: nodesA, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    const canvas = mapEl(container);
+    const hud = () => container.querySelector('.archgen-map-hud')!.textContent ?? '';
+    expect(hud()).toContain(pct(fitA));
+
+    // User zooms fully in — viewport leaves the fitted state.
+    fireEvent.wheel(canvas, { deltaY: -1e9, clientX: 400, clientY: 300 });
+    expect(hud()).toContain('400%');
+
+    // Model swap → new layout identity → refit onto the NEW bounds (the
+    // pre-fix bug kept the stale 400% viewport and the new constellation
+    // rendered off-screen).
+    rerender(
+      createElement(GraphMap, { nodes: nodesB, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    expect(hud()).toContain(pct(fitB));
+
+    // Same-identity rerender must NOT refit — user pan/zoom survives.
+    fireEvent.wheel(canvas, { deltaY: -1e9, clientX: 400, clientY: 300 });
+    expect(hud()).toContain('400%');
+    rerender(
+      createElement(GraphMap, { nodes: nodesB, kindColorFor: colorForKind, onSelect: () => {}, themeKind: 'dark' }),
+    );
+    await flushFrames();
+    expect(hud()).toContain('400%');
   });
 
   it('double-click zooms into the point', async () => {

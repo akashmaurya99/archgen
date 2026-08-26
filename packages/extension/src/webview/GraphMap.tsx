@@ -482,10 +482,15 @@ export function GraphMap(props: GraphMapProps): React.ReactElement {
     scheduleDraw();
   }, [scheduleDraw, layout, tree, kindBuckets, edgeInfo, selectedId, hoveredId, themeKind]);
 
-  // Initial fit as soon as the host reports real size.
+  // Fit as soon as the host reports real size — and REFIT whenever `layout`
+  // identity changes (model swap: new `nodes` → new pack → new bounds).
+  // Without the re-fit, `fittedRef` stayed true forever after the first fit
+  // and a swapped model inherited the stale viewport (new constellation
+  // off-screen). Same-identity re-renders never re-run this effect, and
+  // resizes go through the observer below, so user pan/zoom survives both.
   useLayoutEffect(() => {
     const host = hostRef.current;
-    if (!host || fittedRef.current) return;
+    if (!host) return;
     const cw = host.clientWidth;
     const ch = host.clientHeight;
     if (cw > 0 && ch > 0) {
@@ -493,6 +498,10 @@ export function GraphMap(props: GraphMapProps): React.ReactElement {
       viewRef.current = fitView(layout.bounds, cw, ch);
       setHudScale(viewRef.current.scale);
       scheduleDraw();
+    } else {
+      // Host not laid out yet — re-arm the draw-path fallback (it fits the
+      // first frame that reports real dimensions).
+      fittedRef.current = false;
     }
   }, [layout, scheduleDraw]);
 

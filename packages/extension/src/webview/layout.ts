@@ -28,6 +28,9 @@ export interface Positioned {
  * Lay `nodes` out left→right following `edges` (source → target).
  * Returns NEW node objects (`{...n, position}`); inputs are never mutated.
  * Edges referencing unknown ids are ignored, so partial graphs are safe.
+ * Duplicate ids OVERWRITE: `g.setNode` is last-wins, so every occurrence of a
+ * repeated id shares ONE dagre node and thus ONE position — callers needing
+ * distinct cards must dedupe or namespace ids first.
  */
 export function layoutLeftToRight<T extends { id: string }>(
   nodes: T[],

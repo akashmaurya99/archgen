@@ -57,6 +57,7 @@ import {
   CODE_NODE_WIDTH,
   EDGE_KINDS,
   SEARCH_DEBOUNCE_MS,
+  UNLINKED_COMPONENT_ID,
   colorForEdgeKind,
   colorForKind,
   connectedComponents,
@@ -572,12 +573,15 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
     return () => clearTimeout(timer);
   }, [rawQuery]);
 
-  // Radial rings only scale to the tier budget; a larger component (or a
-  // missing rollup on a huge graph) degrades to isolated per-component flow
-  // blocks instead of an unreadable 20k-px ring.
+  // Radial rings only scale to the tier budget; a larger LINKED component (or
+  // a missing rollup on a huge graph) degrades to isolated per-component flow
+  // blocks instead of an unreadable 20k-px ring. The unlinked singleton
+  // bucket is skipped — it renders as a compact grid, never a ring, so loose
+  // symbols must not demote linked rings to flow blocks (todo 13).
   const largestComponent = useMemo(() => {
     let largest = 0;
     for (const comp of connectedComponents(visibleNodes, routableEdges.map(({ e }) => e))) {
+      if (comp.id === UNLINKED_COMPONENT_ID) continue;
       if (comp.nodes.length > largest) largest = comp.nodes.length;
     }
     return largest;
