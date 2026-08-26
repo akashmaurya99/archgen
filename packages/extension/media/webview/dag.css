@@ -2,10 +2,10 @@
  * dag.css — Task DAG canvas and webview layout styles.
  *
  * Implements a modern, clean, and accessible design system:
- * - Refined typography with balanced tracking on headings.
+ * - Refined typography with tight tracking on headings and clear reading hierarchy.
  * - Cohesive interactive signals across tabs, pills, and action triggers.
  * - Frosted-glass floating panels with subtle hairline dividers.
- * - Continuous pill buttons and utility cards.
+ * - Radius hierarchy: pill (9999px), card (18px), medium (11px), utility (8px).
  * - Clean, stable hover and focus interactions without layout shifts.
  * - Responsive breakpoints for compact, standard, and wide viewports.
  */
@@ -24,10 +24,10 @@ body,
 .archgen-root {
   display: flex;
   flex-direction: column;
-  gap: var(--archgen-space-2);
+  gap: var(--archgen-space-2, 8px);
   height: 100%;
   box-sizing: border-box;
-  padding: var(--archgen-space-2);
+  padding: var(--archgen-space-2, 8px);
   background: var(--archgen-canvas);
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
@@ -45,8 +45,8 @@ body,
   backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
   -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-pill);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  border-radius: var(--archgen-radius-pill, 9999px);
+  box-shadow: var(--archgen-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
   flex-shrink: 0;
   z-index: 10;
 }
@@ -58,11 +58,11 @@ body,
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-sm);
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
   padding: 6px 16px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   cursor: pointer;
-  transition: color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  transition: color var(--archgen-motion-fast), background var(--archgen-motion-fast), transform var(--archgen-motion-fast);
   user-select: none;
   display: inline-flex;
   align-items: center;
@@ -89,13 +89,13 @@ body,
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: color-mix(in srgb, var(--archgen-surface) 60%, transparent);
   color: var(--archgen-text-muted);
   font-size: var(--archgen-font-size-xs);
   font-family: var(--archgen-font-mono);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-mono, 0.02em);
 }
 
 .archgen-stale-chip::before {
@@ -113,36 +113,53 @@ body,
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--archgen-space-2);
+  gap: var(--archgen-space-2, 8px);
   padding: 0 4px;
 }
 
 .archgen-feature-picker {
   display: inline-flex;
   align-items: center;
-  gap: var(--archgen-space-2);
+  gap: var(--archgen-space-2, 8px);
   font-size: var(--archgen-font-size-xs);
   color: var(--archgen-text-muted);
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
+}
+
+.archgen-feature-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 
 .archgen-feature-select {
-  padding: 4px 12px;
-  border-radius: var(--archgen-radius-pill);
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 4px 28px 4px 12px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface-elevated);
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-sm);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
   outline: none;
   cursor: pointer;
-  transition: border-color var(--archgen-motion-fast);
+  transition: border-color var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
 }
 
 .archgen-feature-select:hover {
   border-color: var(--archgen-hairline-strong);
+}
+
+.archgen-feature-chevron {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+  color: var(--archgen-text-muted);
+  font-size: 10px;
+  line-height: 1;
 }
 
 /* ---- Task DAG View Container ---- */
@@ -150,10 +167,11 @@ body,
   flex: 1 1 auto;
   min-height: 320px;
   position: relative;
-  border-radius: var(--archgen-radius-lg);
+  border-radius: var(--archgen-radius-lg, 18px);
   overflow: hidden;
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-canvas);
+  transition: opacity 0.2s ease-in-out;
 }
 
 /* ---- Task Node Card ---- */
@@ -172,14 +190,14 @@ body,
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-sm);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-  transition: box-shadow var(--archgen-motion-fast), border-color var(--archgen-motion-fast);
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
+  transition: box-shadow var(--archgen-motion-fast), border-color var(--archgen-motion-fast), transform var(--archgen-motion-fast);
   cursor: pointer;
   position: relative;
 }
 
 .archgen-tasknode:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+  box-shadow: var(--archgen-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.28));
   border-color: var(--archgen-hairline-strong);
 }
 
@@ -187,7 +205,7 @@ body,
   font-family: var(--archgen-font-mono);
   font-size: var(--archgen-font-size-xs);
   color: var(--archgen-text-muted);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--archgen-tracking-mono, 0.02em);
   font-weight: 500;
   line-height: 1;
 }
@@ -196,7 +214,7 @@ body,
   font-size: var(--archgen-font-size-sm);
   font-weight: 600;
   line-height: 1.25;
-  letter-spacing: -0.015em;
+  letter-spacing: var(--archgen-tracking-heading, -0.018em);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -237,9 +255,7 @@ body,
   box-shadow: inset 0 0 0 1px var(--archgen-status-failed);
 }
 
-/* Reveal spotlight (revealTask intent): focus-border halo. Declared AFTER the
-   status blocks so it wins the equal-specificity cascade; --archgen-focus-ring
-   resolves to --vscode-focusBorder, so high-contrast themes stay legible. */
+/* Reveal spotlight (revealTask intent): focus-border halo. */
 .archgen-tasknode.is-highlighted {
   border-color: var(--archgen-focus-ring);
   box-shadow:
@@ -254,40 +270,42 @@ body,
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid color-mix(in srgb, var(--archgen-text-on-action) 25%, transparent);
   background: var(--archgen-action-blue);
   color: var(--archgen-text-on-action);
   font-size: 10px;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  transition: background var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
+  box-shadow: var(--archgen-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+  transition: background var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast), transform var(--archgen-motion-fast);
 }
 
 .archgen-build-btn:hover {
   background: var(--archgen-action-blue-focus);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
 }
 
-/* ---- Start Work Hero Button ---- */
+/* ---- Start Work Primary Pill Button ---- */
 .archgen-start-work {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  height: 28px;
   background: var(--archgen-action-blue);
   color: var(--archgen-text-on-action);
   font-family: var(--archgen-font-ui);
-  font-size: var(--archgen-font-size-sm);
+  font-size: var(--archgen-font-size-xs);
   font-weight: 600;
-  letter-spacing: -0.01em;
-  padding: 8px 18px;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
+  padding: 0 14px;
   border: none;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--archgen-action-blue) 30%, transparent);
   cursor: pointer;
-  transition: background var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
+  transition: background var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast), transform var(--archgen-motion-fast);
   user-select: none;
+  box-sizing: border-box;
 }
 
 .archgen-start-work:hover {
@@ -295,18 +313,22 @@ body,
   box-shadow: 0 3px 12px color-mix(in srgb, var(--archgen-action-blue) 40%, transparent);
 }
 
+.archgen-start-work:active {
+  transform: scale(0.97);
+}
+
 /* ---- Status Legend Panel ---- */
 .archgen-legend {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 10px 14px;
-  border-radius: var(--archgen-radius-lg);
+  padding: 8px 12px;
+  border-radius: var(--archgen-radius-md, 11px);
   border: 1px solid var(--archgen-hairline);
   background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
   backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
   -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
   font-size: var(--archgen-font-size-xs);
   color: var(--archgen-text-muted);
 }
@@ -314,16 +336,16 @@ body,
 .archgen-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: var(--archgen-space-2);
+  gap: var(--archgen-space-2, 8px);
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
   text-transform: capitalize;
 }
 
 .archgen-dot {
   width: 8px;
   height: 8px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   display: inline-block;
   flex-shrink: 0;
 }
@@ -352,12 +374,14 @@ body,
 
 /* Controls & MiniMap Styling */
 .react-flow__controls {
-  border-radius: var(--archgen-radius-md) !important;
+  border-radius: var(--archgen-radius-pill, 9999px) !important;
   overflow: hidden;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18)) !important;
   border: 1px solid var(--archgen-hairline) !important;
   background: color-mix(in srgb, var(--archgen-surface) 90%, transparent) !important;
-  backdrop-filter: blur(12px) !important;
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px)) !important;
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px)) !important;
+  margin: 12px 14px !important;
 }
 
 .react-flow__controls-button {
@@ -371,12 +395,34 @@ body,
   background: var(--archgen-surface-elevated) !important;
 }
 
+/* Polished MiniMap */
 .react-flow__minimap {
-  border-radius: var(--archgen-radius-md) !important;
-  overflow: hidden;
+  border-radius: 12px !important;
+  overflow: hidden !important;
   border: 1px solid var(--archgen-hairline) !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2) !important;
-  background: color-mix(in srgb, var(--archgen-surface) 90%, transparent) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28) !important;
+  background: color-mix(in srgb, var(--archgen-surface-elevated) 80%, transparent) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  margin: 12px 14px !important;
+}
+
+.react-flow__minimap svg {
+  display: block;
+}
+
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--archgen-canvas) 50%, transparent) !important;
+  stroke: var(--archgen-action-blue) !important;
+  stroke-width: 1.5px !important;
+  rx: 4px;
+  ry: 4px;
+}
+
+.react-flow__minimap-node {
+  rx: 3px !important;
+  ry: 3px !important;
+  stroke: none !important;
 }
 
 /* ---- Code Graph View (CODE Tab) ---- */
@@ -384,40 +430,44 @@ body,
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--archgen-space-2);
   min-height: 320px;
   position: relative;
-  border-radius: var(--archgen-radius-lg);
+  border-radius: var(--archgen-radius-lg, 18px);
   overflow: hidden;
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-canvas);
+  transition: opacity 0.2s ease-in-out;
 }
 
+/* Seamless Integrated Header Toolbar */
 .archgen-cg-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--archgen-space-2);
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 8px 14px;
   background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
   border-bottom: 1px solid var(--archgen-hairline);
   flex-wrap: wrap;
   z-index: 5;
+  box-sizing: border-box;
 }
 
 /* Search Input */
 .archgen-cg-search {
-  flex: 1 1 200px;
-  max-width: 320px;
-  padding: 6px 14px;
-  border-radius: var(--archgen-radius-pill);
+  flex: 1 1 180px;
+  max-width: 260px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface-elevated);
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
-  font-size: var(--archgen-font-size-sm);
+  font-size: var(--archgen-font-size-xs);
   outline: none;
+  box-sizing: border-box;
   transition: border-color var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
 }
 
@@ -437,17 +487,19 @@ body,
 .archgen-chip-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  height: 28px;
+  box-sizing: border-box;
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   background: var(--archgen-surface-elevated);
   color: var(--archgen-text-muted);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-xs);
   font-weight: 500;
-  padding: 4px 10px;
+  padding: 0 10px;
   cursor: pointer;
-  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast), transform var(--archgen-motion-fast);
   user-select: none;
 }
 
@@ -464,21 +516,22 @@ body,
 
 .archgen-impact-badge {
   margin-left: auto;
-  padding: 4px 12px;
-  border-radius: var(--archgen-radius-pill);
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   background: var(--archgen-surface-elevated);
   border: 1px solid var(--archgen-hairline);
   color: var(--archgen-text);
   font-size: var(--archgen-font-size-xs);
   font-family: var(--archgen-font-mono);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--archgen-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+  display: inline-flex;
+  align-items: center;
 }
 
 /* Codegraph Node */
 .archgen-gnode {
-  /* Card MUST fill its xyflow wrapper box exactly: dagre spaces nodes by the
-     declared dims, and handles anchor at wrapper edges — an auto-sized card
-     overflows both, causing overlapping nodes and arrows that stop short. */
   position: relative;
   display: flex;
   align-items: center;
@@ -488,20 +541,19 @@ body,
   box-sizing: border-box;
   overflow: hidden;
   padding: 7px 13px;
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-md, 11px);
   background: var(--archgen-surface-elevated);
   border: 1.5px solid color-mix(in srgb, var(--archgen-text) 38%, transparent);
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  box-shadow: var(--archgen-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+  transition: border-color var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast), transform var(--archgen-motion-fast);
 }
 
 /* Openable cards reserve the badge lane on the right. */
 .archgen-gnode.is-openable {
   padding-right: 34px;
-}
-  color: var(--archgen-text);
-  font-family: var(--archgen-font-ui);
-  font-size: var(--archgen-font-size-xs);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  transition: border-color var(--archgen-motion-fast), box-shadow var(--archgen-motion-fast);
 }
 
 .archgen-gnode.is-selected {
@@ -521,10 +573,7 @@ body,
   flex-shrink: 0;
 }
 
-/* ==== CODE GRAPH · dependency-explorer upgrade — NEW SECTION START ====
-   Owns every --archgen-cg-* custom property plus the gnode handles,
-   captions, edge highlight/dim states and canvas toolbar buttons.
-   Edge hues are WCAG-checkable on the dark canvas and mutually distinct. */
+/* Code Graph dependency tokens */
 .archgen-code-view {
   --archgen-cg-edge-calls: #ffa657;
   --archgen-cg-edge-imports: #58a6ff;
@@ -535,16 +584,14 @@ body,
   --archgen-cg-accent: #58a6ff;
 }
 
-/* Handles: real routing anchors (xyflow v12 resolves edge endpoints from
-   rendered handle DOM). Hidden via opacity ONLY — display:none would collapse
-   them to 0×0 and break routing. Small dots surface on hover/selection. */
+/* Handles: real routing anchors */
 .react-flow__handle.archgen-gnode-handle {
   width: 7px;
   height: 7px;
   background: var(--archgen-surface-elevated);
   border: 1px solid var(--archgen-hairline-strong);
   opacity: 0;
-  transition: opacity var(--archgen-motion-fast, 120ms);
+  transition: opacity var(--archgen-motion-fast);
   pointer-events: none;
 }
 
@@ -553,8 +600,7 @@ body,
   opacity: 1;
 }
 
-/* Ring lives INSIDE the flow coordinate space (as a node) so it pans/zooms
-   with the graph — a static background layer would not. */
+/* Ring layer */
 .archgen-ring-svg {
   display: block;
   pointer-events: none;
@@ -562,9 +608,12 @@ body,
 
 .archgen-cg-mode {
   display: inline-flex;
+  align-items: center;
   gap: 2px;
+  height: 28px;
+  box-sizing: border-box;
   padding: 2px;
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface);
 }
@@ -575,20 +624,25 @@ body,
   color: var(--archgen-text-muted);
   font: inherit;
   font-size: var(--archgen-font-size-xs);
-  padding: 4px 10px;
-  border-radius: calc(var(--archgen-radius-md) - 2px);
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   cursor: pointer;
   opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--archgen-motion-fast), color var(--archgen-motion-fast);
 }
 
 .archgen-cg-mode-btn.is-active {
   background: var(--archgen-action-blue);
-  color: var(--archgen-surface);
+  color: var(--archgen-text-on-action);
   opacity: 1;
   font-weight: 600;
 }
 
-/* Label + file:line caption column; caption truncates when space is tight. */
+/* Label + file:line caption column */
 .archgen-gnode-text {
   display: flex;
   flex-direction: column;
@@ -601,7 +655,7 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-heading, -0.018em);
   line-height: 1.2;
 }
 
@@ -615,7 +669,7 @@ body,
   line-height: 1.2;
 }
 
-/* Non-neighborhood edges fade to near-invisible while highlighting. */
+/* Non-neighborhood edges fade while highlighting */
 .react-flow__edge.archgen-edge--dimmed {
   opacity: 0.12;
 }
@@ -625,10 +679,19 @@ body,
   filter: drop-shadow(0 0 3px color-mix(in srgb, var(--archgen-cg-accent) 55%, transparent));
 }
 
-/* Canvas overlay buttons (zoom-to-fit). */
+/* Canvas overlay buttons (zoom-to-fit) */
 .archgen-cg-panel {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  padding: 3px 6px;
+  margin: 12px 14px;
+  border-radius: var(--archgen-radius-pill, 9999px);
+  border: 1px solid var(--archgen-hairline);
+  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
 }
 
 .archgen-cg-fit-btn,
@@ -636,8 +699,10 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 12px;
-  border-radius: var(--archgen-radius-pill);
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface-elevated);
   color: var(--archgen-text);
@@ -645,8 +710,8 @@ body,
   font-size: var(--archgen-font-size-xs);
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-  transition: border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  box-shadow: var(--archgen-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+  transition: border-color var(--archgen-motion-fast), background var(--archgen-motion-fast), transform var(--archgen-motion-fast);
 }
 
 .archgen-cg-fit-btn:hover,
@@ -654,13 +719,6 @@ body,
   border-color: var(--archgen-action-blue);
   background: color-mix(in srgb, var(--archgen-action-blue) 10%, var(--archgen-surface-elevated));
 }
-/* ==== CODE GRAPH · dependency-explorer upgrade — NEW SECTION END ==== */
-
-/* ==== CODE GRAPH · grouped single-canvas view — NEW SECTION START ====
-   Every component lives on ONE shared canvas: radial = one kind-clustered
-   ring per component, flow = one isolated dagre block per component,
-   shelf-packed 3-per-row. Component chips (inside the canvas panel) fit-view
-   to their cluster. Flow-mode edges recede at rest. */
 
 .archgen-cg-canvas {
   position: relative;
@@ -671,15 +729,17 @@ body,
 .archgen-cg-fit-chip {
   display: inline-flex;
   align-items: center;
-  padding: 3px 10px;
-  border-radius: var(--archgen-radius-pill);
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: color-mix(in srgb, var(--archgen-surface-elevated) 88%, transparent);
   color: var(--archgen-text-muted);
   font-family: var(--archgen-font-mono);
   font-size: var(--archgen-font-size-xs);
   cursor: pointer;
-  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast), transform var(--archgen-motion-fast);
   user-select: none;
 }
 
@@ -689,10 +749,7 @@ body,
   background: color-mix(in srgb, var(--archgen-action-blue) 12%, var(--archgen-surface-elevated));
 }
 
-/* Flow-mode declutter: resting edges recede (thin stroke comes from the
-   inline style; this adds the translucent opacity). Highlighted/dimmed
-   states override below — dimmed keeps its near-invisible element opacity,
-   highlighted restores full opacity + glow. */
+/* Flow-mode edges recede at rest */
 .archgen-code-view .react-flow__edge-path {
   stroke-opacity: 0.75;
 }
@@ -700,18 +757,18 @@ body,
 .archgen-code-view .react-flow__edge.archgen-edge--highlighted .react-flow__edge-path {
   stroke-opacity: 1;
 }
-/* ==== CODE GRAPH · multi-canvas component view — NEW SECTION END ==== */
 
 /* ---- Documentation View (DOCS Tab) ---- */
 .archgen-docs-view {
   flex: 1 1 auto;
   display: flex;
-  gap: var(--archgen-space-2);
+  gap: var(--archgen-space-2, 8px);
   min-height: 320px;
-  border-radius: var(--archgen-radius-lg);
+  border-radius: var(--archgen-radius-lg, 18px);
   overflow: hidden;
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-canvas);
+  position: relative;
 }
 
 .archgen-doc-sidebar {
@@ -735,7 +792,7 @@ body,
 .archgen-doc-list li {
   display: flex;
   align-items: center;
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-md, 11px);
   transition: background var(--archgen-motion-fast);
 }
 
@@ -782,8 +839,8 @@ body,
   overflow-y: auto;
   font-family: var(--archgen-font-ui);
   font-size: 15px;
-  line-height: 1.47;
-  letter-spacing: -0.01em;
+  line-height: var(--archgen-line-height-body, 1.47);
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
   display: flex;
   flex-direction: column;
 }
@@ -796,18 +853,18 @@ body,
   justify-content: center;
   text-align: center;
   margin: auto;
-  padding: var(--archgen-space-6) var(--archgen-space-4);
+  padding: var(--archgen-space-6, 24px) var(--archgen-space-4, 16px);
   max-width: 360px;
   box-sizing: border-box;
 }
 
 .archgen-doc-empty-title {
-  margin: 0 0 var(--archgen-space-1) 0;
+  margin: 0 0 var(--archgen-space-1, 4px) 0;
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-md);
   font-weight: 600;
   color: var(--archgen-text);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-heading, -0.018em);
 }
 
 .archgen-doc-empty-desc {
@@ -822,9 +879,9 @@ body,
 .archgen-markdown h1,
 .archgen-markdown h2,
 .archgen-markdown h3 {
-  font-family: var(--archgen-font-ui);
+  font-family: var(--archgen-font-display, var(--archgen-font-ui));
   font-weight: 600;
-  letter-spacing: -0.022em;
+  letter-spacing: var(--archgen-tracking-tight, -0.025em);
   color: var(--archgen-text);
 }
 
@@ -843,7 +900,7 @@ body,
 .archgen-markdown pre {
   background: var(--archgen-surface-elevated);
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-md, 11px);
   padding: 12px 16px;
   overflow-x: auto;
   font-family: var(--archgen-font-mono);
@@ -861,7 +918,7 @@ body,
 .archgen-diagram {
   margin: 16px 0;
   padding: 16px;
-  border-radius: var(--archgen-radius-lg);
+  border-radius: var(--archgen-radius-lg, 18px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface-elevated);
   display: flex;
@@ -878,15 +935,59 @@ body,
   justify-content: center;
   text-align: center;
   padding: 48px 24px;
-  border-radius: var(--archgen-radius-lg);
+  border-radius: var(--archgen-radius-lg, 18px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-canvas);
+}
+
+.archgen-state-icon {
+  font-size: 36px;
+  line-height: 1;
+  margin-bottom: 12px;
+  color: var(--archgen-action-blue);
+  opacity: 0.8;
+}
+
+.archgen-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid color-mix(in srgb, var(--archgen-action-blue) 25%, transparent);
+  border-top-color: var(--archgen-action-blue);
+  border-radius: 50%;
+  animation: archgen-spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes archgen-spin {
+  to { transform: rotate(360deg); }
+}
+
+.archgen-skeleton-track {
+  width: 180px;
+  height: 4px;
+  border-radius: var(--archgen-radius-pill, 9999px);
+  background: color-mix(in srgb, var(--archgen-text) 10%, transparent);
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.archgen-skeleton-bar {
+  width: 60px;
+  height: 100%;
+  border-radius: var(--archgen-radius-pill, 9999px);
+  background: var(--archgen-action-blue);
+  animation: archgen-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes archgen-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 .archgen-state h2 {
   font-size: 22px;
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--archgen-tracking-tight, -0.025em);
   margin-bottom: 8px;
   color: var(--archgen-text);
 }
@@ -894,7 +995,7 @@ body,
 .archgen-state p {
   color: var(--archgen-text-muted);
   max-width: 480px;
-  line-height: 1.47;
+  line-height: var(--archgen-line-height-body, 1.47);
   font-size: 14px;
 }
 
@@ -903,7 +1004,7 @@ body,
   font-size: 14px;
 }
 
-/* Error banner floats TOP-CENTER above the dimmed last-good graph. */
+/* Error banner floats TOP-CENTER */
 .archgen-error-banner {
   position: fixed;
   top: 12px;
@@ -912,15 +1013,15 @@ body,
   z-index: 1000;
   display: flex;
   align-items: center;
-  gap: var(--archgen-space-3);
-  max-width: min(640px, calc(100% - var(--archgen-space-6)));
+  gap: var(--archgen-space-3, 12px);
+  max-width: min(640px, calc(100% - var(--archgen-space-6, 24px)));
   padding: 8px 16px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-status-failed);
   background: color-mix(in srgb, var(--archgen-status-failed) 18%, var(--archgen-surface-elevated));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  box-shadow: var(--archgen-shadow-floating, 0 12px 36px rgba(0, 0, 0, 0.35));
   color: var(--archgen-text);
   font-size: var(--archgen-font-size-sm);
   font-weight: 500;
@@ -948,17 +1049,17 @@ body,
   pointer-events: none;
 }
 
-/* Empty-state install CTA: copyable command pill. */
+/* Empty-state install CTA: copyable command pill */
 .archgen-install-cta {
   display: inline-flex;
   align-items: center;
-  gap: var(--archgen-space-2);
+  gap: var(--archgen-space-2, 8px);
   margin-top: 16px;
   padding: 4px 6px 4px 14px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline-strong);
   background: var(--archgen-surface-elevated);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--archgen-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
 }
 
 .archgen-install-cmd {
@@ -969,7 +1070,7 @@ body,
 
 .archgen-copy-btn {
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   background: var(--archgen-surface);
   color: var(--archgen-action-blue);
   font-family: var(--archgen-font-ui);
@@ -977,82 +1078,52 @@ body,
   font-size: var(--archgen-font-size-xs);
   padding: 4px 12px;
   cursor: pointer;
-  transition: background var(--archgen-motion-fast);
+  transition: background var(--archgen-motion-fast), transform var(--archgen-motion-fast);
 }
 
 .archgen-copy-btn:hover {
   background: var(--archgen-surface-elevated);
 }
 
-/* ---- Responsive Adaptations ---- */
-@media (max-width: 834px) {
-  .archgen-docs-view {
-    flex-direction: column;
-  }
-  .archgen-doc-sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--archgen-hairline);
-    max-height: 140px;
-  }
-  .archgen-doc-body {
-    padding: 16px;
-  }
-}
-
-@media (max-width: 419px) {
-  .archgen-root {
-    padding: 4px;
-    gap: 4px;
-  }
-  .archgen-tab {
-    padding: 5px 10px;
-    font-size: 11px;
-  }
-  .archgen-cg-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .archgen-cg-search {
-    max-width: 100%;
-  }
-}
-
-/* ============================================================
-   TASKS DAG ENTERPRISE ADDITIONS
-   Scope: TASKS tab only (.archgen-dag-*, .archgen-progress-chip,
-   .archgen-filter-announce, .archgen-legend-toggle/-wrap).
-   Mirrors the frosted-panel + pill language defined above.
-   ============================================================ */
-
-/* HUD column floating top-left: Start Work row + filter toolbar */
+/* ---- TASKS DAG HUD & TOOLBARS ---- */
 .archgen-dag-hud {
   display: flex;
   flex-direction: column;
   gap: 8px;
   max-width: min(640px, calc(100vw - 24px));
+  margin: 12px 14px;
 }
 
 .archgen-dag-hud-row {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--archgen-space-2);
+  gap: var(--archgen-space-2, 8px);
+  padding: 4px 6px;
+  border-radius: var(--archgen-radius-pill, 9999px);
+  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  border: 1px solid var(--archgen-hairline);
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
+  width: fit-content;
   flex-wrap: wrap;
 }
 
-/* Wave-progress chip (done/total) beside Start Work */
+/* Wave-progress chip (done/total) */
 .archgen-progress-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  border-radius: var(--archgen-radius-pill);
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid color-mix(in srgb, var(--archgen-status-done) 45%, var(--archgen-hairline));
   background: color-mix(in srgb, var(--archgen-status-done) 12%, var(--archgen-surface-elevated));
   color: var(--archgen-text);
   font-family: var(--archgen-font-mono);
   font-size: var(--archgen-font-size-xs);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-mono, 0.02em);
   white-space: nowrap;
 }
 
@@ -1065,23 +1136,25 @@ body,
   box-shadow: 0 0 6px var(--archgen-status-done);
 }
 
-/* Layout direction toggle (LR ↔ TB) */
+/* Layout direction toggle */
 .archgen-dag-layout-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  border-radius: var(--archgen-radius-pill);
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: color-mix(in srgb, var(--archgen-surface) 60%, transparent);
   color: var(--archgen-text-muted);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-xs);
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
   cursor: pointer;
   white-space: nowrap;
-  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast), transform var(--archgen-motion-fast);
 }
 
 .archgen-dag-layout-btn:hover {
@@ -1099,35 +1172,37 @@ body,
 .archgen-dag-toolbar {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
   width: fit-content;
-  padding: 8px 10px;
-  border-radius: var(--archgen-radius-lg);
+  padding: 4px 8px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
   backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
   -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
 }
 
 .archgen-dag-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  height: 24px;
+  box-sizing: border-box;
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   background: var(--archgen-surface-elevated);
   color: var(--archgen-text-muted);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-xs);
   font-weight: 500;
-  letter-spacing: -0.01em;
-  padding: 3px 10px;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
+  padding: 0 8px;
   cursor: pointer;
   user-select: none;
   text-transform: capitalize;
-  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast), transform var(--archgen-motion-fast);
 }
 
 .archgen-dag-chip:hover {
@@ -1141,19 +1216,12 @@ body,
   border-color: var(--archgen-action-blue);
 }
 
-.archgen-dag-chip:focus-visible,
-.archgen-dag-layout-btn:focus-visible,
-.archgen-legend-toggle:focus-visible {
-  outline: 2px solid var(--archgen-action-blue);
-  outline-offset: 1px;
-}
-
 .archgen-dag-chip-count {
   font-family: var(--archgen-font-mono);
   font-size: 10px;
-  line-height: 1.5;
-  padding: 0 6px;
-  border-radius: var(--archgen-radius-pill);
+  line-height: 1.4;
+  padding: 0 5px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   background: color-mix(in srgb, var(--archgen-text) 10%, transparent);
 }
 
@@ -1166,12 +1234,13 @@ body,
   cursor: default;
 }
 
-/* Collapsible legend wrapper + chevron toggle */
+/* Collapsible legend */
 .archgen-legend-wrap {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
+  margin: 12px 14px;
 }
 
 .archgen-legend-toggle {
@@ -1180,7 +1249,7 @@ body,
   align-items: center;
   gap: 4px;
   padding: 3px 10px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
   backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
@@ -1199,10 +1268,9 @@ body,
 }
 
 .archgen-legend-toggle--collapsed {
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
 }
 
-/* Screen-reader-only live announcer (filter emptied the board) */
 .archgen-filter-announce {
   position: absolute;
   width: 1px;
@@ -1215,18 +1283,7 @@ body,
   border: 0;
 }
 
-/* ================================================================
-   DOCS ENTERPRISE UPGRADE — docs-scoped additions ONLY.
-   Scope: .archgen-docs-view, .archgen-doc-*, .archgen-markdown,
-   .archgen-diagram-*, .archgen-search-hit, .archgen-back-to-top.
-   ================================================================ */
-
-/* Anchor for the floating TOC trigger / back-to-top / narrow TOC overlay. */
-.archgen-docs-view {
-  position: relative;
-}
-
-/* ---- Sidebar tools: filter box + count chip (C) ---- */
+/* ---- DOCS SIDEBAR TOOLS ---- */
 .archgen-doc-side-tools {
   display: flex;
   align-items: center;
@@ -1238,7 +1295,7 @@ body,
   flex: 1 1 auto;
   min-width: 0;
   padding: 5px 9px;
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-md, 11px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface);
   color: var(--archgen-text);
@@ -1250,23 +1307,17 @@ body,
   color: var(--archgen-text-muted);
 }
 
-.archgen-doc-filter:focus-visible {
-  outline: 1px solid var(--archgen-action-blue);
-  outline-offset: -1px;
-}
-
 .archgen-doc-count {
   flex-shrink: 0;
   padding: 3px 8px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   color: var(--archgen-text-muted);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--archgen-tracking-mono, 0.02em);
 }
 
-/* Top-level folder group labels (paths containing '/'). */
 .archgen-doc-group {
   display: block;
 }
@@ -1282,7 +1333,7 @@ body,
   letter-spacing: 0.09em;
 }
 
-/* ---- Doc toolbar: reading time + in-document search (B, E) ---- */
+/* ---- DOC TOOLBAR ---- */
 .archgen-doc-toolbar {
   position: sticky;
   top: 0;
@@ -1302,7 +1353,7 @@ body,
 .archgen-doc-readtime {
   flex-shrink: 0;
   padding: 3px 10px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface-elevated);
   color: var(--archgen-text-muted);
@@ -1321,17 +1372,12 @@ body,
 .archgen-doc-search-input {
   width: 200px;
   padding: 5px 9px;
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-md, 11px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-surface);
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-xs);
-}
-
-.archgen-doc-search-input:focus-visible {
-  outline: 1px solid var(--archgen-action-blue);
-  outline-offset: -1px;
 }
 
 .archgen-search-count {
@@ -1343,7 +1389,7 @@ body,
 
 .archgen-search-nav {
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-sm, 4px);
+  border-radius: var(--archgen-radius-sm, 8px);
   background: var(--archgen-surface);
   color: var(--archgen-text);
   font-size: 12px;
@@ -1374,7 +1420,7 @@ mark.archgen-search-hit.is-current {
   color: #ffffff;
 }
 
-/* ---- Table of contents rail (A): right side ≥1100px ---- */
+/* Table of contents rail */
 .archgen-doc-toc {
   width: 220px;
   flex-shrink: 0;
@@ -1403,7 +1449,7 @@ mark.archgen-search-hit.is-current {
 .archgen-doc-toc-toggle,
 .archgen-doc-toc-fab {
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-md, 11px);
   background: var(--archgen-surface);
   color: var(--archgen-text-muted);
   cursor: pointer;
@@ -1435,7 +1481,7 @@ mark.archgen-search-hit.is-current {
   display: block;
   padding: 4px 8px;
   border-left: 2px solid transparent;
-  border-radius: 0 var(--archgen-radius-sm, 4px) var(--archgen-radius-sm, 4px) 0;
+  border-radius: 0 var(--archgen-radius-sm, 8px) var(--archgen-radius-sm, 8px) 0;
   color: var(--archgen-text-muted);
   font-size: 12px;
   line-height: 1.35;
@@ -1453,14 +1499,13 @@ mark.archgen-search-hit.is-current {
   color: var(--archgen-text);
 }
 
-.archgen-doc-toc-link[aria-current='true'] {
+.archgen-doc-toc-link[aria-current="true"] {
   border-left-color: var(--archgen-action-blue);
   background: color-mix(in srgb, var(--archgen-action-blue) 12%, transparent);
   color: var(--archgen-action-blue);
   font-weight: 600;
 }
 
-/* Floating trigger — hidden on wide screens where the rail is visible. */
 .archgen-doc-toc-fab {
   display: none;
   position: absolute;
@@ -1472,34 +1517,11 @@ mark.archgen-search-hit.is-current {
   line-height: 1;
 }
 
-@media (max-width: 1099px) {
-  /* Rail becomes a floating overlay panel; ☰ fab toggles it. */
-  .archgen-doc-toc {
-    display: none;
-    position: absolute;
-    top: 40px;
-    right: 12px;
-    z-index: 30;
-    width: min(300px, calc(100% - 24px));
-    max-height: calc(100% - 60px);
-    border: 1px solid var(--archgen-hairline-strong, var(--archgen-hairline));
-    border-radius: var(--archgen-radius-lg);
-    background: var(--archgen-surface-elevated);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  }
-  .archgen-doc-toc:not(.is-collapsed) {
-    display: block;
-  }
-  .archgen-doc-toc-fab {
-    display: block;
-  }
-}
-
-/* ---- Code frames: language chip + copy button (E) ---- */
+/* Code frames */
 .archgen-code-frame {
   margin: 16px 0;
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-md, 11px);
   background: var(--archgen-surface-elevated);
   overflow: hidden;
 }
@@ -1538,8 +1560,7 @@ mark.archgen-search-hit.is-current {
   color: var(--archgen-status-done, var(--archgen-action-blue));
 }
 
-/* ---- Syntax highlighting tokens (F) — VS Code approximations.
-   Classes only (CSP-safe); colors resolve from these vars. ---- */
+/* Syntax highlighting */
 .archgen-docs-view {
   --doc-hl-keyword: #0000ff;
   --doc-hl-string: #a31515;
@@ -1552,8 +1573,8 @@ mark.archgen-search-hit.is-current {
   --doc-hl-literal: #0000ff;
 }
 
-[data-theme='dark'] .archgen-docs-view,
-[data-theme='highContrast'] .archgen-docs-view {
+[data-theme="dark"] .archgen-docs-view,
+[data-theme="highContrast"] .archgen-docs-view {
   --doc-hl-keyword: #569cd6;
   --doc-hl-string: #ce9178;
   --doc-hl-comment: #6a9955;
@@ -1637,11 +1658,11 @@ mark.archgen-search-hit.is-current {
   font-weight: 700;
 }
 
-/* ---- Diagram zoom/pan viewports (D) ---- */
+/* Diagrams */
 .archgen-diagram-wrap {
   margin: 16px 0;
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-lg);
+  border-radius: var(--archgen-radius-lg, 18px);
   background: var(--archgen-surface-elevated);
   overflow: hidden;
 }
@@ -1658,7 +1679,7 @@ mark.archgen-search-hit.is-current {
   min-width: 28px;
   padding: 3px 8px;
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-sm, 4px);
+  border-radius: var(--archgen-radius-sm, 8px);
   background: var(--archgen-surface);
   color: var(--archgen-text);
   font-family: var(--archgen-font-ui);
@@ -1694,7 +1715,6 @@ mark.archgen-search-hit.is-current {
   padding: 16px;
 }
 
-/* Failed diagram: inline alert frame with Retry (per-block isolation). */
 .archgen-diagram-error {
   display: flex;
   align-items: center;
@@ -1703,7 +1723,7 @@ mark.archgen-search-hit.is-current {
   margin: 16px 0;
   padding: 10px 14px;
   border: 1px solid var(--archgen-status-failed);
-  border-radius: var(--archgen-radius-md);
+  border-radius: var(--archgen-radius-md, 11px);
   background: color-mix(in srgb, var(--archgen-status-failed) 12%, var(--archgen-surface-elevated));
   color: var(--archgen-text);
   font-size: var(--archgen-font-size-sm);
@@ -1712,7 +1732,7 @@ mark.archgen-search-hit.is-current {
 .archgen-diagram-retry {
   flex-shrink: 0;
   border: 1px solid var(--archgen-hairline);
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   background: var(--archgen-surface);
   color: var(--archgen-action-blue);
   font-family: var(--archgen-font-ui);
@@ -1726,14 +1746,14 @@ mark.archgen-search-hit.is-current {
   background: var(--archgen-surface-elevated);
 }
 
-/* ---- Back to top (E) ---- */
+/* Back to top */
 .archgen-back-to-top {
   position: absolute;
   right: 20px;
   bottom: 20px;
   z-index: 40;
   padding: 8px 14px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline-strong, var(--archgen-hairline));
   background: var(--archgen-surface-elevated);
   color: var(--archgen-action-blue);
@@ -1741,27 +1761,14 @@ mark.archgen-search-hit.is-current {
   font-weight: 600;
   font-size: var(--archgen-font-size-sm);
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--archgen-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.28));
 }
 
 .archgen-back-to-top:hover {
   border-color: var(--archgen-action-blue);
 }
 
-/* ---- Responsive: toolbar wraps on narrow docs panes ---- */
-@media (max-width: 834px) {
-  .archgen-doc-toolbar {
-    flex-wrap: wrap;
-    margin: -16px -16px 14px;
-    padding: 8px 16px;
-  }
-  .archgen-doc-search-input {
-    width: 100%;
-    max-width: 220px;
-  }
-}
-
-/* Group wrapper rows are containers, not hoverable items. */
+/* Group wrapper */
 .archgen-doc-list li.archgen-doc-group {
   display: block;
 }
@@ -1770,21 +1777,14 @@ mark.archgen-search-hit.is-current {
   background: transparent;
 }
 
-/* ==== CODE GRAPH · whole-repo MAP layer (Canvas2D) — NEW SECTION START ====
-   Scope: .archgen-map* ONLY. The map fills its container and layers
-   [canvas < tooltip < hud]. Cursor modes communicate affordance:
-   grab = pan-able, grabbing = panning, pointer = over a symbol.
-   Colors resolve from --archgen-* tokens; the canvas itself reads the same
-   vars at paint time with literal fallbacks (see GraphMap.tsx). */
-
-/* Container: fills its parent (drop into .archgen-code-view or any sized box). */
+/* ---- WHOLE-REPO MAP LAYER ---- */
 .archgen-map {
   position: relative;
   width: 100%;
   height: 100%;
   min-height: 320px;
   overflow: hidden;
-  border-radius: var(--archgen-radius-lg);
+  border-radius: var(--archgen-radius-lg, 18px);
   border: 1px solid var(--archgen-hairline);
   background: var(--archgen-canvas);
   cursor: grab;
@@ -1805,7 +1805,6 @@ mark.archgen-search-hit.is-current {
   display: block;
 }
 
-/* Cursor modes */
 .archgen-map.is-panning {
   cursor: grabbing;
 }
@@ -1814,14 +1813,12 @@ mark.archgen-search-hit.is-current {
   cursor: pointer;
 }
 
-/* Hover tooltip: frosted pill following the cursor; pointer-events none so it
-   never steals hover from the canvas. Content set imperatively (CSP-safe). */
 .archgen-map-tooltip {
   position: absolute;
   z-index: 30;
   max-width: 340px;
   padding: 5px 10px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline-strong);
   background: color-mix(in srgb, var(--archgen-surface) 92%, transparent);
   backdrop-filter: blur(12px);
@@ -1830,11 +1827,11 @@ mark.archgen-search-hit.is-current {
   font-family: var(--archgen-font-ui);
   font-size: var(--archgen-font-size-xs);
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--archgen-motion-fast);
@@ -1851,7 +1848,6 @@ mark.archgen-search-hit.is-current {
   font-weight: 400;
 }
 
-/* HUD readout: scale %, symbol count, cluster count (+ dense-edge flag). */
 .archgen-map-hud {
   position: absolute;
   top: 10px;
@@ -1861,7 +1857,7 @@ mark.archgen-search-hit.is-current {
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
   backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
@@ -1869,27 +1865,25 @@ mark.archgen-search-hit.is-current {
   color: var(--archgen-text-muted);
   font-family: var(--archgen-font-mono);
   font-size: var(--archgen-font-size-xs);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--archgen-tracking-mono, 0.02em);
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--archgen-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
 }
 
 .archgen-map-hud .archgen-map-dense {
   color: var(--archgen-status-blocked, #d29922);
 }
-/* ==== CODE GRAPH · whole-repo MAP layer — NEW SECTION END ==== */
 
-/* ==== CODE GRAPH · size-tier auto-mode + zoom LOD — NEW SECTION START ====
-   Tier chrome (badge / focus banner / back chip) plus the zoom Level-of-Detail
-   ladder: data-lod on .archgen-code-view scopes every rule so tiers never leak
-   across tabs. dot <0.35 · mid ≤0.70 · full above; hubs keep their labels. */
-
+/* Tier chrome & focus banner */
 .archgen-cg-tier-badge {
   display: inline-flex;
   align-items: center;
-  padding: 4px 12px;
-  border-radius: var(--archgen-radius-pill);
+  justify-content: center;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline);
   background: color-mix(in srgb, var(--archgen-action-blue) 10%, var(--archgen-surface-elevated));
   color: var(--archgen-text);
@@ -1904,8 +1898,10 @@ mark.archgen-search-hit.is-current {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 12px;
-  border-radius: var(--archgen-radius-pill);
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid color-mix(in srgb, var(--archgen-action-blue) 55%, var(--archgen-hairline));
   background: color-mix(in srgb, var(--archgen-action-blue) 14%, var(--archgen-surface-elevated));
   color: var(--archgen-text);
@@ -1923,7 +1919,7 @@ mark.archgen-search-hit.is-current {
   background: color-mix(in srgb, var(--archgen-action-blue) 24%, var(--archgen-surface-elevated));
 }
 
-/* ---- LOD tier: DOT (<0.35 zoom) — card collapses to a kind-colored dot ---- */
+/* LOD tiers */
 .archgen-gnode.is-lod-dot {
   padding: 0;
   justify-content: center;
@@ -1942,36 +1938,28 @@ mark.archgen-search-hit.is-current {
   display: none;
 }
 
-/* Hubs keep their label at EVERY zoom: restore the pill chrome around text. */
 .archgen-gnode.is-lod-dot.is-hub {
   padding: 2px 10px;
   gap: 6px;
   justify-content: flex-start;
   background: var(--archgen-surface-elevated);
   border-color: var(--archgen-hairline-strong);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--archgen-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
 }
 
 .archgen-gnode.is-lod-dot.is-hub .archgen-gnode-text {
   display: flex;
 }
 
-/* ---- LOD tier: MID (0.35–0.70) — caption hidden, label stays ---- */
 .archgen-gnode.is-lod-mid .archgen-gnode-caption {
   display: none;
 }
 
-/* ---- Edge LOD: at dot zoom remaining edges recede (scoped to this view) ---- */
-.archgen-code-view[data-lod='dot'] .react-flow__edge:not(.archgen-edge--highlighted):not(.archgen-edge--dimmed) {
+.archgen-code-view[data-lod="dot"] .react-flow__edge:not(.archgen-edge--highlighted):not(.archgen-edge--dimmed) {
   opacity: 0.25;
 }
-/* ==== CODE GRAPH · size-tier auto-mode + zoom LOD — NEW SECTION END ==== */
 
-
-/* ==== CODE GRAPH · polish pass — labels, breadcrumb, compact chrome ==== */
-
-/* File-node affordances: openable files invite a click (drill-in); files
-   whose focus would be empty render inert so behavior == affordance. */
+/* File node affordances */
 .archgen-gnode.is-openable {
   cursor: pointer;
   border-color: color-mix(in srgb, var(--archgen-action-blue) 55%, var(--archgen-hairline-strong));
@@ -1996,7 +1984,7 @@ mark.archgen-search-hit.is-current {
   align-items: center;
   justify-content: center;
   background: var(--archgen-action-blue);
-  color: var(--archgen-surface);
+  color: var(--archgen-text-on-action);
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
 }
 
@@ -2014,19 +2002,19 @@ mark.archgen-search-hit.is-current {
   opacity: 0.8;
 }
 
-/* Component labels drawn above each ring / cluster block (SVG text). */
+/* Component labels */
 .archgen-ring-label {
   font-family: var(--archgen-font-mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   fill: var(--archgen-text);
-  paint-order: stroke;
+  paint-order: stroke fill;
   stroke: var(--archgen-canvas);
   stroke-width: 4px;
   stroke-linejoin: round;
 }
 
-/* Floating focus breadcrumb: top-center overlay on the canvas. */
+/* Floating focus breadcrumb */
 .archgen-cg-breadcrumb {
   position: absolute;
   top: 10px;
@@ -2037,10 +2025,10 @@ mark.archgen-search-hit.is-current {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border-radius: var(--archgen-radius-pill);
+  border-radius: var(--archgen-radius-pill, 9999px);
   border: 1px solid var(--archgen-hairline-strong);
   background: color-mix(in srgb, var(--archgen-surface-elevated) 92%, transparent);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--archgen-shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
 }
 
 .archgen-cg-back-chip {
@@ -2066,4 +2054,95 @@ mark.archgen-search-hit.is-current {
   font-family: var(--archgen-font-mono);
   font-size: var(--archgen-font-size-xs);
   color: var(--archgen-text);
+}
+
+/* ---- RESPONSIVE BREAKPOINTS ---- */
+@media (max-width: 1099px) {
+  .archgen-doc-toc {
+    display: none;
+    position: absolute;
+    top: 40px;
+    right: 12px;
+    z-index: 30;
+    width: min(300px, calc(100% - 24px));
+    max-height: calc(100% - 60px);
+    border: 1px solid var(--archgen-hairline-strong, var(--archgen-hairline));
+    border-radius: var(--archgen-radius-lg, 18px);
+    background: var(--archgen-surface-elevated);
+    box-shadow: var(--archgen-shadow-floating, 0 12px 36px rgba(0, 0, 0, 0.35));
+  }
+  .archgen-doc-toc:not(.is-collapsed) {
+    display: block;
+  }
+  .archgen-doc-toc-fab {
+    display: block;
+  }
+}
+
+@media (max-width: 834px) {
+  .archgen-docs-view {
+    flex-direction: column;
+  }
+  .archgen-doc-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--archgen-hairline);
+    max-height: 140px;
+  }
+  .archgen-doc-body {
+    padding: 16px;
+  }
+  .archgen-doc-toolbar {
+    flex-wrap: wrap;
+    margin: -16px -16px 14px;
+    padding: 8px 16px;
+  }
+  .archgen-doc-search-input {
+    width: 100%;
+    max-width: 220px;
+  }
+}
+
+@media (max-width: 640px) {
+  .archgen-dag-hud {
+    max-width: 100%;
+    margin: 8px 10px;
+  }
+  .archgen-dag-toolbar {
+    width: 100%;
+  }
+  .archgen-cg-toolbar {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  .archgen-cg-search {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+  .archgen-cg-panel {
+    margin: 8px 10px;
+  }
+}
+
+@media (max-width: 419px) {
+  .archgen-root {
+    padding: 4px;
+    gap: 4px;
+  }
+  .archgen-tab {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+  .archgen-cg-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 6px 8px;
+  }
+  .archgen-cg-search {
+    max-width: 100%;
+  }
+  .archgen-dag-hud-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

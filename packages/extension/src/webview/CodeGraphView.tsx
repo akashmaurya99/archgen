@@ -284,10 +284,10 @@ const RingComponent = memo(function RingComponent({ data }: NodeProps<RingFlowNo
       aria-hidden="true"
     >
       {data.circles.map((c, i) => (
-        <circle key={`c${i}`} cx={c.cx} cy={c.cy} r={c.r} fill="none" stroke="var(--archgen-hairline)" strokeWidth={2} />
+        <circle key={`c${i}`} cx={c.cx} cy={c.cy} r={c.r} fill="none" stroke="var(--archgen-hairline)" strokeWidth={1.5} />
       ))}
       {data.anchors.map((a, i) => (
-        <circle key={`a${i}`} cx={a.x} cy={a.y} r={5} fill={a.color} stroke="var(--archgen-surface-elevated)" strokeWidth={1.5} />
+        <circle key={`a${i}`} cx={a.x} cy={a.y} r={4.5} fill={a.color} stroke="var(--archgen-surface-elevated)" strokeWidth={1.5} />
       ))}
       {data.labels.map((l, i) => (
         <text

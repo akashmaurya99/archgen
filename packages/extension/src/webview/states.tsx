@@ -17,8 +17,12 @@ export function StatusChip({ status }: { status: TaskStatus }) {
 
 export function LoadingState({ label = 'Loading ArchGen model…' }: { label?: string }) {
   return (
-    <div className="archgen-state" role="status" aria-live="polite">
+    <div className="archgen-state archgen-state--loading" role="status" aria-live="polite">
+      <div className="archgen-spinner" aria-hidden="true" />
       <p>{label}</p>
+      <div className="archgen-skeleton-track" aria-hidden="true">
+        <div className="archgen-skeleton-bar" />
+      </div>
     </div>
   );
 }
@@ -40,7 +44,8 @@ export function EmptyState({ hasArchgenFolder }: EmptyDetails) {
   };
 
   return (
-    <div className="archgen-state" role="status">
+    <div className="archgen-state archgen-state--empty" role="status">
+      <div className="archgen-state-icon" aria-hidden="true">◇</div>
       <h2>No ArchGen plan found</h2>
       {hasArchgenFolder ? (
         <p>This workspace has a <code>.archgen/</code> folder but no readable tasks yet.</p>
