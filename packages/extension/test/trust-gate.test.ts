@@ -27,6 +27,12 @@ const state = vi.hoisted(() => ({
 
 vi.mock('vscode', () => {
   const disposable = { dispose(): void {} };
+  class Disposable {
+    constructor(private readonly fn?: () => void) {}
+    dispose(): void {
+      this.fn?.();
+    }
+  }
   class EventEmitter<T> {
     event = (_listener: unknown): typeof disposable => disposable;
     fire(_e?: T): void {}
@@ -45,6 +51,7 @@ vi.mock('vscode', () => {
     dispose(): void {},
   });
   return {
+    Disposable,
     EventEmitter,
     RelativePattern,
     Range: class {},
@@ -119,6 +126,7 @@ vi.mock('vscode', () => {
         },
       }),
       createFileSystemWatcher: (): object => makeWatcher(),
+      onDidChangeWorkspaceFolders: (): typeof disposable => disposable,
     },
     commands: {
       registerCommand: (id: string, cb: (...args: unknown[]) => unknown): typeof disposable => {

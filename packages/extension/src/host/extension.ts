@@ -1,5 +1,5 @@
 // extension.ts — activation entry (host bundle: dist/extension.js).
-import { commands, env, ExtensionContext, OutputChannel, workspace, window } from 'vscode';
+import { commands, env, ExtensionContext, OutputChannel, workspace, window, Disposable } from 'vscode';
 import { ArchgenPanel, PanelHostOptions, registerBoard } from './panel';
 import { ModelHub } from './hub';
 import {
@@ -564,11 +564,21 @@ export function activate(context: ExtensionContext): void {
     },
   };
 
+  function disposePipeline(): void {
+    pipeline?.dispose();
+    pipeline = null;
+  }
+
   function ensurePipeline(): void {
     const folder = workspace.workspaceFolders?.[0];
     if (pipeline || !folder) return;
+    // The pipeline is NOT pushed to context.subscriptions here: the single
+    // holder disposable registered below disposes whichever pipeline is
+    // current at deactivation, so root swaps never accumulate dead
+    // disposables (todo 8 multi-root hygiene).
     pipeline = createWatchPipeline(folder, {
       isVisible: () => ArchgenPanel.active?.visible ?? false,
+      log: (line) => out.appendLine(line),
       onRefresh: (uris) => {
         out.appendLine(`[watch] refresh after changes: ${[...uris].join(', ')}`);
         pushModel(true);
@@ -589,8 +599,23 @@ export function activate(context: ExtensionContext): void {
         rootFollowUp.trigger();
       },
     });
-    context.subscriptions.push(pipeline);
   }
+
+  // MULTI-ROOT HYGIENE (todo 8): the pipeline watches the FIRST workspace
+  // folder; when folders change, tear down the old pipeline (watchers +
+  // pending debounce) and re-create for the new root. Both registrations are
+  // pushed exactly ONCE — N root swaps keep context.subscriptions bounded.
+  context.subscriptions.push(
+    workspace.onDidChangeWorkspaceFolders(() => {
+      disposePipeline();
+      ensurePipeline();
+      // The new root's truth is in no watcher event stream yet: re-converge
+      // model + setup for it immediately instead of waiting for an event.
+      pushModel(true);
+      void evaluateSetupNow();
+    }),
+    new Disposable(() => disposePipeline()),
+  );
 
   function openBoard(): void {
     if (!requireWorkspaceFolder()) return;
