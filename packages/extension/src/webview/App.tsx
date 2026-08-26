@@ -40,6 +40,18 @@ function applyTheme(themeKind: ThemeKind | undefined): void {
   document.documentElement.dataset['theme'] = themeKind;
 }
 
+// READY WATCHDOG (todo 2): on restart-restore the webview's first `ready` can
+// land before the host's message listener exists, leaving a blank shell. Re-post
+// `ready` until the first `model` arrives — 750ms for the first 10 re-posts,
+// then 5s — capping at 2 minutes with an inline Retry UI so a dead host is
+// never spammed forever (the host force-pushes a model on every ready, so the
+// backoff also bounds host work).
+const WATCHDOG_FAST_MS = 750;
+const WATCHDOG_FAST_POSTS = 10;
+const WATCHDOG_SLOW_MS = 5_000;
+const WATCHDOG_CAP_MS = 120_000;
+const WAITING_FOR_HOST_ERROR = 'ArchGen: waiting for host — click Retry';
+
 export function App(props: AppProps) {
   const vscode = useMemo(() => props.api ?? getVsCodeApi(), [props.api]);
   const [model, setModel] = useState<ArchgenModelMessage | null>(null);
@@ -59,6 +71,49 @@ export function App(props: AppProps) {
   const [setupOpen, setSetupOpen] = useState(false);
   // Header ⋯ menu: ref lets item clicks close the native <details> directly.
   const menuRef = useRef<HTMLDetailsElement | null>(null);
+
+  // READY WATCHDOG (todo 2): refs (not state) so the timer chain never causes
+  // re-renders; the message handler, visibility/focus listeners and the Retry
+  // button all share them across render boundaries.
+  const hasReceivedModelRef = useRef(false);
+  const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchdogPostsRef = useRef(0);
+  const watchdogStartedAtRef = useRef(0);
+  const watchdogCappedRef = useRef(false);
+
+  const stopWatchdog = useCallback((): void => {
+    if (watchdogTimerRef.current !== null) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+  }, []);
+
+  const armWatchdog = useCallback((): void => {
+    stopWatchdog();
+    watchdogCappedRef.current = false;
+    watchdogPostsRef.current = 0;
+    watchdogStartedAtRef.current = Date.now();
+    const tick = (): void => {
+      if (hasReceivedModelRef.current) return;
+      if (Date.now() - watchdogStartedAtRef.current >= WATCHDOG_CAP_MS) {
+        watchdogCappedRef.current = true;
+        watchdogTimerRef.current = null;
+        setError(WAITING_FOR_HOST_ERROR);
+        return;
+      }
+      watchdogPostsRef.current += 1;
+      vscode.postMessage({ type: 'ready' });
+      const delay = watchdogPostsRef.current < WATCHDOG_FAST_POSTS ? WATCHDOG_FAST_MS : WATCHDOG_SLOW_MS;
+      watchdogTimerRef.current = setTimeout(tick, delay);
+    };
+    watchdogTimerRef.current = setTimeout(tick, WATCHDOG_FAST_MS);
+  }, [vscode, stopWatchdog]);
+
+  const retryHandshake = useCallback((): void => {
+    setError(null);
+    vscode.postMessage({ type: 'ready' });
+    armWatchdog();
+  }, [vscode, armWatchdog]);
 
   const closeMenu = useCallback((): void => {
     const el = menuRef.current;
@@ -87,7 +142,7 @@ export function App(props: AppProps) {
     [vscode],
   );
 
-  // Handshake + message intake.
+  // Handshake + message intake + ready watchdog (todo 2).
   useEffect(() => {
     // Exhaustive intake over HostToWebview: the default arm's assertNever
     // fails `tsc` when a protocol member lacks a case, so no host message is
@@ -96,6 +151,8 @@ export function App(props: AppProps) {
       const msg = event.data;
       switch (msg.type) {
         case 'model':
+          hasReceivedModelRef.current = true;
+          stopWatchdog();
           storeRef.current = new StatusStore<TaskVM>(msg.tasks);
           setStoreVersion((v) => v + 1);
           setModel(msg);
@@ -138,10 +195,31 @@ export function App(props: AppProps) {
           assertNever(msg);
       }
     };
+    // Restart-restore can lose the first `ready` (posted before the host's
+    // listener exists); visibility/focus are safe moments to re-post at once.
+    const repostIfWaiting = (): void => {
+      if (!hasReceivedModelRef.current && !watchdogCappedRef.current) {
+        vscode.postMessage({ type: 'ready' });
+      }
+    };
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState === 'visible') repostIfWaiting();
+    };
+    const onFocus = (): void => repostIfWaiting();
+
     window.addEventListener('message', handler);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onFocus);
+    hasReceivedModelRef.current = false;
     vscode.postMessage({ type: 'ready' });
-    return () => window.removeEventListener('message', handler);
-  }, [vscode, selectTab]);
+    armWatchdog();
+    return () => {
+      window.removeEventListener('message', handler);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onFocus);
+      stopWatchdog();
+    };
+  }, [vscode, selectTab, armWatchdog, stopWatchdog]);
 
   const openFile = useCallback(
     (path: string) => {
@@ -161,6 +239,20 @@ export function App(props: AppProps) {
   );
 
   if (!model) {
+    // Watchdog cap (todo 2): 2 minutes of `ready` re-posts went unanswered —
+    // stop spinning and offer an explicit Retry instead of an endless loader.
+    if (error === WAITING_FOR_HOST_ERROR) {
+      return (
+        <main className="archgen-root">
+          <div className="archgen-state archgen-state--waiting" role="alert">
+            <p>{error}</p>
+            <button type="button" onClick={retryHandshake}>
+              Retry
+            </button>
+          </div>
+        </main>
+      );
+    }
     return (
       <main className="archgen-root">
         <ErrorBanner message={error} onDismiss={() => setError(null)} />

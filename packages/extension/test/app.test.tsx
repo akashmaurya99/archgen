@@ -1,7 +1,7 @@
 // Webview shell smoke tests (jsdom): tabs, states, acquireVsCodeApi-once,
 // setState/getState persistence, message intake.
 // @vitest-environment jsdom
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { createElement } from 'react';
 import { App } from '../src/webview/App';
@@ -244,6 +244,86 @@ describe('App shell', () => {
     });
     expect(document.querySelector('[data-task-id="B"]')).toBeNull();
     expect(document.querySelector('.is-highlighted')).toBeNull();
+  });
+});
+
+describe('ready watchdog (restore handshake)', () => {
+  function readyCount(api: FakeApi): number {
+    return api.posted.filter((m) => (m as { type: string }).type === 'ready').length;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('re-posts ready every 750ms until the first model, then never again', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    expect(readyCount(api)).toBe(1);
+
+    act(() => { vi.advanceTimersByTime(750); });
+    expect(readyCount(api)).toBe(2);
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: MODEL }));
+    });
+    act(() => { vi.advanceTimersByTime(5 * 60_000); });
+    expect(readyCount(api)).toBe(2);
+    expect(screen.getByTestId('archgen-root')).toBeTruthy();
+  });
+
+  it('backs off: ten 750ms re-posts (11 readies) then 5s spacing', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => { vi.advanceTimersByTime(750 * 10); });
+    expect(readyCount(api)).toBe(11);
+
+    act(() => { vi.advanceTimersByTime(4_999); });
+    expect(readyCount(api)).toBe(11);
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(readyCount(api)).toBe(12);
+  });
+
+  it('visibilitychange→visible and window focus re-post ready immediately', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    expect(readyCount(api)).toBe(1);
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(readyCount(api)).toBe(2);
+
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    expect(readyCount(api)).toBe(3);
+  });
+
+  it('caps after 2 minutes: error UI + Retry, timer cleared until Retry re-arms', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    // 10 fast re-posts (7.5s) then 5s spacing; the first tick at/after 120s
+    // (t=122.5s) caps instead of posting.
+    act(() => { vi.advanceTimersByTime(122_500); });
+    const readiesAtCap = readyCount(api);
+
+    expect(screen.getByText('ArchGen: waiting for host — click Retry')).toBeTruthy();
+    const retry = screen.getByRole('button', { name: 'Retry' });
+
+    // Timer is cleared — a still-silent host gets no further readies.
+    act(() => { vi.advanceTimersByTime(5 * 60_000); });
+    expect(readyCount(api)).toBe(readiesAtCap);
+
+    // Retry re-posts ready at once and re-arms the capped watchdog.
+    fireEvent.click(retry);
+    expect(readyCount(api)).toBe(readiesAtCap + 1);
+    expect(screen.queryByText(/waiting for host/)).toBeNull();
+    act(() => { vi.advanceTimersByTime(750); });
+    expect(readyCount(api)).toBe(readiesAtCap + 2);
   });
 });
 
