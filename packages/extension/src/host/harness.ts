@@ -7,7 +7,8 @@
 // exercise it directly; extension.ts owns OutputChannel + toast wiring.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
 
 export type HarnessId = 'claude' | 'opencode' | 'codex' | 'gemini' | 'custom';
 
@@ -39,6 +40,25 @@ export class TemplateNotFoundError extends Error {
     super(`No command template configured for harness "${harness}". Set archgen.harness.templates.${harness}.`);
     this.name = 'TemplateNotFoundError';
   }
+}
+
+/**
+ * Resolve the harness transcript outfile for one task id, hardened against
+ * path traversal. Task ids come from repository-controlled tasks.yaml (a
+ * supply-chain surface), so every character outside [a-zA-Z0-9_-] is
+ * replaced with `_` (an id that sanitizes to nothing falls back to "task"),
+ * and the result is pinned inside os.tmpdir() — a hostile id like
+ * `../../etc/cron` can never escape the temp directory. The containment
+ * assert is defense-in-depth: after sanitization the id cannot contain a
+ * separator, so the join alone is already safe.
+ */
+export function outfileForTask(taskId: string): string {
+  const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'task';
+  const outfile = join(tmpdir(), `archgen-${safeId}.json`);
+  if (!resolve(outfile).startsWith(resolve(tmpdir()) + sep)) {
+    throw new Error(`Refusing to write harness outfile outside the temp directory for task "${taskId}".`);
+  }
+  return outfile;
 }
 
 /**

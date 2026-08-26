@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import {
   DEFAULT_TEMPLATES,
   ScriptsNotFoundError,
@@ -11,6 +11,7 @@ import {
   interpolateTemplate,
   launchHarness,
   loadWaves,
+  outfileForTask,
   parseWaves,
   probeScriptsPath,
   splitCommand,
@@ -271,5 +272,38 @@ describe('DEFAULT_TEMPLATES coverage', () => {
     for (const t of Object.values(DEFAULT_TEMPLATES)) {
       if (t !== '') expect(t).toContain('{{prompt}}');
     }
+  });
+});
+
+describe('outfileForTask (path-traversal hardening, todo 4)', () => {
+  const tmp = resolve(tmpdir());
+
+  it('keeps benign ids intact', () => {
+    expect(outfileForTask('T-123')).toBe(join(tmp, 'archgen-T-123.json'));
+    expect(outfileForTask('wave_2_task_9')).toBe(join(tmp, 'archgen-wave_2_task_9.json'));
+  });
+
+  // tasks.yaml is repository-controlled input (supply-chain surface): hostile
+  // ids must never produce an outfile outside os.tmpdir().
+  it.each(['../../etc/cron', '../../etc/passwd', 'a/b', 'a\0b', 'a\\b', '..', '.', 'a/../../b'])(
+    'pins hostile id %j inside tmpdir with no traversal',
+    (id) => {
+      const outfile = outfileForTask(id);
+      expect(resolve(outfile).startsWith(tmp + sep)).toBe(true);
+      expect(dirname(resolve(outfile))).toBe(tmp);
+      expect(basename(outfile)).not.toContain('..');
+      expect(basename(outfile)).toMatch(/^archgen-[a-zA-Z0-9_-]+\.json$/);
+    },
+  );
+
+  it('replaces every character outside [a-zA-Z0-9_-] with an underscore', () => {
+    expect(basename(outfileForTask('a/b'))).toBe('archgen-a_b.json');
+    expect(basename(outfileForTask('a\0b'))).toBe('archgen-a_b.json');
+    expect(basename(outfileForTask('../../etc/cron'))).toBe('archgen-______etc_cron.json');
+  });
+
+  it('falls back to a fixed name for an empty id and keeps underscore-only sanitizations', () => {
+    expect(basename(outfileForTask(''))).toBe('archgen-task.json');
+    expect(basename(outfileForTask('///'))).toBe('archgen-___.json');
   });
 });

@@ -76,9 +76,13 @@ Setup: `npm install && npm run compile && npm test` must be green first.
 1. Switch editor theme Dark ↔ Light ↔ High Contrast.
    - ✅ Board recolors live through `--vscode-*` variables; data-theme attribute flips; contrast stays readable; pulse ring uses theme yellow.
 
-## 11. Serializer restore
+## 11. Serializer restore (reload + quit/restart)
 1. With the board open, run **Developer: Reload Window**.
    - ✅ Board restores automatically (same view state/tab) without rerunning the command.
+2. Full restart: with the board open, quit VS Code (Cmd+Q on macOS; File → Exit on Windows/Linux), then restart and reopen the same workspace — do NOT rerun the command or click anything.
+   - ✅ The board tab restores automatically via the serializer; the restored webview re-runs its `ready` handshake and the host force-pushes the model, so the TASKS graph renders without interaction. No infinite loading spinner, no blank canvas, no Retry card; the stale chip starts counting from "updated 0s ago".
+3. Repeat the quit + restart on a VS Code fork (Cursor, Windsurf).
+   - ✅ Identical restore behavior — the serializer and the ready-handshake force-push ride stable webview APIs, nothing VS Code-specific.
 
 ## 12. CSP hygiene (workbench confirmation)
 1. Help → Toggle Developer Tools → Console; walk all tabs, flip statuses, render docs.

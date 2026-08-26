@@ -34,8 +34,6 @@ export type { Debouncer };
 export interface WatchPipelineOptions {
   /** Should refreshes happen right now? (panel visible?) */
   isVisible: () => boolean;
-  /** Called when the panel becomes visible again and missed changes exist. */
-  onCatchUp: () => void;
   /** Debounced refresh with the coalesced URIs. */
   onRefresh: (changedUris: Set<string>) => void;
   /** Debounced setup re-evaluation — fires on EVERY coalesced batch, visible or not. */
@@ -60,18 +58,19 @@ function entryName(uri: Uri): string {
 /** Wire the four FileSystemWatchers + visibility gating. */
 export function createWatchPipeline(folder: WorkspaceFolder, opts: WatchPipelineOptions): WatchPipeline {
   const disposables: Disposable[] = [];
-  let missedWhileHidden = false;
 
   const debouncer = createUriDebouncer(DEBOUNCE_MS, (uris) => {
     // Setup truth must resolve even while every panel is hidden: a skill
     // install landing on disk flips the status item without any board open.
     opts.onSetupReeval?.();
-    if (!opts.isVisible()) {
-      missedWhileHidden = true;
-      return;
-    }
+    // Hidden panels skip refreshes; becoming visible again force-pushes the
+    // fresh model through the panel's onDidChangeViewState → onVisible hook
+    // (extension.ts wires it to pushModel(true)), so no catch-up state is
+    // tracked here.
+    if (!opts.isVisible()) return;
     opts.onRefresh(uris);
   });
+  disposables.push(debouncer);
 
   const archgenWatcher: FileSystemWatcher = workspace.createFileSystemWatcher(
     new RelativePattern(folder, '.archgen/**/*.{yaml,yml,md}'),
@@ -112,18 +111,5 @@ export function createWatchPipeline(folder: WorkspaceFolder, opts: WatchPipeline
     rootEntriesWatcher,
   );
 
-  // Hidden panels skip refreshes; becoming visible again triggers one full catch-up.
-  const visibilityGate = {
-    onVisible(): void {
-      if (missedWhileHidden) {
-        missedWhileHidden = false;
-        opts.onCatchUp();
-      }
-    },
-    dispose(): void {
-      debouncer.dispose();
-    },
-  };
-  disposables.push(visibilityGate);
   return { debouncer, dispose: () => { for (const d of disposables.splice(0)) d.dispose(); } };
 }

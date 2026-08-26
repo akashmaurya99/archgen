@@ -31,6 +31,7 @@ import {
   interpolateTemplate,
   launchHarness,
   loadWaves,
+  outfileForTask,
   probeScriptsPath,
   type HarnessId,
 } from './harness';
@@ -189,7 +190,8 @@ export function activate(context: ExtensionContext): void {
     return interpolateTemplate(template, {
       prompt,
       task: taskId,
-      outfile: path.join(os.tmpdir(), `archgen-${taskId}.json`),
+      // Sanitized + pinned inside tmpdir (tasks.yaml is a supply-chain surface).
+      outfile: outfileForTask(taskId),
     });
   }
 
@@ -505,7 +507,6 @@ export function activate(context: ExtensionContext): void {
     if (pipeline || !folder) return;
     pipeline = createWatchPipeline(folder, {
       isVisible: () => ArchgenPanel.active?.visible ?? false,
-      onCatchUp: () => pushModel(true),
       onRefresh: (uris) => {
         out.appendLine(`[watch] refresh after changes: ${[...uris].join(', ')}`);
         pushModel(true);
