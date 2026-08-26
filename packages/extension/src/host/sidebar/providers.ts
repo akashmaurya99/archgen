@@ -1,9 +1,3 @@
-// providers.ts — thin TreeDataProvider adapters for the sidebar cockpit.
-//
-// Pure row logic lives in model.ts; this module only shapes vscode.TreeItems.
-// Providers never touch extension code: they read snapshots through an
-// injected getter and route clicks through the injected SidebarActions, so
-// index.ts can wire them to a ModelHub and tests could stub both.
 import {
   Event,
   EventEmitter,
@@ -16,11 +10,25 @@ import {
 } from 'vscode';
 import type { ArchgenModelMessage, TaskVM } from '../../shared/protocol';
 import type { SidebarActions } from './actions';
-import { docRows, groupTasks, iconFor, overviewRows, statusSummary, type DocRow, type FeatureRow, type GroupRow, type TaskRow, type TasksTreeRow } from './model';
+import {
+  STATUS_GROUPS,
+  compactStatusSummary,
+  docRows,
+  getStatusGroupRows,
+  getTasksForStatus,
+  iconFor,
+  overviewRows,
+  statusSummary,
+  type DocRow,
+  type FeatureRow,
+  type GroupRow,
+  type TaskRow,
+  type TasksTreeRow,
+} from './model';
 
 type GetSnapshot = () => ArchgenModelMessage | null;
 
-function truncateTitle(text: string, max = 48): string {
+function truncateTitle(text: string, max = 36): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
@@ -46,8 +54,11 @@ export class OverviewProvider implements TreeDataProvider<FeatureRow> {
     const snapshot = this.getSnapshot();
     const featureTasks = snapshot && row.slug === snapshot.activeSlug ? snapshot.tasks : [];
     const item = new TreeItem(row.slug);
-    item.description = statusSummary(featureTasks);
-    item.iconPath = row.active ? new ThemeIcon('check') : new ThemeIcon('circuit-board');
+    item.description = compactStatusSummary(featureTasks);
+    item.iconPath = row.active
+      ? new ThemeIcon('pass-filled', new ThemeColor('charts.green'))
+      : new ThemeIcon('circuit-board');
+    item.tooltip = this.featureTooltip(row, featureTasks);
     item.contextValue = row.active ? 'feature-active' : 'feature';
     item.command = { command: 'archgen.selectFeature', title: 'Select Feature', arguments: [row.slug] };
     return item;
@@ -63,9 +74,23 @@ export class OverviewProvider implements TreeDataProvider<FeatureRow> {
   dispose(): void {
     this._onDidChangeTreeData.dispose();
   }
+
+  private featureTooltip(row: FeatureRow, tasks: readonly TaskVM[]): MarkdownString {
+    const md = new MarkdownString();
+    md.appendMarkdown(`### **Feature: ${row.slug}** ${row.active ? '*(Active)*' : ''}\n\n`);
+    md.appendMarkdown(`Status summary: ${statusSummary(tasks)}\n\n`);
+    if (tasks.length > 0) {
+      md.appendMarkdown('| Status | Tasks |\n| :--- | :--- |\n');
+      for (const s of STATUS_GROUPS) {
+        const count = tasks.filter((t) => t.status === s).length;
+        if (count > 0) md.appendMarkdown(`| **${s}** | ${count} |\n`);
+      }
+    }
+    return md;
+  }
 }
 
-/** Tasks tree: flat list of status groups interleaved with their task rows. */
+/** Tasks tree: 2-level collapsible hierarchy (Status Groups -> Task Items). */
 export class TasksProvider implements TreeDataProvider<TasksTreeRow> {
   private readonly _onDidChangeTreeData = new EventEmitter<TasksTreeRow | undefined>();
   readonly onDidChangeTreeData: Event<TasksTreeRow | undefined> = this._onDidChangeTreeData.event;
@@ -84,9 +109,16 @@ export class TasksProvider implements TreeDataProvider<TasksTreeRow> {
     return this.toTaskItem(row);
   }
 
-  getChildren(): TasksTreeRow[] {
+  getChildren(element?: TasksTreeRow): TasksTreeRow[] {
     const snapshot = this.getSnapshot();
-    return groupTasks(snapshot?.tasks ?? []);
+    const tasks = snapshot?.tasks ?? [];
+    if (!element) {
+      return getStatusGroupRows(tasks);
+    }
+    if (element.kind === 'group') {
+      return getTasksForStatus(tasks, element.status);
+    }
+    return [];
   }
 
   dispose(): void {
@@ -95,16 +127,18 @@ export class TasksProvider implements TreeDataProvider<TasksTreeRow> {
 
   private toGroupItem(row: GroupRow): TreeItem {
     const item = new TreeItem(capitalize(row.status));
-    item.description = `${row.count}`;
+    item.description = `[ ${row.count} ]`;
     const busy = row.status === 'running' || row.status === 'ready';
-    item.collapsibleState = busy || row.count <= 8 ? TreeItemCollapsibleState.Expanded : TreeItemCollapsibleState.Collapsed;
+    item.collapsibleState = busy || row.count <= 4 ? TreeItemCollapsibleState.Expanded : TreeItemCollapsibleState.Collapsed;
+    const icon = iconFor(row.status);
+    item.iconPath = new ThemeIcon(icon.id, icon.colorId ? new ThemeColor(icon.colorId) : undefined);
     item.contextValue = 'group';
     return item;
   }
 
   private toTaskItem(row: TaskRow): TreeItem {
     const item = new TreeItem(row.taskId);
-    item.description = truncateTitle(row.title);
+    item.description = truncateTitle(row.title, 36);
     const icon = iconFor(row.status);
     item.iconPath = new ThemeIcon(icon.id, icon.colorId ? new ThemeColor(icon.colorId) : undefined);
     item.tooltip = this.taskTooltip(row);
@@ -140,6 +174,9 @@ export class DocsProvider implements TreeDataProvider<DocRow> {
     const item = new TreeItem(row.title);
     item.description = row.dir === '' ? undefined : row.dir;
     item.tooltip = row.relPath;
+    const isAdr = row.relPath.toLowerCase().includes('adr');
+    const isSpec = row.relPath.toLowerCase().includes('spec') || row.relPath.toLowerCase().includes('plan');
+    item.iconPath = isAdr ? new ThemeIcon('shield') : isSpec ? new ThemeIcon('book') : new ThemeIcon('markdown');
     item.contextValue = 'doc';
     item.command = { command: 'archgen.openDoc', title: 'Open Document', arguments: [row.relPath] };
     return item;
@@ -154,3 +191,4 @@ export class DocsProvider implements TreeDataProvider<DocRow> {
     this._onDidChangeTreeData.dispose();
   }
 }
+

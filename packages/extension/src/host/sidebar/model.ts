@@ -61,6 +61,33 @@ export function groupTasks(tasks: readonly TaskVM[]): TasksTreeRow[] {
   return rows;
 }
 
+/** Non-empty status group rows only (for hierarchical sidebar navigation). */
+export function getStatusGroupRows(tasks: readonly TaskVM[]): GroupRow[] {
+  const counts = new Map<TaskStatus, number>();
+  for (const t of tasks) counts.set(t.status, (counts.get(t.status) ?? 0) + 1);
+  const out: GroupRow[] = [];
+  for (const status of STATUS_GROUPS) {
+    const count = counts.get(status) ?? 0;
+    if (count > 0) out.push({ kind: 'group', status, count });
+  }
+  return out;
+}
+
+/** Task rows belonging to a specific status bucket, sorted by id ASC. */
+export function getTasksForStatus(tasks: readonly TaskVM[], status: TaskStatus): TaskRow[] {
+  const matching = tasks.filter((t) => t.status === status).sort((a, b) => a.id.localeCompare(b.id));
+  return matching.map((t) => ({
+    kind: 'task',
+    taskId: t.id,
+    title: t.title,
+    status: t.status,
+    ownership: t.fileOwnership[0] ?? '',
+    dependsOn: [...t.dependsOn],
+    artifacts: [...t.artifacts],
+  }));
+}
+
+
 export interface FeatureRow {
   slug: string;
   active: boolean;
@@ -104,6 +131,24 @@ export function statusSummary(tasks: readonly TaskVM[]): string {
   }
   return parts.join(' · ');
 }
+
+/** Compact status string with percentage progress for sidebar badges (e.g. "4/16 (25%) • 2 running"). */
+export function compactStatusSummary(tasks: readonly TaskVM[]): string {
+  if (tasks.length === 0) return '0 tasks';
+  const total = tasks.length;
+  const done = tasks.filter((t) => t.status === 'done').length;
+  const running = tasks.filter((t) => t.status === 'running').length;
+  const failed = tasks.filter((t) => t.status === 'failed').length;
+  const pct = Math.round((done / total) * 100);
+
+  const critical: string[] = [];
+  if (running > 0) critical.push(`${running} running`);
+  if (failed > 0) critical.push(`${failed} failed`);
+
+  const suffix = critical.length > 0 ? ` • ${critical.join(' · ')}` : '';
+  return `${done}/${total} (${pct}%)${suffix}`;
+}
+
 
 export interface DocRow {
   relPath: string;

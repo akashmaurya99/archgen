@@ -25,7 +25,10 @@ export function registerSidebar(context: ExtensionContext, hub: ModelHub, action
 
     const running = model.tasks.filter((t) => t.status === 'running').length;
     const failed = model.tasks.filter((t) => t.status === 'failed').length;
-    tasksView.badge = running + failed > 0 ? { value: running + failed, tooltip: `${running} running · ${failed} failed` } : undefined;
+    const badgeParts: string[] = [];
+    if (running > 0) badgeParts.push(`${running} running`);
+    if (failed > 0) badgeParts.push(`${failed} failed`);
+    tasksView.badge = running + failed > 0 ? { value: running + failed, tooltip: badgeParts.join(' · ') } : undefined;
 
     void commands.executeCommand('setContext', 'archgen.hasFeatures', model.features.length > 0);
   });
