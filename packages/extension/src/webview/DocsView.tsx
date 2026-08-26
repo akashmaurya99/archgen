@@ -61,6 +61,14 @@ const md = new MarkdownIt({
   },
 });
 
+// XSS hardening (todo 10): html:false escapes raw HTML but does NOT sanitize
+// link href schemes, and docs come from .archgen/ which can be agent-generated
+// (untrusted). Strict allowlist — https/http, mailto, hash anchors,
+// root-relative paths, and inline images only. Blocks javascript:,
+// data:text/html, vbscript:, and every other scheme. A rejected link degrades
+// to literal text (markdown-it's link rule returns false), never an <a href>.
+md.validateLink = (url: string) => /^(https?:|mailto:|#|\/|data:image\/)/i.test(url.trim());
+
 /* ------------------------------------------------------------------ */
 /* Mermaid lazy singleton with theme-aware initialization              */
 /* ------------------------------------------------------------------ */

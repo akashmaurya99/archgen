@@ -75,6 +75,37 @@ describe('DocsView', () => {
     expect(document.querySelector('.archgen-markdown')?.innerHTML).toContain('&lt;img');
   });
 
+  it('validateLink blocks javascript:/data:/vbscript: hrefs but keeps https and # anchors (todo 10)', () => {
+    const DOC = [
+      '[x](javascript:alert(1))',
+      '',
+      '[y](data:text/html,alert)',
+      '',
+      '[z](vbscript:alert(1))',
+      '',
+      '[ok](https://example.com)',
+      '',
+      '[anchor](#section)',
+    ].join('\n');
+    renderView({ active: { path: 'plan.md', content: DOC } });
+    const mdEl = document.querySelector('.archgen-markdown');
+    expect(mdEl).toBeTruthy();
+    const inner = mdEl?.innerHTML ?? '';
+    // dangerous schemes never reach an href attribute
+    expect(inner).not.toContain('href="javascript');
+    expect(inner).not.toContain('href="vbscript');
+    expect(inner).not.toContain('href="data:');
+    expect(mdEl?.querySelector('a[href^="javascript:"]')).toBeNull();
+    expect(mdEl?.querySelector('a[href^="data:"]')).toBeNull();
+    expect(mdEl?.querySelector('a[href^="vbscript:"]')).toBeNull();
+    // rejected links degrade to literal text, not anchors
+    expect(mdEl?.textContent).toContain('[x](javascript:alert(1))');
+    expect(mdEl?.textContent).toContain('[y](data:text/html,alert)');
+    // safe schemes still render as clickable links
+    expect(mdEl?.querySelector('a[href="https://example.com"]')).toBeTruthy();
+    expect(mdEl?.querySelector('a[href="#section"]')).toBeTruthy();
+  });
+
   it('sidebar click selects a doc; ↗ posts open-in-editor', () => {
     const onSelect = vi.fn();
     const onOpenInEditor = vi.fn();
