@@ -83,6 +83,7 @@ function toTaskVMs(text: string, slug: string): { tasks: TaskVM[]; warnings: str
     fileOwnership: t.file_ownership,
     artifacts: t.artifacts,
     parallelGroup: t.parallel_group,
+    acceptance: t.acceptance,
   }));
   const warnings = model.warnings.map((w) => `${slug}: ${w.message}`);
   return { tasks, warnings };

@@ -1,6 +1,10 @@
 // Shared message protocol between host (extension) and webview.
 // Imported by BOTH sides — keep it dependency-free and JSON-serializable.
 import { TASK_STATUSES, type TaskStatus, isTaskStatus } from './status';
+// setup.ts is vscode-free pure TS, so a TYPE-ONLY import drags no runtime
+// (let alone node built-ins) into the browser bundle; it keeps the setup
+// payload structurally honest instead of duplicated by hand.
+import type { SetupAction, SetupState } from '../host/setup';
 
 export { TASK_STATUSES };
 export type { TaskStatus };
@@ -14,6 +18,8 @@ export interface TaskVM {
   fileOwnership: string[];
   artifacts: string[];
   parallelGroup?: string | null;
+  /** Objective done-criteria from tasks.yaml — surfaced read-only in tooltips. */
+  acceptance?: string[];
 }
 
 export interface DocRef {
@@ -118,7 +124,45 @@ export interface ArchgenStatusMessage {
 
 export type ThemeKind = 'light' | 'dark' | 'highContrast' | 'highContrastLight';
 
-export type HostToWebview = ArchgenModelMessage | ArchgenUpdateMessage | ArchgenStatusMessage | ArchgenDocContentMessage | { type: 'theme'; themeKind: ThemeKind };
+/** Sidebar/context-menu intent: open board focused on one task node. */
+export interface WebviewRevealTaskMessage {
+  type: 'revealTask';
+  taskId: string;
+}
+
+/** Structural mirror of the host-side SetupState (see setup.ts). */
+export type SetupStateLike = SetupState;
+export type { SetupAction };
+
+/** Live setup snapshot: full state truth plus the derived pending-action list. */
+export interface ArchgenSetupMessage {
+  type: 'setup';
+  state: SetupStateLike;
+  actions: SetupAction[];
+  extVersion: string;
+}
+
+/** Parked-navigation intent: make the SETUP tab active once the board is up. */
+export interface WebviewRevealSetupMessage {
+  type: 'revealSetup';
+}
+
+/** SETUP-tab card button: copy the install prompt for any agent chat. */
+export interface WebviewCopyInstallMessage {
+  type: 'copyInstall';
+}
+
+/** SETUP-tab card button: ask for an idea, then copy the plan-kickoff prompt. */
+export interface WebviewCopyInitPlanMessage {
+  type: 'copyInitPlan';
+}
+
+/** SETUP-tab card button: copy the skill-update prompt. */
+export interface WebviewCopyUpdateMessage {
+  type: 'copyUpdate';
+}
+
+export type HostToWebview = ArchgenModelMessage | ArchgenUpdateMessage | ArchgenStatusMessage | ArchgenDocContentMessage | ArchgenSetupMessage | WebviewRevealTaskMessage | WebviewRevealSetupMessage | { type: 'theme'; themeKind: ThemeKind };
 
 export interface WebviewReadyMessage {
   type: 'ready';
@@ -153,13 +197,16 @@ export interface WebviewSelectFeatureMessage {
   slug: string;
 }
 
-/** Sidebar/context-menu intent: open board focused on one task node. */
-export interface WebviewRevealTaskMessage {
-  type: 'revealTask';
-  taskId: string;
-}
+export type WebviewToHost = WebviewReadyMessage | WebviewOpenFileMessage | WebviewBuildMessage | WebviewStartWorkMessage | WebviewOpenDocMessage | WebviewSelectFeatureMessage | WebviewCopyInstallMessage | WebviewCopyInitPlanMessage | WebviewCopyUpdateMessage;
 
-export type WebviewToHost = WebviewReadyMessage | WebviewOpenFileMessage | WebviewBuildMessage | WebviewStartWorkMessage | WebviewOpenDocMessage | WebviewSelectFeatureMessage | WebviewRevealTaskMessage;
+/**
+ * Exhaustiveness guard for message-router switches: the `default` arm calls
+ * this with the narrowed message, so adding a union member without a case
+ * fails `tsc` instead of silently dropping traffic.
+ */
+export function assertNever(value: never): never {
+  throw new Error(`Unhandled protocol message: ${JSON.stringify(value)}`);
+}
 
 export interface ArchgenDocContentMessage {
   type: 'docContent';

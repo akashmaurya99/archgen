@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { TaskStatus } from '../shared/protocol';
+import type { SetupStateLike, TaskStatus } from '../shared/protocol';
 
 export const STATUS_ORDER: TaskStatus[] = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 
 /** Install hint CTA target — copyable so users can paste it into a terminal. */
-export const INSTALL_COMMAND = 'npx archgen-skill generate';
+export const INSTALL_COMMAND = 'npx archgen-skill init';
 
 /** Status chip used across list placeholders until the DAG view lands (todo 8). */
 export function StatusChip({ status }: { status: TaskStatus }) {
@@ -49,9 +49,15 @@ export function LoadingState({ label = 'Loading ArchGen model…' }: { label?: s
 
 export interface EmptyDetails {
   hasArchgenFolder: boolean;
+  /** Bridge into the board's SETUP tab; omit to hide the button. */
+  onSelectSetup?: () => void;
+  /** Latest host setup snapshot; null/undefined = unknown ⇒ legacy install guidance. */
+  setup?: SetupStateLike | null;
+  /** Ready-variant kickoff CTA target; posts the exact copyInitPlan wire message. */
+  post?: (msg: { type: 'copyInitPlan' }) => void;
 }
 
-export function EmptyState({ hasArchgenFolder }: EmptyDetails) {
+export function EmptyState({ hasArchgenFolder, onSelectSetup, setup, post }: EmptyDetails) {
   const [copied, setCopied] = useState(false);
 
   const copyInstall = async (): Promise<void> => {
@@ -66,14 +72,33 @@ export function EmptyState({ hasArchgenFolder }: EmptyDetails) {
   return (
     <div className="archgen-state archgen-state--empty" role="status">
       <ArchGenIcon />
-      <h2>No ArchGen plan found</h2>
       {hasArchgenFolder ? (
-        <p>This workspace has a <code>.archgen/</code> folder but no readable tasks yet.</p>
+        <>
+          <h2>No ArchGen plan found</h2>
+          <p>This workspace has a <code>.archgen/</code> folder but no readable tasks yet.</p>
+        </>
+      ) : setup?.skill.installed === true ? (
+        <>
+          <h2>ArchGen skill is ready.</h2>
+          <p>
+            This workspace has no plan yet. Tell your coding agent: "generate architecture for &lt;your idea&gt;" — or copy a kickoff prompt below.
+          </p>
+          <div className="archgen-setup-routes">
+            <button type="button" className="archgen-setup-primary" onClick={() => post?.({ type: 'copyInitPlan' })}>
+              Copy kickoff prompt
+            </button>
+            <span className="archgen-setup-manual">
+              <span>To verify the installation: </span>
+              <code>npx archgen-skill doctor</code>
+            </span>
+          </div>
+        </>
       ) : (
         <>
+          <h2>No ArchGen plan found</h2>
           <p>This workspace has no <code>.archgen/</code> folder yet.</p>
           <p>
-            Run <code>archgen generate</code> in your repo to scaffold the plan, then reopen this board.
+            Run <code>{INSTALL_COMMAND}</code> once to scaffold the plan, then tell your coding agent: "generate architecture for &lt;your idea&gt;".
           </p>
           <div className="archgen-install-cta">
             <code className="archgen-install-cmd">{INSTALL_COMMAND}</code>
@@ -82,6 +107,11 @@ export function EmptyState({ hasArchgenFolder }: EmptyDetails) {
             </button>
           </div>
         </>
+      )}
+      {onSelectSetup && (
+        <button type="button" className="archgen-copy-btn archgen-empty-setup-btn" onClick={onSelectSetup}>
+          Open Setup &amp; updates
+        </button>
       )}
     </div>
   );
@@ -121,8 +151,8 @@ export function StaleChip({ since }: { since: number }) {
 }
 
 /** Tab definition shared by App shell. */
-export type ViewTab = 'TASKS' | 'CODE' | 'DOCS';
-export const VIEW_TABS: ViewTab[] = ['TASKS', 'CODE', 'DOCS'];
+export type ViewTab = 'TASKS' | 'CODE' | 'DOCS' | 'SETUP';
+export const VIEW_TABS: ViewTab[] = ['TASKS', 'CODE', 'DOCS', 'SETUP'];
 
 export function useTabState(initial: ViewTab = 'TASKS'): [ViewTab, (t: ViewTab) => void] {
   return useState<ViewTab>(initial);

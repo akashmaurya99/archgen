@@ -123,6 +123,8 @@
 .archgen-start-work:focus-visible,
 .archgen-tab:focus-visible,
 .archgen-copy-btn:focus-visible,
+.archgen-menu summary:focus-visible,
+.archgen-menu-item:focus-visible,
 .archgen-chip-btn:focus-visible,
 .archgen-doc-link:focus-visible,
 .archgen-doc-external:focus-visible,

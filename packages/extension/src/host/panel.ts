@@ -12,7 +12,8 @@ import {
   window,
   workspace,
 } from 'vscode';
-import type { HostToWebview, ThemeKind, WebviewRevealTaskMessage, WebviewToHost } from '../shared/protocol';
+import { assertNever } from '../shared/protocol';
+import type { HostToWebview, ThemeKind, WebviewToHost } from '../shared/protocol';
 
 export const VIEW_TYPE = 'archgen.taskBoard';
 
@@ -36,6 +37,16 @@ export function themeKindOf(kind: number): ThemeKind {
   }
 }
 
+/** FNV-1a hex digest — stable, dependency-free fingerprint of a payload string. */
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
 export interface PanelHostOptions {
   /** Called when the panel becomes visible after being hidden (watcher refresh). */
   onVisible?: () => void;
@@ -43,10 +54,20 @@ export interface PanelHostOptions {
   onReady?: () => void;
   /** Build intent from the ▶ button (wired to harness spawn in todo 9). */
   onBuild?: (taskId: string) => void;
+  /** Header "Start Work" — dispatches wave-1 of next-tasks.mjs via the harness. */
+  onStartWork?: () => void;
   /** DOCS sidebar click — host reads the file and posts docContent back. */
   onOpenDoc?: (path: string) => void;
   /** TASKS-tab feature picker — host persists + re-posts the scoped model. */
   onSelectFeature?: (slug: string) => void;
+  /** SETUP-tab install card — host composes + delivers the install prompt. */
+  onCopyInstall?: () => void;
+  /** SETUP-tab plan card — host asks for an idea, then delivers the kickoff. */
+  onCopyInitPlan?: () => void;
+  /** SETUP-tab update card — host composes + delivers the update prompt. */
+  onCopyUpdate?: () => void;
+  /** Ready handshake — host replays its latest setup snapshot for late-opened boards. */
+  onSetupSync?: () => void;
 }
 
 export class ArchgenPanel {
@@ -59,6 +80,10 @@ export class ArchgenPanel {
   // webview is still loading; flushed right after the model push in the
   // `ready` branch so ordering stays model-before-reveal.
   private pendingReveal: string | null = null;
+  // SETUP-tab navigation intent (status bar / notifications / command) parked
+  // the same way; flushed after the revealTask slot so a combined
+  // reveal+setup request lands on the SETUP tab deterministically.
+  private pendingRevealSetup = false;
   // Flips true once this webview completed its `ready` handshake.
   private readySeen = false;
 
@@ -137,12 +162,19 @@ export class ArchgenPanel {
       case 'ready': {
         this.forceNext = true;
         this.readySeen = true;
-        // onReady pushes the model synchronously BEFORE the flush below, so
-        // the webview always receives model → revealTask in channel order.
+        // onReady pushes the model synchronously BEFORE the flushes below, so
+        // the webview always receives model → revealTask → revealSetup →
+        // setupSync in channel order: by the time paint settles it holds both
+        // the full model AND current setup truth, never either alone.
         this.opts.onReady?.();
         const taskId = this.pendingReveal;
         this.pendingReveal = null;
         if (taskId !== null) this.post({ type: 'revealTask', taskId });
+        if (this.pendingRevealSetup) {
+          this.pendingRevealSetup = false;
+          this.post({ type: 'revealSetup' });
+        }
+        this.opts.onSetupSync?.();
         break;
       }
       case 'openFile': {
@@ -164,26 +196,39 @@ export class ArchgenPanel {
       case 'build':
         this.opts.onBuild?.(msg.taskId);
         break;
+      case 'startWork':
+        this.opts.onStartWork?.();
+        break;
       case 'openDoc':
         this.opts.onOpenDoc?.(msg.path);
         break;
       case 'selectFeature':
         this.opts.onSelectFeature?.(msg.slug);
         break;
+      case 'copyInstall':
+        this.opts.onCopyInstall?.();
+        break;
+      case 'copyInitPlan':
+        this.opts.onCopyInitPlan?.();
+        break;
+      case 'copyUpdate':
+        this.opts.onCopyUpdate?.();
+        break;
+      default:
+        // Exhaustiveness guard: a new WebviewToHost member without a case
+        // fails `tsc` here instead of silently dropping its traffic.
+        assertNever(msg);
     }
   }
 
   /** Post typed message; dedupes identical models unless invalidated. */
-  post(message: HostToWebview | WebviewRevealTaskMessage): void {
+  post(message: HostToWebview): void {
     if (!this.panel) return;
     if (message.type === 'model') {
-      // activeSlug leads the fingerprint: two features may expose identical
-      // task shapes, and dropping the scoped re-post would strand the picker.
-      const fingerprint = JSON.stringify([
-        message.activeSlug,
-        message.tasks.map((t) => [t.id, t.status]),
-        message.docs.map((d) => d.path),
-      ]);
+      // FULL-PAYLOAD fingerprint: the hashed object carries every model field
+      // (activeSlug, tasks incl. acceptance, docs, warnings, codegraph, …), so
+      // ANY mutation reaches the webview — not just id/status/doc deltas.
+      const fingerprint = fnv1a(JSON.stringify(message));
       if (!this.forceNext && fingerprint === this.lastSentModel) return;
       this.lastSentModel = fingerprint;
       this.forceNext = false;
@@ -207,6 +252,19 @@ export class ArchgenPanel {
       return;
     }
     this.pendingReveal = taskId;
+  }
+
+  /**
+   * Schedule a SETUP-tab reveal on this board — same parking contract as
+   * setPendingReveal: parks until the `ready` handshake on a freshly created
+   * webview, fires at once on an already-loaded board.
+   */
+  setPendingRevealSetup(): void {
+    if (this.readySeen) {
+      this.post({ type: 'revealSetup' });
+      return;
+    }
+    this.pendingRevealSetup = true;
   }
 
   private renderHtml(webview: Webview): string {
@@ -246,6 +304,7 @@ export class ArchgenPanel {
   private dispose(): void {
     for (const d of this.disposables.splice(0)) d.dispose();
     this.pendingReveal = null;
+    this.pendingRevealSetup = false;
     this.panel = undefined;
     if (ArchgenPanel.current === this) ArchgenPanel.current = null;
   }

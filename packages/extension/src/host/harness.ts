@@ -41,23 +41,47 @@ export class TemplateNotFoundError extends Error {
   }
 }
 
-/** Replace {{var}} placeholders; unknown placeholders are a config error. */
+/**
+ * Replace {{var}} placeholders; unknown placeholders are a config error.
+ * Substituted values are escaped for the double-quoted regions templates wrap
+ * around {{prompt}}/{{task}}/{{outfile}}: backslash first (`\` → `\\`), then
+ * double quote (`"` → `\"`). splitCommand decodes those escapes inside double
+ * quotes, so a hostile task title round-trips as ONE verbatim argv element
+ * instead of corrupting argv or smuggling instructions into the agent prompt.
+ */
 export function interpolateTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{\s*([a-zA-Z_]\w*)\s*\}\}/g, (_m, key: string) => {
     const value = vars[key];
     if (value === undefined) throw new Error(`Missing template value for placeholder {{${key}}}`);
-    return value;
+    // Order matters: escaping backslashes first keeps the `\"` added below intact.
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   });
 }
 
-/** Split a command line into argv, honoring double/single quotes. No shell involved. */
+/**
+ * Split a command line into argv, honoring double/single quotes. No shell involved.
+ *
+ * Inside double quotes `\"` and `\\` decode to literal `"` and `\`
+ * (POSIX-double-quote-ish), so values escaped by interpolateTemplate reappear
+ * verbatim as ONE argv element. Everywhere else characters are taken
+ * literally, exactly as before this escape decoding existed.
+ */
 export function splitCommand(cmd: string): string[] {
   const out: string[] = [];
   let cur = '';
   let quote: '"' | "'" | null = null;
   let started = false;
-  for (const ch of cmd) {
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd.charAt(i);
     if (quote) {
+      if (quote === '"' && ch === '\\') {
+        const next = cmd.charAt(i + 1);
+        if (next === '"' || next === '\\') {
+          cur += next;
+          i++;
+          continue;
+        }
+      }
       if (ch === quote) quote = null;
       else cur += ch;
     } else if (ch === '"' || ch === "'") {

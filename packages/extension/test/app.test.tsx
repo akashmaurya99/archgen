@@ -5,7 +5,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { createElement } from 'react';
 import { App } from '../src/webview/App';
-import type { ArchgenModelMessage, HostToWebview } from '../src/shared/protocol';
+import type { ArchgenModelMessage, HostToWebview, SetupAction, SetupStateLike } from '../src/shared/protocol';
 import { resetVsCodeApiForTests } from '../src/webview/vscode';
 import { installFlowDomStubs } from './helpers/dom-stubs';
 
@@ -147,6 +147,25 @@ describe('App shell', () => {
     expect(document.documentElement.dataset['theme']).toBe('light');
   });
 
+  it('surfaces task acceptance criteria as read-only node hover detail', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          ...MODEL,
+          tasks: [{ ...MODEL.tasks[0], acceptance: ['tests pass', 'docs updated'] }, MODEL.tasks[1]],
+        },
+      }));
+    });
+    const detail = document.querySelector('[data-task-id="C"]')?.getAttribute('title');
+    expect(detail).toContain('Acceptance:');
+    expect(detail).toContain('- tests pass');
+    expect(detail).toContain('- docs updated');
+    // tasks WITHOUT acceptance render no tooltip rather than an empty one
+    expect(document.querySelector('[data-task-id="B"]')?.getAttribute('title')).toBeNull();
+  });
+
   it('revealTask message switches to TASKS (persisted) and spotlights the node', () => {
     const api = makeApi();
     render(createElement(App, { api }));
@@ -205,5 +224,264 @@ describe('App shell', () => {
     });
     expect(document.querySelector('[data-task-id="B"]')).toBeNull();
     expect(document.querySelector('.is-highlighted')).toBeNull();
+  });
+});
+
+describe('SETUP tab (board-integrated setup UX)', () => {
+  const SKILL_OK = { installed: true, path: '/ws/.agents/skills/archgen/scripts', version: '0.0.1' };
+  const SKILL_MISSING = { installed: false, path: null, version: null };
+
+  function setupMessage(overrides?: { state?: SetupStateLike; actions?: SetupAction[]; extVersion?: string }): HostToWebview {
+    return {
+      type: 'setup',
+      state: overrides?.state ?? { skill: SKILL_OK, planInitialized: true, upToDate: false },
+      actions: overrides?.actions ?? ['update'],
+      extVersion: overrides?.extVersion ?? '0.0.4',
+    };
+  }
+
+  function mountWithSetup(msg: HostToWebview = setupMessage()): FakeApi {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: MODEL }));
+      window.dispatchEvent(new MessageEvent('message', { data: msg }));
+    });
+    return api;
+  }
+
+  it('lists the SETUP tab fourth in the tab bar', () => {
+    mountWithSetup();
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('.archgen-tab')].map((b) => b.textContent);
+    expect(tabs).toEqual(['TASKS', 'CODE', 'DOCS', 'SETUP']);
+  });
+
+  it('renders summary rows with glyph/detail truth from the setup snapshot', () => {
+    mountWithSetup(setupMessage({
+      state: { skill: SKILL_MISSING, planInitialized: false, upToDate: null },
+      actions: ['install'],
+    }));
+    fireEvent.click(screen.getByRole('tab', { name: 'SETUP' }));
+    const rows = [...document.querySelectorAll('.archgen-setup-row')];
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.textContent).toContain('Skill');
+    expect(rows[0]!.textContent).toContain('not found');
+    expect(rows[1]!.textContent).toContain('Plan');
+    expect(rows[1]!.textContent).toContain('no .archgen plan');
+    expect(rows[2]!.textContent).toContain('Up to date');
+    expect(rows[2]!.textContent).toContain('unknown');
+    expect(document.querySelector('.archgen-setup-glyph--warn')).toBeTruthy();
+  });
+
+  it('renders one card per pending action with version-aware update body + reassurance line', () => {
+    mountWithSetup(setupMessage({ actions: ['initPlan', 'update'] }));
+    fireEvent.click(screen.getByRole('tab', { name: 'SETUP' }));
+    expect(screen.getByText('Initialize a plan')).toBeTruthy();
+    expect(screen.getByText('Update the ArchGen skill')).toBeTruthy();
+    expect(
+      screen.getByText('Installed skill v0.0.1 is older than this extension (v0.0.4).'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Everything keeps working on older versions — updating is recommended.'),
+    ).toBeTruthy();
+  });
+
+  it('legacy install (no stamp) renders the predates-stamping body', () => {
+    mountWithSetup(setupMessage({
+      state: { skill: { ...SKILL_OK, version: null }, planInitialized: true, upToDate: null },
+      actions: ['update'],
+    }));
+    fireEvent.click(screen.getByRole('tab', { name: 'SETUP' }));
+    expect(
+      screen.getByText('The installed skill predates version stamping (this extension ships v0.0.4).'),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ['install', { type: 'copyInstall' }],
+    ['initPlan', { type: 'copyInitPlan' }],
+    ['update', { type: 'copyUpdate' }],
+  ] as const)('%s card button posts the EXACT wire message %j', (action, expected) => {
+    const api = mountWithSetup(setupMessage({
+      ...(action === 'install'
+        ? { state: { skill: SKILL_MISSING, planInitialized: false, upToDate: null } as SetupStateLike }
+        : {}),
+      actions: [action],
+    }));
+    fireEvent.click(screen.getByRole('tab', { name: 'SETUP' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy prompt for my agent' }));
+    const copies = api.posted.filter((m) => (m as { type: string }).type === expected.type);
+    expect(copies).toEqual([expected]);
+  });
+
+  it('revealSetup switches to the SETUP tab and persists the choice', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: MODEL }));
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'CODE' }));
+    expect(api.state).toEqual({ tab: 'CODE' });
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: { type: 'revealSetup' } }));
+    });
+    expect(screen.getByRole('tab', { name: 'SETUP' }).getAttribute('aria-selected')).toBe('true');
+    expect(api.state).toEqual({ tab: 'SETUP' });
+  });
+
+  it('empty-actions snapshot renders the compact all-good row instead of cards', () => {
+    mountWithSetup(setupMessage({
+      state: { skill: SKILL_OK, planInitialized: true, upToDate: true },
+      actions: [],
+    }));
+    fireEvent.click(screen.getByRole('tab', { name: 'SETUP' }));
+    expect(screen.getByText('ArchGen is set up.')).toBeTruthy();
+    expect(document.querySelector('.archgen-setup-card')).toBeNull();
+  });
+
+  it('manual-route Copy pill writes the route text via the clipboard pattern', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    mountWithSetup();
+    fireEvent.click(screen.getByRole('tab', { name: 'SETUP' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy npx archgen-skill update' }));
+    await act(async () => { await Promise.resolve(); });
+    expect(writeText).toHaveBeenCalledWith('npx archgen-skill update');
+    expect(screen.getByText('Copied!')).toBeTruthy();
+  });
+
+  it('shows a placeholder hint when SETUP opens before any setup snapshot arrived', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: MODEL }));
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'SETUP' }));
+    expect(screen.getByText(/Setup status arrives with the next evaluation/)).toBeTruthy();
+    void api;
+  });
+
+  it('renders live setup truth in an EMPTY workspace instead of the empty state', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      // Host always posts a model first; an empty workspace carries zero
+      // ArchGen content, so the ONLY content-bearing message is the setup
+      // snapshot (exactly what the status-bar/notification entry points hit).
+      window.dispatchEvent(new MessageEvent('message', { data: { ...MODEL, tasks: [], docs: [] } }));
+      window.dispatchEvent(new MessageEvent('message', {
+        data: setupMessage({
+          state: { skill: SKILL_MISSING, planInitialized: false, upToDate: null },
+          actions: ['install'],
+        }),
+      }));
+    });
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: { type: 'revealSetup' } }));
+    });
+    expect(screen.getByRole('tab', { name: 'SETUP' }).getAttribute('aria-selected')).toBe('true');
+    const rows = [...document.querySelectorAll('.archgen-setup-row')];
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.textContent).toContain('not found');
+    expect(screen.queryByText(/No ArchGen plan found/i)).toBeNull();
+    void api;
+  });
+
+  it('header ⋯ menu routes Setup & updates and Copy install prompt', () => {
+    const api = mountWithSetup();
+    const menu = document.querySelector<HTMLDetailsElement>('details.archgen-menu');
+    expect(menu).toBeTruthy();
+    const summary = menu!.querySelector('summary');
+    expect(summary?.getAttribute('aria-label')).toBe('More actions');
+
+    menu!.open = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Setup & updates' }));
+    expect(screen.getByRole('tab', { name: 'SETUP' }).getAttribute('aria-selected')).toBe('true');
+    expect(menu!.open).toBe(false);
+
+    menu!.open = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Copy install prompt' }));
+    const copies = api.posted.filter((m) => (m as { type: string }).type === 'copyInstall');
+    expect(copies).toEqual([{ type: 'copyInstall' }]);
+    expect(menu!.open).toBe(false);
+  });
+
+  it('⋯ menu closes when a click lands outside it', () => {
+    mountWithSetup();
+    const menu = document.querySelector<HTMLDetailsElement>('details.archgen-menu');
+    expect(menu).toBeTruthy();
+    act(() => { menu!.open = true; });
+    fireEvent.click(document.body);
+    expect(menu!.open).toBe(false);
+  });
+
+  it('empty state offers "Open Setup & updates" bridging into the SETUP tab', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: { ...MODEL, tasks: [], docs: [] } }));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Setup & updates' }));
+    expect(screen.getByRole('tab', { name: 'SETUP' }).getAttribute('aria-selected')).toBe('true');
+    void api;
+  });
+});
+
+describe('EmptyState setup-awareness (post-init dead-end fix)', () => {
+  function mountEmpty(...messages: HostToWebview[]): FakeApi {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: { ...MODEL, tasks: [], docs: [] } }));
+      for (const msg of messages) window.dispatchEvent(new MessageEvent('message', { data: msg }));
+    });
+    return api;
+  }
+
+  function emptyStateText(): string {
+    return document.querySelector('.archgen-state--empty')!.textContent ?? '';
+  }
+
+  it('no setup snapshot yet → legacy install guidance byte-for-byte', () => {
+    mountEmpty();
+    expect(emptyStateText()).toContain('This workspace has no .archgen/ folder yet.');
+    expect(emptyStateText()).toContain(
+      'Run npx archgen-skill init once to scaffold the plan, then tell your coding agent: "generate architecture for <your idea>".',
+    );
+    expect(screen.getByRole('button', { name: 'Copy install command' })).toBeTruthy();
+    expect(screen.queryByText('ArchGen skill is ready.')).toBeNull();
+  });
+
+  it('skill installed → ready variant with kickoff CTA posting EXACT copyInitPlan', () => {
+    const api = mountEmpty({
+      type: 'setup',
+      state: {
+        skill: { installed: true, path: '/ws/.agents/skills/archgen/scripts', version: '0.0.4' },
+        planInitialized: false,
+        upToDate: true,
+      },
+      actions: ['initPlan'],
+      extVersion: '0.0.4',
+    });
+    expect(screen.getByText('ArchGen skill is ready.')).toBeTruthy();
+    expect(emptyStateText()).toContain(
+      'This workspace has no plan yet. Tell your coding agent: "generate architecture for <your idea>" — or copy a kickoff prompt below.',
+    );
+    expect(emptyStateText()).toContain('npx archgen-skill doctor');
+    expect(screen.queryByText(/scaffold the plan/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy kickoff prompt' }));
+    expect(api.posted.filter((m) => (m as { type: string }).type === 'copyInitPlan')).toEqual([{ type: 'copyInitPlan' }]);
+  });
+
+  it('skill explicitly missing → legacy install guidance again', () => {
+    mountEmpty({
+      type: 'setup',
+      state: { skill: { installed: false, path: null, version: null }, planInitialized: false, upToDate: null },
+      actions: ['install'],
+      extVersion: '0.0.4',
+    });
+    expect(screen.queryByText('ArchGen skill is ready.')).toBeNull();
+    expect(emptyStateText()).toContain('Run npx archgen-skill init once to scaffold the plan');
+    expect(screen.getByRole('button', { name: 'Copy install command' })).toBeTruthy();
   });
 });

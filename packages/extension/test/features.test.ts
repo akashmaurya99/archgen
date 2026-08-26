@@ -179,6 +179,16 @@ describe('buildScopedModel', () => {
     expect(scoped.tasks[1]?.dependsOn).toContain('GHOST');
   });
 
+  it('passes tasks.yaml acceptance criteria through to the scoped TaskVMs', () => {
+    const ws = scratch();
+    makeFeature(ws, 'alpha', ALPHA_YAML, 1000);
+    const scoped = buildScopedModel(ws, 'alpha');
+    expect(scoped.tasks.map((t) => t.id)).toEqual(['A1', 'A2']);
+    expect(scoped.tasks[0]?.acceptance).toEqual(['x']);
+    // absent key parses to an EMPTY list, never undefined
+    expect(scoped.tasks[1]?.acceptance).toEqual([]);
+  });
+
   it('surfaces unreadable YAML as a typed per-feature warning instead of crashing', () => {
     const ws = scratch();
     makeFeature(ws, 'good', BETA_YAML, 1000);

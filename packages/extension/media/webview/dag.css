@@ -108,6 +108,78 @@ body,
   box-shadow: 0 0 6px var(--archgen-status-ready);
 }
 
+/* ---- Header ⋯ Overflow Menu (native <details>; zero-JS dropdown) ---- */
+.archgen-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.archgen-menu summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--archgen-radius-pill, 9999px);
+  background: transparent;
+  color: var(--archgen-text-muted);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-md);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition: color var(--archgen-motion-fast), background var(--archgen-motion-fast);
+}
+
+.archgen-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.archgen-menu summary:hover,
+.archgen-menu[open] summary {
+  color: var(--archgen-text);
+  background: color-mix(in srgb, var(--archgen-text) 8%, transparent);
+}
+
+.archgen-menu-items {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-md, 11px);
+  background: var(--archgen-surface-elevated);
+  box-shadow: var(--archgen-shadow-floating, 0 12px 36px rgba(0, 0, 0, 0.35));
+}
+
+.archgen-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: var(--archgen-radius-sm, 8px);
+  background: transparent;
+  color: var(--archgen-text);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-sm);
+  padding: 7px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--archgen-motion-fast);
+}
+
+.archgen-menu-item:hover {
+  background: color-mix(in srgb, var(--archgen-text) 8%, transparent);
+}
+
 /* ---- Feature Picker (TASKS tab header) ---- */
 .archgen-feature-bar {
   flex: 0 0 auto;
@@ -1096,6 +1168,11 @@ body,
   background: var(--archgen-surface-elevated);
 }
 
+/* Empty-state bridge into the SETUP tab (secondary action under the CTA). */
+.archgen-empty-setup-btn {
+  margin-top: 10px;
+}
+
 /* ---- TASKS DAG HUD & TOOLBARS ---- */
 .archgen-dag-hud {
   display: flex;
@@ -2065,6 +2142,136 @@ mark.archgen-search-hit.is-current {
   font-family: var(--archgen-font-mono);
   font-size: var(--archgen-font-size-xs);
   color: var(--archgen-text);
+}
+
+/* ---- SETUP TAB (board-integrated setup UX) ---- */
+.archgen-setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--archgen-space-3, 12px);
+  max-width: 640px;
+  margin: 12px auto;
+  padding: 0 14px;
+}
+
+.archgen-setup-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: var(--archgen-radius-md, 11px);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface);
+}
+
+.archgen-setup-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--archgen-space-2, 8px);
+}
+
+.archgen-setup-glyph--ok {
+  color: var(--archgen-status-done);
+}
+
+.archgen-setup-glyph--warn {
+  color: var(--archgen-status-blocked);
+}
+
+.archgen-setup-glyph--unknown {
+  color: var(--archgen-text-muted);
+}
+
+.archgen-setup-label {
+  font-weight: 600;
+  min-width: 84px;
+  color: var(--archgen-text);
+}
+
+.archgen-setup-detail {
+  color: var(--archgen-text-muted);
+  word-break: break-all;
+}
+
+.archgen-setup-card {
+  border: 1px solid var(--archgen-hairline);
+  border-radius: var(--archgen-radius-md, 11px);
+  padding: 12px 14px;
+  background: var(--archgen-canvas);
+}
+
+.archgen-setup-card-title {
+  margin: 0 0 6px;
+  font-size: var(--archgen-font-size-md);
+  font-weight: 600;
+  color: var(--archgen-text);
+}
+
+.archgen-setup-card-body,
+.archgen-setup-reassure {
+  margin: 0 0 10px;
+  color: var(--archgen-text-muted);
+  line-height: var(--archgen-line-height-body, 1.47);
+  font-size: var(--archgen-font-size-sm);
+}
+
+.archgen-setup-routes {
+  display: flex;
+  align-items: center;
+  gap: var(--archgen-space-3, 12px);
+  flex-wrap: wrap;
+}
+
+/* Primary card button — mirrors .archgen-start-work pill styling. */
+.archgen-setup-primary {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  background: var(--archgen-action-blue);
+  color: var(--archgen-text-on-action);
+  font-family: var(--archgen-font-ui);
+  font-size: var(--archgen-font-size-xs);
+  font-weight: 600;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--archgen-radius-pill, 9999px);
+  cursor: pointer;
+  transition: background var(--archgen-motion-fast), transform var(--archgen-motion-fast);
+}
+
+.archgen-setup-primary:hover {
+  background: var(--archgen-action-blue-focus);
+}
+
+.archgen-setup-primary:active {
+  transform: scale(0.97);
+}
+
+.archgen-setup-primary:focus-visible {
+  outline: 2px solid var(--archgen-focus-ring);
+  outline-offset: 2px;
+}
+
+.archgen-setup-manual {
+  color: var(--archgen-text-muted);
+  font-size: var(--archgen-font-size-xs);
+}
+
+.archgen-setup-manual code {
+  font-family: var(--archgen-font-mono);
+  color: var(--archgen-text);
+  background: var(--archgen-surface-elevated);
+  padding: 1px 4px;
+  border-radius: var(--archgen-radius-sm, 8px);
+}
+
+.archgen-setup-allgood {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--archgen-radius-md, 11px);
+  border: 1px solid var(--archgen-hairline);
+  background: var(--archgen-surface);
+  color: var(--archgen-text-muted);
 }
 
 /* ---- RESPONSIVE BREAKPOINTS ---- */

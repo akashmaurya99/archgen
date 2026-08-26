@@ -152,6 +152,7 @@ export class TasksProvider implements TreeDataProvider<TasksTreeRow> {
     if (row.dependsOn.length > 0) lines.push('', `Depends on: ${row.dependsOn.join(', ')}`);
     if (row.ownership.length > 0) lines.push('', `Owns: ${row.ownership}`);
     if (row.artifacts.length > 0) lines.push('', 'Artifacts:', ...row.artifacts.map((a) => `- ${a}`));
+    if (row.acceptance.length > 0) lines.push('', 'Acceptance:', ...row.acceptance.map((a) => `- ${a}`));
     return new MarkdownString(lines.join('\n'));
   }
 }

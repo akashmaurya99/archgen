@@ -18,6 +18,7 @@ export interface TaskRow {
   ownership: string;
   dependsOn: string[];
   artifacts: string[];
+  acceptance: string[];
 }
 
 export interface GroupRow {
@@ -55,6 +56,7 @@ export function groupTasks(tasks: readonly TaskVM[]): TasksTreeRow[] {
         ownership: t.fileOwnership[0] ?? '',
         dependsOn: [...t.dependsOn],
         artifacts: [...t.artifacts],
+        acceptance: [...(t.acceptance ?? [])],
       });
     }
   }
@@ -84,6 +86,7 @@ export function getTasksForStatus(tasks: readonly TaskVM[], status: TaskStatus):
     ownership: t.fileOwnership[0] ?? '',
     dependsOn: [...t.dependsOn],
     artifacts: [...t.artifacts],
+    acceptance: [...(t.acceptance ?? [])],
   }));
 }
 

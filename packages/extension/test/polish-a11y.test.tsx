@@ -1,7 +1,7 @@
 // Polish a11y + state tests (todo 13, jsdom):
 // - node aria-label contract `task <id>: <title>, status <status>`
 // - keyboard: every node in tab order; Enter/Space on focused node dispatches build
-// - empty state: 'run archgen generate' hint + copyable install command
+// - empty state: 'run archgen-skill init' hint + copyable install command
 // - error state: last-good graph stays mounted (dimmed class) + dismissible banner
 // - stale-data chip renders "updated Ns ago"
 // @vitest-environment jsdom
@@ -118,7 +118,7 @@ describe('keyboard navigation', () => {
 });
 
 describe('empty state install CTA', () => {
-  it('shows the archgen generate hint with a copyable install command', async () => {
+  it('shows the archgen init hint with a copyable install command', async () => {
     const writeText = vi.fn(async () => undefined);
     Object.assign(navigator, { clipboard: { writeText } });
     const api = makeApi();
@@ -126,11 +126,11 @@ describe('empty state install CTA', () => {
     act(() => {
       window.dispatchEvent(new MessageEvent('message', { data: { ...MODEL, tasks: [], docs: [] } }));
     });
-    expect(screen.getAllByText(/archgen-skill generate/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/archgen-skill init/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Copy install command' }));
     await act(async () => { await Promise.resolve(); });
     expect(writeText).toHaveBeenCalledWith(INSTALL_COMMAND);
-    expect(INSTALL_COMMAND).toContain('archgen-skill generate');
+    expect(INSTALL_COMMAND).toEqual('npx archgen-skill init');
     expect(screen.getByText('Copied!')).toBeTruthy();
     void api;
   });

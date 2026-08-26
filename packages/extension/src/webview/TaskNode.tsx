@@ -20,6 +20,8 @@ export type TaskNodeData = {
   highlighted?: boolean;
   /** Host-injected dispatch callback; stable via ref in TasksView. */
   onBuild?: (taskId: string) => void;
+  /** Acceptance criteria — read-only hover detail (native title tooltip). */
+  acceptance?: string[];
 };
 
 export type TaskFlowNode = Node<TaskNodeData, 'task'>;
@@ -40,6 +42,12 @@ function TaskNodeComponent({
 }: NodeProps<TaskFlowNode>) {
   const pulse = data.status === 'running' ? ' archgen-pulse' : '';
   const spotlight = data.highlighted ? ' is-highlighted' : '';
+  // Hover detail: acceptance criteria via the native tooltip — same bullet
+  // style as the sidebar task tooltip.
+  const detail =
+    data.acceptance && data.acceptance.length > 0
+      ? ['Acceptance:', ...data.acceptance.map((a) => `- ${a}`)].join('\n')
+      : undefined;
 
   // KEYBOARD NAV (todo 13): every node is in the tab order; Enter or Space on
   // a focused node activates the ▶ build dispatch — same path as the button.
@@ -56,6 +64,7 @@ function TaskNodeComponent({
       role="button"
       tabIndex={0}
       aria-label={taskAriaLabel(id, data.label, data.status)}
+      title={detail}
       onKeyDown={onKeyDown}
     >
       <NodeToolbar isVisible>

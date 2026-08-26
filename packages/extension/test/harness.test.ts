@@ -41,6 +41,10 @@ describe('interpolateTemplate', () => {
   it('throws on missing placeholder values', () => {
     expect(() => interpolateTemplate('{{outfile}}', {})).toThrow(/outfile/);
   });
+
+  it('escapes substituted values for double-quoted regions (backslash first)', () => {
+    expect(interpolateTemplate('"{{p}}"', { p: 'a\\b"c' })).toBe('"a\\\\b\\"c"');
+  });
 });
 
 describe('splitCommand', () => {
@@ -51,6 +55,58 @@ describe('splitCommand', () => {
   it('honors single quotes and empty results', () => {
     expect(splitCommand("bin 'x y'")).toEqual(['bin', 'x y']);
     expect(splitCommand('   ')).toEqual([]);
+  });
+
+  it('preserves newlines inside double-quoted segments', () => {
+    expect(splitCommand('bin "line1\nline2" --flag')).toEqual(['bin', 'line1\nline2', '--flag']);
+  });
+
+  it('keeps backslashes literal outside quotes (legacy behavior)', () => {
+    expect(splitCommand('bin C:\\tools\\run.exe')).toEqual(['bin', 'C:\\tools\\run.exe']);
+  });
+
+  it('takes single-quoted segments verbatim without escape decoding', () => {
+    expect(splitCommand("bin 'a\\\"b'")).toEqual(['bin', 'a\\"b']);
+  });
+
+  it('merges adjacent quoted segments into one token (legacy behavior)', () => {
+    expect(splitCommand('bin "a""b" c')).toEqual(['bin', 'ab', 'c']);
+  });
+
+  it('yields an empty argv element for an empty quoted value', () => {
+    expect(splitCommand('bin -p "" --json')).toEqual(['bin', '-p', '', '--json']);
+  });
+});
+
+describe('interpolateTemplate + splitCommand injection-safety invariant', () => {
+  // For ANY v: interpolate into a double-quoted {{p}} region, then split, must
+  // yield v VERBATIM as ONE argv element — repository-controlled task titles
+  // must never corrupt argv or smuggle text out of the prompt argument.
+  const adversarial: string[] = [
+    'Fix "quoted" parts',
+    'back\\slash \\ path',
+    '"leading and trailing"',
+    '',
+    'pre \\" post',
+    'Implement task T1: refactor auth.\n\nSteps:\n1. rotate keys "carefully"\n2. run \\tests\\ locally\n3. report via set-status.mjs',
+    'ends with \\',
+  ];
+
+  it.each(adversarial)('round-trips %j verbatim through a quoted placeholder', (v) => {
+    expect(splitCommand(interpolateTemplate('bin -p "{{p}}" --json', { p: v }))).toEqual([
+      'bin',
+      '-p',
+      v,
+      '--json',
+    ]);
+  });
+
+  it.each(adversarial)('round-trips %j verbatim through the real claude template', (v) => {
+    const argv = splitCommand(interpolateTemplate(DEFAULT_TEMPLATES.claude, { prompt: v }));
+    expect(argv[0]).toBe('claude');
+    expect(argv[1]).toBe('-p');
+    expect(argv[2]).toBe(v);
+    expect(argv.slice(3)).toEqual(['--output-format', 'json', '--permission-mode', 'acceptEdits']);
   });
 });
 

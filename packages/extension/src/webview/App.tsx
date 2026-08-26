@@ -8,12 +8,13 @@
 // immutable patch application — so TasksView re-renders only changed nodes
 // instead of remapping the whole tasks array on every message.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { assertNever } from '../shared/protocol';
 import type {
   ArchgenModelMessage,
+  ArchgenSetupMessage,
   HostToWebview,
   TaskVM,
   ThemeKind,
-  WebviewRevealTaskMessage,
 } from '../shared/protocol';
 import { StatusStore } from '../host/store';
 import { getVsCodeApi } from './vscode';
@@ -21,6 +22,7 @@ import { EmptyState, ErrorBanner, LoadingState, StaleChip, VIEW_TABS, type ViewT
 import { TasksView } from './TasksView';
 import { CodeGraphView } from './CodeGraphView';
 import { DocsView } from './DocsView';
+import { SetupView } from './SetupView';
 import { FeaturePicker } from './FeaturePicker';
 
 export interface AppProps {
@@ -42,6 +44,7 @@ export function App(props: AppProps) {
   const [model, setModel] = useState<ArchgenModelMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<{ path: string; content: string } | null>(null);
+  const [setup, setSetup] = useState<ArchgenSetupMessage | null>(null);
   const [lastModelAt, setLastModelAt] = useState<number>(() => Date.now());
   const [, setStoreVersion] = useState(0);
   const storeRef = useRef<StatusStore<TaskVM> | null>(null);
@@ -51,6 +54,25 @@ export function App(props: AppProps) {
   });
   // REVEAL INTENT: task id to spotlight on the TASKS canvas; null = no reveal.
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  // Header ⋯ menu: ref lets item clicks close the native <details> directly.
+  const menuRef = useRef<HTMLDetailsElement | null>(null);
+
+  const closeMenu = useCallback((): void => {
+    const el = menuRef.current;
+    if (el) el.open = false;
+  }, []);
+
+  // Native <details> never closes on outside clicks — supply that dismissal.
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent): void => {
+      const el = menuRef.current;
+      if (!el || !el.open) return;
+      if (e.target instanceof Node && el.contains(e.target)) return;
+      el.open = false;
+    };
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, []);
 
   // Declared ABOVE the intake effect so the revealTask case can reuse this
   // exact persistence path (deps array evaluates during render).
@@ -64,10 +86,10 @@ export function App(props: AppProps) {
 
   // Handshake + message intake.
   useEffect(() => {
-    // Host posts revealTask intents over the same channel; the protocol file
-    // groups that payload under WebviewToHost (the emitter side), so intake
-    // listens for the wider union.
-    const handler = (event: MessageEvent<HostToWebview | WebviewRevealTaskMessage>): void => {
+    // Exhaustive intake over HostToWebview: the default arm's assertNever
+    // fails `tsc` when a protocol member lacks a case, so no host message is
+    // ever silently dropped here.
+    const handler = (event: MessageEvent<HostToWebview>): void => {
       const msg = event.data;
       switch (msg.type) {
         case 'model':
@@ -80,6 +102,14 @@ export function App(props: AppProps) {
           break;
         case 'docContent':
           setDocContent({ path: msg.path, content: msg.content });
+          break;
+        case 'setup':
+          // Latest snapshot wins; the host re-posts on every evaluation so
+          // the SETUP tab can never render stale cards.
+          setSetup(msg);
+          break;
+        case 'revealSetup':
+          selectTab('SETUP');
           break;
         case 'update':
           // Batched into ONE rAF flush by the store; no setState here —
@@ -98,6 +128,8 @@ export function App(props: AppProps) {
           selectTab('TASKS');
           setHighlightId(msg.taskId);
           break;
+        default:
+          assertNever(msg);
       }
     };
     window.addEventListener('message', handler);
@@ -144,6 +176,31 @@ export function App(props: AppProps) {
           </button>
         ))}
         <StaleChip since={lastModelAt} />
+        <details className="archgen-menu" ref={menuRef}>
+          <summary aria-label="More actions" title="More actions">⋯</summary>
+          <div className="archgen-menu-items">
+            <button
+              type="button"
+              className="archgen-menu-item"
+              onClick={() => {
+                closeMenu();
+                selectTab('SETUP');
+              }}
+            >
+              Setup &amp; updates
+            </button>
+            <button
+              type="button"
+              className="archgen-menu-item"
+              onClick={() => {
+                closeMenu();
+                vscode.postMessage({ type: 'copyInstall' });
+              }}
+            >
+              Copy install prompt
+            </button>
+          </div>
+        </details>
       </nav>
 
       {/* Feature picker lives in the TASKS tab header; absent with no
@@ -163,8 +220,29 @@ export function App(props: AppProps) {
         </div>
       )}
 
-      {!hasArchgenContent ? (
-        <EmptyState hasArchgenFolder={model.warnings.some((w) => w.includes('.archgen'))} />
+      {/* GATING ORDER: SETUP is evaluated BEFORE the hasArchgenContent
+          fallback — the empty-state branch used to short-circuit every tab,
+          so in an empty workspace (where setup matters most) selecting or
+          revealing SETUP re-rendered the "No ArchGen plan found" state and
+          read as a dead button. */}
+      {tab === 'SETUP' ? (
+        setup !== null ? (
+          <SetupView
+            state={setup.state}
+            actions={setup.actions}
+            extVersion={setup.extVersion}
+            post={(msg) => vscode.postMessage(msg)}
+          />
+        ) : (
+          <p className="archgen-hint">Setup status arrives with the next evaluation…</p>
+        )
+      ) : !hasArchgenContent ? (
+        <EmptyState
+          hasArchgenFolder={model.warnings.some((w) => w.includes('.archgen'))}
+          onSelectSetup={() => selectTab('SETUP')}
+          setup={setup?.state ?? null}
+          post={(msg) => vscode.postMessage(msg)}
+        />
       ) : tab === 'TASKS' ? (
         model.tasks.length > 0 && storeRef.current ? (
           <TasksView
@@ -175,7 +253,12 @@ export function App(props: AppProps) {
             onStartWork={() => vscode.postMessage({ type: 'startWork' })}
           />
         ) : (
-          <EmptyState hasArchgenFolder />
+          <EmptyState
+            hasArchgenFolder
+            onSelectSetup={() => selectTab('SETUP')}
+            setup={setup?.state ?? null}
+            post={(msg) => vscode.postMessage(msg)}
+          />
         )
       ) : tab === 'CODE' ? (
         <CodeGraphView vm={model.codegraph} />

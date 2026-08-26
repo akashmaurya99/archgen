@@ -260,11 +260,14 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
         const status = statuses[n.id] ?? 'pending';
         const hidden = !isVisibleStatus(status);
         const highlighted = n.id === effectiveHighlight;
+        const task = tasks.find((t) => t.id === n.id);
+        const acceptance = task?.acceptance;
         const prev = cacheRef.current.get(n.id);
         if (
           prev &&
           prev.data.status === status &&
           prev.data.highlighted === highlighted &&
+          prev.data.acceptance === acceptance &&
           prev.hidden === hidden &&
           prev.sourcePosition === sourcePos &&
           prev.targetPosition === targetPos &&
@@ -273,7 +276,6 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
         ) {
           return prev;
         }
-        const task = tasks.find((t) => t.id === n.id);
         const next: TaskFlowNode = {
           id: n.id,
           type: 'task',
@@ -286,7 +288,7 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
           targetPosition: targetPos,
           draggable: false,
           selectable: false,
-          data: { label: task?.title ?? n.id, status, onBuild: dispatchBuild, highlighted },
+          data: { label: task?.title ?? n.id, status, onBuild: dispatchBuild, highlighted, acceptance },
         };
         cacheRef.current.set(n.id, next);
         return next;

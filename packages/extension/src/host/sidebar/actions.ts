@@ -7,7 +7,6 @@ import type { ArchgenModelMessage } from '../../shared/protocol';
 
 export interface SidebarActions {
   openBoard(): void;
-  startWork(): void;
   selectFeature(slug: string): void;
   buildTask(taskId: string): void;
   revealTask(taskId: string): void;
