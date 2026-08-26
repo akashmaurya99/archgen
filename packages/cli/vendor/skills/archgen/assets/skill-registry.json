@@ -17,7 +17,7 @@
       "purpose": "Canonical cross-harness skill installer (75+ agents) - use when a registry entry lacks a direct command",
       "repo": "vercel-labs/skills",
       "install": "npx skills add <owner>/<repo> [-a <agent>] [-g] [--copy]",
-      "matches": ["*installer*"],
+      "matches": ["installer"],
       "policy": "on-demand"
     }
   ]

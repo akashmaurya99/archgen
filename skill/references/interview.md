@@ -31,6 +31,11 @@ the user in one sentence, and record it as `intent_class` in answers.yaml:
 Never interrogate a BROWNFIELD-FEATURE with PRD-grade questions — token waste,
 user annoyance. Round caps INCLUDE round 0 when it runs.
 
+Default `scope_class` from the intent class (user's choice wins — scope_class
+is agreed in GENERATE step 1 and recorded in answers.yaml):
+GREENFIELD-SYSTEM→LARGE, GREENFIELD-MODULE→MEDIUM,
+BROWNFIELD-FEATURE→MEDIUM/SMALL, BROWNFIELD-CHANGE→SMALL.
+
 ## GREENFIELD-SYSTEM — professional discovery (≤6 rounds)
 
 Creating a system from scratch demands PRD-grade inputs. Each round below

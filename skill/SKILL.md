@@ -114,9 +114,10 @@ Pick ONE mode from the user's intent and follow its section below:
 1. **Acknowledge + confirm scope class.** One sentence: what you'll do +
    SMALL/MEDIUM/LARGE. Ask to proceed. [wait for user]
 2. **Interview.** Follow references/interview.md: round-0 calibration,
-   classify ONE intent class (the four classes + round caps live there),
-   record it as `intent_class` in answers.yaml. Batch questions, never
-   one-per-message. [wait for user per round]
+   classify ONE intent class (the four classes + round caps + default
+   `scope_class` mapping live there), record it as `intent_class` in
+   answers.yaml. Batch questions, never one-per-message. [wait for user per
+   round]
 3. **Generate artifacts** into `.archgen/<slug>/` (slug = project short
    name) at the depth Hard rule 3 demands (templates:
    references/artifact-templates.md). Every task needs: id, title,
@@ -146,7 +147,7 @@ Pick ONE mode from the user's intent and follow its section below:
    validate + the verifier gate after every change, until zero findings or an
    explicit user waiver.
 7. **USER GATE.** Present: artifact list, wave summary
-   (`node scripts/next-tasks.mjs .archgen/<slug>/tasks.yaml`), ownership map.
+   (`node <skill>/scripts/next-tasks.mjs .archgen/<slug>/tasks.yaml`), ownership map.
    Ask: "Approve to start work?" [wait for user]
 8. On approval → continue into START-WORK.
 
@@ -177,7 +178,7 @@ Run from the target repo root where `.archgen/<slug>/` exists.
      re-planned.
    - Empty waves + nothing blocked: report completion, go to step 7.
 2. Mark the wave running: for each task in wave 1,
-   `node scripts/set-status.mjs <tasks.yaml> <id> running`.
+    `node <skill>/scripts/set-status.mjs <tasks.yaml> <id> running`.
 3. **Dispatch** per references/orchestration.md §dispatch (native mechanism
    table: references/platforms.md § Sub-agent dispatch capability):
    - Mechanism missing, spawn failed, or lacks permissions → the MAIN AGENT
@@ -205,7 +206,7 @@ Run from the target repo root where `.archgen/<slug>/` exists.
 ## UPDATE (requirements changed mid-flight)
 
 1. Capture the delta conversationally; classify impact:
-   `node scripts/impact.mjs <tasks.yaml> <taskId-or-path>`.
+   `node <skill>/scripts/impact.mjs <tasks.yaml> <taskId-or-path>`.
 2. Right-size again: edit only affected artifacts. New requirements → new
    tasks with correct depends_on; obsolete pending tasks → remove (never
    remove done tasks — history lives in git). Run the FETCH-SKILL scan over
@@ -215,7 +216,7 @@ Run from the target repo root where `.archgen/<slug>/` exists.
 
 ## ROLLBACK
 
-1. Identify scope: `node scripts/impact.mjs <tasks.yaml> <taskId>` shows the
+1. Identify scope: `node <skill>/scripts/impact.mjs <tasks.yaml> <taskId>` shows the
    ripple (direct/transitive dependents + artifacts).
 2. Present the rollback plan: git revert of the task's commit(s) in reverse
    dependency order, plus status rewinds via set-status --force.
@@ -280,7 +281,7 @@ task:
 
 | Situation | Action |
 |---|---|
-| `.archgen/` exists with different slug | Ask user: adopt existing or archive |
+| Slug collision | New request maps to an EXISTING `<slug>` → suffix `-2`, `-3`, … (never overwrite/merge); `.archgen/` holds only different slugs → ask user: adopt existing or archive |
 | tasks.yaml edited externally mid-run | Re-validate before every wave |
 | Worker finishes but acceptance unmet | Mark failed, do NOT cascade, propose fix task |
 | User interrupts mid-wave | Let running workers finish; stop before next wave |
