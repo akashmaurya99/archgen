@@ -45,3 +45,13 @@ Two support modes round out the loop:
 
 - **INSTALL-MCP.** When a needed MCP server (e.g. codegraph, context7) isn't configured, the orchestrator looks up the current platform's config quirks (VS Code uses `servers`; OpenCode uses `mcp` with array commands; Antigravity requires `serverUrl`), prefers the platform CLI (`claude/codex/gemini/copilot mcp add …`), otherwise drafts the exact config diff and shows it. Configs are written only after approval, then verified post-reload.
 - **FETCH-SKILL.** When a task domain matches an entry in `assets/skill-registry.json` (e.g. frontend/UI → ui-skills), the orchestrator installs the referenced skill into the current platform's skill dir (usually `npx skills add <repo>`), confirms, then follows the fetched skill for that domain. Missing capabilities trigger a web search for a reputable skill repo, proposed to the user and added to the registry on approval.
+
+## Provenance & migration
+
+Every artifact archgen writes carries machine-readable provenance, and every mutation is backup-first:
+
+- **Skill trees** carry a `.archgen-version` stamp (`MAJOR.MINOR.PATCH\n`) at their root — rewritten by the CLI on init/install/update; `doctor` and the VS Code extension read it to flag outdated copies (absent = "unknown (legacy)", never an error).
+- **Managed blocks** in AGENTS.md/CLAUDE.md open with a `<!-- archgen:block vX.Y.Z -->` line; init/doctor normalize legacy unversioned blocks to the current format in place.
+- **Generated artifacts** under `.archgen/<slug>/` open with `# schema_version:` / generator / generated-at comments. `archgen-skill migrate --check` lists artifacts missing stamps; `--apply` adds them, backing up each original into `.archgen/.backup/<ts>/migrate/`.
+- **`archgen-skill restore`** lists snapshots from the project vault (`.archgen/.backup/`) and per-harness global vaults (`<skills-dir>/.archgen-backups/`); restoring a snapshot first moves the current state of every affected path into a fresh safety snapshot.
+- **Backup-first policy**: divergent stores, divergent global `--copy` destinations and about-to-be-restored paths are always moved aside before replacement — archgen never destroys state it did not just back up.

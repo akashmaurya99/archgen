@@ -9,12 +9,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Proactive setup UX**: the extension now wakes on startup even before a plan
+  exists and detects three states — archgen skill missing, skill installed but
+  no `.archgen/` plan yet, and installed-but-outdated skill (via a new
+  `.archgen-version` stamp written by the CLI on every install/init/update,
+  readable through symlink layouts). Each state gets a one-time notification
+  (signature-keyed dismissal, never nagging), a status-bar shortcut, and a
+  non-blocking **Setup panel** whose buttons copy ready-to-paste prompts that
+  give your agent full context to install / initialize / update. Everything
+  keeps working on older skill versions — updating is recommended, never
+  required. New command: `ArchGen: Open Setup Panel`.
+- **Clipboard-first delivery**: ▶ Build This Task and ▶ Start Work now copy the
+  composed prompt to the clipboard and ask you to paste it into any agent chat —
+  reliable across VS Code, Cursor, Windsurf, VSCodium and every agent harness,
+  with no CLI or IDE API required. New settings: `archgen.delivery.mode`
+  (`clipboard` | `spawn`) and `archgen.delivery.autoFillChat` (best-effort
+  pre-fill of the IDE's native chat input; never auto-sends).
 - **Activity-bar cockpit**: the single launcher view becomes three sidebar
   views — Overview (feature switcher + live progress summary), Tasks
   (status-grouped live task tree with per-task ▶ build), Docs (quick-open).
 - **Start Work** and **Open Board** view-title actions on the cockpit views.
 - Native welcome states in each view when no `.archgen/` plan exists.
 - Status bar running indicator while a build is in flight.
+- **Central config (`archgen.config.json`)**: one canonical file at the repo root
+  now pins the version, managed-block markers and well-known filenames;
+  `npm run sync` propagates it into SKILL.md frontmatter, package.json and the
+  vendored skill copy — ending the SKILL.md-says-1.0.0-vs-CLI-ships-0.0.x drift,
+  with a CI vendor-freshness gate so stale publishes are impossible.
+- **`archgen-skill restore`**: lists backup snapshots across the project vault
+  (`.archgen/.backup/`) and the per-harness global vaults; `--snapshot <ts>`
+  restores one, moving the current state into a fresh safety snapshot first.
+- **`archgen-skill migrate [--check|--apply]`**: framework for evolving
+  generated-artifact formats in place — dry-run by default, every touched file
+  backed up before modification. Ships migration `001-stamp-provenance`, which
+  stamps `# schema_version` / generator / generated-at comments onto
+  `.archgen/*/tasks.yaml` and `architecture.yaml`.
+- **Versioned managed blocks**: AGENTS.md/CLAUDE.md blocks now open with a
+  `<!-- archgen:block vX.Y.Z -->` provenance line, and init/doctor upgrade
+  legacy unversioned blocks to the current format in place automatically.
+- **Backup-before-replace on global `--copy` installs**: destinations are
+  fingerprinted first — identical trees skip like link mode, divergent ones move
+  into `<skills-dir>/.archgen-backups/<timestamp>/` before replacement.
+- **Dangling global symlink self-repair**: `install` recreates symlinks whose
+  target was evicted (npx cache cleanup) against the current source instead of
+  reporting SAME on a broken link.
+- **Doctor block-upgrade detection**: stale-format managed blocks are reported
+  (`UPGRADED`, or would-upgrade under `--check`) instead of passing silently.
+
+### Fixed
+
+- The installer no longer records foreign symlinks (targets that predate us) in
+  the uninstall manifest, so `uninstall` removes only what archgen installed.
+- Doctor reports broken marker states (orphan/duplicate/reversed markers) as
+  FAIL rows instead of aborting the whole run.
+- `validate`, `set-status` and `impact` report clean one-line errors (no raw
+  stack traces) for unparseable or missing files.
+- `set-status` no longer reopens done work via done→failed without `--force`.
+- Duplicate YAML keys inside a task are rejected instead of silently last-wins.
+- The schema id pattern/type is enforced, so numeric-coerced task ids fail
+  validation fast.
+- The board's ▶ Start Work button silently did nothing (its message was never
+  routed). Both webview↔host message switches now fail compilation if a future
+  intent is added without a route.
+- Task acceptance criteria were parsed from tasks.yaml but never shown; they
+  now appear in sidebar task tooltips and board node hover details.
+- Invalid install hint `npx archgen-skill generate` (no such CLI verb)
+  corrected to the real `npx archgen-skill init` + agent phrase in the welcome
+  views and the board empty state.
+- Prompt-injection hardening in harness dispatch: task titles containing
+  quotes/backslashes can no longer corrupt spawned argv or smuggle instructions
+  (values are escaped at template interpolation and decoded by a hardened argv
+  splitter, proven against an adversarial test suite).
+- Board refreshes that changed anything beyond id/status/doc paths (warnings,
+  acceptance, …) were deduped away and never reached the UI; the model
+  fingerprint now covers the full payload.
+- Board empty-state was a dead end after `archgen-skill init` (it re-instructed
+  the same command while the real next step is generating a plan); it is now
+  setup-aware — skill-installed workspaces get a 'Copy kickoff prompt' action —
+  and the board replays the setup snapshot whenever it opens.
+
+### Changed
+
+- ▶ actions deliver work via the clipboard by default. Set
+  `archgen.delivery.mode` = `"spawn"` for the previous headless CLI behavior
+  (unchanged byte-for-byte).
 
 ## [0.0.3] - 2026-08-25
 

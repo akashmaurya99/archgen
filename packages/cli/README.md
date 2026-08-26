@@ -77,6 +77,16 @@ architecture contract, docs, ADRs, plans, and a `tasks.yaml` task graph — vers
 | `npx archgen-skill doctor [dir] [--check]` | Verify + auto-repair an installation: store integrity, version stamp, Claude link, blocks present exactly once, manifest resolution (`--check` reports without fixing) |
 | `npx archgen-skill --help` | Help |
 
+### Version stamp (`.archgen-version`)
+
+Every skill tree the CLI writes carries a one-line `MAJOR.MINOR.PATCH\n` stamp
+at its root — the canonical store from `init`, each `install --copy` tree, and
+the real directory behind global symlink installs. `update` refreshes it via
+its init/doctor pass. `doctor` lists every detected install with its stamped
+version (`missing` / `unknown (pre-0.1 stamp)` when absent or unparseable).
+The VS Code extension reads the same file to warn about outdated skills;
+absent or corrupt means "unknown (legacy)", never an error.
+
 ## Why archgen
 
 AI coding agents fail at scale for predictable reasons: plans with hidden cycles,
