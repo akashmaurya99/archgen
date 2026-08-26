@@ -853,27 +853,29 @@ body,
   justify-content: center;
   text-align: center;
   margin: auto;
-  padding: var(--archgen-space-6, 24px) var(--archgen-space-4, 16px);
-  max-width: 360px;
+  padding: 48px 24px;
+  max-width: 480px;
   box-sizing: border-box;
 }
 
 .archgen-doc-empty-title {
-  margin: 0 0 var(--archgen-space-1, 4px) 0;
+  margin: 0 0 8px 0;
   font-family: var(--archgen-font-ui);
-  font-size: var(--archgen-font-size-md);
+  font-size: 22px;
   font-weight: 600;
   color: var(--archgen-text);
-  letter-spacing: var(--archgen-tracking-heading, -0.018em);
+  letter-spacing: var(--archgen-tracking-tight, -0.025em);
 }
 
 .archgen-doc-empty-desc {
   margin: 0;
   font-family: var(--archgen-font-ui);
-  font-size: var(--archgen-font-size-sm);
+  font-size: 14px;
   color: var(--archgen-text-muted);
-  line-height: 1.5;
+  line-height: var(--archgen-line-height-body, 1.47);
+  letter-spacing: var(--archgen-tracking-body, -0.011em);
   text-align: center;
+  max-width: 460px;
 }
 
 .archgen-markdown h1,
@@ -941,11 +943,20 @@ body,
 }
 
 .archgen-state-icon {
-  font-size: 36px;
-  line-height: 1;
-  margin-bottom: 12px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
   color: var(--archgen-action-blue);
-  opacity: 0.8;
+  opacity: 0.9;
+}
+
+.archgen-state-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .archgen-spinner {
