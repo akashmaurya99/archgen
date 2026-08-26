@@ -44,16 +44,22 @@ function lstatSafe(p) {
   try { return lstatSync(p); } catch { return null; }
 }
 
-let proj, home;
+let proj, home, pkgRoot;
 
 beforeEach(() => {
   proj = mkdtempSync(join(tmpdir(), 'ag-proj-'));
   home = mkdtempSync(join(tmpdir(), 'ag-home-'));
+  // Hermetic package root so global installs never stamp the repo's own vendor/.
+  pkgRoot = mkdtempSync(join(tmpdir(), 'ag-pkg-'));
+  mkdirSync(join(pkgRoot, 'vendor', 'skills'), { recursive: true });
+  cpSync(VENDOR, join(pkgRoot, 'vendor', 'skills', 'archgen'), { recursive: true });
+  writeFileSync(join(pkgRoot, 'package.json'), JSON.stringify({ name: 'archgen-skill', version: VERSION }));
 });
 
 afterEach(() => {
   rmSync(proj, { recursive: true, force: true });
   rmSync(home, { recursive: true, force: true });
+  rmSync(pkgRoot, { recursive: true, force: true });
 });
 
 function legacyDualCopy() {
@@ -104,7 +110,11 @@ test('init writes AGENTS.md block with empty features registry + CLAUDE.md @AGEN
   const claude = readFileSync(join(proj, 'CLAUDE.md'), 'utf8');
   const s = claude.indexOf(START);
   const e = claude.indexOf(END);
-  assert.equal(claude.slice(s + START.length, e).replace(/^\n+|\n+$/g, ''), '@AGENTS.md');
+  assert.equal(
+    claude.slice(s + START.length, e).replace(/^\n+|\n+$/g, ''),
+    '<!-- archgen:block v' + VERSION + ' -->\n@AGENTS.md',
+    'bridge carries the provenance line above @AGENTS.md',
+  );
 
   const manifest = JSON.parse(readFileSync(join(proj, '.archgen', '.install-manifest.json'), 'utf8'));
   assert.equal(manifest.version, 1);
@@ -132,7 +142,7 @@ test('CRLF+BOM CLAUDE.md without import gets bridge appended preserving BOM and 
   const c = readFileSync(join(proj, 'CLAUDE.md'), 'utf8');
   assert.equal(c.charCodeAt(0), 0xfeff, 'BOM preserved');
   assert.ok(c.startsWith('\uFEFF# Claude rules\r\nBe terse.'), 'user content intact');
-  assert.ok(c.includes('\r\n\r\n' + START + '\r\n@AGENTS.md\r\n' + END + '\r\n'), 'bridge uses CRLF');
+  assert.ok(c.includes('\r\n\r\n' + START + '\r\n<!-- archgen:block v' + VERSION + ' -->\r\n@AGENTS.md\r\n' + END + '\r\n'), 'versioned bridge uses CRLF');
 });
 
 test('divergent store is backed up first, then replaced fresh', () => {
@@ -254,10 +264,10 @@ test('doctor updates a stale version stamp and prunes stale manifest entries', (
 test('global install/uninstall round-trip in sandbox HOME', () => {
   mkdirSync(join(home, '.claude/skills'), { recursive: true });
   mkdirSync(join(home, '.agents/skills'), { recursive: true });
-  const r1 = installGlobal({ home });
+  const r1 = installGlobal({ home, packageRoot: pkgRoot });
   assert.equal(r1.failures, 0);
   assert.ok(existsSync(join(home, '.claude/skills/archgen/SKILL.md')));
-  const r2 = installGlobal({ home });
+  const r2 = installGlobal({ home, packageRoot: pkgRoot });
   assert.ok(r2.rows.filter((r) => r[0] === 'SAME').length >= 2); // idempotent
   const u = uninstallGlobal(home);
   assert.ok(u.removed >= 2);

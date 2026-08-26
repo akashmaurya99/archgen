@@ -17,11 +17,12 @@
 //   to a symlink; a customized one is left untouched with a warning;
 // - installs are atomic: built in a temp sibling dir, then renamed.
 
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { importsAgents, renderBlock, START, END, upsertManagedFile } from './block.js';
 import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, cliVersion, hashDir, moveToBackup } from './store.js';
+import { writeStamp } from './version-stamp.js';
 
 const CONTEXT_FILES = ['AGENTS.md', 'CLAUDE.md'];
 
@@ -128,7 +129,7 @@ export function initProject(projectDir, packageRoot, opts = {}) {
   mkdirSync(skillsParent, { recursive: true });
   const tmp = join(skillsParent, '.archgen-tmp-' + randomBytes(6).toString('hex'));
   cpSync(source, tmp, { recursive: true });
-  writeFileSync(join(tmp, VERSION_FILE), version + '\n');
+  writeStamp(tmp, version);
   rmSync(storeAbs, { recursive: true, force: true });
   renameSync(tmp, storeAbs);
   appendEntry(root, 'dir', STORE_REL);
