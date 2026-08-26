@@ -15,6 +15,26 @@ export function StatusChip({ status }: { status: TaskStatus }) {
   );
 }
 
+/** ArchGen brand logo SVG icon used in empty states and branding surfaces. */
+export function ArchGenIcon({ className = 'archgen-state-icon', size = 36 }: { className?: string; size?: number }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path fill="currentColor" d="M10.55 2.82 L13.45 4.18 L5.45 21.18 L2.55 19.82 Z" />
+      <path fill="currentColor" d="M13.22 7.60 L16.18 6.40 L21.68 19.90 L18.72 21.10 Z" />
+      <circle fill="currentColor" cx="12.8" cy="11.4" r="1.6" />
+      <path fill="currentColor" d="M11.85 13.8 H13.75 V15.0 L5.60 21.9 H3.70 L11.85 14.95 Z" />
+    </svg>
+  );
+}
+
 export function LoadingState({ label = 'Loading ArchGen model…' }: { label?: string }) {
   return (
     <div className="archgen-state archgen-state--loading" role="status" aria-live="polite">
@@ -45,7 +65,7 @@ export function EmptyState({ hasArchgenFolder }: EmptyDetails) {
 
   return (
     <div className="archgen-state archgen-state--empty" role="status">
-      <div className="archgen-state-icon" aria-hidden="true">◇</div>
+      <ArchGenIcon />
       <h2>No ArchGen plan found</h2>
       {hasArchgenFolder ? (
         <p>This workspace has a <code>.archgen/</code> folder but no readable tasks yet.</p>
