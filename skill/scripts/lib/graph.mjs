@@ -156,3 +156,52 @@ function globsMayOverlap(a, b) {
   }
   return true; // one pattern is a segment-prefix of the other
 }
+
+// --- additive (hardening pass): dedup normalization + quality surfacing -----
+
+/** Collapse redundant depends_on entries BEFORE graph construction so no
+ * downstream consumer can ever see the same edge twice (idempotency: identical
+ * input ⇒ byte-identical output with zero duplicated entities).
+ * First occurrence wins; order otherwise preserved. Tasks without an array
+ * depends_on pass through untouched.
+ * @param {Array<any>} tasks
+ * @returns {{tasks: Array<any>, duplicatesCollapsed: number}} */
+export function dedupeDependencies(tasks) {
+  let duplicatesCollapsed = 0;
+  const normalized = tasks.map((t) => {
+    if (!Array.isArray(t.depends_on)) return t;
+    const seen = new Set();
+    const deps = [];
+    for (const d of t.depends_on) {
+      if (seen.has(d)) { duplicatesCollapsed++; continue; }
+      seen.add(d);
+      deps.push(d);
+    }
+    return deps.length === t.depends_on.length ? t : { ...t, depends_on: deps };
+  });
+  return { tasks: normalized, duplicatesCollapsed };
+}
+
+/** Data-quality facts computed from parsed data WITHOUT judging them — the
+ * verifier owns pass/fail; indexers only surface facts deterministically.
+ *  - selfDeps: tasks whose depends_on includes their own id (note: such a task
+ *    is also a 1-node cycle, so the CLI cycle gate normally exits 2 first;
+ *    the field keeps the shape uniform for lib-level consumers).
+ *  - emptyOwnership: missing or empty file_ownership (parallel workers would
+ *    have no disjointness contract).
+ *  - blankAcceptance: missing or empty acceptance (no objective done-criteria).
+ * @param {Array<any>} tasks
+ * @returns {{selfDeps: number, emptyOwnership: number, blankAcceptance: number}} */
+export function computeQualityStats(tasks) {
+  let selfDeps = 0;
+  let emptyOwnership = 0;
+  let blankAcceptance = 0;
+  for (const t of tasks) {
+    if (Array.isArray(t.depends_on) && t.depends_on.includes(t.id)) selfDeps++;
+    const own = t.file_ownership;
+    if (!Array.isArray(own) || own.length === 0) emptyOwnership++;
+    const acc = t.acceptance;
+    if (!Array.isArray(acc) || acc.length === 0) blankAcceptance++;
+  }
+  return { selfDeps, emptyOwnership, blankAcceptance };
+}
