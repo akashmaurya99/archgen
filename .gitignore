@@ -7,9 +7,8 @@ node_modules/
 # macOS
 .DS_Store
 
-# Local agent workspace (.omo) — keep evidence logs versioned
-.omo/*
-!.omo/evidence/
+# Local agent workspace (.omo) — ignored entirely
+.omo/
 
 # Build artifacts
 *.vsix
