@@ -411,7 +411,7 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
               aria-label={legendOpen ? 'Collapse status legend' : 'Expand status legend'}
               onClick={() => setLegendOpen((o) => !o)}
             >
-              {legendOpen ? '▾' : '▸ Legend'}
+              {legendOpen ? 'Legend ▾' : 'Legend ▸'}
             </button>
             {legendOpen && (
               <div className="archgen-legend" id="archgen-legend-items" role="list" aria-label="Status legend">
