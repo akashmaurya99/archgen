@@ -96,6 +96,29 @@ shrinking LARGE hallucinates.
   per-task edge-case matrices + per-module diagrams + MEDIUM-grade plan
   sections. Every diagram ≤15 nodes.
 
+## Structural correctness — verifier-enforced authoring rules
+
+- **Waves derive from `depends_on`.** Declared wave / `parallel_group` labels
+  MUST match the dependency-derived topological order — never hand-label a
+  task into a wave that contradicts its `depends_on`. A dependent task may not
+  sit in an earlier (or parallel) wave than its prerequisite.
+  `plan-graph.mjs --mermaid` is the ground truth for wave order.
+- **artifacts ⊆ file_ownership.** Every path a task lists in `artifacts` must
+  fall inside that task's `file_ownership` globs — workers can write ONLY
+  owned paths. Listing a doc the task doesn't own is a verifier-blocking
+  defect.
+- **Verification commands**: repo-root-relative (no `../`, no `--plan .`),
+  fully specific — exact commands, versions, sample sizes, thresholds — the
+  same form a worker would actually run. Generic "run the tests" or
+  wrong-root-resolved paths fail.
+- **YAML subset**: emit only the parser's supported subset — block mappings
+  and block sequences only. Avoid flow mappings (`{...}`), block scalars
+  (`|` / `>`), duplicate keys, and comma-heavy inline values, which the
+  strict parser rejects (these caused format-repair loops).
+- **tasks.yaml edits**: make small targeted edits or one clean full
+  regeneration — never large multi-region patches (they corrupted tasks.yaml
+  in the field).
+
 ## architecture.yaml (LARGE scope)
 
 The four contract blocks below (`naming_conventions`, `data_contracts`,

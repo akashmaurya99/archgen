@@ -54,6 +54,35 @@ Each verifier run executes ALL four steps:
    - Do acceptance criteria objectively verify (command or observable)?
    - Edge cases covered per SKILL.md right-sizing class?
    - Code-standards compliance plausible for the planned structure?
+   - CONTRACT-COMPLETENESS sweep — round 1 must confirm OR flag-as-missing
+     every APPLICABLE dimension (later discovery = the round-1 sweep failed,
+     not a gap). Apply a dimension only where the system actually has that
+     concern — skip what genuinely doesn't apply, but NEVER skip a dimension
+     the system touches:
+     - **Functional coverage**: every stated requirement/feature has tasks +
+       objectively verifiable acceptance.
+     - **Security & data protection** (if it authenticates, authorizes,
+       encrypts, or handles sensitive data): authn/authz flows, session &
+       credential lifecycle, replay/CSRF protection, encryption & privacy
+       boundaries, input validation — each fully specified, not named-and-
+       skipped.
+     - **Data integrity**: schemas, relationships, validation, and migration /
+       back-compat for any persisted state.
+     - **State, lifecycle & recovery** (if any operation is stateful,
+       long-running, or multi-step): checkpointing/resume, idempotency,
+       cleanup, expiry, compensation/rollback semantics.
+     - **Resource limits & abuse** (if it exposes shared or anonymous
+       resources): quotas, rate limits, retention/deletion, anonymous-abuse
+       controls.
+     - **Operational entrypoints**: every stack-required build/deploy/test/
+       bootstrap entrypoint is OWNED by some task (no orphan entrypoint).
+     - **Metric traceability**: every PRD success metric maps to a task
+       acceptance criterion with a reproducible command / sample size / data
+       source.
+     - **Consistency**: actively check cross-contract claims for internal
+       contradiction (a claim in one artifact that another artifact violates).
+     These failure classes are the TOP cause of multi-round loops — round 1
+     MUST sweep the applicable dimensions exhaustively.
 4. Returns EXACTLY one line verdict: `APPROVE` or `ISSUES:` + numbered list.
 
 ### Efficiency — fewer rounds + zero duplicate work, NEVER shallower checks
