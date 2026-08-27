@@ -21,7 +21,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, r
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { importsAgents, renderBlock, START, END, upsertManagedFile } from './block.js';
-import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackup } from './store.js';
+import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackup, pruneDevOnly } from './store.js';
 import { writeStamp } from './version-stamp.js';
 
 const CONTEXT_FILES = ['AGENTS.md', 'CLAUDE.md'];
@@ -138,6 +138,7 @@ export function initProject(projectDir, packageRoot, opts = {}) {
   mkdirSync(skillsParent, { recursive: true });
   const tmp = join(skillsParent, '.archgen-tmp-' + randomBytes(6).toString('hex'));
   cpSync(source, tmp, { recursive: true });
+  pruneDevOnly(tmp); // dev-only artifacts (scripts/test) never reach the installed store
   writeStamp(tmp, version);
   rmSync(storeAbs, { recursive: true, force: true });
   renameSync(tmp, storeAbs);

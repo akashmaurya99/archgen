@@ -134,11 +134,16 @@ test('BUG-SYNC1 // AUDIT-REGRESSION sync-vendor does not copy OS junk (.DS_Store
     const names = readdirSync(vendor);
     assert.ok(!names.includes('.DS_Store'),
       `sync-vendor copied .DS_Store into vendor: ${names.join(', ')}`);
-    // Full-mirror guarantee: the skill's own suite ships verbatim, so the
-    // drift gate `diff -r skill vendor --exclude=.DS_Store
-    // --exclude=.archgen-version` can never be defeated by silent pruning.
-    assert.ok(existsSync(join(vendor, 'scripts', 'test')),
-      'sync-vendor pruned skill/scripts/test out of the vendor mirror');
+    // Dev-only exclusion: the repo's own node:test suite (scripts/test) is
+    // repo-only CI tooling that cannot run in an installed project, so it must
+    // NOT ship in the published payload. The drift gate excludes it too
+    // (`diff -r skill vendor --exclude=.DS_Store --exclude=.archgen-version
+    // --exclude=test`), so pruning it is correct — not silent drift. scripts/lib
+    // MUST still ship: it is a runtime dependency of the skill scripts.
+    assert.ok(!existsSync(join(vendor, 'scripts', 'test')),
+      'sync-vendor shipped the dev-only skill/scripts/test suite into the vendor mirror');
+    assert.ok(existsSync(join(vendor, 'scripts', 'lib')),
+      'sync-vendor pruned skill/scripts/lib (a runtime dependency) out of the vendor mirror');
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }

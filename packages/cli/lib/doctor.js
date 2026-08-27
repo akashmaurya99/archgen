@@ -22,7 +22,7 @@ import {
   upsertManagedFile,
 } from './block.js';
 import { resolveSkillSource } from './init.js';
-import { CLAUDE_LINK_REL, MANIFEST_REL, STORE_REL, VERSION_FILE, cliVersion, hashDir, loadManifest, saveManifest } from './store.js';
+import { CLAUDE_LINK_REL, DEV_ONLY_RELPATHS, MANIFEST_REL, STORE_REL, VERSION_FILE, cliVersion, hashDir, loadManifest, pruneDevOnly, saveManifest } from './store.js';
 import { compareSemver, parseSemver } from './version.js';
 import { readStamp, writeStamp } from './version-stamp.js';
 
@@ -95,6 +95,23 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
       } catch { /* packaged skill unavailable — skip the divergence probe */ }
       if (diverged) add('WARN', 'store .agents/skills/archgen diverges from packaged skill (customized?)');
       else add('OK', 'store .agents/skills/archgen (SKILL.md present)');
+    }
+  }
+
+  // 1b. Prune dev-only artifacts (scripts/test) that older installers shipped
+  //     into the store. They are repo-only CI tooling and never belong in an
+  //     installed tree; removing them here cleans existing stores without a
+  //     full backup+re-copy. hashDir ignores the same subtrees, so this prune
+  //     neither masks real customization nor reads as divergence.
+  if (existsSync(storeAbs)) {
+    const devOnlyPresent = DEV_ONLY_RELPATHS.filter((rel) => existsSync(join(storeAbs, ...rel.split('/'))));
+    if (devOnlyPresent.length > 0) {
+      if (checkOnly) {
+        add('WOULD-FIX', `store carries dev-only ${devOnlyPresent.join(', ')} -> pruned`);
+      } else {
+        attempt(() => pruneDevOnly(storeAbs), 'FIXED',
+          `dev-only ${devOnlyPresent.join(', ')} pruned from store`, 'cannot prune dev-only artifacts');
+      }
     }
   }
 

@@ -46,6 +46,27 @@ export const VERSION_FILE = CONFIG_FILES.stamp;
 
 const GUARDED_RELPATHS = new Set(['.claude', '.agents', '.claude/skills', '.agents/skills']);
 
+/**
+ * Dev-only skill subtrees that must NEVER be distributed to end users. The
+ * repo's own node:test suite (scripts/test) is repo-only CI tooling: nothing
+ * imports it at runtime and it references repo-only fixtures
+ * (fixtures/yaml-corpus), so it cannot run in an installed project — shipping
+ * it into installed stores or the npm payload is dead weight. It is excluded
+ * consistently from the vendor mirror, every installed-store copy, and BOTH
+ * sides of hashDir comparisons (so its presence/absence never reads as drift).
+ * scripts/lib is deliberately NOT here — it is a runtime dependency of the
+ * skill scripts (imported by next-tasks/plan-graph/set-status/doc-index/etc).
+ */
+export const DEV_ONLY_RELPATHS = ['scripts/test'];
+
+/** True when relpath `r` is (or lives inside) a dev-only excluded subtree. */
+function isDevOnlyRelPath(r) {
+  for (const prefix of DEV_ONLY_RELPATHS) {
+    if (r === prefix || r.startsWith(prefix + '/')) return true;
+  }
+  return false;
+}
+
 /** Canonical refusal message for every symlink-write guard (CLI + install.sh). */
 export function refuseSymlinkMessage(absPath) {
   return 'Refusing to write through symlink at ' + absPath + ' — use --copy or remove symlink';
@@ -105,6 +126,10 @@ function byName(a, b) {
  * The version stamp is ALWAYS ignored on both sides of a comparison: it is
  * CLI metadata written at destination time (global symlink installs stamp the
  * shared real copy), never skill content, so it must not read as divergence.
+ * DEV_ONLY_RELPATHS (scripts/test) are ALSO always ignored on both sides: they
+ * are pruned from every distributed copy, so a source tree that still carries
+ * them (the dev-checkout skill/ fallback) must hash equal to an installed store
+ * that does not — while a real edit anywhere else must still read as divergence.
  * @param {string} dir absolute directory to hash
  * @param {{ignore?: string[]}} opts EXTRA relpaths to skip
  */
@@ -115,7 +140,7 @@ export function hashDir(dir, opts = {}) {
     const entries = readdirSync(abs, { withFileTypes: true }).sort((a, b) => byName(a.name, b.name));
     for (const ent of entries) {
       const r = rel ? rel + '/' + ent.name : ent.name;
-      if (ignore.has(r)) continue;
+      if (ignore.has(r) || isDevOnlyRelPath(r)) continue;
       const p = join(abs, ent.name);
       if (ent.isSymbolicLink()) hash.update('l ' + r + ' -> ' + readlinkSync(p) + '\n');
       else if (ent.isDirectory()) { hash.update('d ' + r + '\n'); walk(p, r); }
@@ -123,6 +148,20 @@ export function hashDir(dir, opts = {}) {
     }
   })(dir, '');
   return hash.digest('hex');
+}
+
+/**
+ * Remove every dev-only subtree (DEV_ONLY_RELPATHS) from an absolute skill-tree
+ * root; idempotent no-op when a subtree is absent. Called after EVERY copy of
+ * the skill into a distributed location (installed store, global --copy tree,
+ * vendor mirror) so dev-only artifacts never reach end users regardless of which
+ * source resolveSkillSource picked — vendor is already pruned by sync-vendor,
+ * but the dev-checkout skill/ fallback is not, and this normalizes both.
+ */
+export function pruneDevOnly(absRoot) {
+  for (const rel of DEV_ONLY_RELPATHS) {
+    rmSync(join(absRoot, ...rel.split('/')), { recursive: true, force: true });
+  }
 }
 
 /** Load `.archgen/.install-manifest.json`; null when absent/corrupt. */

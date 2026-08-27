@@ -1,24 +1,29 @@
 // sync-vendor.mjs — copy the canonical skill into the npm package payload.
 // Source of truth stays at <repo>/skill; vendor/ is build output.
-// FULL MIRROR: everything under skill/ is copied verbatim except
+// MIRROR: everything under skill/ is copied verbatim except
 //   - OS junk (.DS_Store, Thumbs.db, desktop.ini)
 //   - stray .archgen-version stamps (written by installers at deploy time,
 //     never part of the skill payload)
+//   - dev-only artifacts (DEV_ONLY_RELPATHS, i.e. scripts/test — the repo's own
+//     node:test suite; repo-only CI tooling that cannot run in an installed
+//     project, so it must not ship to end users). scripts/lib is NOT excluded
+//     — it is a runtime dependency of the skill scripts.
 // Mirror semantics keep the drift gate trivially exact:
 //   diff -r skill packages/cli/vendor/skills/archgen \
-//     --exclude=.DS_Store --exclude=.archgen-version   # must be EMPTY
+//     --exclude=.DS_Store --exclude=.archgen-version --exclude=test  # EMPTY
 // Any divergence (edited vendor copy, forgotten sync) fails that gate, which
 // is what guarantees npm publish correctness. It also keeps the tracked
-// skill/ and vendor/ trees byte-identical, so doctor's hashDir integrity
-// check agrees regardless of whether the install resolved vendor/ or the
-// dev-checkout skill/ fallback.
+// skill/ and vendor/ trees identical modulo the dev-only exclusions, so doctor's
+// hashDir integrity check agrees regardless of whether the install resolved
+// vendor/ or the dev-checkout skill/ fallback (hashDir skips the same subtrees).
 // Post-sync assertion: the derived skill/archgen.config.json must land in
 // vendor byte-identical — it is the published-layout copy the config loader
 // resolves, so a stale/missing one would break version reporting.
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { DEV_ONLY_RELPATHS } from '../lib/store.js';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CLI_ROOT = resolve(SCRIPT_DIR, '..'); // packages/cli
@@ -55,6 +60,11 @@ export function syncVendor({ root } = {}) {
   rmSync(dest, { recursive: true, force: true });
   cpSync(source, dest, { recursive: true });
 
+  // Dev-only subtrees (scripts/test) never ship in the published payload.
+  for (const rel of DEV_ONLY_RELPATHS) {
+    rmSync(join(dest, ...rel.split('/')), { recursive: true, force: true });
+  }
+
   function prune(dir) {
     for (const entry of readdirSync(dir)) {
       const p = join(dir, entry);
@@ -86,7 +96,19 @@ function main() {
   const ri = args.indexOf('--root');
   if (ri !== -1 && args[ri + 1]) root = resolve(args[ri + 1]);
   const { dest } = syncVendor({ root });
-  console.log(`synced skill -> ${dest} (full mirror; pruned OS junk + stray version stamps; archgen.config.json hash verified)`);
+  console.log(`synced skill -> ${dest} (mirror; pruned OS junk + stray version stamps + dev-only scripts/test; archgen.config.json hash verified)`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main();
+// Node realpath-resolves import.meta.url, but process.argv[1] keeps its
+// as-typed form; where the script is launched through a symlinked path
+// (macOS /tmp and /var/folders -> /private/...) a plain equality never matches
+// and main() would silently never run. Resolve argv[1] the same way first.
+function invokedDirectly() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href;
+  } catch {
+    return false;
+  }
+}
+if (invokedDirectly()) main();

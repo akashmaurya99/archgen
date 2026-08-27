@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSkillSource } from './init.js';
-import { assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackupInto, refuseSymlinkMessage } from './store.js';
+import { assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackupInto, pruneDevOnly, refuseSymlinkMessage } from './store.js';
 import { writeStamp } from './version-stamp.js';
 import { loadConfig } from './config.js';
 
@@ -117,6 +117,7 @@ export function installGlobal(opts = {}) {
           rmSync(dest, { force: true, recursive: true }); // no-op after a move; guards exotic-FS fallbacks
           assertNotSymlink(dest); // TOCTOU re-check: nothing may have re-linked dest between backup and copy
           cpSync(source, dest, { recursive: true });
+          pruneDevOnly(dest); // dev-only artifacts (scripts/test) never reach global --copy trees
           stampNote(rows, dest, () => writeStamp(dest, version));
           record(manifest, 'copy', dest);
           rows.push(['OK', 'copy', dest]);

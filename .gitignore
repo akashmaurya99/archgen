@@ -17,3 +17,8 @@ coverage/
 
 # Worktrees
 .worktrees/
+
+# Deploy-time version stamp: init/install write .archgen-version into INSTALLED
+# trees only; sync-vendor prunes it from the npm payload. Never track it in
+# vendor/ (the CLI test suite recreates it there as a side effect).
+packages/cli/vendor/skills/archgen/.archgen-version
