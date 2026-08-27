@@ -180,7 +180,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage",
+    "coverage": "vitest run --coverage --exclude '**/parsers.perf.test.ts'",
     "cross-mode": "node scripts/cross-mode-check.mjs",
     "package": "npx @vscode/vsce package",
     "build:fixture-db": "node scripts/build-fixture-db.mjs",

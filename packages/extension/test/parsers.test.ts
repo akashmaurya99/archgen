@@ -141,7 +141,7 @@ describe('parseTasks robustness (todo 9)', () => {
     expect(m.tasks[1]?.depends_on).toEqual(['T-1']);
   });
 
-  it('parses a 10,000-task file within the 500ms budget (generated, not committed)', () => {
+  it('parses a 10,000-task file correctly at scale (generated, not committed)', () => {
     const N = 10_000;
     const lines: string[] = ['tasks:'];
     for (let i = 0; i < N; i++) {
@@ -154,20 +154,13 @@ describe('parseTasks robustness (todo 9)', () => {
     }
     const text = lines.join('\n') + '\n';
 
-    parseTasks(text); // warm-up: JIT-compile the hot path before timing
-    const runs: number[] = [];
-    for (let r = 0; r < 3; r++) {
-      const t0 = performance.now();
-      const m = parseTasks(text);
-      runs.push(performance.now() - t0);
-      if (r === 0) {
-        expect(m.tasks).toHaveLength(N);
-        expect(m.warnings).toEqual([]); // chain deps all resolve; no false positives at scale
-        expect(m.tasks[N - 1]).toMatchObject({ id: 'T-09999', status: 'pending', depends_on: ['T-09998'] });
-      }
-    }
-    // min-of-3 shields the budget from CI scheduling noise; budget is 500ms
-    expect(Math.min(...runs), `runs: ${runs.map((x) => x.toFixed(1)).join(', ')}ms`).toBeLessThan(500);
+    // Correctness-at-scale stays in the coverage run (no timing here): the
+    // wall-clock budget lives in parsers.perf.test.ts, which the coverage
+    // script excludes because v8 instrumentation distorts timing.
+    const m = parseTasks(text);
+    expect(m.tasks).toHaveLength(N);
+    expect(m.warnings).toEqual([]); // chain deps all resolve; no false positives at scale
+    expect(m.tasks[N - 1]).toMatchObject({ id: 'T-09999', status: 'pending', depends_on: ['T-09998'] });
   });
 });
 
