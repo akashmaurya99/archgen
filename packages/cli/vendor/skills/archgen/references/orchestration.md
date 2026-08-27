@@ -24,7 +24,23 @@ Accept the map only if every section is present and non-empty.
 
 ## §verifier — plan review brief
 
-Dispatch AFTER artifacts exist and validate.mjs passes. The verifier:
+Dispatch AFTER artifacts exist and validate.mjs passes.
+
+### Agent tier — EVERY verifier dispatch
+
+Verification is judgment-heavy: a weak verifier misses real defects AND raises
+false positives — costing MORE rounds, not fewer. Dispatch on the strongest
+reasoning agent the harness offers (best agent present), or a mid/high-tier
+sub-agent scaled to plan complexity:
+
+- SMALL/MEDIUM plan → one strong (mid/high-tier) agent.
+- LARGE plan → the stronger/highest tier available.
+- NEVER an explore / research / quick / small / cheap / fast sub-agent,
+  whatever the harness calls its low-end tiers.
+
+### Verification pass — FULL-DEPTH, every run
+
+Each verifier run executes ALL four steps:
 
 1. Runs `node <skill>/scripts/verify-plan.mjs .archgen/<slug>/tasks.yaml --plan .archgen/<slug>/plans`
    — deterministic floor: cycles, dangling refs, same-wave ownership overlap,
@@ -40,8 +56,49 @@ Dispatch AFTER artifacts exist and validate.mjs passes. The verifier:
    - Code-standards compliance plausible for the planned structure?
 4. Returns EXACTLY one line verdict: `APPROVE` or `ISSUES:` + numbered list.
 
-Orchestrator fixes issues (edits artifacts) and re-dispatches. Loop until
-APPROVE — never present to the user before verifier approval.
+### Efficiency — fewer rounds + zero duplicate work, NEVER shallower checks
+
+Every run stays FULL-DEPTH: both scripts run to completion and the full
+judgment checklist applies each time. Efficiency comes ONLY from:
+
+- capping automatic rounds at 2 (gate protocol below);
+- batching fixes per file (fix discipline below);
+- never re-fixing an already-resolved finding.
+
+"Efficient" NEVER means skipping or lightening verify-plan.mjs, doc-index.mjs,
+or any judgment-checklist item.
+
+### Fix discipline — batch per file, dedupe repeats
+
+On `ISSUES:` the orchestrator fixes ALL findings before re-dispatching:
+
+- Group findings BY FILE; apply each file's fixes in ONE edit pass — open
+  each file once per round, not once per finding.
+- Round N reports the SAME finding as round N-1 (same file + same issue) →
+  the prior fix did not land: re-read the file and fix it properly — never
+  re-apply the identical edit.
+
+### Gate protocol — 2 automatic rounds, then ask the user
+
+The initial VERIFIER GATE flow (GENERATE step 5). Rounds 1–2 run
+automatically; fix ALL findings between rounds (fix discipline above):
+
+1. Round 1: dispatch verifier. `APPROVE` → gate passed → §plan-review.
+   `ISSUES:` → fix ALL findings → round 2.
+2. Round 2: dispatch verifier.
+   - Clean `APPROVE` → ask the user once more, recommending NO, proceed.
+   - `ISSUES:` → fix ALL findings → ask the user once more, recommending
+     YES, one more pass.
+   Ask recommendation-first per interview.md § How to ask: "Run the verifier
+   once more to make sure everything passes?"
+3. On YES → run another round; if it returns `ISSUES:`, fix all and ask again
+   — every round beyond 2 is user-approved. On NO → proceed to §plan-review.
+4. On NO with findings still outstanding and no verifier `APPROVE` on record:
+   surface every outstanding finding verbatim and require an EXPLICIT user
+   waiver — never proceed silently. Hard rule 2 stands: the plan MUST NOT
+   reach the USER GATE without at least one verifier `APPROVE` (or that
+   explicit waiver on the record). An earlier `APPROVE` on record → proceed
+   to §plan-review, noting the latest unverified fixes.
 
 ## §plan-review — post-plan review stage
 

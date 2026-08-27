@@ -140,8 +140,11 @@ Pick ONE mode from the user's intent and follow its section below:
    plus — when markdown artifacts exist under `.archgen/<slug>/` — zero
    broken references from
    `node <skill>/scripts/doc-index.mjs .archgen/<slug> --validate`; may
-   consult `plan-graph.mjs --node <id>` for ordering sanity. Fix and
-   re-verify until APPROVE.
+   consult `plan-graph.mjs --node <id>` for ordering sanity. Verifier runs on
+   the strongest reasoning agent present — never a quick/explore/cheap tier.
+   Fix ALL findings (batched per file) and re-verify: max 2 automatic
+   verify→fix rounds, then ask the user once, recommendation-first, whether
+   to run one more pass (protocol: §verifier gate protocol).
 6. **PLAN-REVIEW.** Dispatch read-only reviewer(s) sized by scope class
    (references/orchestration.md §plan-review: SMALL — self-review acceptable;
    MEDIUM — 1; LARGE — 2–3 by concern), attaching
