@@ -147,11 +147,13 @@ Pick ONE mode from the user's intent and follow its section below:
    to run one more pass (protocol: §verifier gate protocol).
 6. **PLAN-REVIEW.** Dispatch read-only reviewer(s) sized by scope class
    (references/orchestration.md §plan-review: SMALL — self-review acceptable;
-   MEDIUM — 1; LARGE — 2–3 by concern), attaching
+   MEDIUM — 1; LARGE — 1 holistic reviewer, 2 only if too large for one
+   context, never per-concern splits), attaching
    `plan-graph.mjs --mermaid --status` (doubles as wave-progress render) +
    `doc-index.mjs --validate` results. YOU fix the artifacts, re-running
-   validate + the verifier gate after every change, until zero findings or an
-   explicit user waiver.
+   validate + the verifier gate after every change. Passes are bounded: a
+   "more review" approval buys EXACTLY ONE more pass, then consolidate and
+   stop — the stage ends at zero findings or an explicit user waiver.
 7. **USER GATE.** Present: artifact list, wave summary
    (`node <skill>/scripts/next-tasks.mjs .archgen/<slug>/tasks.yaml`), ownership map.
    Ask: "Approve to start work?" [wait for user]

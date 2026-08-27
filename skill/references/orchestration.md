@@ -102,12 +102,20 @@ automatically; fix ALL findings between rounds (fix discipline above):
 
 ## §plan-review — post-plan review stage
 
-Run AFTER verify-plan returns APPROVE and BEFORE the user gate. Dispatch one
-or more REVIEWER sub-agents; count scales with the right-sizing class:
+Run AFTER verify-plan returns APPROVE and BEFORE the user gate. Dispatch
+REVIEWER sub-agents sized by the right-sizing class — always ONE holistic
+review of the WHOLE plan, never per-concern splits:
 
 - SMALL: main-agent self-review acceptable if no reviewer mechanism exists.
 - MEDIUM: 1 reviewer.
-- LARGE: 2–3 reviewers split by concern (correctness / ordering / docs).
+- LARGE: 1 holistic reviewer on the strongest reasoning tier. A 2nd reviewer
+  ONLY if the plan is genuinely too large for one reviewer's context — split
+  by ARTIFACT/VOLUME then (e.g. plans vs docs), never by concern.
+
+One holistic reviewer analyzes ALL issues together: cross-issue reasoning
+catches contradictions a narrow per-concern slice misses, and one reviewer
+costs far fewer tokens than several. NEVER dispatch one sub-agent per
+individual issue/concern.
 
 ```
 TASK: Review the plan in .archgen/<slug>/ READ-ONLY.
@@ -122,9 +130,29 @@ You NEVER edit files. Report only.
 ```
 
 Reviewers are read-only and report-only — they never edit artifacts or code.
-The orchestrator fixes the artifacts itself, re-runs validate.mjs + re-dispatches
-the verifier gate after every change, and loops until zero findings remain or
-findings are explicitly waived by the user.
+The orchestrator fixes the artifacts itself, re-runs validate.mjs +
+re-dispatches the verifier gate after every change.
+
+### Review loop — bounded passes, then ask
+
+The fix→re-verify cycle stays, but reviewer passes are countable and bounded:
+
+1. Pass 1: holistic review. Zero findings → stage done.
+2. Findings → fix ALL (batched per file), re-run validate.mjs + the verifier
+   gate → pass 2.
+3. Pass 2 still yields findings → do NOT spawn more reviewers. Consolidate
+   the outstanding findings and ask the user once, recommendation-first per
+   interview.md § How to ask: "Run one more targeted review pass on the N
+   open findings? 1. One more pass (recommended) 2. Waive these findings and
+   proceed."
+4. On YES → run EXACTLY ONE more pass, then consolidate and STOP. Zero
+   findings → stage done; findings remain → surface them and require an
+   explicit user waiver before the user gate. On NO → record the explicit
+   waiver, proceed.
+
+A "more review" approval authorizes EXACTLY ONE additional pass — never a
+fresh loop, never more reviewers. The stage ends ONLY at zero findings or an
+explicit user waiver on record.
 
 ## §investigate — root-cause protocol
 
