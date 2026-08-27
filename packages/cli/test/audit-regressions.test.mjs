@@ -149,6 +149,38 @@ test('BUG-SYNC1 // AUDIT-REGRESSION sync-vendor does not copy OS junk (.DS_Store
   }
 });
 
+// BUG-SYNC2: sync-config's main guard compared import.meta.url (which Node
+// realpath-resolves) against process.argv[1] (which it does NOT), so launching
+// the script through a symlinked path made the equality fail and main() silently
+// never ran — skipping version derivation during releases. Desired: the guard
+// realpath-resolves argv[1] too, so main() runs even via a symlinked launch path.
+test('BUG-SYNC2 // AUDIT-REGRESSION sync-config main() runs when launched through a symlinked path', () => {
+  const sandbox = mkdtempSync(join(tmpdir(), 'archgen-sync2-'));
+  try {
+    mkdirSync(join(sandbox, 'packages'), { recursive: true });
+    cpSync(CLI_ROOT, join(sandbox, 'packages', 'cli'), { recursive: true });
+    cpSync(join(REPO_ROOT, 'skill'), join(sandbox, 'skill'), { recursive: true });
+    cpSync(join(REPO_ROOT, 'archgen.config.json'), join(sandbox, 'archgen.config.json'));
+
+    // Create a symlinked launch path to the script inside the sandbox.
+    const linkDir = join(sandbox, 'link');
+    mkdirSync(linkDir, { recursive: true });
+    const linkPath = join(linkDir, 'sync-config.mjs');
+    try {
+      symlinkSync(join(sandbox, 'packages', 'cli', 'scripts', 'sync-config.mjs'), linkPath, 'file');
+    } catch {
+      return; // symlinks unavailable on this platform/user — guard cannot be exercised
+    }
+
+    const r = spawnSync(process.execPath, [linkPath, '--check'], { encoding: 'utf8' });
+    assert.equal(r.status, 0, `sync-config exited non-zero via symlink: ${r.stderr}`);
+    assert.match(r.stdout, /sync-config --check:/,
+      `sync-config produced no --check output via symlink (main() did not run): ${r.stdout}${r.stderr}`);
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
 // SKIP-ENV (Windows-only): bin/archgen.mjs `update` runs spawnSync('npm', …)
 // and version.js fetchLatestVersion likewise, WITHOUT shell:true. Since Node's
 // CVE-2024-27980 fix, spawning a .cmd/.bat shim unshelled fails with EINVAL,
