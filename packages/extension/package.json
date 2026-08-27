@@ -5,6 +5,10 @@
   "version": "0.0.5",
   "publisher": "archgen",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akashmaurya99/archgen.git"
+  },
   "//": [
     "NATIVE MODULE DECISION (todo 1): better-sqlite3 (native) chosen as PRIMARY SQLite driver over sql.js/WASM-primary.",
     "Rationale: codegraph reads are synchronous, read-only, small-result queries where a native binding is fastest and simplest;",

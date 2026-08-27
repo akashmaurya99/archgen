@@ -106,7 +106,7 @@ Supported matrix:
 | VS Code desktop ≥ 1.90 | `npx electron-rebuild -f -w better-sqlite3` against the profile's Electron ABI (devDep `@electron/rebuild`); or rely on the node:sqlite fallback on Electron ≥ 33 |
 | Node-based (vitest, CLI smoke) | plain `npm install` — prebuilds cover Node 20/22/24 on darwin-arm64/darwin-x64/linux-x64/win32-x64 |
 
-Packaging: `better-sqlite3` stays **external** in the esbuild host bundle; the vsix ships only its runtime chain (`lib/` JS + `prebuilds/*.node`) per `.vscodeignore` — see the `//` decision block in `package.json`. Note `vsce package --no-dependencies` would skip node_modules entirely and DROP the native binding, so `npm run package` runs plain `vsce package`; the `.vscodeignore` whitelist (`node_modules/**` excluded, better-sqlite3 runtime re-included) keeps the vsix at ~1.6 MB.
+Packaging: `better-sqlite3` stays **external** in the esbuild host bundle; the vsix ships only its runtime chain (`lib/` JS + `prebuilds/*.node`) per `.vscodeignore` — see the `//` decision block in `package.json`. Note `vsce package --no-dependencies` would skip node_modules entirely and DROP the native binding, so `npm run package` runs plain `vsce package`; the `.vscodeignore` whitelist (`node_modules/**` excluded, better-sqlite3 runtime re-included) keeps the vsix at ~9.8 MB — dominated by `node_modules/better-sqlite3/prebuilds/`, which ships prebuilt `.node` binaries for all 8 supported platforms so the extension loads on any host without a local compile step.
 
 **No webview-ui-toolkit**: the library is archived by Microsoft; the UI is React 18 + `@xyflow/react` v12 only.
 
