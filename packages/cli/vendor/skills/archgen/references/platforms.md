@@ -100,3 +100,39 @@ If the harness exposes a markdown-heading indexer (e.g. a
 `codegraph_index_markdown`-style tool), prefer it for general repo docs but
 still use `doc-index.mjs` inside `.archgen/` — it understands TASK/FR
 reference semantics. Brownfield surveys prefer codegraph once present.
+
+### Codegraph install & index (concrete — researched Aug 2026, v1.0.1)
+
+CodeGraph = `@colbymchenry/codegraph` (npm), CLI `codegraph`, MIT, 100% local.
+It persists a SQLite symbol graph in `.codegraph/` and serves it over MCP. It
+indexes SOURCE symbols only (scope above) — pair with `doc-index.mjs` /
+`plan-graph.mjs` for markdown/YAML. Requires Node 22 or 24 (native SQLite
+bindings; other versions fall back to a 5–10x-slower WASM backend).
+
+Install the CLI (one-time, global):
+- `npm i -g @colbymchenry/codegraph` (any OS with Node), or
+- `curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh` (macOS/Linux), or
+- zero-install: `npx @colbymchenry/codegraph`.
+
+Wire the harness (writes MCP config + instructions — INSTALL-MCP approval gate):
+- `codegraph install --yes` (auto-detect agents, global)
+- `codegraph install --target=<agent> --yes` (explicit harness)
+- `codegraph install --target=auto --location=local --yes` (project-local)
+- `codegraph install --print-config <agent>` (preview snippet, no writes)
+- Manual config shape: assets/mcp-template.json (stdio `codegraph serve --mcp`
+  or npx `-y @colbymchenry/codegraph mcp`).
+
+Index the project (per project; creates `.codegraph/` + builds the graph):
+- `codegraph init` (add `--yes` to skip prompts); one-shot bootstrap:
+  `codegraph install --yes --init`. Auto-syncs on file change thereafter.
+- `codegraph status` to verify; `codegraph uninit` removes the index;
+  `codegraph uninstall` de-wires the agents; `codegraph upgrade` updates.
+
+`.codegraph/` is deterministic and small — committing it gives teammates the
+index on first checkout (team recommendation); git-ignore it for solo repos.
+Never point two OSes (Windows + WSL) at one `.codegraph/`.
+
+Agent flow: detect `.codegraph/` at repo root. Present → use `codegraph_explore`
+for source navigation. Absent → offer once (INSTALL-MCP approval pattern,
+recommendation-first), run the commands above on approval; on decline use
+Glob+Grep.

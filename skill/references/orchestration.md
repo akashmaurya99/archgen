@@ -272,6 +272,11 @@ Every worker receives ALL of:
   and honor every connected dependency shown;
 - all file paths come from tasks.yaml/architecture.yaml VERBATIM — never
   reconstruct paths from memory.
+- working state goes under `.archgen/<slug>/.agent/` — execution decisions to
+  `.agent/decisions/`, notes to `.agent/notes/<id>.md` (see
+  references/artifact-templates.md § Agent workspace & artifact location).
+  NEVER create ad-hoc note/context/decision folders at the repo root or
+  anywhere outside `.archgen/`.
 
 Workers do NOT talk to each other; coordination happens only through
 tasks.yaml state.

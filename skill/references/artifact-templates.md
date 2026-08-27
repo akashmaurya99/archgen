@@ -119,6 +119,40 @@ shrinking LARGE hallucinates.
   regeneration — never large multi-region patches (they corrupted tasks.yaml
   in the field).
 
+## Agent workspace & artifact location — the two-tier rule
+
+Location follows LIFETIME + AUDIENCE: the plan (and its rationale) travels as
+ONE self-contained, reviewable, git-versioned unit; the product's deliverables
+travel with the product.
+
+INSIDE `.archgen/<slug>/` — the plan + everything needed to execute/review it:
+- tasks.yaml, plans/, architecture.yaml, answers.yaml, codebase-map.md.
+- `docs/prd.md` — a PLANNING artifact (defines the FR-ids tasks cite), not a
+  shipped doc — stays inside so doc-index can validate FR references.
+- `decisions/NNNN-title.md` — the plan's formal ADRs (its rationale). Inside
+  keeps the feature folder self-contained and ADR↔task↔plan references valid.
+- `.agent/` — ALL agent/sub-agent working state. The leading dot keeps it out
+  of doc-index scans (process state, not a validated artifact):
+  - `.agent/decisions/NNNN-<slug>.md` — EXECUTION-time decisions a sub-agent
+    takes while working (distinct from the plan's formal ADRs in `decisions/`).
+  - `.agent/learnings.md` — conventions/patterns discovered (append-only).
+  - `.agent/notes/<task-id-or-topic>.md` — worker/survey/investigator notes.
+  - `.agent/reports/<verifier|reviewer|investigate>-<round>.md` — persisted
+    verifier/reviewer/investigation findings.
+
+OUTSIDE `.archgen/` — project DELIVERABLES an approved task produces, written
+to the task's `file_ownership` paths at the repo root (never into `.archgen/`):
+- source code (`src/...`), and
+- shipped documentation: README, API reference, deployment/runbooks, user
+  guides — the docs the running software ships to users/operators.
+
+Enterprise refinement — durable ADRs: a decision that outlives this feature
+(project-wide, e.g. "Postgres over MongoDB") SHOULD also be promoted to the
+project's canonical ADR register (`docs/adr/` or the team's equivalent) so
+future features discover it. `.archgen/<slug>/decisions/` is the working
+record; the register is the durable project-wide copy. Never delete or
+re-number an accepted ADR — supersede it.
+
 ## architecture.yaml (LARGE scope)
 
 The four contract blocks below (`naming_conventions`, `data_contracts`,

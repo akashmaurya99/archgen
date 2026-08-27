@@ -27,10 +27,14 @@ fixes or one-line edits that need no planning.
 ## Hard rules — read first
 
 1. **Everything you generate goes inside `.archgen/<project-slug>/`** at the
-   target repo root — NEVER elsewhere. Exceptions: source-code edits for
-   approved tasks (by worker sub-agents, or you when self-executing per
-   references/orchestration.md §dispatch) and the AGENTS.md features
-   registry, maintained exclusively via `scripts/update-agents.mjs`.
+   target repo root — NEVER elsewhere, including ALL agent/sub-agent working
+   state (execution decisions, learnings, notes, verifier/reviewer reports),
+   which lives under `.archgen/<slug>/.agent/` (references/artifact-templates.md
+   § Agent workspace & artifact location) — never in ad-hoc folders.
+   Exceptions: (a) source-code edits AND project deliverable docs produced by
+   approved tasks, written to their `file_ownership` paths
+   (references/orchestration.md §dispatch); (b) the AGENTS.md features
+   registry via `scripts/update-agents.mjs`.
 2. **Three stages before execution**: (a) VERIFIER sub-agent APPROVE on
    plan+tasks, (b) PLAN-REVIEW at zero findings (or explicit user waiver),
    (c) USER approval. Never skip any stage.
@@ -85,12 +89,13 @@ Probe in order:
 3. No match → WEB SEARCH `<platform name> MCP configuration official docs`
    and `<platform> agent skills install`; summarize findings, get approval,
    proceed on discovered facts.
-4. **Codegraph offer (once per project).** No `.codegraph/` dir + harness
-   provides codegraph tooling → propose install + indexing once via the
-   INSTALL-MCP approval pattern (show what gets written/indexed; explicit
-   approval; web-search the install method, never a memorized command).
-   Brownfield surveys prefer it once present. Scope:
-   references/platforms.md § Codegraph indexing scope.
+4. **Codegraph offer (once per project).** No `.codegraph/` dir at repo root →
+   propose install + indexing once via the INSTALL-MCP approval pattern
+   (recommendation-first; show what gets written/indexed); on approval run the
+   concrete commands in references/platforms.md § Codegraph install & index;
+   on decline fall back to Glob+Grep. Web-search only if a listed command
+   fails or the platform is unrecognized. Brownfield surveys prefer it once
+   present. Scope: references/platforms.md § Codegraph indexing scope.
 
 ## Step 1 — Route the mode
 
