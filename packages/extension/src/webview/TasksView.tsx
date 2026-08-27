@@ -27,7 +27,6 @@ import {
   Controls,
   MarkerType,
   MiniMap,
-  Panel,
   Position,
   ReactFlow,
   type Edge,
@@ -187,9 +186,6 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
   }, []);
   const resetFilters = useCallback(() => setActiveFilters(new Set()), []);
 
-  // COLLAPSIBLE LEGEND: expanded by default; chevron folds it to a pill.
-  const [legendOpen, setLegendOpen] = useState(true);
-
   const key = useMemo(() => structureKeyOf(tasks), [tasks]);
 
   const counts = useMemo(() => {
@@ -310,122 +306,101 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
   const doneCount = counts['done'];
 
   return (
-    <section className="archgen-tasks-view" aria-label="Task dependency graph" onKeyDown={onSectionKeyDown}>
-      {/* key={structure:direction}: a structural or direction change remounts
-          the canvas so fitView runs against the new shape */}
-      <ReactFlow
-        key={`${key}:${direction}`}
-        nodeTypes={taskNodeTypes}
-        nodes={nodes}
-        edges={edges}
-        fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-        minZoom={0.08}
-        maxZoom={4}
-        zoomOnScroll
-        zoomOnPinch
-        zoomOnDoubleClick={false}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable={false}
-        proOptions={{ hideAttribution: true }}
-        onInit={(inst) => {
-          flowRef.current = inst;
-        }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-        <Controls showInteractive={false} />
-        <MiniMap pannable ariaLabel="Tasks minimap" nodeColor={(n) => STATUS_COLOR[(n.data as { status?: TaskStatus })?.status ?? 'pending']} />
-        <Panel position="top-left">
-          <div className="archgen-dag-hud">
-            <div className="archgen-dag-hud-row">
+    <section className="archgen-dag-view" aria-label="Task dependency graph" onKeyDown={onSectionKeyDown}>
+      <div className="archgen-dag-toolbar" role="toolbar" aria-label="Tasks controls">
+        <div className="archgen-dag-actions">
+          <button
+            type="button"
+            className="archgen-start-work"
+            onClick={() => onStartWork?.()}
+            aria-label="Start Work: dispatch the first task wave"
+          >
+            ▶ Start Work
+          </button>
+          <span
+            className="archgen-progress-chip"
+            role="status"
+            aria-label={`${doneCount} of ${total} tasks done`}
+            data-done={doneCount}
+            data-total={total}
+          >
+            {doneCount}/{total} done
+          </span>
+          <button
+            type="button"
+            className="archgen-dag-layout-btn"
+            aria-pressed={direction === 'TB'}
+            onClick={toggleDirection}
+            aria-label={`Toggle DAG layout direction (currently ${direction === 'LR' ? 'left-right' : 'top-down'})`}
+            title="Toggle left-right / top-down layout"
+          >
+            ⇄ {direction === 'LR' ? 'Left–right' : 'Top–down'}
+          </button>
+        </div>
+
+        <div className="archgen-dag-divider" aria-hidden="true" />
+
+        <div className="archgen-dag-filters" role="group" aria-label="Filter tasks by status">
+          {STATUS_ORDER.map((s) => {
+            const on = activeFilters.has(s);
+            return (
               <button
+                key={s}
                 type="button"
-                className="archgen-start-work"
-                onClick={() => onStartWork?.()}
-                aria-label="Start Work: dispatch the first task wave"
+                className={`archgen-dag-chip${on ? ' is-on' : ''}`}
+                aria-pressed={on}
+                aria-label={`Filter ${s} tasks (${counts[s]})`}
+                onClick={() => toggleFilter(s)}
               >
-                ▶ Start Work
+                <i aria-hidden="true" className={`archgen-dot archgen-dot--${s}`} />
+                {s}
+                <span className="archgen-dag-chip-count">{counts[s]}</span>
               </button>
-              <span
-                className="archgen-progress-chip"
-                role="status"
-                aria-label={`${doneCount} of ${total} tasks done`}
-                data-done={doneCount}
-                data-total={total}
-              >
-                {doneCount}/{total} done
-              </span>
-              <button
-                type="button"
-                className="archgen-dag-layout-btn"
-                aria-pressed={direction === 'TB'}
-                onClick={toggleDirection}
-                aria-label={`Toggle DAG layout direction (currently ${direction === 'LR' ? 'left-right' : 'top-down'})`}
-                title="Toggle left-right / top-down layout"
-              >
-                ⇄ {direction === 'LR' ? 'Left–right' : 'Top–down'}
-              </button>
-            </div>
-            <div className="archgen-dag-toolbar" role="group" aria-label="Filter tasks by status">
-              {STATUS_ORDER.map((s) => {
-                const on = activeFilters.has(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    className={`archgen-dag-chip${on ? ' is-on' : ''}`}
-                    aria-pressed={on}
-                    aria-label={`Filter ${s} tasks (${counts[s]})`}
-                    onClick={() => toggleFilter(s)}
-                  >
-                    <i aria-hidden="true" className={`archgen-dot archgen-dot--${s}`} />
-                    {s}
-                    <span className="archgen-dag-chip-count">{counts[s]}</span>
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                className="archgen-dag-chip archgen-dag-chip--reset"
-                onClick={resetFilters}
-                disabled={!filterActive}
-                aria-label="Show all tasks"
-              >
-                All
-              </button>
-            </div>
-            {/* Polite announcer: fires when filters empty the board. */}
-            <p className="archgen-filter-announce" role="status" aria-live="polite" data-testid="archgen-filter-announce">
-              {filterActive && visibleCount === 0 ? 'No tasks match the selected filters' : ''}
-            </p>
-          </div>
-        </Panel>
-        <Panel position="top-right">
-          <div className="archgen-legend-wrap">
-            <button
-              type="button"
-              className={`archgen-legend-toggle${legendOpen ? '' : ' archgen-legend-toggle--collapsed'}`}
-              aria-expanded={legendOpen}
-              aria-controls="archgen-legend-items"
-              aria-label={legendOpen ? 'Collapse status legend' : 'Expand status legend'}
-              onClick={() => setLegendOpen((o) => !o)}
-            >
-              {legendOpen ? 'Legend ▾' : 'Legend ▸'}
-            </button>
-            {legendOpen && (
-              <div className="archgen-legend" id="archgen-legend-items" role="list" aria-label="Status legend">
-                {STATUS_ORDER.map((s) => (
-                  <span role="listitem" key={s} className="archgen-legend-item">
-                    <i aria-hidden="true" className={`archgen-dot archgen-dot--${s}`} />
-                    {s}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </Panel>
-      </ReactFlow>
+            );
+          })}
+          <button
+            type="button"
+            className="archgen-dag-chip archgen-dag-chip--reset"
+            onClick={resetFilters}
+            disabled={!filterActive}
+            aria-label="Show all tasks"
+          >
+            All
+          </button>
+        </div>
+
+        {/* Polite announcer: fires when filters empty the board. */}
+        <p className="archgen-filter-announce" role="status" aria-live="polite" data-testid="archgen-filter-announce">
+          {filterActive && visibleCount === 0 ? 'No tasks match the selected filters' : ''}
+        </p>
+      </div>
+
+      <div className="archgen-dag-canvas">
+        <ReactFlow
+          key={`${key}:${direction}`}
+          nodeTypes={taskNodeTypes}
+          nodes={nodes}
+          edges={edges}
+          fitView
+          fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+          minZoom={0.1}
+          maxZoom={2.5}
+          zoomOnScroll
+          zoomOnPinch
+          zoomOnDoubleClick={false}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          proOptions={{ hideAttribution: true }}
+          onInit={(inst) => {
+            flowRef.current = inst;
+          }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+          <Controls showInteractive={false} />
+          <MiniMap pannable ariaLabel="Tasks minimap" nodeColor={(n) => STATUS_COLOR[(n.data as { status?: TaskStatus })?.status ?? 'pending']} />
+        </ReactFlow>
+      </div>
     </section>
   );
 }

@@ -140,11 +140,8 @@ describe('Task DAG canvas', () => {
     expect(document.querySelector('.react-flow__edge.archgen-edge--blocked')?.classList.contains('animated')).toBe(false);
   });
 
-  it('shows Legend panel top-right, MiniMap and Controls', () => {
+  it('shows MiniMap and Controls', () => {
     renderWithModel();
-    const legend = screen.getByRole('list', { name: 'Status legend' });
-    expect(legend.closest('.react-flow__panel.top.right')).toBeTruthy();
-    expect(legend.querySelectorAll('[role="listitem"]')).toHaveLength(6);
     expect(document.querySelector('.react-flow__minimap')).toBeTruthy();
     expect(document.querySelector('.react-flow__controls')).toBeTruthy();
   });
@@ -318,21 +315,6 @@ describe('edge arrowheads (C)', () => {
   });
 });
 
-describe('collapsible legend (D)', () => {
-  it('chevron collapses the legend to a pill and restores it', () => {
-    renderWithModel(CHAIN_MODEL);
-    expect(screen.getByRole('list', { name: 'Status legend' })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse status legend' }));
-    expect(screen.queryByRole('list', { name: 'Status legend' })).toBeNull();
-    const expand = screen.getByRole('button', { name: 'Expand status legend' });
-    expect(expand.getAttribute('aria-expanded')).toBe('false');
-
-    fireEvent.click(expand);
-    expect(screen.getByRole('list', { name: 'Status legend' })?.querySelectorAll('[role="listitem"]')).toHaveLength(6);
-    expect(screen.getByRole('button', { name: 'Collapse status legend' }).getAttribute('aria-expanded')).toBe('true');
-  });
-});
 
 describe('wave progress chip (E)', () => {
   it('derives done/total from live statuses near Start Work', async () => {

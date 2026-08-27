@@ -264,8 +264,11 @@ body,
 }
 
 /* ---- Task DAG View Container ---- */
-.archgen-tasks-view {
+.archgen-tasks-view,
+.archgen-dag-view {
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   min-height: 320px;
   position: relative;
   border-radius: var(--archgen-radius-lg, 18px);
@@ -418,31 +421,7 @@ body,
   transform: scale(0.97);
 }
 
-/* ---- Status Legend Panel ---- */
-.archgen-legend {
-  display: grid;
-  grid-template-columns: repeat(2, auto);
-  column-gap: 14px;
-  row-gap: 5px;
-  padding: 8px 12px;
-  border-radius: var(--archgen-radius-md, 12px);
-  border: 1px solid var(--archgen-hairline);
-  background: color-mix(in srgb, var(--archgen-surface) 88%, transparent);
-  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
-  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
-  font-size: var(--archgen-font-size-xs);
-  color: var(--archgen-text-muted);
-}
-
-.archgen-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--archgen-space-2, 8px);
-  font-weight: 500;
-  letter-spacing: var(--archgen-tracking-body, -0.011em);
-  text-transform: capitalize;
-}
+/* ---- Status Dots ---- */
 
 .archgen-dot {
   width: 8px;
@@ -1206,44 +1185,48 @@ body,
 }
 
 /* Empty-state bridge into the SETUP tab (secondary action under the CTA). */
-/* ---- TASKS DAG HUD & TOOLBARS ---- */
-.archgen-dag-hud {
-  display: inline-flex;
+/* ---- TASKS DAG DOCKED TOOLBAR & CONTROLS ---- */
+.archgen-dag-toolbar {
+  flex-shrink: 0;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  max-width: min(840px, calc(100vw - 24px));
-  margin: 12px 14px;
-  padding: 4px 6px;
-  border-radius: var(--archgen-radius-pill, 9999px);
-  background: color-mix(in srgb, var(--archgen-surface) 88%, transparent);
-  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
-  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
-  border: 1px solid var(--archgen-hairline);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--archgen-hairline);
+  background: var(--archgen-canvas);
+  min-height: 44px;
+  box-sizing: border-box;
   flex-wrap: wrap;
 }
 
-.archgen-dag-hud-row {
+.archgen-dag-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  width: fit-content;
+  flex-shrink: 0;
 }
 
-.archgen-dag-hud-row::after {
-  content: "";
-  display: inline-block;
+.archgen-dag-divider {
   width: 1px;
   height: 16px;
   background: var(--archgen-hairline);
-  margin: 0 2px;
+  margin: 0 4px;
   flex-shrink: 0;
+}
+
+.archgen-dag-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.archgen-dag-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 320px;
+  height: 100%;
 }
 
 /* Wave-progress chip (done/total) */
@@ -1305,20 +1288,7 @@ body,
   border-color: var(--archgen-action-blue);
 }
 
-/* Status filter chip toolbar */
-.archgen-dag-toolbar {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex-wrap: wrap;
-  width: fit-content;
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
+/* Status filter chips */
 
 .archgen-dag-chip {
   display: inline-flex;
@@ -1370,46 +1340,7 @@ body,
   cursor: default;
 }
 
-/* Collapsible legend */
-.archgen-legend-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  margin: 12px 14px;
-}
 
-.archgen-legend-toggle {
-  align-self: flex-end;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  box-sizing: border-box;
-  padding: 0 10px;
-  border-radius: var(--archgen-radius-pill, 9999px);
-  border: 1px solid var(--archgen-hairline);
-  background: color-mix(in srgb, var(--archgen-surface) 85%, transparent);
-  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
-  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
-  color: var(--archgen-text-muted);
-  font-family: var(--archgen-font-ui);
-  font-size: var(--archgen-font-size-xs);
-  font-weight: 500;
-  letter-spacing: var(--archgen-tracking-body, -0.011em);
-  cursor: pointer;
-  transition: color var(--archgen-motion-fast), border-color var(--archgen-motion-fast), background var(--archgen-motion-fast);
-}
-
-.archgen-legend-toggle:hover {
-  color: var(--archgen-text);
-  border-color: var(--archgen-hairline-strong);
-  background: color-mix(in srgb, var(--archgen-surface-elevated) 90%, transparent);
-}
-
-.archgen-legend-toggle--collapsed {
-  letter-spacing: var(--archgen-tracking-body, -0.011em);
-}
 
 .archgen-filter-announce {
   position: absolute;
@@ -2500,12 +2431,9 @@ mark.archgen-search-hit.is-current {
 }
 
 @media (max-width: 640px) {
-  .archgen-dag-hud {
-    max-width: 100%;
-    margin: 8px 10px;
-  }
   .archgen-dag-toolbar {
-    width: 100%;
+    gap: 6px;
+    padding: 6px 10px;
   }
   .archgen-cg-toolbar {
     gap: 6px;
@@ -2537,8 +2465,10 @@ mark.archgen-search-hit.is-current {
   .archgen-cg-search {
     max-width: 100%;
   }
-  .archgen-dag-hud-row {
-    flex-direction: column;
-    align-items: stretch;
+  .archgen-dag-toolbar {
+    padding: 6px 8px;
+  }
+  .archgen-dag-actions {
+    flex-wrap: wrap;
   }
 }
