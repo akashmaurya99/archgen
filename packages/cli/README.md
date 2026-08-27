@@ -32,15 +32,15 @@ What `init` writes (nothing is ever duplicated):
 
 | Path | What |
 | --- | --- |
-| `.agents/skills/archgen/` | **The only real copy** — the agentskills.io standard location read natively by OpenCode, Cursor, Codex, Gemini CLI, Copilot and Antigravity |
-| `.claude/skills/archgen → ../../.agents/skills/archgen` | Relative symlink for Claude Code (the one harness needing it). Skipped gracefully where symlinks need privileges — Claude still works via the bridge below |
-| `AGENTS.md` | Managed hub block: skill pointer + quick triggers + a features registry that stays current as you add features |
-| `CLAUDE.md` | One-line bridge: `@AGENTS.md` (existing files keep all their content; if it already imports AGENTS.md we write nothing) |
+| `.agents/skills/archgen/` | **The only real copy** — the agentskills.io standard location, read natively by OpenCode, Cursor, Codex, Gemini CLI, Copilot, and Antigravity |
+| `.claude/skills/archgen → ../../.agents/skills/archgen` | Relative symlink for Claude Code (the one harness that needs it); skipped gracefully where symlinks require privileges |
+| `AGENTS.md` | Managed hub block: skill pointer, quick triggers, and a features registry that stays current as you add features |
+| `CLAUDE.md` | One-line bridge: `@AGENTS.md` (existing content is preserved; nothing is written if it already imports AGENTS.md) |
 
-Existing projects with user content are safe: managed blocks upsert between
-markers, modified skill copies are backed up to `.archgen/.backup/<timestamp>/`
-before refresh, and legacy dual-copy layouts are migrated to symlinks
-automatically. Verify anytime with `archgen-skill doctor`.
+Existing projects are safe: managed blocks upsert between markers, modified skill
+copies are backed up to `.archgen/.backup/<timestamp>/` before refresh, and legacy
+dual-copy layouts are migrated to symlinks automatically. Verify anytime with
+`archgen-skill doctor`.
 
 **Or install globally** into every detected harness:
 
@@ -49,12 +49,13 @@ npx archgen-skill install          # symlinks; --copy for real copies
 ```
 
 Prefer shell? Clone the repo and run `./install.sh` (same behavior, plus
-`--init`, `--project`, `--uninstall`). Requires Node.js ≥ 18.
-The skill itself has zero npm dependencies.
+`--init`, `--project`, `--uninstall`). Requires Node.js ≥ 18. The skill itself
+has zero npm dependencies.
 
 ## Quick start
 
-After `npx archgen-skill init`, open your project in any supported agent and talk naturally:
+After `npx archgen-skill init`, open your project in any supported agent and talk
+naturally:
 
 | You say | What runs |
 | --- | --- |
@@ -64,39 +65,33 @@ After `npx archgen-skill init`, open your project in any supported agent and tal
 | *"roll back the auth changes"* | Impact analysis → reverse-order revert plan → approval |
 
 Everything archgen produces lives in one reviewable `.archgen/<slug>/` folder —
-architecture contract, docs, ADRs, plans, and a `tasks.yaml` task graph — versioned by git.
+architecture contract, docs, ADRs, plans, and a `tasks.yaml` task graph — versioned
+by git.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `npx archgen-skill init [dir]` | Install the single canonical skill store at `.agents/skills/archgen`, add the Claude symlink adapter, write the AGENTS.md hub + CLAUDE.md `@AGENTS.md` bridge |
+| `npx archgen-skill init [dir]` | Prepare a project: canonical skill store at `.agents/skills/archgen`, Claude symlink adapter, AGENTS.md hub + CLAUDE.md bridge |
 | `npx archgen-skill install [--copy]` | Install into global harness skill dirs (symlinks by default, real copies with `--copy`) |
 | `npx archgen-skill uninstall` | Remove globally-installed copies (manifest-recorded, safe removal) |
-| `npx archgen-skill uninstall --project [dir]` | Remove project install: strips managed blocks, our symlink and the store **only if unmodified** — feature folders in `.archgen/` and all user content are preserved |
-| `npx archgen-skill doctor [dir] [--check]` | Verify + auto-repair an installation: store integrity, version stamp, Claude link, blocks present exactly once, manifest resolution (`--check` reports without fixing) |
-| `npx archgen-skill --help` | Help |
-
-### Version stamp (`.archgen-version`)
-
-Every skill tree the CLI writes carries a one-line `MAJOR.MINOR.PATCH\n` stamp
-at its root — the canonical store from `init`, each `install --copy` tree, and
-the real directory behind global symlink installs. `update` refreshes it via
-its init/doctor pass. `doctor` lists every detected install with its stamped
-version (`missing` / `unknown (pre-0.1 stamp)` when absent or unparseable).
-The VS Code extension reads the same file to warn about outdated skills;
-absent or corrupt means "unknown (legacy)", never an error.
+| `npx archgen-skill uninstall --project [dir]` | Remove a project install: strips managed blocks, symlink, and store **only if unmodified** — `.archgen/` feature folders and all user content are preserved |
+| `npx archgen-skill doctor [dir] [--check]` | Verify and auto-repair an installation: store integrity, version stamp, Claude link, managed blocks, manifest (`--check` reports without fixing) |
+| `npx archgen-skill update [dir]` | Check npm for a newer `archgen-skill`, upgrade the global install if outdated, then re-init the project and run doctor against the new version |
+| `npx archgen-skill restore` | List backup snapshots; `--snapshot <ts>` restores one (current state is backed up first) |
+| `npx archgen-skill migrate [dir] [--apply]` | Evolve generated-artifact formats in place (`--check` by default; every touched file is backed up) |
+| `npx archgen-skill --version` / `--help` | Print the CLI version / show help |
 
 ## Why archgen
 
 AI coding agents fail at scale for predictable reasons: plans with hidden cycles,
 workers editing the same files, tasks without objective acceptance criteria, and no
 human checkpoint before execution. archgen makes each of these a *structural*
-guarantee rather than a hope:
+guarantee:
 
 | Guarantee | Mechanism |
 | --- | --- |
-| Plans are valid before work starts | Verifier gate — catches cycles, dangling refs, ownership overlaps, plan↔task coverage gaps |
+| Plans are valid before work starts | Verifier gate — cycles, dangling refs, ownership overlaps, plan↔task coverage |
 | You approve before code is written | Explicit user gate after verifier approval |
 | Parallel workers never collide | Disjoint `file_ownership` globs enforced per wave |
 | Task order is always correct | Topological waves from `depends_on`; chains stay sequential |
@@ -124,23 +119,17 @@ guarantee rather than a hope:
 
 ## Supported harnesses
 
-| Harness | Global install | Project-local (`init`) |
-| --- | --- | --- |
-| Claude Code | ✅ | ✅ |
-| OpenCode | ✅ | ✅ |
-| Cursor | ✅ | ✅ |
-| Codex | ✅ | ✅ |
-| Gemini CLI | ✅ | ✅ |
-| Antigravity | ✅ | ✅ |
-| Any agentskills.io harness | ✅ | ✅ |
+Claude Code, OpenCode, Cursor, Codex, Gemini CLI, Antigravity — and any
+agentskills.io-compatible harness. Both global install and project-local `init`
+are supported for all of them.
 
 ## VS Code extension (optional)
 
-A read-only visual layer that renders `.archgen/` as a live task DAG (running tasks
-pulse, edges animate), your code-dependency graph, and rendered docs — with a ▶
-button that launches your agent on any task. Install the `.vsix` from
-[GitHub Releases](https://github.com/akashmaurya99/archgen/releases). It is strictly
-a viewer: uninstalling it loses nothing.
+A read-only visual layer that renders `.archgen/` as a live task DAG, your
+code-dependency graph, and rendered docs — with a ▶ button that hands any task to
+your agent. Install it from the VS Code Marketplace or from a `.vsix` on
+[GitHub Releases](https://github.com/akashmaurya99/archgen/releases). It never
+edits anything: uninstalling it loses nothing.
 
 ## Documentation
 
@@ -149,7 +138,6 @@ a viewer: uninstalling it loses nothing.
 | [Architecture walkthrough](https://github.com/akashmaurya99/archgen/blob/main/docs/architecture.md) | Dual-mode design, gates, wave mechanics, platform detection |
 | [The skill contract](https://github.com/akashmaurya99/archgen/blob/main/skill/SKILL.md) | The full skill specification agents execute |
 | [Changelog](https://github.com/akashmaurya99/archgen/blob/main/CHANGELOG.md) | Release history |
-| [Contributing](https://github.com/akashmaurya99/archgen/blob/main/CONTRIBUTING.md) | Development setup and PR guide |
 
 ## Contributing
 

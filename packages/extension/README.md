@@ -1,159 +1,81 @@
-# ArchGen Extension
+# ArchGen
 
-A VS Code extension that turns your `.archgen/` folder into living pictures.
-It targets only stable webview/serializer APIs, so it works the same in VS Code
-forks — Cursor 1.4+, Windsurf, VSCodium (release gate: the human-executed fork
-smoke checklist in `MANUAL-TEST.md` §16).
+**Read-only visualization of your `.archgen/` folder: live task DAG, code dependency graph, and rendered docs.**
 
-Views:
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/akashmaurya99/archgen/blob/main/LICENSE)
+[![VS Code](https://img.shields.io/badge/VS%20Code-%E2%89%A51.90-239cd0)](https://code.visualstudio.com)
 
-- **TASKS** — a task board drawn as a dependency graph where running tasks pulse, done tasks glow green, failed ones red.
-- **CODE** — a map of your code's real dependencies read straight from the codegraph SQLite index.
-- **DOCS** — rendered docs with mermaid diagrams, click-through to source.
-- **▶ Build / Start Work** — copies the composed prompt to your clipboard for any agent chat (Copilot Chat, Cursor, Cascade, terminal CLIs…) with best-effort pre-fill of native chat inputs; legacy headless CLI dispatch (`claude`/`opencode`/`codex`/`gemini`/custom) remains available via `archgen.delivery.mode`.
+ArchGen renders the plans produced by the [archgen](https://github.com/akashmaurya99/archgen)
+skill — an architecture contract plus a dependency-ordered task graph — as live,
+interactive views in your editor. Watch tasks move through the pipeline, inspect
+your code's real dependencies, read the docs, and hand work to any coding agent
+with one click.
 
-The extension is strictly a **window**: it reads files and hands prompts to your agent — clipboard-first by default, optional headless spawn — and never edits anything itself. Uninstalling it loses nothing.
+## Privacy & guarantees
+
+ArchGen is strictly a **window** over your repository:
+
+- **Never edits anything.** It reads `.archgen/` files and your codegraph index; all writes are done by your agent. Uninstalling loses nothing.
+- **No telemetry.** No data leaves your machine.
+- **No LLM calls.** The extension contains no agent runtime — it composes prompts and hands them to the agent you already use.
+- Codegraph indexes are opened read-only.
 
 ## Features
 
-| Area | What you get |
+| View | What you get |
 | --- | --- |
-| Task DAG | dagre left→right layout; exact six-status enum `pending · ready · running · blocked · done · failed` (no cancelled exists); running pulse ring; edges animate only into running targets; MiniMap + Legend + zoom Controls. |
-| Multi-feature repos | A **feature picker** in the TASKS tab header lists every `.archgen/<slug>/` feature (most-recently-modified first). The choice persists per workspace (`workspaceState`), and the default is the most-recent feature. |
-| Live updates | FileSystemWatcher on `.archgen/**` and `.codegraph/**`, 300 ms coalesced debounce → rAF-batched immutable patches; only changed nodes re-render. |
-| Keyboard + ARIA | Tab walks task nodes; **Enter/Space** on a focused node dispatches ▶ build; nodes announce `task <id>: <title>, status <status>`; visible focus rings from the theme's focus border. |
-| States | Empty state with copyable `npx archgen-skill init` install CTA; errors keep the last-good graph mounted (dimmed) under a dismissible top-center banner; "updated Ns ago" stale chip. |
-| Docs | markdown-it (`html:false`) + mermaid strict mode; per-diagram error isolation; open-in-editor click-through. |
-| Code graph | colby/optave SQLite indexes read **read-only**; kind colors; edge-kind filter chips; search; impact highlight; unsupported-product banner. |
+| **TASKS** | The task board drawn as a dependency DAG: running tasks pulse, done is green, failed is red; minimap, legend, and zoom controls. |
+| **CODE** | Your code's real dependencies, read from the codegraph SQLite index — search, edge-kind filters, impact highlighting. |
+| **DOCS** | Rendered architecture docs with mermaid diagrams and click-through to source. |
+| **▶ Build / Start Work** | Copies the composed prompt to your clipboard for any agent chat, with best-effort pre-fill of the native chat input. Optional headless CLI dispatch via `archgen.delivery.mode`. |
 
-## Accessibility (WCAG 2.1 AA — scoped commitment)
+Also included: a feature picker for repos with multiple `.archgen/<slug>/`
+features, live updates as files change, and keyboard navigation (Tab to a task,
+Enter/Space to build it).
 
-The extension commits to a **scoped** WCAG 2.1 AA subset, enforced by the
-a11y tests in `test/` and the workbench steps in `MANUAL-TEST.md` §4/§10:
+## Installation
 
-- **Keyboard navigation** — every task node is reachable in tab order; Enter/Space on a focused node dispatches ▶ build; visible focus rings use the theme's focus border color.
-- **Contrast** — all colors come from `--vscode-*` theme variables, so the board stays readable in Dark, Light, and High Contrast themes (verified live in `MANUAL-TEST.md` §10).
-- **aria-live for status pushes** — loading/empty states announce via `role="status"` + `aria-live="polite"`, error and waiting states via `role="alert"`; task nodes announce `task <id>: <title>, status <status>`; the stale chip carries `role="timer"`.
+- **VS Code Marketplace** — search for "ArchGen" (publisher `archgen`) in the Extensions view and install.
+- **From a `.vsix`** — download the latest release from [GitHub Releases](https://github.com/akashmaurya99/archgen/releases), then run *Extensions: Install from VSIX…*
 
-Explicitly **out of scope**: full WCAG 2.1 AA certification of third-party
-render internals (mermaid-generated SVG, `@xyflow/react` canvas chrome) —
-these inherit the library's own a11y behavior.
+## Usage
 
-## Performance budgets (enforced by tests)
+1. Open the **ArchGen** activity-bar icon (or run *ArchGen: Open Task Board*). The activity bar shows glanceable progress, status-grouped tasks, and quick-open docs.
+2. Switch between the **TASKS**, **CODE**, and **DOCS** tabs on the board.
+3. Click ▶ on any task to copy its build prompt, or ▶ **Start Work** for the full execution prompt — then paste it into your agent chat.
 
-| Budget | Value | Where proven |
-| --- | --- | --- |
-| Re-renders per status flip | ≤ 2 for the changed node (expected exactly 1), 0 for untouched nodes | `test/polish-perf.test.tsx` render-count spy |
-| Animated edges | ≤ 50 (`MAX_ANIMATED_EDGES`); 60 running targets → exactly 50 animated | same file |
-| Virtualization switch | `onlyRenderVisibleElements` ON above 500 nodes (verified at 500/501) | same file + `data-virtualized` attr |
-| CSP violations | ZERO across tab switches (jsdom console capture + `securitypolicyviolation` events) | same file; workbench confirmation in MANUAL-TEST.md §12 |
+## Requirements
+
+- VS Code ≥ 1.90 (or a fork — see below).
+- A `.archgen/` folder produced by the archgen skill (`npx archgen-skill init`, then generate an architecture).
+- For the CODE view: a codegraph SQLite index in the workspace — `.codegraph/codegraph.db` (colby) or `.codegraph/graph.db` (optave). Other codegraph products are not read; the CODE tab shows an explicit unsupported banner instead.
 
 ## Settings
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `archgen.harness.default` | `claude` | Agent harness invoked by the ▶ build button: `claude \| opencode \| codex \| gemini \| custom`. |
-| `archgen.harness.templates` | see below | Command template per harness. Placeholders: `{{prompt}}`, `{{task}}`, `{{outfile}}`. |
-| `archgen.scriptsPath` | *(empty)* | Explicit path to the archgen scripts dir (`next-tasks.mjs`, `set-status.mjs`). Probed in order: this setting → `<ws>/.agents/skills/archgen/scripts` → `<ws>/.claude/skills/archgen/scripts` → `<ws>/skills/archgen/scripts` → `~/.agents/skills/archgen/scripts` → `~/.claude/skills/archgen/scripts`. A typed UI error appears when none resolve. |
-| `archgen.delivery.mode` | `clipboard` | How ▶ Build This Task / ▶ Start Work deliver work: `clipboard` copies the composed prompt for you to paste into any agent chat (works everywhere); `spawn` runs the legacy headless CLI harness. `spawn` requires a [trusted workspace](https://code.visualstudio.com/api/extension-guides/workspace-trust) — in an untrusted workspace it is refused with a warning (the dispatched scripts come from the repo itself), while `clipboard` keeps working. |
+| `archgen.harness.default` | `claude` | Agent harness invoked by the ▶ build button: `claude` \| `opencode` \| `codex` \| `gemini` \| `custom`. |
+| `archgen.harness.templates` | built-in templates | Command template per harness. Placeholders: `{{prompt}}`, `{{task}}`, `{{outfile}}`. |
+| `archgen.scriptsPath` | *(empty)* | Explicit path to the archgen scripts directory (`next-tasks.mjs`, `set-status.mjs`). When empty, probed in order: `<workspace>/.agents/skills/archgen/scripts`, `<workspace>/.claude/skills/archgen/scripts`, `<workspace>/skills/archgen/scripts`, `~/.agents/skills/archgen/scripts`, `~/.claude/skills/archgen/scripts`. |
+| `archgen.delivery.mode` | `clipboard` | How ▶ delivers work: `clipboard` copies the composed prompt to paste into any agent chat (works everywhere); `spawn` runs the headless CLI harness and requires a [trusted workspace](https://code.visualstudio.com/api/extension-guides/workspace-trust) — it is refused with a warning otherwise. |
 | `archgen.delivery.autoFillChat` | `true` | After copying, best-effort pre-fill of the IDE's native chat input (ignored where unsupported). |
 
-### Harness template examples
+`spawn` mode dispatches the harness templates, e.g.:
 
 ```jsonc
-{
-  "archgen.harness.templates": {
-    // default claude: non-interactive print mode, edits auto-accepted
-    "claude":   "claude -p \"{{prompt}}\" --output-format json --permission-mode acceptEdits",
-    // opencode headless run
-    "opencode": "opencode run \"{{prompt}}\" --auto --format json",
-    // codex exec sandboxed to the workspace, JSON events, transcript to {{outfile}}
-    "codex":    "codex exec --sandbox workspace-write --json -o \"{{outfile}}\" \"{{prompt}}\"",
-    // gemini CLI
-    "gemini":   "gemini --output-format json \"{{prompt}}\"",
-    // custom: any command line; {{task}} gives the bare task id
-    "custom":   "my-agent run --task {{task}} --notes \"{{prompt}}\""
-  }
+"archgen.harness.templates": {
+  "claude":   "claude -p \"{{prompt}}\" --output-format json --permission-mode acceptEdits",
+  "opencode": "opencode run \"{{prompt}}\" --auto --format json",
+  "codex":    "codex exec --sandbox workspace-write --json -o \"{{outfile}}\" \"{{prompt}}\"",
+  "gemini":   "gemini --output-format json \"{{prompt}}\""
 }
 ```
 
-Spawn rules: `child_process.spawn` with `cwd` = workspace root; stdout tail streams to the *ArchGen* output channel; exit code 0 → info toast, non-zero → error toast. The spawned agent updates task status itself via `set-status.mjs` — the extension never writes repo state.
+## Supported editors
 
-## Codegraph product support matrix
+VS Code ≥ 1.90, Cursor, Windsurf, and VSCodium — the extension targets only
+stable webview APIs, so it behaves the same in each.
 
-| Detection | Product | Support |
-| --- | --- | --- |
-| `<ws>/.codegraph/codegraph.db` | colby | ✅ read-only (nodes/edges/files/nodes_fts FTS5) |
-| `<ws>/.codegraph/graph.db` | optave | ✅ read-only (+confidence columns tolerated) |
-| `~/.codegraph/graph.db` (global home) | — | ❌ typed `UnsupportedProductError` → explicit **unsupported banner** in the CODE tab (no partial graph, no crash) |
-| RocksDB-style indexes (codegraph-ai) | — | ❌ unsupported banner (never parsed) |
+## License
 
-## Native module note (SQLite)
-
-**Chosen: `better-sqlite3` (native) as primary driver + `node:sqlite` feature-detected fallback.** Not sql.js/WASM-primary.
-
-Why:
-
-- Codegraph reads are synchronous, read-only, small-result queries; the native binding is the fastest and simplest path.
-- sql.js would force async handoff, manual persistence plumbing, and ship a WASM blob inside the vsix for no benefit.
-- The database is opened with `{ readonly: true }` — the extension structurally cannot mutate an index.
-- If the native binding fails to load (Electron ABI mismatch before rebuild), `src/host/codegraph.ts` falls back to `require('node:sqlite')` (`DatabaseSync`, Node ≥ 22.5 / Electron ≥ 33 runtimes) automatically. Only when NO driver can open the detected DB does a typed `UnsupportedProductError` reach the UI banner.
-
-Supported matrix:
-
-| Context | Requirement |
-| --- | --- |
-| VS Code desktop ≥ 1.90 | `npx electron-rebuild -f -w better-sqlite3` against the profile's Electron ABI (devDep `@electron/rebuild`); or rely on the node:sqlite fallback on Electron ≥ 33 |
-| Node-based (vitest, CLI smoke) | plain `npm install` — prebuilds cover Node 20/22/24 on darwin-arm64/darwin-x64/linux-x64/win32-x64 |
-
-Packaging: `better-sqlite3` stays **external** in the esbuild host bundle; the vsix ships only its runtime chain (`lib/` JS + `prebuilds/*.node`) per `.vscodeignore` — see the `//` decision block in `package.json`. Note `vsce package --no-dependencies` would skip node_modules entirely and DROP the native binding, so `npm run package` runs plain `vsce package`; the `.vscodeignore` whitelist (`node_modules/**` excluded, better-sqlite3 runtime re-included) keeps the vsix at ~9.8 MB — dominated by `node_modules/better-sqlite3/prebuilds/`, which ships prebuilt `.node` binaries for all 8 supported platforms so the extension loads on any host without a local compile step.
-
-**No webview-ui-toolkit**: the library is archived by Microsoft; the UI is React 18 + `@xyflow/react` v12 only.
-
-## Development
-
-```bash
-npm install
-npm run compile      # dist/extension.js (host cjs) + media/webview/main.js (iife es2020)
-npm run typecheck    # tsc --noEmit, strict
-npm test             # vitest: corpus parity, parsers, store batching, codegraph FTS, tokens WCAG,
-                     #          watcher debounce, webview shell, a11y/polish, perf budgets, CSP scan
-npm run cross-mode   # parser↔view-model parity vs fixtures/greenfield-demo/.archgen/demo/tasks.yaml
-npm run package      # npx @vscode/vsce package --no-dependencies → archgen-extension-<version>.vsix
-npm run watch        # dual-context incremental builds
-npm run build:fixture-db   # regenerate committed test/fixtures/*.db via DDL
-```
-
-### Dual-context build
-
-| Bundle | Format | Platform | Target | Externals |
-| --- | --- | --- | --- | --- |
-| `dist/extension.js` | cjs | node | node20 | `vscode`, `better-sqlite3` |
-| `media/webview/main.js` | iife | browser | es2020 | none (fully bundled) |
-
-Removing `'vscode'` from the host externals MUST fail the build with `Could not resolve "vscode"` — that is the guard proving host-only modules never leak into browser bundles.
-
-### Shared YAML corpus
-
-`fixtures/yaml-corpus/` (repo root) is consumed by BOTH parser implementations:
-
-- `skills/archgen/scripts/lib/yaml.mjs` via `skills/archgen/scripts/test/corpus.test.mjs` (node:test)
-- `extension/src/host/readers/yaml.ts` (faithful TS port) via `extension/test/corpus.test.ts` (vitest)
-
-Both assert identical `data`, identical `comments`, identical error behavior against the `*.expected.json` siblings. Never adjust expected outputs unilaterally — fix both sides together.
-
-## QA
-
-Manual workbench protocol with expected outcomes per step: see `MANUAL-TEST.md`
-— including the full quit+restart restore repro (§11) and the human-executed
-fork smoke checklist for Cursor/Windsurf (§16). Release history: see
-`CHANGELOG.md`.
-
-## Guardrails
-
-- No extension-side mutation of any repo file (display + spawn only).
-- No agent runtime / LLM calls inside the extension.
-- No JetBrains target. No telemetry. No marketplace publishing automation.
-- No RocksDB parsing (codegraph-ai product shows the unsupported banner).
-- The webview performs ZERO direct fs/network IO — all IO is host-side.
-- `spawn` delivery is gated on VS Code workspace trust: in an untrusted workspace the harness is never launched and a warning is shown instead; `clipboard` delivery stays allowed (it starts no process).
+[MIT](https://github.com/akashmaurya99/archgen/blob/main/LICENSE) © ArchGen contributors
