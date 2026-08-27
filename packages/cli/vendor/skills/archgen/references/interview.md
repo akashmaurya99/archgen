@@ -1,20 +1,53 @@
 # Interview playbook — requirement elicitation
 
 Goal: complete, conflict-free requirements in the FEWEST round-trips.
-Batch 3–5 questions per message. Never ask what you can infer.
+Batch 3–5 questions per message. Never ask what you can infer — ask only
+decision-forks, state everything else as a veto-able decision (§ How to ask).
+
+## How to ask
+
+- **Tool-first, options-fallback.** Use your harness's ask-question /
+  interactive multiple-choice tool when one exists; no such tool → ask inline
+  with labeled options. Same content either way.
+- **Recommendation-first.** Every option set leads with YOUR best judgment
+  tagged `(recommended)`, then alternatives. The user accepts the
+  recommendation by default and may override — never present bare options
+  without a recommendation.
+- **Ask forks, state decisions.** Ask ONLY the few decision-forks that
+  materially branch the plan. Everything derivative: DECIDE autonomously and
+  announce — "I'll use X because Y — say so if you'd rather Z" — so the user
+  can veto without being interrogated.
+- **Volume scales with scope.** Round caps (§ Step 1) are MAXIMA, not targets:
+  SMALL/simple prompt → at most 1–2 core questions, decide the rest; MEDIUM →
+  the targeted set; LARGE — or an experienced engineer signaling they want
+  control → the fuller discovery set.
+
+Worked example (recommendation-first, inline fallback form):
+
+> Rollout strategy?
+> 1. Feature flag + staged rollout **(recommended)** — existing users unaffected
+> 2. Immediate cutover — simpler, riskier
+> 3. Versioned API alongside — only if existing clients break
+> Reply 1–3, or just "ok" to accept the recommendation.
 
 ## Round 0 — calibration exchange (skippable)
 
-Two or three rapid questions, asked once at the very start:
+Two or three rapid items, asked once at the very start — each INFERRED first
+(§ How to ask), asked only when genuinely ambiguous:
 
-1. Rough scale: prototype, MVP, or production-bound?
+1. Rough scale: prototype, MVP, or production-bound? INFER from the opening
+   message + repo context; state the inference + one line of reasoning and
+   let the user confirm or correct. Ask open-ended ONLY when genuinely
+   ambiguous.
 2. Team size + convention constraints? (solo? existing lint/CI/style guides?)
 3. Deadline pressure: none, moderate, crunch?
 
 Purpose is ONLY to pick question-set depth and right-size later verification
 rigor — never to collect requirements. SKIP the whole exchange when the user's
-opening message already answers these items (e.g. "quick prototype by Friday").
-Record whatever was captured under `calibration:` in answers.yaml.
+opening message already answers these items (e.g. "quick prototype by
+Friday"); SMALL/simple prompts skip calibration entirely and go straight to
+their 1–2 core forks (§ How to ask). Record whatever was captured under
+`calibration:` in answers.yaml.
 
 ## Step 1 — classify intent (decide during round 1)
 
@@ -35,6 +68,12 @@ Default `scope_class` from the intent class (user's choice wins — scope_class
 is agreed in GENERATE step 1 and recorded in answers.yaml):
 GREENFIELD-SYSTEM→LARGE, GREENFIELD-MODULE→MEDIUM,
 BROWNFIELD-FEATURE→MEDIUM/SMALL, BROWNFIELD-CHANGE→SMALL.
+
+Scale is INFERRED, not asked: derive scope_class from the opening message +
+repo context + the class above, state it with one line of reasoning, and let
+the user confirm or correct. Ask about scale ONLY when genuinely
+ambiguous/confused. Small/simple prompts: skip heavy calibration, ask only
+the 1–2 core forks (§ How to ask), decide the rest.
 
 ## GREENFIELD-SYSTEM — professional discovery (≤6 rounds)
 
@@ -163,7 +202,8 @@ resolve before proceeding. [wait for user]
 ## Token discipline
 
 - Batch 3–5 questions per message; never ping-pong one-per-message.
-- Hard round caps: GREENFIELD-SYSTEM ≤6 rounds, every other class ≤3
+- Hard round caps — MAXIMA, not targets (small prompts ask far fewer;
+  § How to ask): GREENFIELD-SYSTEM ≤6 rounds, every other class ≤3
   (round 0 counts when it runs).
 - Skip any question already answered by the opening message, calibration, or
   survey artifacts.

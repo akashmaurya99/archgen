@@ -116,8 +116,11 @@ Pick ONE mode from the user's intent and follow its section below:
 2. **Interview.** Follow references/interview.md: round-0 calibration,
    classify ONE intent class (the four classes + round caps + default
    `scope_class` mapping live there), record it as `intent_class` in
-   answers.yaml. Batch questions, never one-per-message. [wait for user per
-   round]
+   answers.yaml. Batch questions, never one-per-message. Ask per interview.md
+   § How to ask: harness ask-question tool if available else labeled options,
+   always recommendation-first; INFER scale — state + confirm, ask only if
+   ambiguous; ask only decision-forks, state derivative decisions — question
+   volume scales with scope. [wait for user per round]
 3. **Generate artifacts** into `.archgen/<slug>/` (slug = project short
    name) at the depth Hard rule 3 demands (templates:
    references/artifact-templates.md). Every task needs: id, title,
