@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Root monorepo scripts**: a private, scripts-only root `package.json` —
+  `npm run setup` (once) installs extension deps, `npm test` runs the skill +
+  CLI + extension suites CI runs, plus `test:fixtures`, `sync`, and
+  `sync:check` aliases. Deliberately not npm-workspaces (the extension keeps
+  its own lockfile + native rebuild); no root `version` field (single source
+  stays `archgen.config.json`).
+- **Community policies**: `SECURITY.md` (private vulnerability reporting via
+  GitHub advisories or email) and `CODE_OF_CONDUCT.md` (Contributor Covenant
+  2.1).
+
+### Fixed
+
+- `CONTRIBUTING.md` repo map now names the CLI package correctly
+  (`archgen-skill`, not `archgen`).
+
 ## [0.0.5] - 2026-08-27
 
 Enterprise-hardening release: restore reliability, security, performance

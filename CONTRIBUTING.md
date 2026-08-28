@@ -4,7 +4,7 @@ Thanks for your interest in contributing! This repository is a small monorepo:
 
 ```
 skill/              the archgen agent skill (canonical source of truth)
-packages/cli/       `archgen` npm CLI (init / install / uninstall)
+packages/cli/       `archgen-skill` npm CLI (init / install / uninstall)
 packages/extension/ VS Code extension (DAG, code-graph, docs views)
 fixtures/           deterministic end-to-end drivers + shared YAML corpus
 schemas/            JSON schema + architecture conventions
@@ -18,8 +18,15 @@ schemas/            JSON schema + architecture conventions
 
 ## Running tests
 
-Each package has its own suite — run all of them before opening a PR (CI runs
-the same set):
+Fast path from the repo root — one setup, one command for everything CI runs:
+
+```sh
+npm run setup   # once — installs extension dependencies
+npm test        # skill + CLI + extension (typecheck + compile + vitest)
+```
+
+Each package also has its own suite — run all of them before opening a PR
+(CI runs the same set):
 
 ```sh
 # skill (node:test, no deps)

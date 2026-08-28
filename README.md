@@ -108,9 +108,18 @@ uninstalling it loses nothing.
 | [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button · activity-bar cockpit | `.vsix` attached to [GitHub Releases](https://github.com/akashmaurya99/archgen/releases) by CI |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
 | [`fixtures/`](fixtures/) | Deterministic E2E demos + shared YAML corpus | repo-only |
-| [`docs/`](docs/) | Architecture walkthrough · release process | repo-only |
+| [`docs/`](docs/) | Architecture walkthrough · release process · research | repo-only |
 
 ## Development
+
+One-command flow from the repo root:
+
+```sh
+npm run setup   # once — installs extension dependencies
+npm test        # skill + CLI + extension suites (same set CI runs)
+```
+
+Or per-package:
 
 ```sh
 # Skill suite (node:test, zero deps)
@@ -137,6 +146,7 @@ extension runs inside VS Code's Electron runtime regardless. See
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Dual-mode design, gates, wave mechanics, platform detection |
 | [docs/releasing.md](docs/releasing.md) | Cutting CLI + extension releases |
+| [docs/research/](docs/research/agentic-ide-context-injection-catalog.md) | Sourced research catalog: programmatic context injection into agentic IDE chat boxes |
 | [skill/SKILL.md](skill/SKILL.md) | The full skill contract the agents execute |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 

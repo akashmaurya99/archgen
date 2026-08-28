@@ -1,0 +1,35 @@
+{
+  "name": "archgen",
+  "private": true,
+  "description": "Monorepo root for archgen — scripts only. Not published; the CLI publishes as archgen-skill and the extension ships as a .vsix from GitHub Releases.",
+  "//": [
+    "Deliberately NOT an npm workspaces root: packages/cli is zero-dep and",
+    "packages/extension manages its own committed lockfile + native rebuild",
+    "(better-sqlite3). Workspaces would hoist/merge lockfiles and break the",
+    "extension's `npm ci` contract. Use `npm run setup` once after cloning,",
+    "then `npm test` runs every suite CI runs.",
+    "Extension tests require Node 22 (jsdom + better-sqlite3 + vitest pools);",
+    "skill and CLI run on Node >= 18.",
+    "No `version` field on purpose: archgen.config.json is the single version",
+    "source (CI vendor-check gates every derived copy). A root version here",
+    "would be an ungated drift source."
+  ],
+  "scripts": {
+    "setup": "npm ci --prefix packages/extension",
+    "test": "npm run test:skill && npm run test:cli && npm run test:extension",
+    "test:skill": "node --test skill/scripts/test/*.test.mjs",
+    "test:cli": "npm --prefix packages/cli test",
+    "test:extension": "npm --prefix packages/extension run typecheck && npm --prefix packages/extension run compile && npm --prefix packages/extension test",
+    "test:fixtures": "bash fixtures/greenfield-demo/run.sh && bash fixtures/brownfield-demo/run.sh && bash fixtures/verifier-negative/run.sh",
+    "sync": "npm --prefix packages/cli run sync",
+    "sync:check": "npm --prefix packages/cli run sync:check"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akashmaurya99/archgen.git"
+  }
+}
