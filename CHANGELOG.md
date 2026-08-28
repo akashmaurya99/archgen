@@ -7,23 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **Root monorepo scripts**: a private, scripts-only root `package.json` —
-  `npm run setup` (once) installs extension deps, `npm test` runs the skill +
-  CLI + extension suites CI runs, plus `test:fixtures`, `sync`, and
-  `sync:check` aliases. Deliberately not npm-workspaces (the extension keeps
-  its own lockfile + native rebuild); no root `version` field (single source
-  stays `archgen.config.json`).
-- **Community policies**: `SECURITY.md` (private vulnerability reporting via
-  GitHub advisories or email) and `CODE_OF_CONDUCT.md` (Contributor Covenant
-  2.1).
-
-### Fixed
-
-- `CONTRIBUTING.md` repo map now names the CLI package correctly
-  (`archgen-skill`, not `archgen`).
-
 ## [0.0.5] - 2026-08-27
 
 Enterprise-hardening release: restore reliability, security, performance
@@ -53,6 +36,18 @@ extension.
 - **`docs/releasing.md` single-source release flow**: bump the version in
   `archgen.config.json`, run `node packages/cli/scripts/sync-config.mjs &&
   node packages/cli/scripts/sync-vendor.mjs`, verify with `sync:check`.
+- **Tag-triggered release workflow** (`.github/workflows/release.yml`):
+  pushing a `vextension-*` tag runs the extension gates, builds the vsix, and
+  publishes a GitHub Release with the vsix attached — no manual upload step.
+- **Root monorepo scripts**: a private, scripts-only root `package.json` —
+  `npm run setup` (once) installs extension deps, `npm test` runs the skill +
+  CLI + extension suites CI runs, plus `test:fixtures`, `sync`, and
+  `sync:check` aliases. Deliberately not npm-workspaces (the extension keeps
+  its own lockfile + native rebuild); no root `version` field (single source
+  stays `archgen.config.json`).
+- **Community policies**: `SECURITY.md` (private vulnerability reporting via
+  GitHub advisories or email) and `CODE_OF_CONDUCT.md` (Contributor Covenant
+  2.1).
 
 ### Changed
 
@@ -83,7 +78,10 @@ extension.
   invalid statuses, empty/CRLF/unicode docs; corrupt sibling features degrade
   to a warning while the active board renders; 10k-task parse <500 ms.
 - Extension: the kickoff-prompt input was a top-center native quick-input jump; it now opens as a centered modal inside the Task Board itself (Enter copies, Esc cancels), while non-board entry points keep the native input.
-- Clicking a Docs-tree entry could update an invisible board; documents now open the board directly on their page.
+- Clicking a Docs-tree entry could update an invisible board; documents now
+  open the board directly on their page.
+- `CONTRIBUTING.md` repo map now names the CLI package correctly
+  (`archgen-skill`, not `archgen`).
 
 ## [0.0.4] - 2026-08-26
 

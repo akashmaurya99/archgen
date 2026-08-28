@@ -1,0 +1,49 @@
+name: Release
+
+# Tag-triggered extension release. Pushing a `vextension-*` tag runs the same
+# gates as the CI extension job, builds the vsix (plain `vsce package` via
+# `npm run package` — NEVER `--no-dependencies`, which would drop the
+# externalized better-sqlite3 native binding), and publishes a GitHub Release
+# with the vsix attached. See docs/releasing.md.
+on:
+  push:
+    tags:
+      - 'vextension-*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: packages/extension
+      - run: npm run typecheck
+        working-directory: packages/extension
+      - run: npm run compile
+        working-directory: packages/extension
+      - run: npm test
+        working-directory: packages/extension
+      - run: npm run package
+        working-directory: packages/extension
+      - run: ls archgen-extension-*.vsix
+        working-directory: packages/extension
+      - id: meta
+        run: echo "version=${GITHUB_REF_NAME#vextension-}" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ArchGen Extension v${{ steps.meta.outputs.version }}
+          body: |
+            Read-only visual layer for archgen — live task DAG, code-dependency graph, rendered docs, and a ▶ button that hands any task to your coding agent.
+
+            **Install:** download `archgen-extension-${{ steps.meta.outputs.version }}.vsix` below, then run *Extensions: Install from VSIX…* in VS Code (Cursor, Windsurf, and VSCodium work too).
+
+            The archgen skill itself installs with `npx archgen-skill init` — see the [repo README](https://github.com/akashmaurya99/archgen).
+          files: packages/extension/*.vsix
+          fail_on_unmatched_files: true
+          generate_release_notes: true
