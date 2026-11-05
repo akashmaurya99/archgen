@@ -7,6 +7,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CodeGraph bootstrap everywhere** — install.sh, `archgen init`, and
+  `archgen install` (global) now ensure the CodeGraph CLI is present and
+  up-to-date, wire the MCP server into every DETECTED harness, and build the
+  project index — all through the new `scripts/codegraph.mjs`. `--no-codegraph`
+  (CLI) / `--no-codegraph` (install.sh) / `ARCHGEN_CODEGRAPH=0` (env) opt out;
+  the bootstrap is never fatal to the skill install. The CLI suite no longer
+  touches the developer's real global MCP configs (`ARCHGEN_CODEGRAPH=0` is set
+  for `npm test`).
+- **CodeGraph command shape corrected** — the MCP server is `codegraph serve
+  --mcp` (stdio). There is no `codegraph mcp` subcommand (it prints the
+  top-level help and exits, so a server declared that way never connects).
+  `serve --mcp` keeps the file watcher ON, so the index stays live in real
+  time once it is built — no re-indexing, ever.
+- **Per-harness MCP wiring is now data-driven** via new
+  `assets/harness-mcp.json` (11 harnesses; correct top-level key per platform —
+  `mcpServers` / `servers` / `mcp` / `context_servers` — and codegraph's own
+  native target list `claude,cursor,codex,opencode,gemini,antigravity,kiro`;
+  Windsurf, VS Code/Copilot, Zed and Trae are written by the script itself).
+  The writer never rewrites an unparseable config (JSONC stays untouched), is
+  idempotent, and resolves harness `local` install paths from the project root.
+- **Real-time index on every new project** — `codegraph init` (1.6.x indexes
+  by default) builds `.codegraph/` once; the MCP server's watcher
+  (`--no-watch` never passed) keeps it synchronized in real time.
+- **Internal context-budget tool** — `internal/tools/context-budget.mjs`
+  (repo-only, never shipped): token cost of the skill payload, per-slug
+  artifacts, and load scenarios as a percentage of 32k/64k/128k/200k/1M
+  windows; `--budget <n>` exits 1 when any scenario exceeds it;
+  `--tokenizer <pkg>` swaps in an exact tokenizer. Internal QA only — it does
+  not ship in the npm payload or installed stores, like all of `internal/`.
+  The shipped skill only carries the runtime retrieval lenses (`--digest` /
+  `--section` / `--map`).
+- **Section-level artifact retrieval** — `scripts/lib/docs.mjs` +
+  `doc-index.mjs --digest` (sections with line ranges), `--section
+  <path>[#anchor]` (fetch exactly one section), `--map <token>` (which
+  SECTIONS mention a task/FR/ADR). Workers can now pull one section instead of
+  a whole plan. No token reporting ships — the retrieval lenses carry only
+  structure.
+- **Anchor validation** — `doc-index.mjs --validate` now resolves markdown
+  heading anchors against the target document's GitHub-exact slugs (duplicate
+  headings get `-1`, `-2`); a link to a deleted/renamed section is a broken
+  `anchor`, previously a silent pass.
+- **GitHub-exact heading slugs** — `slugifyHeading()` matches GitHub (each
+  whitespace char → one hyphen, runs are NOT collapsed), with a tolerant
+  collapsed-hyphen comparison for hand-typed anchors.
+- **CRLF corpus fixture** (`fixtures/yaml-corpus/crlf.yaml`) — both YAML
+  parsers normalize `\r\n` identically; locked by 2 new corpus tests.
+- **Extension YAML parser parity fixes** — CRLF normalization, duplicate-key
+  rejection (mappings and flat flow mappings), mirroring skill/scripts/lib/yaml.mjs.
+- **tests**: `codegraph.test.mjs`, `docs.test.mjs`, `skill-registry.test.mjs`
+  (skill); `codegraph.test.mjs` (CLI); `context-budget.test.mjs` (internal).
+  30+ new tests; skill suite now 183, CLI suite now 100, internal suite new (11).
+
+### Added (hardening)
+- **Anti-compaction rules** — new Hard rule 9 (assume compaction: the FIRST
+  tool call after summarization must be re-reading `.archgen/<slug>/tasks.yaml`
+  + `next-tasks.mjs` + `.agent/resume.md`; tasks.yaml is ground truth; never
+  cite state un re-read) and `.agent/resume.md`, an ≤10-line re-entry snapshot
+  rewritten after every wave (slug, wave index, done/failed/blocked ids, the
+  resume command, remaining plan sections).
+- **CodeGraph for understanding** — the skill now directs agents to prefer
+  CodeGraph (`codegraph_explore` / `codegraph node`) whenever they need to
+  understand the codebase, and the worker prompt contract carries the same
+  directive. Never re-index: the server's file watcher keeps the index live.
+- **Drift guards** — `.githooks/pre-commit` (sync single-source check),
+  CI `.codegraph/` never-tracked guard, `skill-registry` whole-word matcher
+  test, documented Windows parity path (`npx archgen-skill`), internal-vs-
+  shipped import boundary in CONTRIBUTING.md.
+
+### Changed
+- **The skill no longer restates CodeGraph's command surface.** Once the MCP
+  server is wired it exposes its own tool set to the agent, so the shipped
+  skill keeps only the rules that matter (bootstrap once, never re-index, use
+  the MCP tools for comprehension, telemetry is on by default) and points at
+  the installed CLI for command syntax. The official command list now lives
+  only in the runtime script and `assets/harness-mcp.json` (data the writer
+  needs), not in the agent-facing docs.
+- **"Init once" is now stated identically everywhere** — SKILL.md, platforms.md,
+  orchestration.md, interview.md and the script output all say: the index is
+  built once per project, the server's watcher keeps it live, and nothing is
+  re-indexed by hand. Manual index/sync is documented only as the escape hatch
+  for a disabled watcher.
+- **Comment + prose diet** (token size): the agent-facing surface was trimmed
+  to essentials — `codegraph.mjs` 80 → ~55 comment lines, `lib/docs.mjs` 66 →
+  26, `lib/spawn-npm.js` 30 → 11, `cli/lib/codegraph.js` 26 → 11,
+  `internal/tools/tokens.mjs` 33 → 20; SKILL.md's CodeGraph section, Hard rule
+  9 and the platforms.md CodeGraph section were rewritten tighter. Shipped
+  payload: 76.3k → 74.3k tokens; the always-loaded SKILL.md: 6.2k → 5.9k.
+- **CodeGraph bootstrap now drives ONLY the official commands** (verified against
+  the official docs): `npm i -g @colbymchenry/codegraph` (install, always the
+  latest published release — **no version is pinned anywhere**),
+  `codegraph upgrade` / `codegraph upgrade --check` (freshness, official
+  updater), `codegraph install --target=<ids> --location=<global|local> --yes`
+  (wiring), `codegraph init <path>` (creates `.codegraph/` AND builds the
+  graph in one step), `codegraph status --json` (verification),
+  `codegraph telemetry status|on|off` (disclosure). The custom script only
+  adds what the official installer does not cover: detection of DETECTED
+  harnesses, the approval gate before any config write, telemetry disclosure,
+  and the config write for harnesses codegraph does not target (VS Code /
+  Copilot, Windsurf, Zed, Trae) with the per-platform key from
+  `assets/harness-mcp.json`.
+- **No codegraph version is referenced in the shipped skill** — the docs point
+  at `codegraph help <command>` for the current surface, and the installer
+  always takes the latest published release.
+
+### Fixed
+- **Windows npm spawn (EINVAL)** — `npm` was spawned unshelled, which fails on
+  Windows since the CVE-2024-27980 hardening, so `update` always reported
+  "could not reach the npm registry". Root fix: `lib/spawn-npm.js` invokes
+  npm's JS entry point with the current node binary (no shim, no shell), with
+  a portable PATH lookup replacing the POSIX-only `command -v`. The Windows-only
+  regression test was rewritten as two cross-platform tests — the CLI suite now
+  reports **0 skipped** (was 1).
+
+
+- **install.sh shipped the dev-only `scripts/test` suite** into every installed
+  store (the CLI prunes it via `DEV_ONLY_RELPATHS`); both `--init` and global
+  `--copy` now prune `scripts/test` and OS junk, matching the CLI.
+- **install.sh `--init` skipped the CodeGraph bootstrap** entirely; it now
+  runs the same engine as the CLI (`node scripts/codegraph.mjs ensure --yes`).
+- **Vendor mirror drift** — new `scripts/codegraph.mjs`, `scripts/lib/docs.mjs`,
+  `scripts/lib/yaml.mjs` parity fixes and `assets/harness-mcp.json` were not in
+  the npm payload until re-synced. (The token/context QA tooling was
+  deliberately moved out of the payload into `internal/` in the same pass.)
+- **platforms.md CodeGraph section was written against v1.0.1** (install flags,
+  target list, Node 22/24 requirement, "100% local" telemetry claim). Updated to
+  v1.6.2: `codegraph install --target=...`, `init` indexes by default,
+  telemetry ON by default with a machine ID (`codegraph telemetry
+  status|on|off`; disclosed, never auto-disabled without consent).
+- **assets/mcp-template.json used the non-existent `codegraph mcp` subcommand**
+  in every variant; all now use `codegraph serve --mcp`.
+- **`.gitignore` now excludes `.codegraph/`** (14 MB local index was
+  accidentally created in the repo by the test suite before the
+  `ARCHGEN_CODEGRAPH=0` guard existed — removed).
+
+
 ## [0.0.5] - 2026-08-27
 
 Enterprise-hardening release: restore reliability, security, performance
@@ -57,6 +194,22 @@ extension.
 - Version is single-sourced: `archgen.config.json` is now the only place the
   version is edited; sync-config propagates it to the skill config, SKILL.md
   frontmatter, and both package.json files (CI `vendor-check` fails on drift).
+
+### Added (hardening)
+- **Anti-compaction rules** — new Hard rule 9 (assume compaction: the FIRST
+  tool call after summarization must be re-reading `.archgen/<slug>/tasks.yaml`
+  + `next-tasks.mjs` + `.agent/resume.md`; tasks.yaml is ground truth; never
+  cite state un re-read) and `.agent/resume.md`, an ≤10-line re-entry snapshot
+  rewritten after every wave (slug, wave index, done/failed/blocked ids, the
+  resume command, remaining plan sections).
+- **CodeGraph for understanding** — the skill now directs agents to prefer
+  CodeGraph (`codegraph_explore` / `codegraph node`) whenever they need to
+  understand the codebase, and the worker prompt contract carries the same
+  directive. Never re-index: the server's file watcher keeps the index live.
+- **Drift guards** — `.githooks/pre-commit` (sync single-source check),
+  CI `.codegraph/` never-tracked guard, `skill-registry` whole-word matcher
+  test, documented Windows parity path (`npx archgen-skill`), internal-vs-
+  shipped import boundary in CONTRIBUTING.md.
 
 ### Fixed
 
@@ -181,6 +334,22 @@ extension.
 - **Doctor block-upgrade detection**: stale-format managed blocks are reported
   (`UPGRADED`, or would-upgrade under `--check`) instead of passing silently.
 
+### Added (hardening)
+- **Anti-compaction rules** — new Hard rule 9 (assume compaction: the FIRST
+  tool call after summarization must be re-reading `.archgen/<slug>/tasks.yaml`
+  + `next-tasks.mjs` + `.agent/resume.md`; tasks.yaml is ground truth; never
+  cite state un re-read) and `.agent/resume.md`, an ≤10-line re-entry snapshot
+  rewritten after every wave (slug, wave index, done/failed/blocked ids, the
+  resume command, remaining plan sections).
+- **CodeGraph for understanding** — the skill now directs agents to prefer
+  CodeGraph (`codegraph_explore` / `codegraph node`) whenever they need to
+  understand the codebase, and the worker prompt contract carries the same
+  directive. Never re-index: the server's file watcher keeps the index live.
+- **Drift guards** — `.githooks/pre-commit` (sync single-source check),
+  CI `.codegraph/` never-tracked guard, `skill-registry` whole-word matcher
+  test, documented Windows parity path (`npx archgen-skill`), internal-vs-
+  shipped import boundary in CONTRIBUTING.md.
+
 ### Fixed
 
 - The installer no longer records foreign symlinks (targets that predate us) in
@@ -249,6 +418,22 @@ extension.
   installer creates.
 
 ## [0.0.2] - 2026-08-25
+
+### Added (hardening)
+- **Anti-compaction rules** — new Hard rule 9 (assume compaction: the FIRST
+  tool call after summarization must be re-reading `.archgen/<slug>/tasks.yaml`
+  + `next-tasks.mjs` + `.agent/resume.md`; tasks.yaml is ground truth; never
+  cite state un re-read) and `.agent/resume.md`, an ≤10-line re-entry snapshot
+  rewritten after every wave (slug, wave index, done/failed/blocked ids, the
+  resume command, remaining plan sections).
+- **CodeGraph for understanding** — the skill now directs agents to prefer
+  CodeGraph (`codegraph_explore` / `codegraph node`) whenever they need to
+  understand the codebase, and the worker prompt contract carries the same
+  directive. Never re-index: the server's file watcher keeps the index live.
+- **Drift guards** — `.githooks/pre-commit` (sync single-source check),
+  CI `.codegraph/` never-tracked guard, `skill-registry` whole-word matcher
+  test, documented Windows parity path (`npx archgen-skill`), internal-vs-
+  shipped import boundary in CONTRIBUTING.md.
 
 ### Fixed
 

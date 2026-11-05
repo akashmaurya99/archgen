@@ -23,6 +23,7 @@ import { dirname, join, resolve } from 'node:path';
 import { importsAgents, renderBlock, START, END, upsertManagedFile } from './block.js';
 import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackup, pruneDevOnly } from './store.js';
 import { writeStamp } from './version-stamp.js';
+import { bootstrapCodegraph } from './codegraph.js';
 
 const CONTEXT_FILES = ['AGENTS.md', 'CLAUDE.md'];
 
@@ -99,8 +100,10 @@ function installClaudeAdapter(root, source, warnings) {
  * claude adapter, and write context pointers.
  * @param {string} projectDir target repo root
  * @param {string} packageRoot dir containing this CLI package
- * @param {{force?: boolean}} opts --force proceeds automatically; divergent
- *   copies are always auto-backed-up (never refused, never destroyed)
+ * @param {{force?: boolean, codegraph?: boolean, log?: (s: string) => void, env?: NodeJS.ProcessEnv}} opts
+ *   --force proceeds automatically; divergent copies are always auto-backed-up
+ *   (never refused, never destroyed). opts.codegraph === false opts OUT of the
+ *   automatic CodeGraph bootstrap (install + MCP wiring + index build).
  * @returns {{storePath: string, claudeLink: 'created'|'existing'|'migrated'|'skipped'|'kept-divergent',
  *            backups: string[], contextFiles: string[], createdContextFiles: string[], warnings: string[]}}
  */
@@ -110,6 +113,8 @@ export function initProject(projectDir, packageRoot, opts = {}) {
   // both plain and --force runs take the same safe path.
   const force = opts.force === true;
   void force;
+  const codegraphAllowed = opts.codegraph !== false;
+  const log = opts.log ?? console.log;
 
   const root = resolve(projectDir);
   const source = resolveSkillSource(packageRoot);
@@ -163,6 +168,17 @@ export function initProject(projectDir, packageRoot, opts = {}) {
     contextFiles.push(name);
     if (!existed) createdContextFiles.push(name);
     appendEntry(root, 'block', name);
+  }
+
+  // 4. CodeGraph bootstrap — install the latest CLI, wire the MCP server into
+  //    every detected harness, and build the project index. Non-fatal by
+  //    design: an offline machine still gets the skill installed.
+  if (codegraphAllowed) {
+    const r = bootstrapCodegraph({ source, projectDir: root, log, env: opts.env, noCodegraph: false });
+    if (!r.ok) warnings.push(`codegraph bootstrap incomplete${r.detail ? ': ' + r.detail : ''} — install later with: node .agents/skills/archgen/scripts/codegraph.mjs ensure --project . --yes`);
+    else if (r.skipped) warnings.push('codegraph bootstrap skipped (' + r.skipped + ')');
+  } else {
+    warnings.push('codegraph bootstrap skipped (--no-codegraph)');
   }
 
   return { storePath: storeAbs, claudeLink, backups, contextFiles, createdContextFiles, warnings };

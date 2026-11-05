@@ -55,7 +55,13 @@ conversation that produced them. Hard rules, no exceptions:
    `see ../architecture.yaml data_contracts.orders` or
    `payload per ../architecture.yaml api_contracts.payments.request_payload`.
    Never restate a contract from memory — point at it.
-6. **Verifier-compatible ids in plans.** `verify-plan.mjs` rejects any
+6. **Markdown heading anchors are GitHub-exact slugs.** Lowercase, punctuation
+   dropped, every whitespace character becomes a hyphen (runs are NOT
+   collapsed): `## TASK-02 — Auth API` slugs to `#task-02--auth-api`. A link
+   whose anchor does not resolve against the target document's real heading
+   slugs is a broken `anchor` finding (verifier-blocking). Underscores and
+   hyphens survive; letters/digits are never dropped.
+7. **Verifier-compatible ids in plans.** `verify-plan.mjs` rejects any
    UPPERCASE-numbered token in `plans/*.md` that is not a real tasks.yaml id
    (`TASK-999` fails; your actual ids pass). So: requirement ids
    (`FR-<MODULE>-nn`) are cited from `tasks.yaml` acceptance lines and
@@ -139,6 +145,11 @@ INSIDE `.archgen/<slug>/` — the plan + everything needed to execute/review it:
   - `.agent/notes/<task-id-or-topic>.md` — worker/survey/investigator notes.
   - `.agent/reports/<verifier|reviewer|investigate>-<round>.md` — persisted
     verifier/reviewer/investigation findings.
+  - `.agent/resume.md` — the RE-ENTRY snapshot, rewritten after every wave:
+    ≤10 lines carrying slug, wave index, done/failed/blocked ids, the one
+    command to resume (`node <skill>/scripts/next-tasks.mjs
+    .archgen/<slug>/tasks.yaml`), and the plan sections the remaining tasks
+    own. This is the FIRST file to read after any context compaction.
 
 OUTSIDE `.archgen/` — project DELIVERABLES an approved task produces, written
 to the task's `file_ownership` paths at the repo root (never into `.archgen/`):

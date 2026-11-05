@@ -1,5 +1,6 @@
 // version.js — semver compare + npm registry lookup (zero deps).
 import { spawnSync } from 'node:child_process';
+import { npmInvocation } from './spawn-npm.js';
 
 export function parseSemver(v) {
   const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(v ?? '').trim());
@@ -17,7 +18,14 @@ export function compareSemver(a, b) {
 }
 
 export function fetchLatestVersion(pkg) {
-  const r = spawnSync('npm', ['view', pkg, 'version'], { encoding: 'utf8', timeout: 15000 });
-  if (r.status !== 0 || !r.stdout) return null;
-  return r.stdout.trim().split(/\r?\n/).pop() || null;
+  // Registry-verified constant in every caller; refuse anything else outright.
+  if (!/^[a-z0-9@][a-z0-9._/-]*$/i.test(String(pkg ?? ''))) return null;
+  try {
+    const inv = npmInvocation(['view', String(pkg), 'version']);
+    const r = spawnSync(inv.command, inv.args, { encoding: 'utf8', timeout: 15000, shell: inv.shell });
+    if (r.status !== 0 || !r.stdout) return null;
+    return r.stdout.trim().split(/\r?\n/).pop() || null;
+  } catch {
+    return null;
+  }
 }

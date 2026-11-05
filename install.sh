@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# POSIX-only (Linux/macOS). On Windows use the cross-platform equivalent:
+#   npx archgen-skill init   (or: npx archgen-skill install)
+# every flag here has a matching --flag on the CLI; parity is enforced by
+# packages/cli tests + the managed-block byte comparison.
 # install.sh — multi-harness installer for the archgen skill.
 # Zero dependencies beyond coreutils; no sudo; no network.
 set -u
@@ -11,10 +15,11 @@ PROJECT_ARG=""
 UNINSTALL=0
 INIT=0
 INIT_DIR=""
+CODEGRAPH=1
 
 usage() {
   cat <<EOF
-Usage: install.sh [--copy] [--project <dir>] [--uninstall]
+Usage: install.sh [--copy] [--project <dir>] [--uninstall] [--no-codegraph]
 
   --copy            make real copies instead of symlinks (default: symlink)
   --project <dir>   create + install into <dir>/.github/skills (GitHub Copilot,
@@ -27,7 +32,12 @@ Usage: install.sh [--copy] [--project <dir>] [--uninstall]
                     <dir>/.claude/skills/archgen -> ../../.agents/skills/archgen
                     (skipped gracefully when symlinks are unavailable), and
                     generate AGENTS.md / CLAUDE.md pointer blocks so every
-                    agent harness auto-discovers archgen (default dir: cwd)
+                    agent harness auto-discovers archgen (default dir: cwd).
+                    Also bootstraps CodeGraph: installs the latest CLI if
+                    missing, wires the MCP server into every detected
+                    harness, and builds the project index (kept live by the
+                    server's file watcher).
+  --no-codegraph    opt out of the CodeGraph bootstrap
   -h, --help        show this help
 
 Targets (installed only when the directory already exists):
@@ -43,6 +53,15 @@ EOF
 
 warn() { printf 'install.sh: %s\n' "$*" >&2; }
 die()  { warn "$*"; exit 1; }
+
+# Prune dev-only subtrees from a copied store (CLI parity: DEV_ONLY_RELPATHS
+# in packages/cli/lib/store.js). The repo's own node:test suite never ships to
+# end users; hashDir ignores it on both sides too.
+prune_dev_only() { # $1 = installed store root
+  [ -d "$1/scripts/test" ] && rm -rf -- "$1/scripts/test"
+  find "$1" -name '.DS_Store' -o -name 'Thumbs.db' -o -name 'desktop.ini' 2>/dev/null | while IFS= read -r f; do rm -f -- "$f"; done
+  return 0
+}
 
 # ---- Installer safety helpers (parity with packages/cli/lib/store.js) -------
 # lstat-style refusal: [ -L ] inspects the link itself, never its target. A
@@ -76,6 +95,7 @@ while [ $# -gt 0 ]; do
     --copy)      MODE="copy"; shift ;;
     --project)   [ $# -ge 2 ] || die '--project requires a path argument'; PROJECT_ARG="$2"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --no-codegraph) CODEGRAPH=0; shift ;;
     --init)      INIT=1; if [ $# -ge 2 ] && [ "${2-}" != "--copy" ] && [ "${2-}" != "--uninstall" ]; then INIT_DIR="$2"; shift; fi; shift ;;
     -h|--help)   usage; exit 0 ;;
     *)           die "unknown option: $1 (try --help)" ;;
@@ -116,6 +136,7 @@ if [ "$INIT" -eq 1 ]; then
     fi
   fi
   cp -R -- "$SOURCE" "$STORE"
+  prune_dev_only "$STORE"
 
   # Version stamp inside the store. Canonical source: archgen.config.json at
   # the repo root; falls back to the CLI package.json scrape, then "dev".
@@ -225,6 +246,23 @@ BLOCK
     } > "$f.tmp" && mv "$f.tmp" "$f"
   }
   write_bridge "$ROOT/CLAUDE.md"
+
+  # CodeGraph bootstrap (mirrors packages/cli --init): install the latest CLI,
+  # wire the MCP server into every DETECTED harness, build the project index.
+  # Non-fatal by design: an offline machine still gets the skill installed.
+  if [ "$CODEGRAPH" -eq 1 ] && [ -f "$STORE/scripts/codegraph.mjs" ]; then
+    if command -v node >/dev/null 2>&1; then
+      echo 'archgen: bootstrapping CodeGraph (install + MCP wiring + index)…'
+      if ! node "$STORE/scripts/codegraph.mjs" ensure --project "$ROOT" --location both --yes; then
+        warn "CodeGraph bootstrap incomplete — run: node .agents/skills/archgen/scripts/codegraph.mjs ensure --project . --yes"
+      fi
+    else
+      warn "node not found on PATH — skipping the CodeGraph bootstrap (skill works without it; uses Glob+Grep)"
+    fi
+  elif [ "$CODEGRAPH" -eq 1 ]; then
+    warn "scripts/codegraph.mjs not in this payload — skipping the CodeGraph bootstrap"
+  fi
+
 
   echo "archgen: project initialized at $ROOT"
   echo "  + .agents/skills/archgen (canonical store)"
@@ -382,6 +420,7 @@ while IFS= read -r tdir; do
       fi
     fi
     if cp -R -- "$SOURCE" "$dest"; then
+      prune_dev_only "$dest"
       printf '%-8s %-5s %s\n' OK copy "$dest"; changed=$((changed+1))
       have_entry "$(printf 'copy\t%s' "$dest")" || printf 'copy\t%s\n' "$dest" >> "$MANIFEST"
     else

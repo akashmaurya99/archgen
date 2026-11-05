@@ -108,6 +108,7 @@ uninstalling it loses nothing.
 | [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button · activity-bar cockpit | `.vsix` attached to [GitHub Releases](https://github.com/akashmaurya99/archgen/releases) by CI |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
 | [`fixtures/`](fixtures/) | Deterministic E2E demos + shared YAML corpus | repo-only |
+| [`internal/`](internal/) | QA tooling (context/token budget) — never shipped | repo-only |
 | [`docs/`](docs/) | Architecture walkthrough · release process · research | repo-only |
 
 ## Development

@@ -56,7 +56,11 @@ interface Ctx {
 /** Parse YAML-subset text into data plus its comment ledger. */
 export function parseYaml(text: string, opts: ParseYamlOptions = {}): ParsedYaml {
   const filename = opts.filename ?? '<input>';
-  const lines = text.split('\n');
+  // Normalize CRLF: split on '\n' leaves a stray '\r' at the end of every line
+  // in Windows-authored files; stripping it here keeps scalar values and
+  // comment texts free of carriage returns so the parser behaves byte-identically
+  // to the skill's zero-dep yaml.mjs.
+  const lines = text.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
   // Strip a single trailing newline artifact so the last real line is processed.
   if (lines.length && lines[lines.length - 1] === '') lines.pop();
 
@@ -145,6 +149,13 @@ function parseMapping(lines: string[], pos: { i: number }, indent: number, ctx: 
     const m = matchKey(c.text!);
     if (!m) fail(ctx, pos.i + 1, `expected 'key:' mapping entry, got: ${c.bare!.slice(0, 40)}`);
     assertKeyWellFormed(ctx, pos.i + 1, m);
+    // Duplicate keys are a corruption class (real YAML parsers reject them):
+    // silent last-wins hides data from every downstream check. Parity with
+    // the skill's yaml.mjs is mandatory — the two parsers are pinned together
+    // by the shared corpus.
+    if (Object.prototype.hasOwnProperty.call(out, m.key)) {
+      fail(ctx, pos.i + 1, `duplicate key '${m.key}' in mapping`);
+    }
     const keyPath: Array<string | number> = [...basePath, m.key];
     const key = consumePendingAndParseKey(ctx, c, pos.i + 1, keyPath);
     pos.i++;
@@ -315,11 +326,16 @@ function parseScalarOrFlow(v: string, ctx: Ctx, lineNo: number): YamlValue {
     if (!v.endsWith('}')) fail(ctx, lineNo, `unterminated flow mapping: ${v}`);
     const inner = v.slice(1, -1).trim();
     if (inner === '') return {};
-    const obj: Record<string, any> = {};
+    const obj: Record<string, YamlValue> = {};
     for (const part of splitFlow(inner)) {
       const m = matchKey(part);
       if (!m) fail(ctx, lineNo, `flow mapping entry must be 'key: value', got: ${part}`);
       assertKeyWellFormed(ctx, lineNo, m);
+      // Duplicate keys inside a flat flow mapping corrupt the same way —
+      // reject them instead of letting last-wins drop data silently.
+      if (Object.prototype.hasOwnProperty.call(obj, m.key)) {
+        fail(ctx, lineNo, `duplicate key '${m.key}' in flow mapping`);
+      }
       const val = part.slice(m.end).trim();
       if (val.startsWith('{')) fail(ctx, lineNo, `nested flow mappings are not supported: ${val}`);
       obj[m.key] = parseScalarOrFlow(val, ctx, lineNo);

@@ -41,15 +41,16 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { parseYaml } from './lib/yaml.mjs';
 import { buildGraph, GraphError } from './lib/graph.mjs';
 import { resolveSlugInput, ScopeError } from './lib/scope.mjs';
+import { parseMarkdown, buildSections, findSection, anchorExists } from './lib/docs.mjs';
 
-const USAGE = 'usage: doc-index.mjs <slug-dir> [--refs-to <token>] [--validate] [--stale] [--diagrams] [--file <path>]';
+const USAGE = 'usage: doc-index.mjs <slug-dir> [--refs-to <token>] [--validate] [--stale] [--diagrams] [--file <path>] [--digest] [--section <path>[#<anchor>]] [--map <token>]';
 // Overview emits at most this many files (sorted); above it, truncated:true.
 const OVERVIEW_MAX_FILES = 100;
 function die(msg, code = 4) { console.error(msg); process.exit(code); }
 
 // --- argument parsing -------------------------------------------------------
 const argv = process.argv.slice(2);
-const opts = { input: null, refsTo: null, validate: false, stale: false, diagrams: false, file: null };
+const opts = { input: null, refsTo: null, validate: false, stale: false, diagrams: false, file: null, digest: false, section: null, map: null };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--refs-to') opts.refsTo = argv[++i];
@@ -57,15 +58,20 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--stale') opts.stale = true;
   else if (a === '--diagrams') opts.diagrams = true;
   else if (a === '--file') opts.file = argv[++i];
+  else if (a === '--digest') opts.digest = true;
+  else if (a === '--section') opts.section = argv[++i];
+  else if (a === '--map') opts.map = argv[++i];
   else if (a.startsWith('--')) die(`${USAGE} — unknown option '${a}'`);
   else if (opts.input === null) opts.input = a;
   else die(`${USAGE} — unexpected extra argument '${a}'`);
 }
 if (!opts.input) die(USAGE);
-if (opts.refsTo === undefined || opts.file === undefined) die(`${USAGE} — --refs-to/--file require a value`);
+if (opts.refsTo === undefined || opts.file === undefined || opts.section === undefined || opts.map === undefined) die(`${USAGE} — --refs-to/--file/--section/--map require a value`);
 if (opts.refsTo === '') die(`${USAGE} — --refs-to requires a non-empty token`);
-const modes = [opts.refsTo !== null, opts.validate, opts.stale, opts.diagrams].filter(Boolean).length;
-if (modes > 1) die(`${USAGE} — --refs-to/--validate/--stale/--diagrams are mutually exclusive`);
+if (opts.section === '') die(`${USAGE} — --section requires a non-empty path`);
+if (opts.map === '') die(`${USAGE} — --map requires a non-empty token`);
+const modes = [opts.refsTo !== null, opts.validate, opts.stale, opts.diagrams, opts.digest, opts.section !== null, opts.map !== null].filter(Boolean).length;
+if (modes > 1) die(`${USAGE} — --refs-to/--validate/--stale/--diagrams/--digest/--section/--map are mutually exclusive`);
 
 // --- input resolution -------------------------------------------------------
 // The scope gate is the ONLY way in: the slug dir must be an immediate child of
@@ -111,6 +117,21 @@ function readText(abs) {
   try { t = readFileSync(abs, 'utf8'); } catch { return null; }
   if (t.charCodeAt(0) === 0xfeff) t = t.slice(1);
   return t.replace(/\r\n?/g, '\n');
+}
+
+/**
+ * Parse-and-cache a markdown document by absolute path.
+ * Anchor validation resolves a link's target file OUTSIDE the tracked doc
+ * set (the target may be a file we did not walk), so it needs its own
+ * on-demand parser. Cached so a file referenced 50 times is parsed once.
+ */
+const parsedDocCache = new Map();
+function parsedDocAt(abs) {
+  if (parsedDocCache.has(abs)) return parsedDocCache.get(abs);
+  const text = readText(abs);
+  const doc = text === null ? null : parseMarkdown(text);
+  parsedDocCache.set(abs, doc);
+  return doc;
 }
 
 /** Depth-first collect of files matching `filter`, dot-directories skipped,
@@ -177,68 +198,7 @@ const FR_ID_SOURCE = '(?<![A-Za-z0-9_])FR-[A-Z0-9]+-\\d+(?![A-Za-z0-9_])';
 // Bare same-dir names are only trusted inside explicit markdown links
 // (`](c4-container.md)`) — prose mentions like "tasks.yaml" resolve
 // file-relatively and would be false positives.
-const ARTIFACT_PATH_RE = /(?<![A-Za-z0-9_./-])((?:\.\.?\/)?[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\.(?:md|markdown|ya?ml))(?![A-Za-z0-9_/-])/g;
-const MD_LINK_RE = /\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 const GENERATED_AT_RE = /generated_at:\s*(\S+)/;
-
-/**
- * Parse one markdown document: ATX headings (H1-H3 reported, any level kept
- * for diagram titles), fence bookkeeping, and artifact-path references.
- * Headings and links ignore fenced code; line numbers are 1-based post-CRLF
- * normalization.
- */
-function parseMarkdown(text) {
-  const lines = text.split('\n');
-  const headings = [];
-  const allHeadings = [];
-  const fences = [];
-  const links = [];
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^ {0,3}```/.test(line)) {
-      const info = line.replace(/^ {0,3}```/, '').trim();
-      // CommonMark pairing (nested-fence guard): inside an open fence only a
-      // BARE ``` closes it — an info-carrying ``` (e.g. a ```mermaid example
-      // quoted inside a ```text block) is CONTENT, never an opener. This keeps
-      // nested fences from producing phantom diagram entries or false titles.
-      if (inFence) {
-        if (info === '') { fences.push({ line: i + 1, info: null }); inFence = false; }
-      } else {
-        fences.push({ line: i + 1, info });
-        inFence = true;
-      }
-      continue;
-    }
-    if (inFence) continue;
-    const h = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
-    if (h) {
-      const entry = { level: h[1].length, text: h[2], line: i + 1 };
-      allHeadings.push(entry);
-      if (entry.level <= 3) headings.push(entry);
-      continue;
-    }
-    ARTIFACT_PATH_RE.lastIndex = 0;
-    let m;
-    while ((m = ARTIFACT_PATH_RE.exec(line)) !== null) links.push({ line: i + 1, target: m[1] });
-    MD_LINK_RE.lastIndex = 0;
-    let lm;
-    while ((lm = MD_LINK_RE.exec(line)) !== null) {
-      const t = lm[1];
-      if (/^[a-z][a-z0-9+.-]*:/i.test(t) || t.startsWith('#')) continue; // scheme'd or pure anchor
-      if (/\.(md|markdown|ya?ml)$/i.test(t.split('#')[0])) links.push({ line: i + 1, target: t });
-    }
-  }
-  // A target reachable by both extractors counts once.
-  const seen = new Set();
-  const uniqueLinks = links.filter((l) => {
-    const k = `${l.line}\u0000${l.target}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-  return { lines, headings, allHeadings, fences, links: uniqueLinks, balanced: fences.length % 2 === 0 };
-}
 
 /** Every markdown doc under the slug (or just the --file scope), pre-parsed.
  * Returns { docs, duplicatesSkipped } so overview can report collapsed aliases. */
@@ -353,15 +313,29 @@ if (opts.validate || opts.stale) {
 
       // Links: dedup by (file, target) — the same link repeated in one file is
       // ONE ref: counted once in checked.links, reported once if broken.
+      // ANCHOR ACCURACY: `doc.md#section` used to pass as long as the FILE
+      // existed, so a link to a deleted/renamed section sailed through the
+      // gate while pointing nowhere. Anchors now resolve against the target
+      // document's real heading slugs.
       const linkSeen = new Set();
       for (const link of doc.links) {
         const lkey = `${doc.rel}\u0000${link.target}`;
         if (linkSeen.has(lkey)) continue;
         linkSeen.add(lkey);
         checked.links++;
-        const target = link.target.split('#')[0];
+        const hash = link.target.indexOf('#');
+        const target = hash === -1 ? link.target : link.target.slice(0, hash);
+        const anchor = hash === -1 ? null : link.target.slice(hash + 1);
         if (target && !existsSync(resolve(dirname(doc.abs), target))) {
           broken.push({ kind: 'link', ref: link.target, file: relFromRoot(doc.abs), line: link.line });
+          continue;
+        }
+        if (anchor && target && /\.md$/i.test(target)) {
+          const targetAbs = resolve(dirname(doc.abs), target);
+          const targetDoc = parsedDocAt(targetAbs);
+          if (targetDoc && !anchorExists(targetDoc, anchor)) {
+            broken.push({ kind: 'anchor', ref: link.target, file: relFromRoot(doc.abs), line: link.line });
+          }
         }
       }
 
@@ -429,6 +403,73 @@ if (opts.validate || opts.stale) {
     }
   }
   console.log(JSON.stringify({ diagrams }, null, 2));
+} else if (opts.digest) {
+  // DIGEST — section index the agent reads instead of whole documents;
+  // fetch exactly the sections it needs with --section.
+  const { docs } = collectDocs();
+  const files = docs.map((doc) => ({
+    path: relFromRoot(doc.abs),
+    title: doc.headings.find((h) => h.level === 1)?.text ?? basename(doc.rel),
+    sections: buildSections(doc).map((s) => ({
+      slug: s.slug,
+      title: s.title,
+      level: s.level,
+      line: s.line,
+      endLine: s.endLine,
+    })),
+  }));
+  console.log(JSON.stringify({ slug, totalFiles: files.length, files }, null, 2));
+} else if (opts.section !== null) {
+  // SECTION — fetch ONE section (or one whole file) instead of the tree.
+  const raw = opts.section;
+  const hash = raw.indexOf('#');
+  const filePart = hash === -1 ? raw : raw.slice(0, hash);
+  const anchor = hash === -1 ? null : raw.slice(hash + 1);
+  const candidates = [join(repoRoot, filePart), join(slugDir, filePart)];
+  const hit = candidates.find((p) => { try { return statSync(p).isFile(); } catch { return false; } });
+  if (!hit) die(`cannot read --section ${raw} (missing or not a file)`);
+  let hitReal;
+  try { hitReal = realpathSync(hit); } catch { hitReal = resolve(hit); }
+  if (!hitReal.startsWith(slugDir + sep)) die(`--section ${raw} is outside ${opts.input}`);
+  const doc = parsedDocAt(hit);
+  if (!doc) die(`cannot read --section ${raw} (unreadable)`);
+  if (anchor) {
+    const section = findSection(doc, anchor);
+    if (!section) die(`--section ${raw}: no section '${anchor}' in ${filePart}`);
+    console.log(`<!-- archgen section: ${relFromRoot(hit)}#${section.slug} · lines ${section.line}-${section.endLine} -->`);
+    console.log(section.body);
+  } else {
+    console.log(`<!-- archgen file: ${relFromRoot(hit)} -->`);
+    console.log(doc.lines.join('\n'));
+  }
+} else if (opts.map !== null) {
+  // MAP — section-level retrieval: WHERE is this token mentioned?
+  const re = new RegExp(wholeWordSource(opts.map));
+  const hits = [];
+  for (const doc of collectDocs().docs) {
+    for (const section of buildSections(doc)) {
+      const bodyLines = doc.lines.slice(section.line - 1, section.endLine);
+      const matching = [];
+      for (let i = 0; i < bodyLines.length; i++) {
+        if (re.test(bodyLines[i])) {
+          matching.push({ line: section.line + i, text: bodyLines[i].trim().slice(0, 200) });
+        }
+      }
+      if (!matching.length) continue;
+      hits.push({
+        file: relFromRoot(doc.abs),
+        section: section.slug,
+        title: section.title,
+        level: section.level,
+        line: section.line,
+        endLine: section.endLine,
+        occurrences: matching.length,
+        matches: matching.slice(0, 10),
+      });
+    }
+  }
+  hits.sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
+  console.log(JSON.stringify({ ref: opts.map, sections: hits, sectionCount: hits.length }, null, 2));
 } else {
   // Overview (scale guard): the deduped inventory is always computed in full
   // and sorted, but only the FIRST 100 files are emitted — with
@@ -448,10 +489,8 @@ if (opts.validate || opts.stale) {
 }
 
 // ---------------------------------------------------------------------------
-// WHY doc-index.mjs EXISTS: the codegraph-family indexers our users already run
-// verifiably do not cover this ground — audited 8 tools, Aug 2026: none extract
-// markdown headings or YAML task semantics (installed codegraph v1.0.1 indexes
-// neither .md nor .yaml), so everything archgen writes into .archgen/<slug>/ is
-// invisible to every symbol graph. This script is archgen's deterministic
-// markdown layer: zero dependencies, byte-stable JSON, safe to gate CI on.
+// WHY doc-index.mjs EXISTS: source-symbol indexers cannot graph markdown
+// headings or YAML task semantics, so they cannot see what archgen writes into
+// .archgen/<slug>/. This is archgen's deterministic markdown layer: zero
+// dependencies, byte-stable JSON, safe to gate CI on.
 // ---------------------------------------------------------------------------

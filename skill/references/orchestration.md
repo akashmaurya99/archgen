@@ -15,8 +15,9 @@ sections:
   ## Modules        — table: module | responsibility | key entry points
   ## Conventions    — naming, error-handling, test layout actually observed
   ## Affected       — files/modules the feature will touch, with evidence paths
-SCOPE: read-only. Use codegraph MCP tools when available
-(codegraph_explore / codegraph_files); otherwise Glob+Grep systematically.
+SCOPE: read-only. Use the CodeGraph MCP tools when available — the index is
+built once at bootstrap and kept live by the server's watcher, so never
+re-index. Otherwise Glob+Grep systematically.
 VERIFY: every claim cites a real path; no guessed APIs.
 ```
 
@@ -270,6 +271,14 @@ Every worker receives ALL of:
 - BEFORE writing code run
   `node <skill>/scripts/plan-graph.mjs <slug-dir-or-tasks.yaml> --node <task-id>`
   and honor every connected dependency shown;
+- CHEAP, PRE-LOCATED CONTEXT: point the worker at the exact sections it needs —
+  `node <skill>/scripts/doc-index.mjs .archgen/<slug> --map <task-id>` lists the
+  sections mentioning the id, and `--section <path>#<anchor>` prints just one
+  section. Never tell a worker to "read the plan"; hand it the two sections
+  that contain its contract;
+- CODEGRAPH: if `.codegraph/` is present, the worker must navigate with the
+  CodeGraph MCP tools for anything needing understanding — never guess
+  architecture from prose;
 - all file paths come from tasks.yaml/architecture.yaml VERBATIM — never
   reconstruct paths from memory.
 - working state goes under `.archgen/<slug>/.agent/` — execution decisions to

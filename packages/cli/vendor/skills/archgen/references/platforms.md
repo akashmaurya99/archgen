@@ -87,12 +87,12 @@ Claude Code project-scope servers.
 Current mainstream codegraph indexers extract SOURCE symbols only
 (functions/classes/imports) — they do not index markdown headings, and YAML
 support ranges from absent to file-level config tracking; none can graph
-tasks.yaml dependencies (audited 8 codegraph-family tools Aug 2026; local
-binary v1.0.1 empirically confirms). Generic code indexers verifiably do not
-extract markdown headings or YAML task semantics, so archgen ships its own
+tasks.yaml dependencies. Generic code indexers verifiably do not extract
+markdown headings or YAML task semantics, so archgen ships its own
 deterministic graph tools:
 
-- Source navigation → codegraph MCP when configured (offered at Step 0).
+- Source navigation → codegraph MCP (built automatically by Step 0 / the
+  `scripts/codegraph.mjs ensure` flow).
 - YAML plan graphs → exclusively `scripts/plan-graph.mjs`.
 - Markdown artifact navigation → `scripts/doc-index.mjs`.
 
@@ -101,38 +101,43 @@ If the harness exposes a markdown-heading indexer (e.g. a
 still use `doc-index.mjs` inside `.archgen/` — it understands TASK/FR
 reference semantics. Brownfield surveys prefer codegraph once present.
 
-### Codegraph install & index (concrete — researched Aug 2026, v1.0.1)
+### Codegraph bootstrap (official CLI, no command list here)
 
-CodeGraph = `@colbymchenry/codegraph` (npm), CLI `codegraph`, MIT, 100% local.
-It persists a SQLite symbol graph in `.codegraph/` and serves it over MCP. It
-indexes SOURCE symbols only (scope above) — pair with `doc-index.mjs` /
-`plan-graph.mjs` for markdown/YAML. Requires Node 22 or 24 (native SQLite
-bindings; other versions fall back to a 5–10x-slower WASM backend).
+CodeGraph = `@colbymchenry/codegraph` (npm), CLI `codegraph`, MIT, local-first,
+self-contained runtime. It persists a SQLite symbol graph in `.codegraph/`,
+serves it over MCP, and indexes SOURCE symbols only (scope above) — pair with
+`doc-index.mjs` / `plan-graph.mjs` for markdown/YAML.
 
-Install the CLI (one-time, global):
-- `npm i -g @colbymchenry/codegraph` (any OS with Node), or
-- `curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh` (macOS/Linux), or
-- zero-install: `npx @colbymchenry/codegraph`.
+**No version is pinned:** the bootstrap always takes the latest published
+release and refreshes it in place. The MCP server exposes its own tool set to
+the agent, so the skill does not restate the CLI's command surface — read it
+from the installed CLI (`codegraph help`) or the MCP tools themselves.
 
-Wire the harness (writes MCP config + instructions — INSTALL-MCP approval gate):
-- `codegraph install --yes` (auto-detect agents, global)
-- `codegraph install --target=<agent> --yes` (explicit harness)
-- `codegraph install --target=auto --location=local --yes` (project-local)
-- `codegraph install --print-config <agent>` (preview snippet, no writes)
-- Manual config shape: assets/mcp-template.json (stdio `codegraph serve --mcp`
-  or npx `-y @colbymchenry/codegraph mcp`).
+> **Entry point — `scripts/codegraph.mjs`.** It installs/upgrades the CLI,
+> wires every DETECTED harness with the correct per-platform shape, and builds
+> the project index — idempotently, with an approval gate before any config
+> write. It drives the official CLI; it never reimplements it.
+> ```
+> node scripts/codegraph.mjs ensure --project . --yes   # install + wire + index
+> node scripts/codegraph.mjs init .                     # index only (no config writes)
+> node scripts/codegraph.mjs status . --json             # what is installed/wired/indexed
+> ```
 
-Index the project (per project; creates `.codegraph/` + builds the graph):
-- `codegraph init` (add `--yes` to skip prompts); one-shot bootstrap:
-  `codegraph install --yes --init`. Auto-syncs on file change thereafter.
-- `codegraph status` to verify; `codegraph uninit` removes the index;
-  `codegraph uninstall` de-wires the agents; `codegraph upgrade` updates.
+**Rules that matter to the agent:**
+- The index is built ONCE per project; the MCP server's watcher keeps it live,
+  so **never re-index** — no manual index/sync steps after the bootstrap.
+- MCP configs are written only with `--yes`; the script prints its plan
+  otherwise. A config that is not valid JSON (e.g. JSONC) is reported, never
+  rewritten. Harnesses that are not installed are never touched.
+- Only DETECTED harnesses get an entry. The per-platform file path, top-level
+  key (`mcpServers` / `servers` / `mcp` / `context_servers`) and server entry
+  live in `assets/harness-mcp.json` — one source of truth.
+- **Telemetry — disclose it, never claim "100% local":** it is enabled by
+  default on a fresh install and reports a machine ID (`~/.codegraph/`), and
+  the script changes it only with an explicit `--telemetry off|on`.
 
-`.codegraph/` is deterministic and small — committing it gives teammates the
-index on first checkout (team recommendation); git-ignore it for solo repos.
-Never point two OSes (Windows + WSL) at one `.codegraph/`.
-
-Agent flow: detect `.codegraph/` at repo root. Present → use `codegraph_explore`
-for source navigation. Absent → offer once (INSTALL-MCP approval pattern,
-recommendation-first), run the commands above on approval; on decline use
-Glob+Grep.
+Agent flow (Step 0): detect `.codegraph/` at the repo root.
+- **Absent** → `node scripts/codegraph.mjs ensure --project <root> --yes` once
+  per project (standing approval from the user's install-time consent; show the
+  printed plan). On decline → grep/Glob.
+- **Present** → use the CodeGraph MCP tools for navigation. Never re-index.

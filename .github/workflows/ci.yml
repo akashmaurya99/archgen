@@ -110,6 +110,12 @@ jobs:
       - run: npm --prefix packages/cli run sync:check
       - run: npm --prefix packages/cli run sync
       - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/extension/package.json
+      # Never commit a CodeGraph index (local machine state).
+      - run: |
+          if git ls-files | grep -qE '(^|/)\.codegraph/'; then
+            echo '::error:: .codegraph/ must never be tracked'
+            exit 1
+          fi
 
   # Supply-chain gate: fail on high+ severity advisories.
   audit:

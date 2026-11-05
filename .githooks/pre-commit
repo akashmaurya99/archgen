@@ -1,0 +1,8 @@
+#!/bin/sh
+# archgen pre-commit: catch derived-file and vendor drift before it lands.
+# Install once per clone: git config core.hooksPath .githooks
+npm run sync:check || {
+  echo "\npre-commit: derived files drifted from archgen.config.json."
+  echo "Fix with: npm run sync   (then git add the results)"
+  exit 1
+}

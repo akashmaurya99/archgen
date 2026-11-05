@@ -22,6 +22,7 @@ import { uninstallProject } from '../lib/uninstall-project.js';
 import { restoreMain } from '../lib/restore.js';
 import { migrateMain } from '../lib/migrate.js';
 import { compareSemver, fetchLatestVersion } from '../lib/version.js';
+import { npmInvocation, whichOnPath } from '../lib/spawn-npm.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -46,6 +47,7 @@ Usage:
                                 and generate AGENTS.md / CLAUDE.md pointer blocks.
     [--force]                     proceed automatically; divergent copies are
                                   backed up to .archgen/.backup/ (never destroyed)
+    [--no-codegraph]              skip the CodeGraph bootstrap
   npx archgen-skill doctor [dir]      Health-check a project install: store integrity,
                                 version stamp, claude link, managed blocks,
                                 manifest. Repairs safe issues in place.
@@ -53,6 +55,7 @@ Usage:
   npx archgen-skill install           Install into global harness skill dirs
     [--copy]                      real copies instead of symlinks
     [--uninstall]                 remove manifest-recorded entries
+    [--no-codegraph]              skip the CodeGraph bootstrap
   npx archgen-skill uninstall         Remove globally-installed copies (manifest-based)
     --project [dir]               remove archgen from a project: claude link,
                                   managed blocks, canonical store (kept when
@@ -92,7 +95,8 @@ try {
   switch (cmd) {
     case 'init': {
       flag('--force');
-      const r = initProject(positionalDir(), PACKAGE_ROOT);
+      const noCodegraph = flag('--no-codegraph');
+      const r = initProject(positionalDir(), PACKAGE_ROOT, { codegraph: !noCodegraph });
       console.log('archgen: project ready (single-store layout)');
       console.log('  + store ' + r.storePath);
       if (r.claudeLink === 'created') console.log('  + link  .claude/skills/archgen -> ../../.agents/skills/archgen');
@@ -120,8 +124,9 @@ try {
     }
     case 'install': {
       const copy = flag('--copy');
+      const noCodegraph = flag('--no-codegraph');
       if (flag('--uninstall')) { uninstall(); break; }
-      const r = installGlobal({ copy });
+      const r = installGlobal({ copy, codegraph: !noCodegraph });
       console.log('archgen: global harness install (mode: ' + (copy ? 'copy' : 'symlink') + ')');
       for (const [status, mode, path] of r.rows) console.log(`  ${status.padEnd(7)} ${mode.padEnd(5)} ${path}`);
       console.log('\nPer-project setup (recommended): npx archgen-skill init');
@@ -177,17 +182,24 @@ try {
         runInitAndDoctor(dir);
         break;
       }
+      if (!/^\d+\.\d+\.\d+[-+]?[0-9A-Za-z.-]*$/.test(latest)) {
+        // Registry returned something that is not a semver tag — never
+        // interpolate it into a command line.
+        console.error('  ! registry returned a non-semver version string; refusing: ' + JSON.stringify(latest));
+        process.exitCode = 1;
+        break;
+      }
       console.log('  ↑ newer version available: ' + latest);
       console.log('  upgrading global install: npm install -g archgen-skill@' + latest);
-      const up = spawnSync('npm', ['install', '-g', 'archgen-skill@' + latest], { stdio: 'inherit' });
+      const inv = npmInvocation(['install', '-g', 'archgen-skill@' + latest]);
+      const up = spawnSync(inv.command, inv.args, { stdio: 'inherit', shell: inv.shell });
       if (up.status !== 0) {
         console.error('  ! global upgrade failed — run it manually, then re-run: archgen-skill update');
         process.exitCode = 1;
         break;
       }
       // The running process is the OLD code; re-exec the freshly installed binary.
-      const bin = spawnSync('command', ['-v', 'archgen-skill'], { encoding: 'utf8', shell: true });
-      const freshBin = (bin.stdout || '').trim();
+      const freshBin = whichOnPath('archgen-skill');
       if (!freshBin) {
         console.log('\nUpgraded to v' + latest + '. Now finish per project with:\n  npx archgen-skill@latest init');
         break;

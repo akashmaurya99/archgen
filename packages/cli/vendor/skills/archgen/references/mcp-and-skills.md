@@ -53,8 +53,13 @@ landing-page work REQUIRES the design skills (`ui-skills`, `policy:
      install it before dispatch proceeds.
 1. **MATCH** — read assets/skill-registry.json. Test every task's title,
    summary, and file_ownership globs against each entry's `matches` patterns
-   using case-insensitive substring matching (e.g. a task titled "polish
-   landing page hero" matches ui-skills via `"landing page"`). One hit = this
+   using **case-insensitive whole-WORD matching** (`\b` boundaries; a match
+   requires the pattern to stand alone as a token or hyphen/underscore-delimited
+   unit). Bare `"ui"` matches the task "redesign the ui" and "ui-skills audit",
+   but does NOT match "guide", "build", "sequence", or "building" — the 2026-08
+   substring semantics mis-fired on every task and made the required gate
+   meaningless. Match mode is per entry (`match_mode: "whole-word"`); entries
+   without it default to `whole-word` (never raw substring). One hit = this
    procedure is mandatory for that task.
 2. **RESOLVE** — determine the CURRENT platform's skill dir from
    references/platforms.md § Skill install paths. That table owns the paths;

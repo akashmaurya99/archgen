@@ -1,5 +1,10 @@
 # Programmatic Context Injection into Agentic IDE Chat Boxes — Technique Catalog
 
+**Status: archived snapshot (2026-08-26).** This is a capability survey, not an
+operational contract — vendor behavior and IDs drift constantly; verify against
+official docs before relying on any claim here. Not referenced by any build,
+test, or install path.
+
 **Project:** archgen · **Compiled:** 2026-08-26 · **Method:** ultraresearch swarm — 5 librarian agents (~100 distinct web queries: official docs, vendor forums, GitHub issues, security research) + orchestrator code-search lane over indexed GitHub sources. Every claim carries a link; ⚠️ marks single-source or unverifiable claims. **No ranking applied** (per brief); reliability tiers are evidence descriptions only.
 
 **Terminology:** *auto-send* = text lands in the chat input AND submission fires; *pre-fill* = text lands in the input, user presses Enter.

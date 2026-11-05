@@ -64,8 +64,13 @@ fixes or one-line edits that need no planning.
    writes it); (2) the system/todo tracker item marked completed;
    (3) AGENTS.md refreshed via
    `node <skill>/scripts/update-agents.mjs <repo-root>` with the current
-   date. Batch-updating statuses at session end is FORBIDDEN. Dispatching the
-   next wave while any completed task's status or todos lag is FORBIDDEN.
+   date. After EACH completed wave (not each task), refresh
+   `.archgen/<slug>/.agent/resume.md` — a 10-line snapshot: slug, wave index,
+   done/failed/blocked ids, the exact next command to run (e.g. "node
+   <skill>/scripts/next-tasks.mjs .archgen/<slug>/tasks.yaml"), and the plan
+   section each remaining task owns. This file is the primary re-entry
+   artifact after any context compaction. Dispatching the next wave while any
+   completed task's status, todos, or the resume snapshot lag is FORBIDDEN.
    Per-turn, not per-session — survives compaction.
 7. **Platform awareness.** Detect the harness before touching configs or
    spawning agents — references/platforms.md. Unknown platform → WEB SEARCH
@@ -75,6 +80,20 @@ fixes or one-line edits that need no planning.
    references/code-standards.md: no `any`, no unhandled `undefined`, files
    < 1000 LOC, professional folder trees and file names, why-comments. The
    verifier rejects violations.
+9. **Assume compaction.** After any context summarization, your FIRST tool call
+   MUST be re-reading `.archgen/<slug>/tasks.yaml` + `next-tasks.mjs` +
+   `.archgen/<slug>/.agent/resume.md`. Never act on remembered state, never cite
+   a path/id/status you have not re-read in this window. tasks.yaml is ground
+   truth.
+
+## Codegraph — use it when you need understanding
+
+When `.codegraph/` exists, prefer the CodeGraph MCP tools over grep/glob for
+anything needing comprehension (dependencies, callers, blast radius): they
+return real source and call paths instead of guessed prose. The index is built
+once at bootstrap and kept live by the server's watcher — **never re-index**.
+Without `.codegraph/`, run the Step-0 bootstrap; otherwise grep and Glob are
+the fallback.
 
 ## Step 0 — Detect platform
 
@@ -89,13 +108,15 @@ Probe in order:
 3. No match → WEB SEARCH `<platform name> MCP configuration official docs`
    and `<platform> agent skills install`; summarize findings, get approval,
    proceed on discovered facts.
-4. **Codegraph offer (once per project).** No `.codegraph/` dir at repo root →
-   propose install + indexing once via the INSTALL-MCP approval pattern
-   (recommendation-first; show what gets written/indexed); on approval run the
-   concrete commands in references/platforms.md § Codegraph install & index;
-   on decline fall back to Glob+Grep. Web-search only if a listed command
-   fails or the platform is unrecognized. Brownfield surveys prefer it once
-   present. Scope: references/platforms.md § Codegraph indexing scope.
+4. **Codegraph (automatic).** Bootstrap it ONCE per project:
+   `node <skill>/scripts/codegraph.mjs ensure --project <repo-root> --yes` —
+   installs the CLI if missing, wires the MCP server into every DETECTED
+   harness, and builds the project index. The server's watcher keeps the index
+   live, so **nothing is ever re-indexed by hand**. MCP-config writes are
+   covered by the user's install-time consent; the script prints its plan +
+   telemetry state every run (drop `--yes` for plan-only). Present
+   `.codegraph/` → use it for source navigation; declined or failed → grep/Glob
+   fallback. Details: references/platforms.md § Codegraph bootstrap.
 
 ## Step 1 — Route the mode
 
@@ -168,8 +189,8 @@ Pick ONE mode from the user's intent and follow its section below:
 
 1. Acknowledge + state you'll survey before planning. [wait for user]
 2. **SURVEY.** Dispatch survey sub-agent(s) (references/orchestration.md
-   §survey): analyze current code — prefer codegraph MCP (`codegraph_explore`)
-   when configured (offered at Step 0 when absent), else structured grep/glob
+   §survey): analyze current code — prefer the CodeGraph MCP tools (Step 0
+   builds the index when absent), else structured grep/glob
    — write `.archgen/<slug>/codebase-map.md`: structure, modules,
    conventions, affected surfaces.
 3. Plan against the map: GENERATE steps 3–4 rules apply, but check every new
@@ -208,7 +229,9 @@ Run from the target repo root where `.archgen/<slug>/` exists.
    turn: verify `set-status done|failed` landed, mark tracker/todo completed,
    refresh AGENTS.md via update-agents.mjs. Never let these lag into the next
    dispatch.
-5. After the wave settles: re-run next-tasks. Failed tasks are NOT retried
+5. After the wave settles: verify `set-status` landed for every finished
+   task, refresh AGENTS.md and `.archgen/<slug>/.agent/resume.md`, then
+   re-run next-tasks. Failed tasks are NOT retried
    automatically — surface them, propose a fix task, [wait for user].
 6. Repeat until no actionable tasks remain.
 7. Final report: tasks done/failed/blocked, commits, follow-ups, per-feature
@@ -250,8 +273,10 @@ references/mcp-and-skills.md § INSTALL-MCP procedure (approval-gated):
 platform config from references/platforms.md § MCP configuration; web-search
 the CURRENT install method, never a memorized command; state the scope; SHOW
 the exact config diff; write only after explicit user approval; verify after
-reload. Unknown platform → Hard rule 7. The Step-0 codegraph proposal reuses
-this approval pattern.
+reload. Unknown platform → Hard rule 7. The Step-0 codegraph bootstrap
+(scripts/codegraph.mjs ensure --yes) is the one standing-approval exception —
+the user's install opt-in covers it; every other MCP write still pauses for
+explicit approval.
 
 ## FETCH-SKILL (mandatory capability loading)
 
@@ -261,7 +286,8 @@ task:
 
 1. **Pre-planning scan** (GENERATE / BROWNFIELD / UPDATE): test every task's
    title/summary/file_ownership against assets/skill-registry.json `matches`
-   (case-insensitive substring); one hit = mandatory.
+   (case-insensitive WHOLE-WORD match — see references/mcp-and-skills.md
+   § FETCH-SKILL); one hit = mandatory.
    UI/design/frontend/animation/component/landing-page work REQUIRES
    ui-skills (`policy: "required"`).
 2. **Pre-dispatch verification**: re-verify match + skill presence before
@@ -277,7 +303,7 @@ task:
 
 - Do NOT violate the Hard rules above — artifact location (1), three gates
   (2), regeneration or bloat (3), status batching / lagging dispatch (6),
-  code standards (8).
+  context re-entry / acting from memory (9), code standards (8).
 - Do NOT reuse or overwrite an existing `.archgen/<slug>/` folder — suffix
   `-2`, `-3`, … (multi-feature repos must stay isolated).
 - Do NOT auto-spawn another harness/CLI when sub-agents misbehave —
@@ -310,5 +336,16 @@ scripts/update-agents.mjs <projectRoot> [--slug <s>] [--status <s>] [--prune]
 scripts/impact.mjs        <tasks.yaml> <id-or-artifactPath>
 scripts/verify-plan.mjs   <tasks.yaml> --plan <dir>
 scripts/plan-graph.mjs    <slug-dir-or-tasks.yaml> [--node <id>] [--mermaid] [--status] [--module <name>]
-scripts/doc-index.mjs     <slug-dir> [--validate|--refs-to <id>|--stale|--diagrams]
+scripts/doc-index.mjs     <slug-dir> [--validate|--refs-to <id>|--stale|--diagrams
+                        |--digest|--section <path>[#anchor]|--map <token>]
+scripts/codegraph.mjs     <ensure|init|wire|status> [dir]
+                        # bootstrap CodeGraph: install, wire MCP into detected
+                        # harnesses, build the index (realtime thereafter)
 ```
+
+**Context economics (read this before loading artifacts).** Pull sections,
+not files: `--map <token>` locates the exact SECTIONS mentioning a task/FR/ADR,
+and `--section <path>#<anchor>` prints just one section. Worker prompts point
+at minimal sections, not the whole tree. Anchors are validated against each
+target document's real heading slugs (GitHub-exact) — a link to a renamed
+section is a broken `anchor`, not a silent pass.

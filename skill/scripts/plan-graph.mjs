@@ -320,10 +320,8 @@ if (opts.node !== null) {
 }
 
 // ---------------------------------------------------------------------------
-// WHY plan-graph.mjs EXISTS: generic code indexers (GitHub code nav, Sourcegraph,
-// CodeGraph-style SQLite MCP servers) model source symbols, not YAML task-DAG edges
-// (ast-grep parses YAML ASTs but stays stateless search), so every YAML-DAG system —
-// GitLab needs, Buildkite depends_on, Concourse passed, Argo dependencies — ships its
-// own schema-specific extractor. This script is archgen's; its Mermaid text renders
-// natively on GitHub/GitLab markdown with zero dependencies.
+// WHY plan-graph.mjs EXISTS: source-symbol indexers model source symbols, not
+// YAML task-DAG edges, so every YAML-DAG system ships its own extractor. This
+// script is archgen's; its Mermaid text renders natively on GitHub/GitLab
+// markdown with zero dependencies.
 // ---------------------------------------------------------------------------

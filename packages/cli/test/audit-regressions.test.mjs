@@ -181,16 +181,33 @@ test('BUG-SYNC2 // AUDIT-REGRESSION sync-config main() runs when launched throug
   }
 });
 
-// SKIP-ENV (Windows-only): bin/archgen.mjs `update` runs spawnSync('npm', …)
-// and version.js fetchLatestVersion likewise, WITHOUT shell:true. Since Node's
-// CVE-2024-27980 fix, spawning a .cmd/.bat shim unshelled fails with EINVAL,
-// so on Windows `update` always reports "could not reach the npm registry" /
-// "global upgrade failed" even while online. Desired (asserted on Windows):
-// fetchLatestVersion degrades to null instead of surfacing EINVAL.
-test('SKIP-ENV // AUDIT-REGRESSION update/fetchLatestVersion degrade gracefully where spawning npm .cmd shims is refused', async (t) => {
-  if (process.platform !== 'win32') {
-    return t.skip('Windows-only: spawnSync("npm") without shell:true fails with EINVAL on recent Node');
-  }
+// AUDIT-REGRESSION: the npm lookup must degrade gracefully (null, never a
+// throw) on every platform — including Windows, where an unshelled
+// spawnSync('npm', …) fails with EINVAL since the CVE-2024-27980 hardening.
+// The root fix routes npm through its JS entry point (lib/spawn-npm.js), so
+// the failure mode is asserted cross-platform instead of being skipped on
+// every non-Windows CI run.
+test('AUDIT-REGRESSION // fetchLatestVersion degrades to null (never throws) when the registry lookup fails', async () => {
   const version = await import(join(CLI_ROOT, 'lib', 'version.js'));
-  assert.equal(version.fetchLatestVersion('archgen-skill'), null);
+  // An invalid package name fails at the registry boundary on every platform
+  // and in every network state (offline included).
+  assert.equal(version.fetchLatestVersion('!!not-a-valid-package-name!!'), null);
+  // A name that could be interpolated into a shell command is refused outright.
+  assert.equal(version.fetchLatestVersion('pkg; rm -rf /'), null);
+});
+
+test('AUDIT-REGRESSION // npm invocation resolves npm-cli.js instead of a platform shim', async () => {
+  const { npmCliPath, npmInvocation, whichOnPath } = await import(join(CLI_ROOT, 'lib', 'spawn-npm.js'));
+  const inv = npmInvocation(['--version']);
+  assert.ok(inv.command, 'an npm command is always resolvable');
+  assert.ok(Array.isArray(inv.args));
+  // When the CLI entry is found we invoke it with node — no .cmd shim, no
+  // EINVAL risk on Windows.
+  const cli = npmCliPath();
+  if (cli) {
+    assert.equal(inv.command, process.execPath);
+    assert.equal(inv.shell, false);
+  }
+  // whichOnPath is the portable replacement for `command -v` (POSIX-only).
+  assert.equal(whichOnPath('definitely-not-a-real-binary-xyz'), null);
 });

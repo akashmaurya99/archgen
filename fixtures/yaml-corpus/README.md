@@ -29,3 +29,6 @@ error behavior against the `*.expected.json` siblings.
   example noted in execution log — do not "fix" one side unilaterally.)
 - Error-case files (`malformed-*.yaml`) must throw on BOTH sides with messages
   matching `errorMatches`.
+- `crlf.yaml` is the Windows-authoring case: pure `\r\n` line endings. Both
+  parsers normalize `\r` at tokenize time — without that, a CRLF `tasks.yaml`
+  fails to parse (or corrupts values) and the extension's board goes dark.

@@ -86,7 +86,9 @@ test('init creates ONE canonical store + relative claude symlink (no second copy
 
   assert.equal(r.claudeLink, 'created');
   assert.deepEqual(r.backups, []);
-  assert.deepEqual(r.warnings, []);
+  // The CodeGraph bootstrap runs on every init; the test env disables it via
+  // ARCHGEN_CODEGRAPH=0, which surfaces as a warning (never a failure).
+  assert.deepEqual(r.warnings.filter((w) => !/^codegraph bootstrap skipped/.test(w)), []);
   assert.deepEqual(r.contextFiles, ['AGENTS.md', 'CLAUDE.md']);
   assert.deepEqual(r.createdContextFiles, ['AGENTS.md', 'CLAUDE.md']);
 });

@@ -16,7 +16,8 @@
   ],
   "scripts": {
     "setup": "npm ci --prefix packages/extension",
-    "test": "npm run test:skill && npm run test:cli && npm run test:extension",
+    "test": "npm run test:internal && npm run test:skill && npm run test:cli && npm run test:extension",
+    "test:internal": "node --test internal/test/*.test.mjs",
     "test:skill": "node --test skill/scripts/test/*.test.mjs",
     "test:cli": "npm --prefix packages/cli test",
     "test:extension": "npm --prefix packages/extension run typecheck && npm --prefix packages/extension run compile && npm --prefix packages/extension test",

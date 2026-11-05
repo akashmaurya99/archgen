@@ -10,6 +10,7 @@
       "browse": "npx ui-skills list --category <category>",
       "mcp_endpoint": "https://www.ui-skills.com/mcp",
       "matches": ["frontend", "ui", "ux", "design", "component", "animation", "motion", "landing page"],
+  "match_mode": "whole-word",
       "policy": "required"
     },
     {
@@ -18,6 +19,7 @@
       "repo": "vercel-labs/skills",
       "install": "npx skills add <owner>/<repo> [-a <agent>] [-g] [--copy]",
       "matches": ["installer"],
+      "match_mode": "whole-word",
       "policy": "on-demand"
     }
   ]

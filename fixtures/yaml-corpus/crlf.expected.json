@@ -1,0 +1,58 @@
+{
+  "ok": true,
+  "data": {
+    "tasks": [
+      {
+        "id": "TASK-01",
+        "depends_on": [],
+        "file_ownership": [
+          "src/**",
+          "README.md"
+        ],
+        "acceptance": [
+          "builds"
+        ]
+      },
+      {
+        "id": "TASK-02",
+        "depends_on": [
+          "TASK-01"
+        ],
+        "parallel_group": "wave-1"
+      }
+    ]
+  },
+  "comments": [
+    {
+      "path": [
+        "tasks"
+      ],
+      "inline": false,
+      "text": "# generator: archgen v0.0.5"
+    },
+    {
+      "path": [
+        "tasks"
+      ],
+      "inline": false,
+      "text": "# generated_at: 2026-08-26T09:00:00.000Z"
+    },
+    {
+      "path": [
+        "tasks",
+        0
+      ],
+      "inline": false,
+      "text": "# Core pipeline - do first"
+    },
+    {
+      "path": [
+        "tasks",
+        0,
+        "id"
+      ],
+      "inline": true,
+      "text": "# scaffold"
+    }
+  ]
+}

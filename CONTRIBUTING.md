@@ -6,6 +6,7 @@ Thanks for your interest in contributing! This repository is a small monorepo:
 skill/              the archgen agent skill (canonical source of truth)
 packages/cli/       `archgen-skill` npm CLI (init / install / uninstall)
 packages/extension/ VS Code extension (DAG, code-graph, docs views)
+internal/           repo-only QA tooling (token budget, estimators) — never shipped
 fixtures/           deterministic end-to-end drivers + shared YAML corpus
 schemas/            JSON schema + architecture conventions
 ```
@@ -22,8 +23,13 @@ Fast path from the repo root — one setup, one command for everything CI runs:
 
 ```sh
 npm run setup   # once — installs extension dependencies
-npm test        # skill + CLI + extension (typecheck + compile + vitest)
+npm test        # internal (skill QA) + skill + CLI + extension (typecheck + compile + vitest)
 ```
+
+The internal QA suite (`npm run test:internal`) covers `internal/`, which
+never ships — use it to measure context cost of any skill/artifact change.
+Anything under `internal/` must never be imported by shipped code (skill,
+CLI, vendor mirror).
 
 Each package also has its own suite — run all of them before opening a PR
 (CI runs the same set):
@@ -72,3 +78,15 @@ expected outputs unilaterally.
   (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).
 - All gates must pass locally before you open a PR (CI runs the same set).
 - Keep changes atomic: one concern per PR.
+- Never commit `.codegraph/` or `.archgen-version` — both are local state.
+- Optional: `git config core.hooksPath .githooks` enables the pre-commit
+  sync drift check.
+
+## Hard rules for shipped code
+
+- The skill must run on bare Node ≥18 with zero npm dependencies.
+- `internal/` is import territory: shipped code never imports from it.
+- Every script in `skill/scripts/` ships — keep comments minimal (WHY only),
+  output lean, and runtime deterministic.
+- `.codegraph/` indexes are machine-local; they may be committed for team
+  projects ONLY when the team deliberately opts in.

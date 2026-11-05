@@ -1,0 +1,12 @@
+# generator: archgen v0.0.5
+# generated_at: 2026-08-26T09:00:00.000Z
+tasks:
+  # Core pipeline - do first
+  - id: TASK-01  # scaffold
+    depends_on: []
+    file_ownership: ["src/**", "README.md"]
+    acceptance:
+      - "builds"
+  - id: TASK-02
+    depends_on: [TASK-01]
+    parallel_group: wave-1

@@ -163,11 +163,10 @@ confirm second:
 
 ## BROWNFIELD classes — survey BEFORE questioning (mandatory)
 
-Run the survey first (SKILL.md BROWNFIELD steps 1–2): prefer the codegraph MCP
-(`codegraph_explore`) when configured, else structured glob/grep; produce or
-update `.archgen/<slug>/codebase-map.md`. Then ask ONLY what the survey could
-not answer. NEVER ask what a file already answers — quote the file and ask for
-confirmation instead.
+Run the survey first (SKILL.md BROWNFIELD steps 1–2): prefer the CodeGraph MCP
+tools (Step 0 builds the index when absent), else structured glob/grep; produce or update `.archgen/<slug>/codebase-map.md`. Then ask ONLY
+what the survey could not answer. NEVER ask what a file already answers —
+quote the file and ask for confirmation instead.
 
 ### BROWNFIELD-FEATURE (additive; max ~5 questions, one batched message)
 
