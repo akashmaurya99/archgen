@@ -102,21 +102,45 @@ git tag vextension-x.y.z
 git push && git push --tags
 ```
 
-**Publish order — the MCP server FIRST.** The CLI's installer resolves
+**PUBLISH ORDER — the MCP server FIRST.** The CLI's installer resolves
 `archgen-mcp` from the npm registry, so a release that advertises the MCP
 server before it exists hands every user a broken bootstrap. The extension is
 version-agnostic and can ship in any order.
 
-```sh
-# 1. the MCP server
-cd packages/mcp && npm ci && npm test && npm publish
+Pushing the tags triggers three automations:
 
-# 2. the CLI (its prepublishOnly re-derives the version and re-syncs the vendor copy)
-cd packages/cli && npm test && npm publish
+| Tag | Workflow | What it does |
+|---|---|---|
+| `vmcp-x.y.z` | `publish-npm.yml` | tests, then `npm publish archgen-mcp` (with provenance) |
+| `vcli-x.y.z` | `publish-npm.yml` | tests, then `npm publish archgen-skill` (with provenance) |
+| `vextension-x.y.z` | `release.yml` | tests, builds the `.vsix`, publishes the GitHub Release |
 
-# 3. the extension — CI publishes the GitHub Release on the tag push.
-#    Local smoke build: cd packages/extension && npm run package
-```
+Each publish job first checks that the tag's version equals the package's
+current version, so a tag left over from an older commit is refused rather
+than publishing the wrong thing.
+
+### 7. One-time npm setup (per package)
+
+npm publishing uses **OIDC trusted publishing** — there is no long-lived
+credential in this repository to store, rotate, or leak. The job proves it is
+the tagged commit from this repo, and npm grants a short-lived token for
+exactly that one publish.
+
+Configure it once per package on npmjs.com:
+
+> Settings → Trusted Publishers → GitHub Actions
+>
+> | field | value |
+> |---|---|
+> | organization/user | the npm account that owns the package |
+> | repository | `akashmaurya99/archgen` |
+> | workflow filename | `publish-npm.yml` |
+> | environment | *(leave empty)* |
+
+Without it the publish step fails with a clear npm error. It never publishes
+something wrong. The workflow also runs `npm publish --provenance`, so the
+published tarball carries an attestation linking it to this repository and
+commit.
 
 ---
 
@@ -132,6 +156,9 @@ npm ci                   # the committed lockfile is the source of truth
 npm test                 # gates first
 npm publish              # prepublishOnly re-derives the version from archgen.config.json
 ```
+
+CI publishes this package automatically on the `vmcp-<version>` tag (see the
+publish table above); the local command is the manual equivalent.
 
 The published tarball contains only `bin/`, `src/`, `assets/` and `README.md`
 (see the `files` field). `assets/` carries the canonical registries
@@ -152,6 +179,8 @@ cd packages/cli
 npm test                 # gates first
 npm publish              # syncs config + vendor automatically via prepublishOnly
 ```
+
+CI publishes this package automatically on the `vcli-<version>` tag.
 
 The published tarball contains only `bin/`, `lib/`, `vendor/` and `README.md`
 (see the `files` field).

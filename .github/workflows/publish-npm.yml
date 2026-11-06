@@ -1,0 +1,96 @@
+name: Publish to npm
+
+# Tag-triggered npm publishing for the two npm packages:
+#
+#   vmcp-<version>  ->  archgen-mcp    (the MCP server)
+#   vcli-<version>  ->  archgen-skill  (the CLI + the skill)
+#
+# WHY OIDC (npm trusted publishing) and not a token: there is no long-lived
+# credential to store, rotate, or leak. The job proves it is the tagged
+# commit from this repository, and npm grants a short-lived token for exactly
+# that one publish.
+#
+# ONE-TIME SETUP (per package, on npmjs.com):
+#   Settings -> Trusted Publishers -> GitHub Actions
+#     organization/user : the npm account that owns the package
+#     repository       : akashmaurya99/archgen
+#     workflow filename: publish-npm.yml
+#     environment      : (leave empty)
+# Without it, the publish step fails with a clear npm error — it never
+# publishes something wrong.
+#
+# PUBLISH ORDER: archgen-mcp FIRST. `archgen-skill init` resolves the MCP
+# server from the registry, so advertising a server that does not exist yet
+# hands every user a broken bootstrap. The vcli tag can therefore be pushed
+# only after the vmcp tag's publish has succeeded.
+
+on:
+  push:
+    tags:
+      - 'vmcp-*'
+      - 'vcli-*'
+
+permissions:
+  contents: read
+  id-token: write # OIDC: this is the entire credential
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: vmcp
+            dir: packages/mcp
+            name: archgen-mcp
+          - tag: vcli
+            dir: packages/cli
+            name: archgen-skill
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      # The tag must name the package's CURRENT version. A tag left over from
+      # an older commit would otherwise publish that older version again (or a
+      # duplicate), and npm refuses re-publishes — so fail early and loudly.
+      - name: Verify the tag matches the package version
+        id: verify
+        working-directory: ${{ matrix.dir }}
+        run: |
+          set -euo pipefail
+          pkg="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          expected="${GITHUB_REF_NAME#${{ matrix.tag }}-}"
+          echo "package=$pkg version=$version tag=$GITHUB_REF_NAME expected=$expected"
+          if [ "$version" != "$expected" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match $pkg version $version"
+            exit 1
+          fi
+          echo "publishing=$pkg@$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install
+        working-directory: ${{ matrix.dir }}
+        run: npm ci --no-audit --no-fund
+
+      - name: Test
+        working-directory: ${{ matrix.dir }}
+        run: npm test
+
+      - name: Publish
+        working-directory: ${{ matrix.dir }}
+        # No NODE_AUTH_TOKEN: with npm trusted publishing, npm exchanges the
+        # OIDC token for a short-lived publish credential. Setting an empty
+        # NODE_AUTH_TOKEN here would make npm try to authenticate with it and
+        # fail with ENEEDAUTH, so the environment is left clean on purpose.
+        run: npm publish --provenance --access public
+
+      # The package name in the log proves which package went out; the npm URL
+      # is the canonical landing page.
+      - name: Summary
+        run: |
+          echo "::notice::published ${{ steps.verify.outputs.publishing }}"

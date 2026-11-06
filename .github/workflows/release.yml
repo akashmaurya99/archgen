@@ -39,11 +39,13 @@ jobs:
         with:
           name: ArchGen Extension v${{ steps.meta.outputs.version }}
           body: |
-            Read-only visual layer for archgen — live task DAG, code-dependency graph, rendered docs, and a ▶ button that hands any task to your coding agent.
+            The visual layer for archgen — live task DAG, code-dependency graph, rendered docs, and a ▶ button that hands any task to your coding agent.
 
             **Install:** download `archgen-extension-${{ steps.meta.outputs.version }}.vsix` below, then run *Extensions: Install from VSIX…* in VS Code (Cursor, Windsurf, and VSCodium work too).
 
-            The archgen skill itself installs with `npx archgen-skill init` — see the [repo README](https://github.com/akashmaurya99/archgen).
+            **Privacy:** the extension never edits your plan, your tasks, or your code. It writes only its own runtime state under `.archgen/.runtime/` (a heartbeat and the command acknowledgements the archgen MCP server uses to drive the board). No telemetry, no LLM calls.
+
+            The archgen skill itself installs with `npx archgen-skill init`, which also wires the `archgen-mcp` MCP server into every detected harness — see the [repo README](https://github.com/akashmaurya99/archgen).
           files: packages/extension/*.vsix
           fail_on_unmatched_files: true
           generate_release_notes: true
