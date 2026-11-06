@@ -48,6 +48,7 @@ Usage:
     [--force]                     proceed automatically; divergent copies are
                                   backed up to .archgen/.backup/ (never destroyed)
     [--no-codegraph]              skip the CodeGraph bootstrap
+    [--no-mcp]                   skip wiring the archgen MCP server
   npx archgen-skill doctor [dir]      Health-check a project install: store integrity,
                                 version stamp, claude link, managed blocks,
                                 manifest. Repairs safe issues in place.
@@ -56,6 +57,7 @@ Usage:
     [--copy]                      real copies instead of symlinks
     [--uninstall]                 remove manifest-recorded entries
     [--no-codegraph]              skip the CodeGraph bootstrap
+    [--no-mcp]                   skip wiring the archgen MCP server
   npx archgen-skill uninstall         Remove globally-installed copies (manifest-based)
     --project [dir]               remove archgen from a project: claude link,
                                   managed blocks, canonical store (kept when
@@ -96,7 +98,8 @@ try {
     case 'init': {
       flag('--force');
       const noCodegraph = flag('--no-codegraph');
-      const r = initProject(positionalDir(), PACKAGE_ROOT, { codegraph: !noCodegraph });
+      const noMcp = flag('--no-mcp');
+      const r = initProject(positionalDir(), PACKAGE_ROOT, { codegraph: !noCodegraph, mcp: !noMcp });
       console.log('archgen: project ready (single-store layout)');
       console.log('  + store ' + r.storePath);
       if (r.claudeLink === 'created') console.log('  + link  .claude/skills/archgen -> ../../.agents/skills/archgen');
@@ -125,8 +128,9 @@ try {
     case 'install': {
       const copy = flag('--copy');
       const noCodegraph = flag('--no-codegraph');
+      const noMcp = flag('--no-mcp');
       if (flag('--uninstall')) { uninstall(); break; }
-      const r = installGlobal({ copy, codegraph: !noCodegraph });
+      const r = installGlobal({ copy, codegraph: !noCodegraph, mcp: !noMcp });
       console.log('archgen: global harness install (mode: ' + (copy ? 'copy' : 'symlink') + ')');
       for (const [status, mode, path] of r.rows) console.log(`  ${status.padEnd(7)} ${mode.padEnd(5)} ${path}`);
       console.log('\nPer-project setup (recommended): npx archgen-skill init');
@@ -142,6 +146,7 @@ try {
         if (r.storeRemoved) console.log('  - .agents/skills/archgen (unmodified store)');
         if (r.storeKept) console.log('  = .agents/skills/archgen KEPT (customized)');
         if (r.manifestRemoved) console.log('  - .archgen/.install-manifest.json');
+        for (const m of r.mcpRemoved ?? []) console.log(`  - ${m} (archgen MCP entry)`);
         for (const w of r.warnings) console.log('  note: ' + w);
         console.log('  .archgen feature folders and backups are preserved.');
       } else {

@@ -15,7 +15,7 @@ import { configCandidates, loadConfig, loadConfigFrom, parseConfig } from '../li
 import { START, END, FEATURES_START, FEATURES_END, renderManagedBlockText, renderClaudeBridgeText } from '../lib/block.js';
 import { VERSION_FILE, MANIFEST_REL, BACKUP_ROOT_REL } from '../lib/store.js';
 import { MANIFEST_NAME } from '../lib/install.js';
-import { syncConfig, setFrontmatterVersion, setPackageVersion } from '../scripts/sync-config.mjs';
+import { syncConfig, setFrontmatterVersion, setPackageVersion, readRequiresMcp, serverSatisfies } from '../scripts/sync-config.mjs';
 import { syncVendor } from '../scripts/sync-vendor.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 /** Minimal fake checkout: <fx>/archgen.config.json + skill/ + packages/cli/. */
-function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, extVersion } = {}) {
+function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, extVersion, requiresMcp } = {}) {
   const cfgText = JSON.stringify(canonical, null, 2) + '\n';
   writeFileSync(join(fx, 'archgen.config.json'), cfgText);
   mkdirSync(join(fx, 'skill'), { recursive: true });
@@ -53,6 +53,7 @@ function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, extVersion } 
         'metadata:',
         '  version: 0.0.0',
         '  repo: https://example.test/archgen',
+        ...(requiresMcp ? ['  requires:', `    archgen_mcp: "${requiresMcp}"`] : []),
         '---',
         '',
         '# body line one',
@@ -76,8 +77,46 @@ function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, extVersion } 
   return libDir;
 }
 
-test('loadConfig resolves the monorepo layout and matches the exact literals hardcoded in consumers', () => {
-  const cfg = loadConfig();
+// ── the capability contract ────────────────────────────────────────────────
+//
+// The skill declares the server version it needs. The sync NEVER rewrites the
+// declaration (it is a human decision), but it MUST refuse a release whose
+// server cannot satisfy it — otherwise the skill calls a tool that does not
+// exist and the failure is silent.
+
+test('sync-config refuses a release whose server cannot satisfy the skill requirement', () => {
+  fixtureRepo({ canonical: { ...CANONICAL, version: '0.0.6' }, requiresMcp: '>=9.9.9' });
+  assert.throws(
+    () => syncConfig({ root: fx }),
+    /requires archgen-mcp >=9\.9\.9.*this release is 0\.0\.6/s,
+    'an unsatisfiable capability contract must fail the release',
+  );
+  // And it must fail BEFORE writing anything.
+  assert.match(readFileSync(join(fx, 'skill', 'SKILL.md'), 'utf8'), /version: 0\.0\.0/);
+});
+
+test('sync-config refuses the same release in check mode', () => {
+  fixtureRepo({ canonical: { ...CANONICAL, version: '0.0.6' }, requiresMcp: '>=9.9.9' });
+  assert.throws(() => syncConfig({ root: fx, check: true }), /requires archgen-mcp/);
+});
+
+test('sync-config accepts a requirement the release satisfies', () => {
+  fixtureRepo({ canonical: { ...CANONICAL, version: '0.0.6' }, requiresMcp: '>=0.0.6' });
+  assert.doesNotThrow(() => syncConfig({ root: fx }));
+});
+
+test('readRequiresMcp + serverSatisfies implement the declared forms', () => {
+  const fm = ['---', 'metadata:', '  requires:', '    archgen_mcp: ">=0.0.6"', '---'].join('\n');
+  assert.equal(readRequiresMcp(fm), '>=0.0.6');
+  assert.equal(readRequiresMcp('---\nmetadata:\n  version: 1\n---\n'), null);
+  assert.equal(serverSatisfies('0.0.6', '>=0.0.6'), true);
+  assert.equal(serverSatisfies('0.0.5', '>=0.0.6'), false);
+  assert.equal(serverSatisfies('1.2.3', '^1.0.0'), true);
+  assert.equal(serverSatisfies('2.0.0', '^1.0.0'), false);
+  assert.equal(serverSatisfies('0.0.6', 'not-a-version'), false, 'an unparseable requirement must never pass vacuously');
+});
+
+test('loadConfig resolves the monorepo layout and matches the exact literals hardcoded in consumers', () => {  const cfg = loadConfig();
   assert.equal(cfg.version, VERSION);
   assert.equal(cfg.skillName, 'archgen');
   assert.equal(cfg.markers.start, START);
@@ -291,11 +330,13 @@ test('repo consistency guard: canonical == SKILL.md frontmatter == package.json 
 
   const pkg = JSON.parse(readFileSync(join(REPO, 'packages', 'cli', 'package.json'), 'utf8'));
   const extPkg = JSON.parse(readFileSync(join(REPO, 'packages', 'extension', 'package.json'), 'utf8'));
+  const mcpPkg = JSON.parse(readFileSync(join(REPO, 'packages', 'mcp', 'package.json'), 'utf8'));
   const vendorCfg = JSON.parse(readFileSync(join(REPO, 'packages', 'cli', 'vendor', 'skills', 'archgen', 'archgen.config.json'), 'utf8'));
 
   assert.equal(mdVersion[1], VERSION, 'SKILL.md frontmatter must equal archgen.config.json version');
   assert.equal(pkg.version, VERSION, 'packages/cli/package.json must equal archgen.config.json version');
   assert.equal(extPkg.version, VERSION, 'packages/extension/package.json must equal archgen.config.json version');
+  assert.equal(mcpPkg.version, VERSION, 'packages/mcp/package.json must equal archgen.config.json version');
   assert.equal(vendorCfg.version, VERSION, 'vendored config must equal archgen.config.json version');
 });
 

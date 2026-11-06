@@ -22,9 +22,10 @@ import {
   upsertManagedFile,
 } from './block.js';
 import { resolveSkillSource } from './init.js';
-import { CLAUDE_LINK_REL, DEV_ONLY_RELPATHS, MANIFEST_REL, STORE_REL, VERSION_FILE, cliVersion, hashDir, loadManifest, pruneDevOnly, saveManifest } from './store.js';
+import { CLAUDE_LINK_REL, DEV_ONLY_RELPATHS, MANIFEST_REL, STORE_REL, VERSION_FILE, cliVersion, findObsolete, hashDir, loadManifest, pruneDevOnly, pruneObsolete, saveManifest } from './store.js';
 import { compareSemver, parseSemver } from './version.js';
 import { readStamp, writeStamp } from './version-stamp.js';
+import { mcpDoctor } from './mcp-server.js';
 
 function lstatSafe(p) {
   try { return lstatSync(p); } catch { return null; }
@@ -83,7 +84,21 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
   if (!existsSync(join(storeAbs, 'SKILL.md'))) {
     add('FAIL', 'store .agents/skills/archgen missing or incomplete - run `archgen init`');
   } else {
-    const missingCore = ['scripts', 'references'].filter((d) => !existsSync(join(storeAbs, d)));
+    // MIGRATION: the skill no longer ships code. An install carried over from
+    // the pre-MCP layout still has a scripts/ tree — dead weight that would
+    // otherwise read as "diverges from packaged skill (customized?)".
+    // Pruned BEFORE the divergence check so an upgrade is not misreported.
+    const packaged = (() => {
+      try { return resolveSkillSource(packageRoot); } catch { return null; }
+    })();
+    if (packaged) {
+      // --check reports WITHOUT mutating; repair mode prunes.
+      const obsolete = checkOnly ? findObsolete(storeAbs, packaged) : pruneObsolete(storeAbs, packaged);
+      for (const rel of obsolete) {
+        add(checkOnly ? 'WOULD-FIX' : 'FIXED', `store carried the obsolete ${rel}/ tree (pre-MCP layout) -> ${checkOnly ? 'would prune' : 'pruned'}`);
+      }
+    }
+    const missingCore = ['references'].filter((d) => !existsSync(join(storeAbs, d)));
     if (missingCore.length > 0) {
       // Deferred so the managed-block FAIL rows below stay FIRST: existing
       // consumers read checks.find(FAIL) expecting the marker verdict.
@@ -294,6 +309,34 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
     const v = readStamp(p);
     const slot = v ?? (existsSync(join(p, VERSION_FILE)) ? 'unknown (pre-0.1 stamp)' : 'missing');
     add(v ? 'OK' : 'WARN', `skill ${p}: ${slot}`);
+  }
+
+  // 8. MCP server wiring — the archgen MCP server is what actually gives the
+  //    agent its tools. A skill with no MCP entry is a skill the agent cannot
+  //    use, so this is a first-class check, not a footnote.
+  //
+  // READ-ONLY and NEVER FATAL: doctor must work on a machine with no npm, no
+  // network, and no MCP server installed. The MCP server is asked for its own
+  // report; if it cannot run, that is a WARN with the remediation command.
+  const mcp = mcpDoctor({ projectRoot: root, env: { ...process.env, HOME: homeDir } });
+  if (!mcp.report) {
+    add('WARN', `archgen MCP server not reachable${mcp.detail ? ` — ${mcp.detail}` : ''} — install with: npx archgen-mcp bootstrap --project . --yes`);
+  } else {
+    const rep = mcp.report;
+    add(
+      rep.skill ? 'OK' : 'WARN',
+      rep.skill
+        ? `archgen MCP server v${rep.server} ready (skill ${rep.skill.version ?? 'unknown'})`
+        : 'archgen MCP server ready, but no skill was found',
+    );
+    const wired = (rep.mcpTargets ?? []).filter((t) => t.exists).length;
+    if (wired === 0) {
+      add('WARN', 'archgen MCP is not wired into any harness config — run: npx archgen-mcp bootstrap --project . --yes');
+    } else {
+      add('OK', `archgen MCP wiring present in ${wired} harness config(s)`);
+    }
+    if (rep.codegraph) add('OK', `codegraph ${rep.codegraph.version}`);
+    else add('WARN', 'codegraph not installed — run: npx archgen-mcp bootstrap --project . --yes');
   }
 
   const tally = { OK: 0, FIXED: 0, 'WOULD-FIX': 0, WARN: 0, FAIL: 0 };

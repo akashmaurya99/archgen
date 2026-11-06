@@ -57,7 +57,7 @@
         "tasks"
       ],
       "inline": false,
-      "text": "# comment lines are preserved by set-status.mjs — annotate freely"
+      "text": "# comment lines are preserved by archgen_tasks{set_status} — annotate freely"
     },
     {
       "path": [

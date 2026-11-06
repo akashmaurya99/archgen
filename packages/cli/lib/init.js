@@ -17,13 +17,13 @@
 //   to a symlink; a customized one is left untouched with a warning;
 // - installs are atomic: built in a temp sibling dir, then renamed.
 
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { importsAgents, renderBlock, START, END, upsertManagedFile } from './block.js';
 import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackup, pruneDevOnly } from './store.js';
 import { writeStamp } from './version-stamp.js';
-import { bootstrapCodegraph } from './codegraph.js';
+import { bootstrapServers } from './bootstrap.js';
 
 const CONTEXT_FILES = ['AGENTS.md', 'CLAUDE.md'];
 
@@ -100,10 +100,11 @@ function installClaudeAdapter(root, source, warnings) {
  * claude adapter, and write context pointers.
  * @param {string} projectDir target repo root
  * @param {string} packageRoot dir containing this CLI package
- * @param {{force?: boolean, codegraph?: boolean, log?: (s: string) => void, env?: NodeJS.ProcessEnv}} opts
+ * @param {{force?: boolean, codegraph?: boolean, mcp?: boolean, log?: (s: string) => void, env?: NodeJS.ProcessEnv}} opts
  *   --force proceeds automatically; divergent copies are always auto-backed-up
  *   (never refused, never destroyed). opts.codegraph === false opts OUT of the
- *   automatic CodeGraph bootstrap (install + MCP wiring + index build).
+ *   automatic CodeGraph bootstrap (install + MCP wiring + index build);
+ *   opts.mcp === false opts OUT of the archgen MCP wiring.
  * @returns {{storePath: string, claudeLink: 'created'|'existing'|'migrated'|'skipped'|'kept-divergent',
  *            backups: string[], contextFiles: string[], createdContextFiles: string[], warnings: string[]}}
  */
@@ -114,6 +115,7 @@ export function initProject(projectDir, packageRoot, opts = {}) {
   const force = opts.force === true;
   void force;
   const codegraphAllowed = opts.codegraph !== false;
+  const mcpAllowed = opts.mcp !== false;
   const log = opts.log ?? console.log;
 
   const root = resolve(projectDir);
@@ -170,15 +172,26 @@ export function initProject(projectDir, packageRoot, opts = {}) {
     appendEntry(root, 'block', name);
   }
 
-  // 4. CodeGraph bootstrap — install the latest CLI, wire the MCP server into
-  //    every detected harness, and build the project index. Non-fatal by
-  //    design: an offline machine still gets the skill installed.
-  if (codegraphAllowed) {
-    const r = bootstrapCodegraph({ source, projectDir: root, log, env: opts.env, noCodegraph: false });
-    if (!r.ok) warnings.push(`codegraph bootstrap incomplete${r.detail ? ': ' + r.detail : ''} — install later with: node .agents/skills/archgen/scripts/codegraph.mjs ensure --project . --yes`);
-    else if (r.skipped) warnings.push('codegraph bootstrap skipped (' + r.skipped + ')');
+  // 4. Server bootstrap — wire the archgen MCP server into every detected
+  //    harness AND ensure CodeGraph (its CLI, its MCP entry, the project
+  //    index). Non-fatal by design: an offline machine still gets the skill
+  //    installed.
+  if (codegraphAllowed || mcpAllowed) {
+    const r = bootstrapServers({
+      projectDir: root,
+      location: 'both',
+      log,
+      env: opts.env,
+      noCodegraph: !codegraphAllowed,
+      noMcp: !mcpAllowed,
+    });
+    if (!r.ok) {
+      warnings.push(`server bootstrap incomplete${r.detail ? ': ' + r.detail : ''} — install later with: npx archgen-mcp bootstrap --project . --yes`);
+    } else if (r.skipped) {
+      warnings.push(`server bootstrap skipped (${r.skipped})`);
+    }
   } else {
-    warnings.push('codegraph bootstrap skipped (--no-codegraph)');
+    warnings.push('server bootstrap skipped (--no-codegraph --no-mcp)');
   }
 
   return { storePath: storeAbs, claudeLink, backups, contextFiles, createdContextFiles, warnings };

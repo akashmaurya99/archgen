@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/akashmaurya99/archgen/actions/workflows/ci.yml/badge.svg)](https://github.com/akashmaurya99/archgen/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/akashmaurya99/archgen/blob/main/LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 
 Describe what you want to build. archgen interviews you (or surveys your existing
 codebase), produces an architecture contract plus a dependency-ordered task graph,
@@ -49,8 +49,13 @@ npx archgen-skill install          # symlinks; --copy for real copies
 ```
 
 Prefer shell? Clone the repo and run `./install.sh` (same behavior, plus
-`--init`, `--project`, `--uninstall`). Requires Node.js ≥ 18. The skill itself
-has zero npm dependencies.
+`--init`, `--project`, `--uninstall`). Requires Node.js ≥ 20 — the official MCP
+SDK v2 floor.
+
+**What `init` actually does:** installs the skill (guidance only — no code),
+wires the `archgen-mcp` MCP server into every detected harness, and ensures
+CodeGraph (its CLI, its MCP entry, and the project index). The CLI itself is
+zero-dependency; the MCP server it installs depends on the official MCP SDK.
 
 ## Quick start
 
@@ -145,7 +150,7 @@ See [CONTRIBUTING.md](https://github.com/akashmaurya99/archgen/blob/main/CONTRIB
 Skill suite and CLI tests run with zero dependencies:
 
 ```sh
-node --test skill/scripts/test/*.test.mjs   # skill suite
+node --test packages/mcp/test/**/*.test.mjs   # MCP server suite
 cd packages/cli && npm test                 # CLI suite
 ```
 

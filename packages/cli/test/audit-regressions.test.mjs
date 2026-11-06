@@ -72,15 +72,16 @@ test('BUG-DOC3 // AUDIT-REGRESSION doctor flags reversed archgen:features marker
     'doctor reported OK for reversed features markers');
 });
 
-// BUG-DOC4: store validity = "SKILL.md exists". A store missing scripts/ (or
-// any whole subtree) still reports OK, so doctor green-lights installs whose
-// verify-plan/set-status entry points are gone.
+// BUG-DOC4: store validity = "SKILL.md exists". A store missing a whole
+// REQUIRED subtree still reports OK, so doctor green-lights installs whose
+// references are gone. (The skill no longer ships a scripts/ tree — that
+// subtree is obsolete, not required — so the probe targets references/.)
 test('BUG-DOC4 // AUDIT-REGRESSION doctor detects a store missing whole subdirectories (not just SKILL.md)', () => {
   const proj = initProject();
-  rmSync(join(proj, '.agents', 'skills', 'archgen', 'scripts'), { recursive: true, force: true });
+  rmSync(join(proj, '.agents', 'skills', 'archgen', 'references'), { recursive: true, force: true });
   const r = runCli(['doctor', proj, '--check']);
   assert.doesNotMatch(r.stdout, /SKILL\.md present\)/,
-    'doctor treated a gutted store (no scripts/) as fully healthy');
+    'doctor treated a gutted store (no references/) as fully healthy');
 });
 
 // BUG-INST1: installGlobal treats ANY existing symlink at <target>/archgen as
@@ -134,16 +135,15 @@ test('BUG-SYNC1 // AUDIT-REGRESSION sync-vendor does not copy OS junk (.DS_Store
     const names = readdirSync(vendor);
     assert.ok(!names.includes('.DS_Store'),
       `sync-vendor copied .DS_Store into vendor: ${names.join(', ')}`);
-    // Dev-only exclusion: the repo's own node:test suite (scripts/test) is
-    // repo-only CI tooling that cannot run in an installed project, so it must
-    // NOT ship in the published payload. The drift gate excludes it too
-    // (`diff -r skill vendor --exclude=.DS_Store --exclude=.archgen-version
-    // --exclude=test`), so pruning it is correct — not silent drift. scripts/lib
-    // MUST still ship: it is a runtime dependency of the skill scripts.
+    // Dev-only exclusion: the repo's own node:test suite is repo-only CI
+    // tooling and must never ship.
     assert.ok(!existsSync(join(vendor, 'scripts', 'test')),
-      'sync-vendor shipped the dev-only skill/scripts/test suite into the vendor mirror');
-    assert.ok(existsSync(join(vendor, 'scripts', 'lib')),
-      'sync-vendor pruned skill/scripts/lib (a runtime dependency) out of the vendor mirror');
+      'sync-vendor shipped the dev-only scripts/test suite into the vendor mirror');
+    // The mirror must still carry everything the skill actually ships.
+    for (const required of ['SKILL.md', 'references']) {
+      assert.ok(existsSync(join(vendor, required)),
+        `sync-vendor pruned the required ${required} out of the vendor mirror`);
+    }
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }

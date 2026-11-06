@@ -20,6 +20,7 @@ import {
   rmIfExists,
 } from './store.js';
 import { resolveSkillSource } from './init.js';
+import { uninstallMcp } from './mcp-server.js';
 
 function lstatSafe(p) {
   try { return lstatSync(p); } catch { return null; }
@@ -33,7 +34,8 @@ function relJoin(rel) {
  * @param {string} projectDir project root to clean
  * @param {string} packageRoot dir containing this CLI package (vendor source)
  * @returns {{root: string, linkRemoved: boolean, strippedBlocks: string[],
- *            storeRemoved: boolean, storeKept: boolean, manifestRemoved: boolean, warnings: string[]}}
+ *            storeRemoved: boolean, storeKept: boolean, manifestRemoved: boolean,
+ *            mcpRemoved: string[], warnings: string[]}}
  */
 export function uninstallProject(projectDir, packageRoot) {
   const root = resolve(projectDir);
@@ -86,10 +88,21 @@ export function uninstallProject(projectDir, packageRoot) {
     }
   }
 
-  // 4. Manifest file — then prune .archgen only if nothing else remains
+  // 4. MCP server entries — remove ONLY the archgen entries this install
+  //    wrote (the MCP server keeps a manifest of exactly what it created, so
+  //    unrelated servers in the same config are never touched).
+  let mcpRemoved = [];
+  const mcp = uninstallMcp({ projectRoot: root });
+  if (mcp.report?.removed?.length) {
+    mcpRemoved = mcp.report.removed;
+  } else if (mcp.detail) {
+    warnings.push(`archgen MCP entries not removed: ${mcp.detail}`);
+  }
+
+  // 5. Manifest file — then prune .archgen only if nothing else remains
   //    (feature folders / backups keep it alive).
   const manifestRemoved = rmIfExists(join(root, relJoin(MANIFEST_REL)));
   if (manifestRemoved) pruneEmptyParents(root, dirname(MANIFEST_REL));
 
-  return { root, linkRemoved, strippedBlocks, storeRemoved, storeKept, manifestRemoved, warnings };
+  return { root, linkRemoved, strippedBlocks, storeRemoved, storeKept, manifestRemoved, mcpRemoved, warnings };
 }

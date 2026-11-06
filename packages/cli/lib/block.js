@@ -98,7 +98,7 @@ export function renderBlock(skillRelPath = '.agents/skills/archgen', eol = '\n')
     '',
     'Rules of the road:',
     '- Generated artifacts live ONLY under `.archgen/<slug>/`',
-    '- Never hand-edit task statuses - use `scripts/set-status.mjs` (comment-safe)',
+    '- Never hand-edit task statuses - call the `archgen_tasks` MCP tool (comment-safe)',
     '- Two gates before any execution: verifier approval, then human approval',
     '',
     '## Features registry',

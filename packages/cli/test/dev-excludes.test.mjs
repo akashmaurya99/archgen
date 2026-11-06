@@ -1,8 +1,14 @@
-// dev-excludes.test.mjs — dev-only artifacts (scripts/test) must never reach
-// end users: not in a fresh `init` store, not in the npm vendor payload, and
-// cleaned out of existing stores on re-init/doctor — all WITHOUT weakening
-// hashDir's real-divergence detection and WITHOUT excluding scripts/lib (a
-// runtime dependency of the skill scripts).
+// dev-excludes.test.mjs — what must never reach end users, and what must be
+// cleaned out of stores carried over from an older layout.
+//
+// The skill used to ship a scripts/ tree (11 scripts + a lib/ folder). It no
+// longer does: every capability moved into the archgen MCP server. So:
+//   - a FRESH install must contain NO scripts/ tree at all;
+//   - an install carried over from the pre-MCP layout must have that tree
+//     PRUNED (it is dead weight, and it would otherwise read as a customized
+//     store);
+//   - the dev-only exclusion list keeps its meaning: repo-only test tooling
+//     never ships and never reads as divergence.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -10,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashDir, DEV_ONLY_RELPATHS } from '../lib/store.js';
+import { hashDir, DEV_ONLY_RELPATHS, OBSOLETE_RELPATHS } from '../lib/store.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_ROOT = join(HERE, '..'); // packages/cli
@@ -32,52 +38,51 @@ function storeOf(proj) {
   return join(proj, '.agents', 'skills', 'archgen');
 }
 
-test('the shared dev-only exclusion list is exactly scripts/test (scripts/lib is NOT excluded)', () => {
+test('the dev-only exclusion list is exactly scripts/test', () => {
   assert.deepEqual(DEV_ONLY_RELPATHS, ['scripts/test']);
-  assert.ok(!DEV_ONLY_RELPATHS.some((p) => p === 'scripts/lib' || p.startsWith('scripts/lib/')),
-    'scripts/lib is a runtime dependency and must never be dev-only-excluded');
 });
 
-test('fresh init installs scripts/lib but NOT the dev-only scripts/test', () => {
+test('the obsolete list names the pre-MCP code tree', () => {
+  assert.deepEqual(OBSOLETE_RELPATHS, ['scripts']);
+});
+
+test('a fresh init ships NO scripts tree at all (the skill carries no code)', () => {
   const proj = initProject();
   const store = storeOf(proj);
   assert.ok(existsSync(join(store, 'SKILL.md')), 'SKILL.md must be installed');
-  assert.ok(existsSync(join(store, 'scripts', 'lib')), 'scripts/lib must be installed (runtime dependency)');
-  assert.ok(!existsSync(join(store, 'scripts', 'test')), 'dev-only scripts/test must NOT be installed');
+  assert.ok(existsSync(join(store, 'references')), 'references must be installed');
+  assert.ok(!existsSync(join(store, 'scripts')), 'the skill must ship no scripts tree');
 });
 
-test('re-init prunes a stale scripts/test from an existing store without error or spurious backup', () => {
+test('doctor prunes an obsolete scripts/ tree from an upgraded store', () => {
   const proj = initProject();
   const store = storeOf(proj);
-  // Simulate an older installer that shipped the dev-only suite into the store.
-  mkdirSync(join(store, 'scripts', 'test'), { recursive: true });
-  writeFileSync(join(store, 'scripts', 'test', 'stale.test.mjs'), '// stale dev-only test\n');
-  const r = runCli(['init', proj]);
-  assert.equal(r.status, 0, r.stderr + r.stdout);
-  assert.ok(!existsSync(join(store, 'scripts', 'test')), 'stale scripts/test must be pruned on re-init');
-  assert.ok(existsSync(join(store, 'scripts', 'lib')), 'scripts/lib must survive re-init');
-  // The store hashed identical (scripts/test is ignored on both sides of
-  // hashDir), so re-init must NOT have moved it aside into a backup.
-  assert.ok(!existsSync(join(proj, '.archgen', '.backup')),
-    're-init must not create a spurious full-store backup for a store that only carried scripts/test');
-});
+  // Simulate an install carried over from the pre-MCP layout.
+  mkdirSync(join(store, 'scripts', 'lib'), { recursive: true });
+  writeFileSync(join(store, 'scripts', 'lib', 'yaml.mjs'), 'export const x = 1;\n');
+  writeFileSync(join(store, 'scripts', 'next-tasks.mjs'), '// old\n');
 
-test('doctor prunes a stale scripts/test from an existing store (--check reports, repair removes)', () => {
-  const proj = initProject();
-  const store = storeOf(proj);
-  mkdirSync(join(store, 'scripts', 'test'), { recursive: true });
-  writeFileSync(join(store, 'scripts', 'test', 'stale.test.mjs'), '// stale dev-only test\n');
   // --check reports without mutating.
   const check = runCli(['doctor', proj, '--check']);
   assert.equal(check.status, 0, check.stderr + check.stdout);
-  assert.match(check.stdout, /scripts\/test/i);
-  assert.ok(existsSync(join(store, 'scripts', 'test')), '--check must not mutate the store');
-  // Repair mode prunes it, keeps scripts/lib, and does not cry "divergent".
+  assert.match(check.stdout, /obsolete scripts\/ tree/i);
+  assert.ok(existsSync(join(store, 'scripts')), '--check must not mutate the store');
+
+  // Repair mode prunes it — and does NOT cry "diverges from packaged skill".
   const fix = runCli(['doctor', proj]);
   assert.equal(fix.status, 0, fix.stderr + fix.stdout);
-  assert.ok(!existsSync(join(store, 'scripts', 'test')), 'doctor must prune the dev-only scripts/test');
-  assert.ok(existsSync(join(store, 'scripts', 'lib')), 'scripts/lib must survive doctor');
+  assert.ok(!existsSync(join(store, 'scripts')), 'doctor must prune the obsolete scripts tree');
   assert.doesNotMatch(fix.stdout, /diverges from packaged skill/i);
+});
+
+test('re-init replaces an obsolete scripts/ tree wholesale', () => {
+  const proj = initProject();
+  const store = storeOf(proj);
+  mkdirSync(join(store, 'scripts'), { recursive: true });
+  writeFileSync(join(store, 'scripts', 'stale.mjs'), '// old\n');
+  const r = runCli(['init', proj]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(!existsSync(join(store, 'scripts')), 're-init must not restore the obsolete tree');
 });
 
 test('hashDir still flags a real content edit as divergent', () => {
@@ -85,12 +90,12 @@ test('hashDir still flags a real content edit as divergent', () => {
   const b = mkdtempSync(join(tmpdir(), 'archgen-hash-b-'));
   try {
     for (const root of [a, b]) {
-      mkdirSync(join(root, 'scripts', 'lib'), { recursive: true });
+      mkdirSync(join(root, 'references'), { recursive: true });
       writeFileSync(join(root, 'SKILL.md'), '# skill\n');
-      writeFileSync(join(root, 'scripts', 'lib', 'yaml.mjs'), 'export const x = 1;\n');
+      writeFileSync(join(root, 'references', 'a.md'), 'x\n');
     }
     assert.equal(hashDir(a), hashDir(b), 'identical trees hash equal');
-    writeFileSync(join(b, 'scripts', 'lib', 'yaml.mjs'), 'export const x = 2;\n');
+    writeFileSync(join(b, 'references', 'a.md'), 'y\n');
     assert.notEqual(hashDir(a), hashDir(b), 'a real content edit must read as divergent');
   } finally {
     rmSync(a, { recursive: true, force: true });
@@ -103,9 +108,7 @@ test('hashDir ignores scripts/test on both sides (dev-only presence is not diver
   const b = mkdtempSync(join(tmpdir(), 'archgen-hash-d-'));
   try {
     for (const root of [a, b]) {
-      mkdirSync(join(root, 'scripts', 'lib'), { recursive: true });
       writeFileSync(join(root, 'SKILL.md'), '# skill\n');
-      writeFileSync(join(root, 'scripts', 'lib', 'yaml.mjs'), 'export const x = 1;\n');
     }
     assert.equal(hashDir(a), hashDir(b));
     mkdirSync(join(a, 'scripts', 'test'), { recursive: true });

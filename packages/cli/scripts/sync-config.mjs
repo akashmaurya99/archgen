@@ -59,8 +59,47 @@ export function setFrontmatterVersion(raw, version) {
  * @param {string} version MAJOR.MINOR.PATCH to set
  * @returns {string} new contents
  */
-export function setPackageVersion(raw, version) {
-  const lines = raw.split('\n');
+/**
+ * Read the skill's declared capability requirement from its frontmatter:
+ * `metadata.requires.archgen_mcp` (e.g. ">=0.0.6"). Returns null when the
+ * skill declares none.
+ */
+export function readRequiresMcp(raw) {
+  const bom = raw.charCodeAt(0) === 0xfeff;
+  const body = bom ? raw.slice(1) : raw;
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(body);
+  if (!fm) return null;
+  const m = /^[ \t]+archgen_mcp:[ \t]*["']?([^"'\r\n]+?)["']?\s*$/m.exec(fm[1]);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * Does `version` satisfy the requirement `spec`? Supports `>=`, `>`, `<=`, `<`,
+ * `=`, `^` and `~` over MAJOR.MINOR.PATCH — the same forms the MCP server's
+ * `core/compat.mjs` accepts. An unparseable requirement is treated as NOT
+ * satisfied: it must never pass vacuously.
+ */
+export function serverSatisfies(version, spec) {
+  const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)/.exec(String(spec ?? '').trim());
+  if (!m) return false;
+  const op = m[1] ?? '=';
+  const want = { major: +m[2], minor: +m[3], patch: +m[4] };
+  const hm = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(version ?? '').trim());
+  if (!hm) return false;
+  const have = { major: +hm[1], minor: +hm[2], patch: +hm[3] };
+  const cmp = (a, b) => (a.major !== b.major ? a.major - b.major : a.minor !== b.minor ? a.minor - b.minor : a.patch - b.patch);
+  switch (op) {
+    case '>=': return cmp(have, want) >= 0;
+    case '>': return cmp(have, want) > 0;
+    case '<=': return cmp(have, want) <= 0;
+    case '<': return cmp(have, want) < 0;
+    case '^': return have.major === want.major && cmp(have, want) >= 0;
+    case '~': return have.major === want.major && have.minor === want.minor && cmp(have, want) >= 0;
+    default: return cmp(have, want) === 0;
+  }
+}
+
+export function setPackageVersion(raw, version) {  const lines = raw.split('\n');
   let base = null;
   for (const line of lines) {
     const m = /^([ \t]*)"[^"]+"[ \t]*:/.exec(line);
@@ -86,6 +125,23 @@ export function syncConfig({ root = DEFAULT_ROOT, check = false } = {}) {
   const cfg = parseConfig(readFileSync(join(rootDir, 'archgen.config.json'), 'utf8'), join(rootDir, 'archgen.config.json'));
   const touched = [];
 
+  // (0) THE CAPABILITY CONTRACT — checked FIRST, before anything is written.
+  //
+  // `metadata.requires.archgen_mcp` is a HUMAN decision, not a derived fact:
+  // it says "the oldest server this skill can talk to", so the sync never
+  // rewrites it (a skill may keep working against an older server). But a
+  // declaration the CURRENT server cannot satisfy is a broken release — the
+  // skill would call a tool that does not exist. Fail fast, before any write.
+  const skillMdPath = join(rootDir, 'skill', 'SKILL.md');
+  const rawMd = readFileSync(skillMdPath, 'utf8');
+  const requiresMcp = readRequiresMcp(rawMd);
+  if (requiresMcp && !serverSatisfies(cfg.version, requiresMcp)) {
+    throw new Error(
+      `skill/SKILL.md requires archgen-mcp ${requiresMcp}, but this release is ${cfg.version} — ` +
+        'raise metadata.requires.archgen_mcp or lower the release version',
+    );
+  }
+
   // (a) derived skill copy
   const skillCfgPath = join(rootDir, 'skill', 'archgen.config.json');
   const desiredCfg = JSON.stringify(cfg, null, 2) + '\n';
@@ -95,8 +151,6 @@ export function syncConfig({ root = DEFAULT_ROOT, check = false } = {}) {
   }
 
   // (b) SKILL.md frontmatter metadata.version line only
-  const skillMdPath = join(rootDir, 'skill', 'SKILL.md');
-  const rawMd = readFileSync(skillMdPath, 'utf8');
   const nextMd = setFrontmatterVersion(rawMd, cfg.version);
   if (nextMd !== rawMd) {
     if (!check) writeFileAtomic(skillMdPath, nextMd);
@@ -121,6 +175,18 @@ export function syncConfig({ root = DEFAULT_ROOT, check = false } = {}) {
     if (nextExt !== rawExt) {
       if (!check) writeFileAtomic(extPkgPath, nextExt);
       touched.push('packages/extension/package.json (version)');
+    }
+  }
+
+  // (e) MCP server package.json version field — exist-conditional for the
+  // same reason: the published CLI payload ships without the MCP package.
+  const mcpPkgPath = join(rootDir, 'packages', 'mcp', 'package.json');
+  if (existsSync(mcpPkgPath)) {
+    const rawMcp = readFileSync(mcpPkgPath, 'utf8');
+    const nextMcp = setPackageVersion(rawMcp, cfg.version);
+    if (nextMcp !== rawMcp) {
+      if (!check) writeFileAtomic(mcpPkgPath, nextMcp);
+      touched.push('packages/mcp/package.json (version)');
     }
   }
 

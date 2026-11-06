@@ -2,7 +2,8 @@
 
 `*.yaml` files here are parsed by:
 
-1. `skills/archgen/scripts/lib/yaml.mjs` via `skills/archgen/scripts/test/corpus.test.mjs` (node:test)
+1. the MCP core's YAML parser (`packages/mcp/src/core/yaml.mjs`) via
+   `packages/mcp/test/core/invariants.test.mjs` (node:test)
 2. `extension/src/host/readers/yaml.ts` (faithful TS port) via `extension/test/corpus.test.ts` (vitest)
 
 Both suites assert **parity**: identical `data`, identical `comments`, identical

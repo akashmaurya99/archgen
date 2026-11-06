@@ -1,4 +1,4 @@
-# comment lines are preserved by set-status.mjs — annotate freely
+# comment lines are preserved by archgen_tasks{set_status} — annotate freely
 tasks:
   # Core pipeline — do first
   - id: C   # the root

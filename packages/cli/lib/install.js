@@ -10,7 +10,7 @@ import { resolveSkillSource } from './init.js';
 import { assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackupInto, pruneDevOnly, refuseSymlinkMessage } from './store.js';
 import { writeStamp } from './version-stamp.js';
 import { loadConfig } from './config.js';
-import { bootstrapCodegraph } from './codegraph.js';
+import { bootstrapServers } from './bootstrap.js';
 
 // Module-anchored default: works from the npm package (cli/lib -> cli/vendor)
 // AND from a monorepo checkout (packages/cli/lib -> ../../skill) without depending on cwd.
@@ -59,7 +59,7 @@ function nextBackupTs(tdir) {
 }
 
 /**
- * @param {{copy?: boolean, home?: string, packageRoot?: string, codegraph?: boolean, log?: (s: string) => void, env?: NodeJS.ProcessEnv}} opts
+ * @param {{copy?: boolean, home?: string, packageRoot?: string, codegraph?: boolean, mcp?: boolean, log?: (s: string) => void, env?: NodeJS.ProcessEnv}} opts
  * @returns {{rows: Array<[string, string, string]>, failures: number, manifest: string,
  *            backups: string[]}} rows are [STATUS, MODE, PATH]; `backups` lists
  *            absolute vault locations written by this run.
@@ -166,20 +166,21 @@ export function installGlobal(opts = {}) {
       rows.push(['FAILED', '-', dest + ' (' + e.message + ')']);
     }
   }
-  // CodeGraph bootstrap — GLOBAL wiring only (project-local configs belong to
-  // `init`). Installs the latest CLI and wires every DETECTED global harness.
-  // Non-fatal: an offline machine still gets the skill installed.
-  if (opts.codegraph !== false) {
-    const r = bootstrapCodegraph({
-      source,
+  // Server bootstrap — GLOBAL wiring only (project-local configs belong to
+  // `init`). Wires the archgen MCP server and CodeGraph into every DETECTED
+  // global harness. Non-fatal: an offline machine still gets the skill
+  // installed.
+  if (opts.codegraph !== false || opts.mcp !== false) {
+    const r = bootstrapServers({
       projectDir: process.cwd(),
       location: 'global',
       log: opts.log ?? console.log,
       env: opts.env,
-      noCodegraph: false,
+      noCodegraph: opts.codegraph === false,
+      noMcp: opts.mcp === false,
     });
     if (!r.ok) {
-      rows.push(['WARN', '-', 'codegraph bootstrap incomplete — run: node <store>/scripts/codegraph.mjs ensure --yes']);
+      rows.push(['WARN', '-', 'server bootstrap incomplete — run: npx archgen-mcp bootstrap --location global --yes']);
     }
   }
 

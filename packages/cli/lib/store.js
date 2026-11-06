@@ -59,6 +59,55 @@ const GUARDED_RELPATHS = new Set(['.claude', '.agents', '.claude/skills', '.agen
  */
 export const DEV_ONLY_RELPATHS = ['scripts/test'];
 
+/**
+ * Subtrees that the CURRENT packaged skill no longer ships.
+ *
+ * The skill used to ship a `scripts/` tree (11 scripts + a lib/ folder). It
+ * does any more — every capability moved into the archgen MCP server. An
+ * existing install still carries that tree, and it is dead weight: nothing
+ * reads it, and it makes the store hash as DIVERGED from the packaged skill.
+ *
+ * Pruning it is a MIGRATION, not a repair: the tree is ours (it shipped in a
+ * previous version), so removing it is safe. It is never removed from a store
+ * whose packaged skill still ships the same path — the check is always
+ * "packaged skill has no such directory".
+ */
+export const OBSOLETE_RELPATHS = ['scripts'];
+
+/**
+ * The subtrees the packaged skill no longer ships that are still present in
+ * an installed tree (report-only — nothing is touched).
+ *
+ * @param {string} absRoot the installed skill tree
+ * @param {string} packagedRoot the packaged (vendor) skill tree
+ * @returns {string[]} the relpaths that are obsolete
+ */
+export function findObsolete(absRoot, packagedRoot) {
+  const found = [];
+  for (const rel of OBSOLETE_RELPATHS) {
+    if (existsSync(join(packagedRoot, ...rel.split('/')))) continue; // still shipped — not obsolete
+    if (!existsSync(join(absRoot, ...rel.split('/')))) continue;
+    found.push(rel);
+  }
+  return found;
+}
+
+/**
+ * Remove the subtrees the packaged skill no longer ships.
+ *
+ * @param {string} absRoot the installed skill tree
+ * @param {string} packagedRoot the packaged (vendor) skill tree
+ * @returns {string[]} the relpaths actually removed
+ */
+export function pruneObsolete(absRoot, packagedRoot) {
+  const removed = [];
+  for (const rel of findObsolete(absRoot, packagedRoot)) {
+    rmSync(join(absRoot, ...rel.split('/')), { recursive: true, force: true });
+    removed.push(rel);
+  }
+  return removed;
+}
+
 /** True when relpath `r` is (or lives inside) a dev-only excluded subtree. */
 function isDevOnlyRelPath(r) {
   for (const prefix of DEV_ONLY_RELPATHS) {
@@ -136,17 +185,38 @@ function byName(a, b) {
 export function hashDir(dir, opts = {}) {
   const ignore = new Set([VERSION_FILE, ...(opts.ignore ?? [])]);
   const hash = createHash('sha256');
-  (function walk(abs, rel) {
+  // A directory contributes its marker ONLY when its subtree contributes
+  // something. Without this, a directory holding nothing but excluded
+  // dev-only content hashed a 'd <rel>' marker on one side and nothing on the
+  // other — the two trees then read as divergent even though they are
+  // identical once the exclusions are applied.
+  //
+  // File contents are hashed as BYTES, never as strings: a lossy string
+  // round-trip would change the digest for any non-UTF-8 file.
+  const walk = (abs, rel) => {
     const entries = readdirSync(abs, { withFileTypes: true }).sort((a, b) => byName(a.name, b.name));
+    const chunks = [];
     for (const ent of entries) {
       const r = rel ? rel + '/' + ent.name : ent.name;
       if (ignore.has(r) || isDevOnlyRelPath(r)) continue;
       const p = join(abs, ent.name);
-      if (ent.isSymbolicLink()) hash.update('l ' + r + ' -> ' + readlinkSync(p) + '\n');
-      else if (ent.isDirectory()) { hash.update('d ' + r + '\n'); walk(p, r); }
-      else { hash.update('f ' + r + '\0'); hash.update(readFileSync(p)); hash.update('\n'); }
+      if (ent.isSymbolicLink()) {
+        chunks.push(Buffer.from('l ' + r + ' -> ' + readlinkSync(p) + '\n'));
+      } else if (ent.isDirectory()) {
+        const sub = walk(p, r);
+        if (sub.length > 0) {
+          chunks.push(Buffer.from('d ' + r + '\n'));
+          chunks.push(...sub);
+        }
+      } else {
+        chunks.push(Buffer.from('f ' + r + '\0'));
+        chunks.push(readFileSync(p));
+        chunks.push(Buffer.from('\n'));
+      }
     }
-  })(dir, '');
+    return chunks;
+  };
+  for (const chunk of walk(dir, '')) hash.update(chunk);
   return hash.digest('hex');
 }
 

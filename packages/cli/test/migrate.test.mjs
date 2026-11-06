@@ -1,6 +1,6 @@
 // Migration framework tests: dry-run default (fs untouched), --apply stamps
 // files + writes migrate backups, idempotent second run, and tolerance of the
-// skill scripts (set-status / verify-plan) for stamped artifacts.
+// archgen MCP tools (set_status / verify) for stamped artifacts.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -21,7 +21,7 @@ import { applyMigration, listMigrations, pendingMigrations } from '../lib/migrat
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = join(CLI, '..', '..');
-const SKILL_SCRIPTS = join(REPO, 'skill', 'scripts');
+const MCP_BIN = join(REPO, 'packages', 'mcp', 'bin', 'archgen-mcp.mjs');
 const CORPUS = join(REPO, 'fixtures', 'yaml-corpus');
 
 const TASKS_SRC = readFileSync(join(CORPUS, 'tasks-block.yaml'), 'utf8');
@@ -72,8 +72,21 @@ async function captureStdout(fn) {
   }
 }
 
-function runScript(script, args) {
-  return spawnSync(process.execPath, [join(SKILL_SCRIPTS, script), ...args], { encoding: 'utf8' });
+/**
+ * Run one archgen MCP tool through the CLI facade — the same surface the
+ * agent uses. Returns the envelope, not the raw payload.
+ */
+function runTool(tool, args, projectRoot) {
+  const r = spawnSync(process.execPath, [MCP_BIN, 'exec', tool, JSON.stringify(args), '--project', projectRoot], {
+    encoding: 'utf8',
+  });
+  let envelope = null;
+  try {
+    envelope = JSON.parse(r.stdout);
+  } catch {
+    /* not JSON — the assertion reports it */
+  }
+  return { ...r, envelope };
 }
 
 test('framework API: listMigrations exposes 001 metadata in order', async () => {
@@ -155,14 +168,15 @@ test('idempotent: second run reports nothing pending and changes nothing', async
   assert.deepEqual(await pendingMigrations(proj), []);
 });
 
-test('set-status.mjs works on a stamped tasks.yaml: status flips, stamp survives verbatim', async () => {
+test('archgen_tasks{set_status} works on a stamped tasks.yaml: status flips, stamp survives verbatim', async () => {
   const dir = seedArtifacts();
   const tasksPath = join(dir, 'tasks.yaml');
   const r0 = await applyMigration('001-stamp-provenance', proj, { dryRun: false });
   assert.equal(r0.status, 'applied');
 
-  const r = runScript('set-status.mjs', [tasksPath, 'C', 'running']);
+  const r = runTool('archgen_tasks', { action: 'set_status', tasksYaml: tasksPath, taskId: 'C', status: 'running' }, proj);
   assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.envelope?.ok, true, JSON.stringify(r.envelope));
 
   const after = readFileSync(tasksPath, 'utf8');
   const ls = after.split('\n');
@@ -170,11 +184,14 @@ test('set-status.mjs works on a stamped tasks.yaml: status flips, stamp survives
   assert.match(ls[1], /^# generator: archgen( v\d+\.\d+\.\d+)?$/, 'stamp line 2 intact');
   assert.match(ls[2], /^# generated_at: /, 'stamp line 3 intact');
   assert.match(after, /status: running/, 'status mutation landed');
-  assert.ok(after.includes('# comment lines are preserved by set-status.mjs — annotate freely'), 'body comments preserved');
+  assert.ok(
+    after.includes('# comment lines are preserved by archgen_tasks{set_status} — annotate freely'),
+    'body comments preserved',
+  );
   assert.ok(after.includes('# Core pipeline — do first'));
 });
 
-test('verify-plan.mjs APPROVEs a stamped fixture copied from the yaml corpus', async () => {
+test('archgen_plan{verify} APPROVEs a stamped fixture copied from the yaml corpus', async () => {
   const dir = seedArtifacts('corpus-check');
   const plansDir = join(proj, 'plans-x');
   mkdirSync(plansDir, { recursive: true });
@@ -184,9 +201,10 @@ test('verify-plan.mjs APPROVEs a stamped fixture copied from the yaml corpus', a
   assert.equal(r0.status, 'applied');
   assert.match(readFileSync(join(dir, 'tasks.yaml'), 'utf8'), /^# schema_version: 1/);
 
-  const r = runScript('verify-plan.mjs', [join(dir, 'tasks.yaml'), '--plan', plansDir]);
+  const r = runTool('archgen_plan', { action: 'verify', tasksYaml: join(dir, 'tasks.yaml'), planDir: plansDir }, proj);
   assert.equal(r.status, 0, r.stdout);
-  assert.equal(JSON.parse(r.stdout).verdict, 'APPROVE');
+  assert.equal(r.envelope?.ok, true, JSON.stringify(r.envelope));
+  assert.equal(r.envelope?.data?.verdict, 'APPROVE');
 });
 
 test('applyMigration API: unknown id -> not-found; clean project -> clean; dryRun default refuses backup', async () => {
