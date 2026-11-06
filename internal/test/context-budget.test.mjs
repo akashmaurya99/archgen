@@ -75,6 +75,12 @@ test('context-budget: dev-only test files are excluded from the shipped payload'
   assert.equal(shipped, out.skill.totalTokens);
 });
 
+test('context-budget: the shipped skill tree carries NO code (the MCP server owns the capability)', () => {
+  const r = run(['--skill-dir', SKILL, '--json']);
+  const out = JSON.parse(r.stdout);
+  assert.ok(!out.skill.files.some((f) => f.file.startsWith('scripts/')), 'the skill ships no scripts tree');
+});
+
 test('context-budget: the MCP tool catalog is measured from the LIVE server', () => {
   const r = run(['--skill-dir', SKILL, '--json']);
   const out = JSON.parse(r.stdout);

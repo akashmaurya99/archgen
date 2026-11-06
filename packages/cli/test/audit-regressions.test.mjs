@@ -135,10 +135,11 @@ test('BUG-SYNC1 // AUDIT-REGRESSION sync-vendor does not copy OS junk (.DS_Store
     const names = readdirSync(vendor);
     assert.ok(!names.includes('.DS_Store'),
       `sync-vendor copied .DS_Store into vendor: ${names.join(', ')}`);
-    // Dev-only exclusion: the repo's own node:test suite is repo-only CI
-    // tooling and must never ship.
-    assert.ok(!existsSync(join(vendor, 'scripts', 'test')),
-      'sync-vendor shipped the dev-only scripts/test suite into the vendor mirror');
+    // The shipped payload is the skill's GUIDANCE tree only: SKILL.md and
+    // references/. The skill carries no code any more, so no scripts/ tree may
+    // ride along.
+    assert.ok(!existsSync(join(vendor, 'scripts')),
+      'sync-vendor shipped a scripts/ tree into the vendor mirror (the skill carries no code)');
     // The mirror must still carry everything the skill actually ships.
     for (const required of ['SKILL.md', 'references']) {
       assert.ok(existsSync(join(vendor, required)),
