@@ -121,13 +121,14 @@ function walkFiles(slugDir, filter) {
     const rel = stack.pop();
     for (const e of readdirSync(rel ? join(slugDir, rel) : slugDir, { withFileTypes: true })) {
       if (e.name.startsWith('.')) continue;
-      const r = rel ? `${rel}/${e.name}` : e.name;
+      const r = rel ? `${rel}/${e.name}` : rel === '' ? e.name : `${rel}/${e.name}`;
       if (e.isDirectory()) stack.push(r);
       else if (filter.test(e.name)) candidates.push(r);
     }
   }
   const chosen = new Map(); // real key -> { rel, isLink }
   let duplicatesSkipped = 0;
+  let escapesSkipped = 0;
   for (const r of candidates.sort()) {
     const abs = join(slugDir, r);
     let key;
@@ -139,6 +140,14 @@ function walkFiles(slugDir, filter) {
       key = resolve(abs); // dangling symlink: keep, keyed by spelled path
       isLink = false;
     }
+    // A file whose REAL path is outside the artifact space is a symlink out
+    // of it. Reading it would return whatever it points at — a private key,
+    // a file from elsewhere on the machine — inside a tool that promises to
+    // read nothing but archgen's own artifacts. Such a file is skipped.
+    if (key !== slugDir && !key.startsWith(slugDir + sep)) {
+      escapesSkipped++;
+      continue;
+    }
     const prev = chosen.get(key);
     if (!prev) {
       chosen.set(key, { rel: r, isLink });
@@ -147,7 +156,11 @@ function walkFiles(slugDir, filter) {
     duplicatesSkipped++;
     if (prev.isLink && !isLink) chosen.set(key, { rel: r, isLink }); // real spelling wins over alias
   }
-  return { files: [...chosen.values()].map((v) => v.rel).sort(), duplicatesSkipped };
+  return {
+    files: [...chosen.values()].map((v) => v.rel).sort(),
+    duplicatesSkipped,
+    escapesSkipped,
+  };
 }
 
 const wordCount = (lines) => lines.join(' ').split(/\s+/).filter(Boolean).length;
@@ -324,12 +337,18 @@ export function docIndex(input, opts = {}) {
         const hash = link.target.indexOf('#');
         const target = hash === -1 ? link.target : link.target.slice(0, hash);
         const anchor = hash === -1 ? null : link.target.slice(hash + 1);
-        if (target && !existsSync(resolve(dirname(doc.abs), target))) {
+        // A link target is resolved against the document's directory, so a
+        // link like `../../../secrets.md` would otherwise point outside the
+        // artifact space. The link is checked, never READ from outside: a
+        // target outside the slug directory is reported as broken rather
+        // than followed.
+        const targetAbs = target ? resolve(dirname(doc.abs), target) : '';
+        const inside = targetAbs && (targetAbs === slugDir || targetAbs.startsWith(slugDir + sep));
+        if (target && (!inside || !existsSync(targetAbs))) {
           broken.push({ kind: 'link', ref: link.target, file: relFromRoot(doc.abs), line: link.line });
           continue;
         }
         if (anchor && target && /\.md$/i.test(target)) {
-          const targetAbs = resolve(dirname(doc.abs), target);
           const targetDoc = parsedDocAt(targetAbs);
           if (targetDoc && !anchorExists(targetDoc, anchor)) {
             broken.push({ kind: 'anchor', ref: link.target, file: relFromRoot(doc.abs), line: link.line });

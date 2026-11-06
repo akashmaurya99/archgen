@@ -42,21 +42,40 @@ export function assertNotSymlink(absPath) {
 }
 
 /**
- * Realpath-escape guard: resolve `absPath` (climbing to the nearest existing
- * ancestor when it does not exist yet, so a symlinked PARENT dir is caught
- * before anything is created beneath it) and refuse when the real location
- * lands outside `rootAbs`.
+ * Realpath-escape guard: refuse anything that lands outside `rootAbs`.
+ *
+ * TWO CHECKS, IN ORDER.
+ *
+ *   1. LEXICAL. After normalization, the path must be inside the root. This
+ *      always applies — it is the primary guard, and it cannot be skipped
+ *      because a path does not exist yet.
+ *   2. REAL. The nearest existing ancestor is resolved and must also be
+ *      inside the root's real path. This is what catches a symlinked
+ *      PARENT directory that would redirect the write elsewhere.
+ *
+ * The guard does NOT fail open: if the root cannot be resolved, only the
+ * lexical check stands, and the lexical check is always applied.
+ *
  * @param {string} rootAbs
  * @param {string} absPath
  */
 export function assertWithinRoot(rootAbs, absPath) {
+  const root = resolve(rootAbs);
+  const abs = resolve(absPath);
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    throw permissionDenied(
+      `refusing a path outside the project: ${absPath} is not inside ${rootAbs}`,
+      { path: absPath, root: rootAbs },
+    );
+  }
+
   let rootReal;
   try {
-    rootReal = realpathSync(rootAbs);
+    rootReal = realpathSync(root);
   } catch {
-    return; // the root itself does not exist yet — nothing can escape it
+    return; // the root itself does not exist yet — the lexical check stands
   }
-  let probe = absPath;
+  let probe = abs;
   for (;;) {
     let exists = true;
     try {

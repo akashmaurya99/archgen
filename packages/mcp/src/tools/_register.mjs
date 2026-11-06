@@ -82,14 +82,15 @@ export function registerTool(server, name, spec) {
       },
     },
     async (args, extra) => {
-      // A tool may target a project other than the server's cwd (a monorepo
-      // package, a worktree). The projectRoot argument wins; otherwise the
-      // server-level context applies.
+      // A tool may target a directory inside the project (a monorepo package,
+      // a worktree under it). The projectRoot argument SELECTS one; it does
+      // not define the boundary. The server's anchor does, and a selection
+      // outside it is refused with PERMISSION_DENIED.
       const base = extra?.archgenContext ?? serverContext();
       const requested = args?.projectRoot;
       const ctx =
         typeof requested === 'string' && requested.trim() !== ''
-          ? new Context({ projectRoot: requested, env: base.env, home: base.home })
+          ? base.withProjectRoot(requested)
           : base;
       const envelope = await guard(spec.handler, ctx, args ?? {});
       return toToolResult(envelope);

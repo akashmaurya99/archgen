@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { invalidInput } from './core/errors.mjs';
-import { containPath } from './core/fs-safety.mjs';
+import { assertWithinRoot, containPath } from './core/fs-safety.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -148,17 +148,57 @@ export function loadAsset(name) {
 
 /**
  * The per-call context: project root + resolved skill + versions.
+ *
+ * THE ANCHOR. `anchorRoot` is the boundary the server works inside. It is
+ * set when the server starts — the directory the server was launched in, or
+ * the project the CLI named — and it does NOT change per call.
+ *
+ * `projectRoot` selects a directory INSIDE the anchor. It is a selector, not
+ * a boundary: naming a different root cannot move the edge of what the
+ * server may read or write. Before this, every containment check was
+ * relative to a root the MODEL chose, so the guard defended nothing — a
+ * model that named `/etc` simply moved the boundary to `/etc`.
  */
 export class Context {
   /**
-   * @param {{projectRoot?: string, home?: string, env?: Record<string, string|undefined>}} [opts]
+   * @param {{projectRoot?: string, anchorRoot?: string, home?: string, env?: Record<string, string|undefined>}} [opts]
    */
   constructor(opts = {}) {
     this.env = opts.env ?? process.env;
     this.home = opts.home ?? homedir();
-    this.projectRoot = resolve(opts.projectRoot ?? this.env.ARCHGEN_PROJECT_ROOT ?? process.cwd());
+    // The anchor is the server's DECLARED root: what the server was started
+    // with. The cwd is only the fallback for a server started without one.
+    this.anchorRoot = resolve(
+      opts.anchorRoot ?? opts.projectRoot ?? this.env.ARCHGEN_PROJECT_ROOT ?? process.cwd(),
+    );
+    this.projectRoot = resolve(opts.projectRoot ?? this.anchorRoot);
     this.skill = resolveSkill(this.projectRoot, this.home, this.env);
     this.serverVersion = serverVersion();
+  }
+
+  /**
+   * A context for a directory inside the anchor.
+   *
+   * The candidate is resolved and proved to be inside the anchor; a path
+   * outside it is refused with PERMISSION_DENIED. The returned context
+   * keeps the SAME anchor, so containment checks made with it cannot be
+   * widened either.
+   *
+   * @param {string} candidate
+   * @returns {Context}
+   */
+  withProjectRoot(candidate) {
+    if (typeof candidate !== 'string' || candidate.trim() === '') {
+      throw invalidInput('projectRoot must be a non-empty string', { projectRoot: candidate });
+    }
+    const abs = resolve(this.anchorRoot, candidate);
+    assertWithinRoot(this.anchorRoot, abs);
+    return new Context({
+      projectRoot: abs,
+      anchorRoot: this.anchorRoot,
+      env: this.env,
+      home: this.home,
+    });
   }
 
   /**
