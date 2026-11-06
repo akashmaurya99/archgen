@@ -35,7 +35,7 @@
     "url": "https://github.com/akashmaurya99/archgen/issues"
   },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test",
     "inspect": "npx -y @modelcontextprotocol/inspector node bin/archgen-mcp.mjs",
     "prepublishOnly": "node scripts/verify-version.mjs"
   },
