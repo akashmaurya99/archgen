@@ -21,7 +21,7 @@
 // EVERY UI ACTION IS BEST-EFFORT: with no extension running the tool returns
 // `{available:false}` and the agent's work continues. UI control never
 // blocks a task.
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { writeFileAtomic } from './fs-safety.mjs';
@@ -122,6 +122,7 @@ export async function sendUiCommand(projectRoot, toolAction, args = {}, opts = {
   };
 
   writeFileAtomic(cmdPath, JSON.stringify(command, null, 2) + '\n');
+  pruneQueue(runtime);
 
   const timeoutMs = Math.min(opts.timeoutMs ?? DEFAULT_ACK_TIMEOUT_MS, MAX_ACK_TIMEOUT_MS);
   const deadline = Date.now() + timeoutMs;
@@ -154,11 +155,61 @@ export async function sendUiCommand(projectRoot, toolAction, args = {}, opts = {
 }
 
 /**
+ * Prune the command and acknowledgement queues.
+ *
+ * The queues are a channel, not an archive. Every command the server writes
+ * is eventually acknowledged (or expires), and the extension leaves the file
+ * in place — so without a prune the directory grows for the life of the
+ * project, and every status call reads the whole directory.
+ *
+ * Entries are removed by AGE (anything older than the command TTL is dead
+ * either way) and the newest N are kept, so the queue is bounded by
+ * construction rather than by hope.
+ *
+ * @param {string} runtime the `.archgen/.runtime` directory
+ */
+export function pruneQueue(runtime, { maxEntries = 200, maxAgeMs = CMD_TTL_MS * 4 } = {}) {
+  const cmdDir = join(runtime, 'cmd');
+  const ackDir = join(runtime, 'ack');
+  const now = Date.now();
+  for (const dir of [cmdDir, ackDir]) {
+    if (!existsSync(dir)) continue;
+    let names;
+    try {
+      names = readdirSync(dir).filter((n) => n.endsWith('.json'));
+    } catch {
+      continue;
+    }
+    const kept = [];
+    for (const name of names) {
+      const abs = join(dir, name);
+      try {
+        const age = now - statSync(abs).mtimeMs;
+        if (age > maxAgeMs) {
+          unlinkSync(abs);
+          continue;
+        }
+        kept.push({ abs, mtime: statSync(abs).mtimeMs });
+      } catch {
+        /* vanished between the listing and the stat */
+      }
+    }
+    kept.sort((a, b) => b.mtime - a.mtime);
+    for (const { abs } of kept.slice(maxEntries)) {
+      try {
+        unlinkSync(abs);
+      } catch {
+        /* another process pruned it first */
+      }
+    }
+  }
+}
+
+/**
  * List pending (unacknowledged) commands — diagnostics.
  * @param {string} projectRoot
  */
-export function pendingUiCommands(projectRoot) {
-  const dir = join(projectRoot, RUNTIME_DIR, 'cmd');
+export function pendingUiCommands(projectRoot) {  const dir = join(projectRoot, RUNTIME_DIR, 'cmd');
   if (!existsSync(dir)) return [];
   const out = [];
   for (const name of readdirSync(dir)) {

@@ -78,9 +78,14 @@ export function findCycle(prerequisites) {
  * @param {Map<string,any>} byId
  * @param {Map<string,string[]>} prerequisites
  * @returns {{waves: Array<Array<any>>, blockedByFailure: string[]}}
- * Wave membership: every prerequisite is done. Tasks whose TRANSITIVE
- * prerequisites include any failed task are excluded entirely and reported in
- * blockedByFailure (no silent cascades — orchestrator re-plans around them). */
+ * Wave membership: every prerequisite is DONE OR ALREADY QUEUED in an earlier
+ * wave. That is standard topological layering — a task in wave 3 may depend
+ * on a task in wave 2, which is not done yet when wave 3 starts; it is
+ * merely no longer blocked.
+ *
+ * Tasks whose TRANSITIVE prerequisites include any failed task are excluded
+ * entirely and reported in blockedByFailure (no silent cascades — the
+ * orchestrator re-plans around them). */
 export function computeWaves(byId, prerequisites) {
   const done = new Set();
   const failed = new Set();

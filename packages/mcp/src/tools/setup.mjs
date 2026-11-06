@@ -126,7 +126,12 @@ export function registerSetupTools(server) {
         if (!approved) {
           return { written: false, planned: true, detail: 'uninstall_mcp needs approve: true — nothing was removed' };
         }
-        return { written: true, ...uninstallArchgenMcp(ctx.projectRoot, ctx.home) };
+        // The scope is honoured: removing only the global wiring leaves the
+        // project's wiring in place, and vice versa.
+        return {
+          written: true,
+          ...uninstallArchgenMcp(ctx.projectRoot, ctx.home, location),
+        };
       }
 
       if (args.action === 'install_mcp') {

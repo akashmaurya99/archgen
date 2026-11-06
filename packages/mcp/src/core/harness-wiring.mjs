@@ -370,9 +370,10 @@ export function recordWiring(projectRoot, serverId, entries) {
  * @param {string} projectRoot
  * @param {string} serverId
  * @param {string} [home]
+ * @param {'project'|'global'|'both'} [location] which scope to remove
  * @returns {{removed: string[], skipped: string[]}}
  */
-export function removeWiring(projectRoot, serverId, home = homedir()) {
+export function removeWiring(projectRoot, serverId, home = homedir(), location = 'both') {
   const p = join(projectRoot, '.archgen', '.mcp-wiring.json');
   let manifest = null;
   try {
@@ -388,6 +389,12 @@ export function removeWiring(projectRoot, serverId, home = homedir()) {
   for (const entry of record.entries) {
     try {
       const abs = entry.path;
+      // The scope is honoured: a request to remove the global wiring leaves
+      // the project's wiring in place.
+      if (location !== 'both' && entry.location && entry.location !== location) {
+        skipped.push(`${abs} (${entry.location} scope)`);
+        continue;
+      }
       // The manifest is a file ON DISK in the project — repository content.
       // Its paths are therefore untrusted: a clone could ship a manifest
       // naming any file on the machine. A recorded path must resolve inside

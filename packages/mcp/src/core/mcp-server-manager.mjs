@@ -113,8 +113,8 @@ export function wireArchgenMcp(opts) {
  * @param {string} projectRoot
  * @param {string} [home]
  */
-export function uninstallArchgenMcp(projectRoot, home = homedir()) {
-  return removeWiring(projectRoot, 'archgen', home);
+export function uninstallArchgenMcp(projectRoot, home = homedir(), location = 'both') {
+  return removeWiring(projectRoot, 'archgen', home, location);
 }
 
 /**

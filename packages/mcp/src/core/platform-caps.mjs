@@ -67,12 +67,19 @@ export function detectHarness(registry, opts) {
   return { detected: found, primary: found[0], capabilities: platformCapabilities(registry, found[0].id) };
 }
 
-/** The rank of a harness in the detection order (unknown → last). */
+/**
+ * The rank of a harness in the detection order (unknown → last).
+ *
+ * The match is EXACT. A prefix match ranked `code` against `codex` — two
+ * different harnesses — and whichever came first in the registry won, so
+ * the detected platform depended on the registry's ordering rather than on
+ * what is actually installed.
+ */
 function rank(id, order) {
   const keys = Object.keys(order);
   const i = keys.findIndex((k) => {
     const clean = k.replace(/^\./, '').replace(/\/$/, '').replace(/\.json$/, '');
-    return clean === id || clean.startsWith(id);
+    return clean === id;
   });
   return i === -1 ? keys.length : i;
 }

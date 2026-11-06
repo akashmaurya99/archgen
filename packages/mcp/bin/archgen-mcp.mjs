@@ -16,11 +16,13 @@ import { createServer } from '../src/server.mjs';
 import { runCli } from '../src/cli.mjs';
 
 const argv = process.argv.slice(2);
-const CLI_COMMANDS = new Set(['exec', 'bootstrap', 'doctor', 'uninstall-mcp', 'help']);
 const first = argv[0];
-// 'serve' is the default, but any explicit CLI command OR any flag means the
-// caller wants the command-line facade, not the JSON-RPC stream.
-const wantsCli = first === 'serve' ? false : CLI_COMMANDS.has(first) || (first !== undefined && first.startsWith('-'));
+// The stdio server is the DEFAULT, and only for no argument at all or the
+// explicit word 'serve'. Anything else is the command-line facade — a known
+// command, a flag, or an unknown word, which must say "unknown command"
+// rather than silently start a server and block on stdin (which is what it
+// used to do, making the mistake look like a hang).
+const wantsCli = !(first === undefined || first === 'serve');
 
 if (wantsCli) {
   const code = await runCli(argv);
