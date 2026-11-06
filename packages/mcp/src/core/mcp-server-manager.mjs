@@ -18,7 +18,6 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { wireServer, recordWiring, removeWiring } from './harness-wiring.mjs';
 import { which } from './codegraph-manager.mjs';
- './errors.mjs';
 
 export const MCP_PACKAGE = 'archgen-mcp';
 

@@ -61,7 +61,7 @@ export function verifyPlan(file, planDir) {
         }
       }
 
-      issues.push(...checkPlanCoverage(planDir, tasks));
+      issues.push(...checkPlanCoverage(planDir, tasks).findings);
     } catch (e) {
       if (e instanceof GraphError) issues.push(e.message);
       else issues.push(`internal check failure: ${e?.message ?? String(e)}`);
@@ -86,20 +86,14 @@ export function planCoverage(file, planDir) {
     return { covered: [], uncovered: [], findings: [`unparseable tasks.yaml: ${e.message}`] };
   }
   const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
-  const findings = checkPlanCoverage(planDir, tasks);
+  const { findings, referenced, mentionedInTasks } = checkPlanCoverage(planDir, tasks);
   const covered = [];
   const uncovered = [];
   for (const t of tasks) {
     const id = String(t?.id ?? '');
     if (!id) continue;
-    const mentioned = findings.some((f) => f.includes(id)) || tasks.some((x) => x?.id !== id && mentions(x, id));
+    const mentioned = referenced.has(id) || mentionedInTasks.has(id);
     (mentioned ? covered : uncovered).push(id);
   }
   return { covered, uncovered, findings };
-}
-
-/** Does any task reference `id` in its artifacts / acceptance text? */
-function mentions(task, id) {
-  const hay = JSON.stringify([task?.artifacts ?? [], task?.acceptance ?? [], task?.title ?? '']);
-  return hay.includes(id);
 }

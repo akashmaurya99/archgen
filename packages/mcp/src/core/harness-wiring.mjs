@@ -17,11 +17,11 @@
 //   - The per-platform file path + top-level key live in assets/harness-mcp.json
 //     — one source of truth, shared by the tool, the CLI and the docs.
 //   - Writes are atomic and refuse to go through a symlink.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { assertNotSymlink, assertWithinRoot, writeFileAtomic } from './fs-safety.mjs';
- './errors.mjs';
+import { invalidInput } from './errors.mjs';
 
 /**
  * Detect which harnesses are present in this environment.
@@ -46,6 +46,28 @@ export function expandHome(p, home = homedir()) {
 }
 
 /**
+ * True when `abs` resolves inside `root`.
+ *
+ * The path is compared lexically after normalization, and symlinks are
+ * resolved on both sides when they exist — a symlink pointing out of the
+ * root must not pass as "inside".
+ */
+export function pathIsWithin(abs, root) {
+  if (!abs || !root) return false;
+  const resolvedRoot = resolve(root);
+  const resolved = resolve(abs);
+  if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + sep)) return false;
+  try {
+    const realRoot = realpathSync(resolvedRoot);
+    const real = realpathSync(resolved);
+    return real === realRoot || real.startsWith(realRoot + sep);
+  } catch {
+    // The path does not exist yet: the lexical check above stands.
+    return true;
+  }
+}
+
+/**
  * Build the server entry for a harness, substituting the resolved binary path.
  *
  * When no binary was resolved the npx form is used instead, so the MCP config
@@ -57,12 +79,53 @@ export function expandHome(p, home = homedir()) {
  * @param {string|null} binPath the resolved absolute binary path, or null for the npx form
  * @param {string} fallbackCommand the command used when binPath is null
  */
+/**
+ * Build the entry for one harness config.
+ *
+ * THE TWO FORMS ARE DIFFERENT COMMANDS, NOT ONE COMMAND WITH A SWAPPED
+ * EXECUTABLE.
+ *
+ *   installed  the server's own binary:  `codegraph serve --mcp`
+ *   npx        the same server, fetched:  `npx -y @colbymchenry/codegraph serve --mcp`
+ *
+ * When the binary was resolved, the installed form is used and its
+ * executable is replaced with the resolved absolute path. When it was NOT,
+ * the npx form is used VERBATIM — its executable is already `npx`, and
+ * rewriting it to the server's own name produced the nonsense command
+ * `codegraph -y @colbymchenry/codegraph serve --mcp`, which can never start.
+ *
+ * @param {any} entries the entries block (entries / archgenEntries)
+ * @param {any} npxEntries the npx fallback block (npxEntries / archgenNpxEntries)
+ * @param {string} entryKey the entry shape ('stdio' | 'stdioNoType' | …)
+ * @param {string|null} binPath the resolved absolute binary path, or null for the npx form
+ * @param {string} fallbackCommand the command used when no npx form exists
+ * @returns {any} a fresh entry object (the source is never mutated)
+ */
 export function buildEntry(entries, npxEntries, entryKey, binPath, fallbackCommand) {
-  const source = binPath ? entries[entryKey] : (npxEntries?.[entryKey] ?? entries[entryKey]);
-  const entry = JSON.parse(JSON.stringify(source));
-  const command = binPath ?? fallbackCommand;
-  if (Array.isArray(entry.command)) entry.command = [command, ...entry.command.slice(1)];
-  else entry.command = command;
+  const installed = entries?.[entryKey];
+  const npx = npxEntries?.[entryKey];
+  const useNpx = !binPath && Boolean(npx);
+  const source = useNpx ? npx : installed;
+
+  if (!source || typeof source !== 'object') {
+    // A registry entry naming a shape the writer does not know is a REGISTRY
+    // bug, not a user error. Say so plainly instead of crashing with a
+    // SyntaxError from JSON.parse(undefined).
+    throw invalidInput(
+      `unknown MCP entry shape '${entryKey}' — the harness registry and the writer disagree`,
+      { entryKey, available: Object.keys(entries ?? {}) },
+    );
+  }
+
+  const entry = structuredClone(source);
+  if (binPath) {
+    if (Array.isArray(entry.command)) entry.command = [binPath, ...entry.command.slice(1)];
+    else entry.command = binPath;
+  } else if (!useNpx) {
+    // No npx form for this shape: fall back to the server's own name.
+    if (Array.isArray(entry.command)) entry.command = [fallbackCommand, ...entry.command.slice(1)];
+    else entry.command = fallbackCommand;
+  }
   return entry;
 }
 
@@ -262,7 +325,12 @@ export function wireServer(opts) {
         cfg.format === 'toml'
           ? writeTomlConfig(absPath, serverId, entry, { approved, dryRun, root })
           : writeJsonConfig(absPath, cfg.key, serverId, entry, { approved, dryRun, root });
-      wired.push({ harness: d.id, location: loc, path: absPath, key: cfg.key ?? `mcp_servers.${serverId}`, ...res });
+      // The key recorded here is the one the writer ACTUALLY used. A JSON
+      // config uses the registry's top-level key; a TOML config's section is
+      // derived from the server id. Recording the registry's key instead made
+      // uninstall search for the wrong section and leave the real one behind.
+      const writtenKey = cfg.format === 'toml' ? `mcp_servers.${serverId}` : cfg.key;
+      wired.push({ harness: d.id, location: loc, path: absPath, key: writtenKey, ...res });
     }
   }
 
@@ -320,6 +388,14 @@ export function removeWiring(projectRoot, serverId, home = homedir()) {
   for (const entry of record.entries) {
     try {
       const abs = entry.path;
+      // The manifest is a file ON DISK in the project — repository content.
+      // Its paths are therefore untrusted: a clone could ship a manifest
+      // naming any file on the machine. A recorded path must resolve inside
+      // the project root or the user's home, or it is refused.
+      if (!pathIsWithin(abs, projectRoot) && !pathIsWithin(abs, home)) {
+        skipped.push(`${abs} (outside the project and home directories)`);
+        continue;
+      }
       if (!existsSync(abs)) {
         skipped.push(`${entry.path} (absent)`);
         continue;

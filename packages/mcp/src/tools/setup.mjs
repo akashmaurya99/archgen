@@ -2,12 +2,11 @@
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { loadAsset } from '../context.mjs';
-import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary } from '../core/mcp-server-manager.mjs';
+import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary, uninstallArchgenMcp } from '../core/mcp-server-manager.mjs';
 import { manageCodegraph, assertLocation, findCodegraph } from '../core/codegraph-manager.mjs';
 import { detectHarnesses } from '../core/harness-wiring.mjs';
 import { platformCapabilities, detectHarness } from '../core/platform-caps.mjs';
 import { checkCapability } from '../core/compat.mjs';
- '../core/errors.mjs';
 
 const ACTION_DESC =
   'doctor | bootstrap | install_mcp | uninstall_mcp | harnesses | harness_info — see archgen_help.';

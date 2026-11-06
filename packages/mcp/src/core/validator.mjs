@@ -96,7 +96,7 @@ export function validateTasksYaml(file, opts = {}) {
 
   if (planDir) {
     // Delegate plan<->task coverage checks to the single shared implementation.
-    for (const f of checkPlanCoverage(planDir, tasks)) errors.push(f);
+    for (const f of checkPlanCoverage(planDir, tasks).findings) errors.push(f);
   }
 
   return {
