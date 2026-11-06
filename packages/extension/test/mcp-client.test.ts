@@ -16,7 +16,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   MCP_PACKAGE,
   callMcpTool,
@@ -219,6 +220,40 @@ describe('callMcpTool', () => {
         { projectRoot: work, binary: { bin: join(work, 'ghost'), source: 'override', command: join(work, 'ghost'), args: [] } },
       ),
     ).rejects.toThrow();
+  }, SPAWN_TIMEOUT_MS);
+
+  it('reads the WHOLE response when it arrives in more than one chunk', async () => {
+    // A response larger than the pipe buffer cannot be delivered in one
+    // chunk: the child blocks writing, the parent reads in pieces, and the
+    // process exits while bytes are still in flight. Reading the buffer on
+    // 'exit' loses them — the client then reports "produced no JSON" for a
+    // server that answered perfectly well. This is the bug that failed the
+    // CI coverage job on a fast Linux runner.
+    const big = 'x'.repeat(512 * 1024);
+    const script = fakeServer(JSON.stringify({ ok: true, data: { note: big } }));
+    const env = await callMcpTool('archgen_tasks', {}, { projectRoot: work, binary: binFor(script) });
+    expect(env.ok).toBe(true);
+    expect((env.data as { note: string }).note).toHaveLength(big.length);
+  }, SPAWN_TIMEOUT_MS);
+
+  it('waits for the response even when the server exits before it finishes writing', async () => {
+    // The deterministic version of the same race: the stub exits immediately
+    // while a grandchild it spawned still holds the stdout pipe open and
+    // writes the answer 250ms later.
+    //
+    // Reading the buffer on 'exit' sees an EMPTY stdout and rejects a server
+    // that answered perfectly well. Waiting for 'close' sees the whole
+    // answer. This is the exact failure CI reported:
+    //   "archgen-mcp exec archgen_tasks produced no JSON (exit 0):
+    //    Unexpected end of JSON input"
+    const stub = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'late-writer.mjs');
+    const env = await callMcpTool(
+      'archgen_tasks',
+      {},
+      { projectRoot: work, binary: { bin: stub, source: 'override', command: process.execPath, args: [stub] } },
+    );
+    expect(env.ok).toBe(true);
+    expect((env.data as { late: boolean }).late).toBe(true);
   }, SPAWN_TIMEOUT_MS);
 });
 

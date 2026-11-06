@@ -309,8 +309,10 @@ describe('harness edge cases', () => {
       cwd: tmpdir(),
       log: (l) => lines.push(l),
     });
+    // 'close', not 'exit': the harness logs its exit summary on 'close', so
+    // that the tail it prints is the COMPLETE output (see launchHarness).
     const signal = await new Promise<string | null>((resolve) => {
-      child.on('exit', (_c, s) => resolve(s));
+      child.on('close', (_c, s) => resolve(s));
       setTimeout(() => child.kill('SIGKILL'), 50);
     });
     expect(signal).toBe('SIGKILL');

@@ -174,7 +174,11 @@ export function launchHarness(opts: LaunchOptions): ChildProcess {
   child.stderr?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => chunk.split(/\r?\n/).forEach(push));
   child.stderr?.on('data', (chunk: string) => chunk.split(/\r?\n/).forEach(push));
-  child.on('exit', (code, signal) => {
+  // 'close', NOT 'exit': 'exit' fires when the process is gone, but its
+  // stdout pipe may still have bytes in flight. Printing the tail there
+  // would drop the last lines the agent produced — the summary the user
+  // reads to see what the harness did.
+  child.on('close', (code, signal) => {
     opts.log(`[harness] tail (${tail.length} line${tail.length === 1 ? '' : 's'} kept):`);
     for (const l of tail.slice(-max)) opts.log(`  ${l}`);
     opts.log(`[harness] exited code=${code ?? 'null'} signal=${signal ?? 'none'}`);

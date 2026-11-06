@@ -142,7 +142,20 @@ export function callMcpTool(
     child.stdout?.on('data', (d: Buffer) => (stdout += d.toString()));
     child.stderr?.on('data', (d: Buffer) => (stderr += d.toString()));
     child.on('error', reject);
-    child.on('exit', (code) => {
+    // 'close', NOT 'exit'.
+    //
+    // 'exit' fires when the process is gone, but its stdout pipe may still
+    // have bytes in flight: the parent has not necessarily received the last
+    // chunk yet. Reading the buffer on 'exit' therefore loses the tail of the
+    // response — and for a response that arrives in more than one chunk, it
+    // can lose ALL of it. The client then reports "produced no JSON" for a
+    // server that answered perfectly well, which is exactly what happened on
+    // CI: a fast Linux runner delivered the data event AFTER 'exit', and the
+    // extension rejected a valid envelope.
+    //
+    // 'close' fires only after the process has exited AND its stdio streams
+    // have been closed, so the buffer is complete when it runs.
+    child.on('close', (code) => {
       let envelope: Envelope | null = null;
       let parseError = '';
       try {

@@ -191,7 +191,9 @@ describe('launchHarness + describeExit (fake harness stub)', () => {
       cwd: tmpdir(),
       log: (l) => lines.push(l),
     });
-    const code = await new Promise<number | null>((resolve) => child.on('exit', (c) => resolve(c)));
+    // 'close', not 'exit': the harness logs its exit summary on 'close', so
+    // that the tail it prints is the COMPLETE output (see launchHarness).
+    const code = await new Promise<number | null>((resolve) => child.on('close', (c) => resolve(c)));
     expect(code).toBe(0);
     expect(lines.some((l) => l.includes('hello'))).toBe(true);
     expect(describeExit('T9', code, null)).toMatchObject({ kind: 'info' });
@@ -203,7 +205,7 @@ describe('launchHarness + describeExit (fake harness stub)', () => {
       cwd: tmpdir(),
       log: () => {},
     });
-    const code = await new Promise<number | null>((resolve) => child.on('exit', (c) => resolve(c)));
+    const code = await new Promise<number | null>((resolve) => child.on('close', (c) => resolve(c)));
     expect(code).toBe(3);
     expect(describeExit('T9', code, null)).toMatchObject({ kind: 'error', message: /code 3/ });
   });
@@ -216,7 +218,9 @@ describe('launchHarness + describeExit (fake harness stub)', () => {
       log: (l) => lines.push(l),
       tailLines: 10,
     });
-    await new Promise((resolve) => child.on('exit', resolve));
+    // The tail is printed on 'close' — after the output has been flushed —
+    // so the test must wait for the same event.
+    await new Promise((resolve) => child.on('close', resolve));
     const tailIdx = lines.findIndex((l) => l.includes('[harness] tail'));
     const tail = lines.slice(tailIdx + 1, tailIdx + 11);
     expect(tail).toHaveLength(10);

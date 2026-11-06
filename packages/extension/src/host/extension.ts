@@ -301,7 +301,9 @@ export function activate(context: ExtensionContext): void {
     const wsRoot = root() ?? process.cwd();
     out.appendLine(`[harness] dispatch '${taskId}' → ${command.split(' ')[0]} (cwd=${wsRoot})`);
     const child = launchHarness({ command, cwd: wsRoot, log: (line) => out.appendLine(line) });
-    child.on('exit', (code, signal) => {
+    // 'close', not 'exit': the verdict is shown when the harness is truly
+    // done, with its output fully flushed.
+    child.on('close', (code, signal) => {
       const verdict = describeExit(taskId, code, signal);
       (verdict.kind === 'info' ? window.showInformationMessage : window.showErrorMessage)(verdict.message);
     });
