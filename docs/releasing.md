@@ -74,7 +74,8 @@ Two derived locations live OUTSIDE the sync script:
 ### 4. Verify — zero drift, everything green
 
 ```sh
-npm run sync:check     # derived files match archgen.config.json (writes nothing)
+npm run sync:check     # derived files + lockfiles match archgen.config.json
+npm run test:versions  # every version surface agrees, and no example pins one
 npm run test:contract  # the declared minimum is satisfiable by this release
 npm run test:budget    # the always-on context is within its ceiling
 npm test               # every suite CI runs
@@ -82,9 +83,23 @@ npm run test:fixtures  # the three end-to-end drivers, against the real tools
 npm run test:immutable # the suites did not mutate the repository
 ```
 
-CI runs the same set: `vendor-check` (drift), `capability-contract`,
-`context-budget`, `mcp`, `cli`, `extension`, `fixtures`, `immutable`, `audit`
-(high-severity advisories in both npm packages) and `secret-scan`.
+`npm run test:versions` is the umbrella check. It runs two gates:
+
+- **`version-consistency.mjs`** — every version surface (the derived files, the
+  hand-edited declaration, the install.sh managed blocks, both lockfiles) must
+  agree with `archgen.config.json`. Each mismatch is reported with the exact
+  command that fixes it.
+- **`version-lint.mjs`** — no `MAJOR.MINOR.x` version may be pinned in an
+  *illustrative* surface: a doc, a README, a reference asset, a source
+  comment, the manual-test script. Examples show a shape, not a release —
+  so no release ever has to go and update a comment by hand. The real
+  surfaces keep concrete versions and are owned by the sync script and the
+  capability-contract gate.
+
+CI runs the same set: `vendor-check` (drift + version consistency),
+`capability-contract`, `context-budget`, `mcp`, `cli`, `extension`,
+`fixtures`, `immutable`, `audit` (high-severity advisories in both npm
+packages) and `secret-scan`.
 
 ### 5. Write the changelog
 

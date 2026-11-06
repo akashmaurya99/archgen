@@ -2,8 +2,9 @@
 //
 // WHY: the version, managed-block marker strings, and well-known filenames
 // were hardcoded independently in block.js, store.js, install.js, install.sh,
-// and SKILL.md frontmatter — and drifted (SKILL.md advertised 1.0.0 while the
-// CLI shipped 0.0.x). The canonical file lives at <repo-root>/archgen.config.json;
+// and SKILL.md frontmatter — and drifted (SKILL.md advertised a version the
+// CLI had never shipped). The canonical file lives at
+// <repo-root>/archgen.config.json;
 // a byte-identical derived copy ships inside the published npm package at
 // vendor/skills/archgen/archgen.config.json (kept in sync by
 // scripts/sync-config.mjs + scripts/sync-vendor.mjs).

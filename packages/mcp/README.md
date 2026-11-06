@@ -90,7 +90,7 @@ The skill declares the server version it needs:
 ```yaml
 metadata:
   requires:
-    archgen_mcp: ">=0.0.6"
+    archgen_mcp: ">=x.y.z"
 ```
 
 `archgen_setup { action: 'doctor' }` reports a mismatch, `bootstrap` warns

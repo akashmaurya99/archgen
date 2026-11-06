@@ -4,7 +4,7 @@
 //
 //   metadata:
 //     requires:
-//       archgen_mcp: ">=0.0.6"
+//       archgen_mcp: ">=x.y.z"
 //
 // A skill that demands a server release which DOES NOT EXIST can never work.
 // This gate refuses to let that ship.

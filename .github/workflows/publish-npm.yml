@@ -58,8 +58,8 @@ jobs:
             name: archgen-skill
             # The CLI is zero-dependency and ships no lockfile on purpose.
             has_lockfile: false
-    # Each matrix leg handles ONE tag prefix. Without this guard, pushing
-    # `vmcp-0.0.6` also ran the archgen-skill leg, which then refused the
+    # Each matrix leg handles ONE tag prefix. Without this guard, pushing an
+    # `vmcp-` tag also ran the archgen-skill leg, which then refused the
     # mismatched tag and turned the whole run red for a reason that was not a
     # real problem.
     steps:

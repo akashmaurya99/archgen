@@ -26,7 +26,8 @@
     "test:mcp": "npm --prefix packages/mcp test",
     "test:immutable": "node internal/tools/repo-immutable.mjs -- npm test",
     "test:budget": "node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13600",
-    "test:contract": "node internal/tools/check-capability-contract.mjs"
+    "test:contract": "node internal/tools/check-capability-contract.mjs",
+    "test:versions": "node internal/tools/version-lint.mjs && node internal/tools/version-consistency.mjs"
   },
   "engines": {
     "node": ">=20"

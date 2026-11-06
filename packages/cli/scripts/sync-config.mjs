@@ -61,7 +61,7 @@ export function setFrontmatterVersion(raw, version) {
  */
 /**
  * Read the skill's declared capability requirement from its frontmatter:
- * `metadata.requires.archgen_mcp` (e.g. ">=0.0.6"). Returns null when the
+ * `metadata.requires.archgen_mcp` (e.g. ">=x.y.z"). Returns null when the
  * skill declares none.
  */
 export function readRequiresMcp(raw) {
@@ -190,7 +190,43 @@ export function syncConfig({ root = DEFAULT_ROOT, check = false } = {}) {
     }
   }
 
+  // (f) the committed lockfiles' version fields.
+  //
+  // A lockfile whose version disagrees with its package.json makes `npm ci`
+  // REFUSE to install ("can only install packages when your package.json and
+  // package-lock.json are in sync"). That is a release that fails on the
+  // runner, so it is caught HERE — before any publish — rather than in CI.
+  //
+  // The lockfile is written by npm, not by this script, so it is REPORTED,
+  // not rewritten: the fix is
+  //   npm --prefix <dir> install --package-lock-only --no-audit --no-fund
+  // packages/cli has no lockfile by design (zero-dependency) — skipped.
+  for (const [dir, lockRel] of [
+    ['packages/mcp', 'packages/mcp/package-lock.json'],
+    ['packages/extension', 'packages/extension/package-lock.json'],
+  ]) {
+    const lockPath = join(rootDir, lockRel);
+    if (!existsSync(lockPath)) continue;
+    const pkgPath = join(rootDir, dir, 'package.json');
+    if (!existsSync(pkgPath)) continue;
+    const pkgVersion = readPackageVersion(readFileSync(pkgPath, 'utf8'));
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+    const versions = [lock.version, lock.packages?.['']?.version].filter((v) => typeof v === 'string');
+    if (versions.some((v) => v !== pkgVersion)) {
+      touched.push(
+        `${lockRel} (version ${versions.join('/')} != ${dir}/package.json ${pkgVersion}) — ` +
+          `fix: npm --prefix ${dir} install --package-lock-only --no-audit --no-fund`,
+      );
+    }
+  }
+
   return touched;
+}
+
+/** The top-level "version" field of a package.json, as a string. */
+function readPackageVersion(raw) {
+  const m = /"version"\s*:\s*"([^"]+)"/.exec(raw);
+  return m ? m[1] : '';
 }
 
 function main() {

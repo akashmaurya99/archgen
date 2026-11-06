@@ -10,7 +10,7 @@
 //   skill/SKILL.md frontmatter
 //     metadata:
 //       requires:
-//         archgen_mcp: ">=0.0.6"
+//         archgen_mcp: ">=x.y.z"
 //
 // `doctor` reports the mismatch; `bootstrap` warns before wiring; CI refuses
 // to ship a skill whose declared minimum exceeds the server's version.
