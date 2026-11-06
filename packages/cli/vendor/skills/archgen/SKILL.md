@@ -4,10 +4,10 @@ description: Architecture generation and autonomous task execution for coding ag
 license: MIT
 compatibility: Requires Node.js >= 20. The archgen MCP server (archgen-mcp) provides every deterministic capability; the skill itself ships no code.
 metadata:
-  version: 0.0.6
+  version: 0.0.7
   repo: https://github.com/akashmaurya99/archgen
   requires:
-    archgen_mcp: ">=0.0.6"
+    archgen_mcp: ">=0.0.7"
 ---
 
 # archgen — architecture generation & wave execution

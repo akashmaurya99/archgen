@@ -3,6 +3,31 @@
 All notable changes to the ArchGen extension are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semver.
 
+## [0.0.7] - 2026-11-06
+
+### Fixed
+
+- **The MCP client read the server's response on the wrong event.** It
+  collected stdout and decided what to do with it on the child's `'exit'`
+  event — but `'exit'` fires when the *process* is gone, while its stdout
+  pipe may still have bytes in flight. On a fast runner the client could read
+  an empty buffer from a server that had answered correctly and report
+  `archgen-mcp exec archgen_tasks produced no JSON (exit 0)`. It now reads on
+  `'close'`, which fires after the stdio streams are closed. A deterministic
+  regression test (a stub that exits while a grandchild still holds the pipe
+  open) reproduces the original failure byte-for-byte.
+- **`launchHarness` printed its output tail on `'exit'`** as well, so the
+  summary the user reads to see what the agent did could lose its last lines.
+  The dispatch toast now waits for the same event.
+
+### Changed
+
+- The extension's dependencies were updated to clear every live advisory in
+  the published tree: `markdown-it` 15.0.3 (four quadratic-time DoS paths),
+  `mermaid` 12.3.0 (pulls the patched KaTeX), `vitest` 4.1.12 (mock-registration
+  code injection, and the patched Vite). `npm audit` now reports **0
+  vulnerabilities**.
+
 ## [0.0.6] - 2026-11-06
 
 ### Added

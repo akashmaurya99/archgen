@@ -1,3 +1,65 @@
+## [0.0.7] - 2026-11-06
+
+### Fixed
+
+- **Generated artifacts now record the version that produced them.** The
+  `scaffold` action wrote a bare `# generator: archgen` — no version at all —
+  even though the server knows its own version exactly. The provenance header
+  therefore said nothing about which release created the file, and the only
+  guidance for the agent was a placeholder it could copy literally. The tool
+  now writes the running server's version, and the reference tells the agent
+  to paste that header verbatim and never type a version itself.
+- **`--project` is a flag, never a directory name.** `archgen-skill init`,
+  `doctor` and `update` took the project directory *positionally*, so
+  `init --project .` silently created a directory literally named
+  `--project` in the current directory and installed the skill into it — no
+  error, no warning. `--project <dir>` and `--project=<dir>` are now accepted
+  everywhere the positional form is, and an **unknown flag is a usage error**
+  rather than a directory name (`init --no-mcpx` refuses instead of creating
+  `--no-mcpx/`). The same rule `migrate` and the MCP server already followed.
+- **The extension read the MCP server's response on `'exit'`**, which fires
+  before stdout is drained. On a fast runner the client could see an empty
+  buffer from a server that had answered correctly and report
+  `produced no JSON (exit 0)`. It now reads on `'close'`, which fires after
+  the stdio streams are closed. The same race in `launchHarness` (its output
+  tail could lose its last lines) and in the dispatch toast is fixed too. A
+  deterministic regression test reproduces the original failure byte-for-byte.
+
+### Changed
+
+- **The npm publish workflow no longer assumes a lockfile exists.** The CLI is
+  zero-dependency and deliberately ships none, so `npm ci` refused to install
+  it (`EUSAGE`). The install step is now lockfile-aware.
+- **The npm publish order is enforced**, not just documented: the CLI leg
+  checks the registry for `archgen-mcp@<version>` and refuses to publish
+  before the server is there.
+- **The publish credential check is plain shell.** The previous inline
+  `node -e` script could not run at all (`node -e` rejects a top-level
+  `return`), so the check exited 1 in silence. It now runs on every npm
+  version boundary and names both fixes when it refuses.
+- **The capability-contract example is version-agnostic.** A concrete version
+  in a doc or a comment is wrong at the next release and nobody notices. The
+  examples now use the `>=x.y.z` placeholder the repo already used in
+  `docs/releasing.md`, and `internal/tools/version-lint.mjs` keeps them that
+  way — so no release ever has to go and update a comment again.
+
+### Added
+
+- **Version drift gates.** `npm run sync:check` now also verifies that each
+  committed lockfile's version matches its `package.json` (a mismatch makes
+  `npm ci` refuse to install), and CI checks the same thing with the exact
+  command that fixes it.
+- **`npm run test:versions`** — the umbrella version check.
+  `version-consistency.mjs` verifies every version surface against the
+  canonical source and reports each mismatch with the command that fixes it.
+  `version-lint.mjs` refuses a version pinned in an *illustrative* surface
+  (a doc, a README, a reference asset, a source comment, the manual-test
+  script) — examples show a shape, not a release, so no release ever has to
+  go and update a comment by hand. The pattern is derived from the canonical
+  version's `MAJOR.MINOR`, so the gate adapts as the project moves.
+- **The coverage report is uploaded as a CI artifact**, so a threshold
+  failure says *which* file fell below without a local reproduction.
+
 ## [0.0.6] - 2026-11-06
 
 ### Changed — BREAKING: the MCP server owns every capability
