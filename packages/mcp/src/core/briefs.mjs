@@ -37,6 +37,19 @@ export function loadBrief(briefsDir, kind, vars = {}) {
 }
 
 /**
+ * The placeholder names a brief still contains.
+ *
+ * A dispatched brief must not carry a placeholder: a worker told to read
+ * `<slug dir>` looks for a directory with that literal name.
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function remainingPlaceholders(text) {
+  return [...new Set([...String(text ?? '').matchAll(/<([a-z][a-z. ]*)>/g)].map((m) => m[1]))];
+}
+
+/**
  * Every brief, for a caller that wants them all.
  * @param {string} briefsDir
  */

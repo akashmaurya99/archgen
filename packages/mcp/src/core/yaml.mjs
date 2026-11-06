@@ -105,7 +105,7 @@ function peekContent(lines, pos, indent) {
     if (c.type === 'blank') { i++; continue; }
     if (c.type === 'comment') { i++; continue; } // handled by caller via pendingComments
     if (c.indent < indent) return null;
-    if (c.indent > indent) fail({ filename: 'internal' }, i + 1, `unexpected deeper indentation (got ${c.indent}, expected ${indent})`);
+    if (c.indent > indent) fail(ctx, i + 1, `unexpected deeper indentation (got ${c.indent}, expected ${indent})`);
     return { idx: i, line: c };
   }
   return null;

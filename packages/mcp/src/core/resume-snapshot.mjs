@@ -21,6 +21,19 @@ import { writeFileAtomic } from './fs-safety.mjs';
  * @param {any[]} waves resolved waves
  * @returns {string}
  */
+/**
+ * The wave execution resumes at, 1-based.
+ *
+ * When every wave is done there is no NEXT wave, so the resume point is the
+ * LAST wave — not one past the end of the list. The file and the tool
+ * response used two different formulas, so the snapshot could say "wave 3 of
+ * 2" while the response said wave 2.
+ */
+export function resumeWaveIndex(waves, statusOf) {
+  const active = waves.findIndex((w) => w.some((t) => statusOf(t) !== 'done'));
+  return active === -1 ? waves.length : active + 1;
+}
+
 export function renderResume(slug, tasks, waves) {
   const byId = new Map(tasks.map((t) => [t?.id, t]));
   const statusOf = (t) => String(t?.status ?? 'pending');
@@ -32,14 +45,13 @@ export function renderResume(slug, tasks, waves) {
 
   // The first wave that still has work in it is where execution resumes.
   const activeWaveIndex = waves.findIndex((w) => w.some((t) => statusOf(t) !== 'done'));
-  const waveIndex = activeWaveIndex === -1 ? waves.length : activeWaveIndex;
   const remaining = waves[activeWaveIndex] ?? [];
 
   const lines = [];
   lines.push(`# Resume — ${slug}`);
   lines.push('');
   lines.push(`- slug: ${slug}`);
-  lines.push(`- wave: ${waveIndex + 1} of ${waves.length}`);
+  lines.push(`- wave: ${resumeWaveIndex(waves, statusOf)} of ${waves.length}`);
   lines.push(`- done: ${done.length ? done.join(', ') : 'none'}`);
   lines.push(`- failed: ${failed.length ? failed.join(', ') : 'none'}`);
   lines.push(`- blocked: ${blocked.length ? blocked.join(', ') : 'none'}`);
@@ -97,7 +109,7 @@ export function writeResumeSnapshot(slugDir, waves) {
   const activeWaveIndex = waves.findIndex((w) => w.some((t) => statusOf(t) !== 'done'));
   return {
     path: out,
-    waveIndex: activeWaveIndex === -1 ? waves.length : activeWaveIndex + 1,
+    waveIndex: resumeWaveIndex(waves, statusOf),
     done: tasks.filter((t) => statusOf(t) === 'done').map((t) => t.id),
     failed: tasks.filter((t) => statusOf(t) === 'failed').map((t) => t.id),
     blocked: tasks.filter((t) => statusOf(t) === 'blocked').map((t) => t.id),

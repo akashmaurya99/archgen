@@ -13,7 +13,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml } from './yaml.mjs';
-import { buildGraph } from './graph.mjs';
+import { buildGraph, GraphError } from './graph.mjs';
 import { invalidInput, notFound } from './errors.mjs';
 
 /**
@@ -50,7 +50,21 @@ export function buildWorkerContract(opts) {
 
   // The dependency neighbourhood — what must exist BEFORE this task, and what
   // waits on it. Derived from depends_on, never hand-labelled.
-  const { byId, prerequisites, dependents } = buildGraph(tasks);
+  //
+  // A broken graph (a duplicate id, a dangling depends_on) is a PLAN defect,
+  // not an internal error. The agent branches on the code, so it is mapped
+  // to the same typed codes the other plan tools use.
+  let byId;
+  let prerequisites;
+  let dependents;
+  try {
+    ({ byId, prerequisites, dependents } = buildGraph(tasks));
+  } catch (e) {
+    if (e instanceof GraphError) {
+      throw invalidInput(`${tasksYaml}: ${e.message}`, { file: tasksYaml });
+    }
+    throw e;
+  }
   const upstream = (prerequisites.get(taskId) ?? []).map((id) => ({ id, title: byId.get(id)?.title ?? null }));
   const downstream = (dependents.get(taskId) ?? []).map((id) => ({ id, title: byId.get(id)?.title ?? null }));
 

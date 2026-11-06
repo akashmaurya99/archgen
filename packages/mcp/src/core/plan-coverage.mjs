@@ -23,8 +23,18 @@ export function checkPlanCoverage(planDir, tasks) {
   const referenced = new Set();
   const mentionedInTasks = new Set();
   if (!existsSync(planDir)) return { findings: [`plans dir not found: ${planDir}`], referenced, mentionedInTasks };
-  const files = readdirSync(planDir).filter((f) => f.endsWith('.md'));
-  const planText = files.map((f) => readFileSync(join(planDir, f), 'utf8')).join('\n');
+  let files;
+  try {
+    files = readdirSync(planDir).filter((f) => f.endsWith('.md'));
+  } catch (e) {
+    return { findings: [`cannot read plans dir ${planDir}: ${e.message}`], referenced, mentionedInTasks };
+  }
+  let planText = '';
+  try {
+    planText = files.map((f) => readFileSync(join(planDir, f), 'utf8')).join('\n');
+  } catch (e) {
+    return { findings: [`cannot read a plan file under ${planDir}: ${e.message}`], referenced, mentionedInTasks };
+  }
 
   const taskIds = new Set(tasks.map((t) => t.id));
   // Task ids referenced in plans: bare tokens that match an existing-or-not id pattern.

@@ -8,7 +8,7 @@ import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
 import { buildScaffold } from '../core/scaffold.mjs';
-import { loadBrief, BRIEF_KINDS } from '../core/briefs.mjs';
+import { loadBrief, remainingPlaceholders, BRIEF_KINDS } from '../core/briefs.mjs';
 import { validateTasksYaml } from '../core/validator.mjs';
 import { verifyPlan, planCoverage } from '../core/verifier.mjs';
 import { planGraph } from '../core/plan-grapher.mjs';
@@ -33,8 +33,14 @@ const schema = z.object({
   status: z.boolean().optional().describe('Include status styling (graph, mermaid only).'),
   module: z.string().optional().describe('Restrict the graph to one module (graph).'),
   scope: z.enum(['SMALL', 'MEDIUM', 'LARGE']).optional().describe('Scope class (scaffold).'),
-  slug: z.string().optional().describe('Project slug (scaffold).'),
+  slug: z.string().optional().describe('Project slug (scaffold, brief).'),
   kind: z.enum(BRIEF_KINDS).optional().describe('Which dispatch brief (brief).'),
+  featureRequest: z
+    .string()
+    .optional()
+    .describe('The feature being requested, in one line (brief). Defaults to the slug.'),
+  topic: z.string().optional().describe('Investigation topic (brief).'),
+  round: z.number().int().positive().optional().describe('Investigation round number (brief).'),
   projectRoot: projectRootArg,
 });
 
@@ -87,10 +93,35 @@ export function registerPlanTools(server) {
         }
         case 'brief': {
           if (!args.kind) throw invalidInput('brief requires kind', { action });
-          return loadBrief(BRIEFS_DIR, args.kind, {
-            'feature request': args.slug ?? '<feature request>',
-            'slug dir': args.slug ?? '.archgen/<slug>',
-          });
+          // Every placeholder the chosen brief uses is filled in, derived
+          // from ONE source (the slug) so the paths in a brief agree with
+          // each other. Previously only two of the seven were substituted,
+          // and the 'slug dir' one was given the bare slug — so a worker
+          // was told to read `checkout` and to write into `.archgen/<slug>/`
+          // with the placeholder still in it.
+          const slug = args.slug ?? null;
+          const vars = {};
+          if (slug) {
+            vars['slug'] = slug;
+            vars['slug dir'] = `.archgen/${slug}`;
+            vars['plans dir'] = `.archgen/${slug}/plans`;
+            vars['tasks.yaml'] = args.tasksYaml ?? `.archgen/${slug}/tasks.yaml`;
+          }
+          if (args.featureRequest) vars['feature request'] = args.featureRequest;
+          else if (slug) vars['feature request'] = slug;
+          if (args.topic) vars['topic'] = args.topic;
+          if (args.round !== undefined) vars['round'] = String(args.round);
+          const { kind, brief } = loadBrief(BRIEFS_DIR, args.kind, vars);
+          // A brief with a placeholder still in it is a brief that would
+          // send a worker looking for a directory named "<slug dir>".
+          const missing = remainingPlaceholders(brief);
+          if (missing.length) {
+            throw invalidInput(
+              `brief '${kind}' needs ${missing.join(', ')} — pass slug${missing.includes('topic') ? ', topic' : ''}${missing.includes('round') ? ', round' : ''}`,
+              { action, kind, missing },
+            );
+          }
+          return { kind, brief };
         }
         case 'graph': {
           const input = args.tasksYaml ?? args.planDir;

@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { parseYaml } from './yaml.mjs';
 import { buildGraph, findCycle, GraphError } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
-import { invalidInput } from './errors.mjs';
+import { invalidInput, ArchgenError } from './errors.mjs';
 
 export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 export const REQUIRED = ['id', 'title', 'file_ownership'];
@@ -37,7 +37,20 @@ export function validateTasksYaml(file, opts = {}) {
   const errors = [];
   const warnings = [];
 
-  const raw = readFileSync(file, 'utf8');
+  let raw;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch (e) {
+    // A missing or unreadable file is NOT an internal error. The agent is
+    // told to branch on the code, and "the file is not there" is a fact it
+    // can act on — an INTERNAL tells it nothing and hides which path failed.
+    const code = e?.code === 'ENOENT' ? 'NOT_FOUND' : 'INVALID_INPUT';
+    throw new ArchgenError(
+      code,
+      `${code === 'NOT_FOUND' ? 'tasks file not found' : `cannot read tasks file`}: ${file}`,
+      { file },
+    );
+  }
   let data;
   try {
     ({ data } = parseYaml(raw, { filename: file }));

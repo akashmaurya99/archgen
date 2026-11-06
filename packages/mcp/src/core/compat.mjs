@@ -29,11 +29,21 @@ export function parseVersion(v) {
   return m ? { major: +m[1], minor: +m[2], patch: +m[3] } : null;
 }
 
-/** Compare two versions: -1 / 0 / 1. Unparseable versions compare as equal. */
+/**
+ * Compare two versions: -1 / 0 / 1.
+ *
+ * An unparseable version THROWS. The question "which of these is newer?"
+ * has no answer when one of them is not a version, and answering "0" — the
+ * old behaviour — said "they are the same", which is false and quietly
+ * wrong. `satisfies` answers a different question ("does this version meet
+ * this requirement?") and handles an unknown version as "meets nothing".
+ */
 export function compareVersions(a, b) {
   const x = parseVersion(a);
   const y = parseVersion(b);
-  if (!x || !y) return 0;
+  if (!x || !y) {
+    throw invalidInput(`cannot compare versions: '${a}' and '${b}' are not both versions`, { a, b });
+  }
   for (const k of ['major', 'minor', 'patch']) {
     if (x[k] !== y[k]) return x[k] < y[k] ? -1 : 1;
   }
