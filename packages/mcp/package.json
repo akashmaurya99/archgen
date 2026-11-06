@@ -1,7 +1,7 @@
 {
   "name": "archgen-mcp",
   "version": "0.0.6",
-  "description": "MCP server for archgen — the single runtime that owns architecture-plan validation, wave execution, artifact navigation, CodeGraph bootstrap, harness MCP wiring, and live UI control for coding agents.",
+  "description": "MCP server for archgen \u2014 the single runtime that owns architecture-plan validation, wave execution, artifact navigation, CodeGraph bootstrap, harness MCP wiring, and live UI control for coding agents.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -37,7 +37,7 @@
   "scripts": {
     "test": "node --test test/",
     "inspect": "npx -y @modelcontextprotocol/inspector node bin/archgen-mcp.mjs",
-    "prepublishOnly": "node scripts/sync-config.mjs"
+    "prepublishOnly": "node scripts/verify-version.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
