@@ -26,15 +26,16 @@ export const CODEGRAPH_PACKAGE = '@colbymchenry/codegraph';
 
 /** Run a command; never throws. Returns {ok, status, stdout, stderr}. */
 export function run(cmd, args, opts = {}) {
-  const { timeout = 120000, cwd, env } = opts;
+  const { timeout = 120000, cwd, env, shell } = opts;
   const r = spawnSync(cmd, args, {
     encoding: 'utf8',
     timeout,
     cwd,
     env: env ? { ...process.env, ...env } : process.env,
-    shell: false,
-    // On Windows the npm/codegraph shims are .cmd files, which need a shell.
-    ...(process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd) ? { shell: true } : {}),
+    // The caller's `shell` wins; otherwise only a Windows .cmd/.bat shim needs
+    // one. The option used to be dropped, so a caller asking for a shell did
+    // not get one.
+    shell: shell === true || (process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd)),
   });
   if (r.error) return { ok: false, status: -1, stdout: '', stderr: String(r.error.message ?? r.error) };
   return { ok: r.status === 0, status: r.status ?? -1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };

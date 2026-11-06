@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { Context } from '../../src/context.mjs';
 import { assertWithinRoot } from '../../src/core/fs-safety.mjs';
 import { docIndex } from '../../src/core/doc-navigator.mjs';
+import { resolveSlugInput } from '../../src/core/scope.mjs';
 
 let root;
 let outside;
@@ -98,4 +99,20 @@ test('the doc navigator does not read through a symlink out of the artifact spac
   const index = docIndex(slugDir, { mode: 'overview' });
   const text = JSON.stringify(index.data ?? index);
   assert.doesNotMatch(text, /PRIVATE KEY MATERIAL/);
+});
+
+test('the scope gate refuses an artifact space outside the project root', () => {
+  // A `.archgen` directory anywhere on the machine is not this project's
+  // artifact space.
+  const foreign = join(outside, '.archgen', 'demo');
+  mkdirSync(foreign, { recursive: true });
+  assert.throws(() => resolveSlugInput(foreign, root), (e) => e.name === 'ScopeError');
+  // Without a root the gate accepts it — the root is what makes it specific.
+  assert.equal(resolveSlugInput(foreign).slug, 'demo');
+});
+
+test('the scope gate accepts an artifact space inside the project root', () => {
+  const mine = join(root, '.archgen', 'demo');
+  mkdirSync(mine, { recursive: true });
+  assert.equal(resolveSlugInput(mine, root).slug, 'demo');
 });

@@ -85,10 +85,10 @@ function bfsDistances(start, adjacency) {
  * @param {string} input
  * @returns {{root: string, slug: string, tasksFile: string}}
  */
-export function resolvePlanScope(input) {
+export function resolvePlanScope(input, projectRoot = null) {
   let scoped;
   try {
-    scoped = resolveSlugInput(input);
+    scoped = resolveSlugInput(input, projectRoot);
   } catch (e) {
     if (e instanceof ScopeError) throw invalidInput(`plan-graph: ${e.message}`, { input });
     throw invalidInput(`cannot read ${input} (missing or unreadable)`, { input });
@@ -101,7 +101,7 @@ export function resolvePlanScope(input) {
  * @param {string} input slug dir or tasks.yaml path
  */
 function loadPlan(input) {
-  const { root, slug, tasksFile } = resolvePlanScope(input);
+  const { root, slug, tasksFile } = resolvePlanScope(input, opts.projectRoot ?? null);
 
   let raw;
   try {

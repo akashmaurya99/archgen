@@ -103,7 +103,7 @@ export function writeResumeSnapshot(slugDir, waves) {
   const body = renderResume(slug, tasks, waves);
   const out = join(slugDir, '.agent', 'resume.md');
   mkdirSync(dirname(out), { recursive: true });
-  writeFileAtomic(out, body);
+  writeFileAtomic(out, body, { root: slugDir });
 
   const statusOf = (t) => String(t?.status ?? 'pending');
   const activeWaveIndex = waves.findIndex((w) => w.some((t) => statusOf(t) !== 'done'));

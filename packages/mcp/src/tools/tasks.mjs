@@ -127,7 +127,7 @@ export function registerTaskTools(server) {
           // the whole plan.
           let docSections = [];
           try {
-            const map = docIndex(slugDir, { mode: 'map', token: args.taskId });
+            const map = docIndex(slugDir, { mode: 'map', token: args.taskId, projectRoot: ctx.projectRoot });
             docSections = (map.data.sections ?? []).slice(0, 2).map((s) => ({
               file: s.file,
               section: s.section,

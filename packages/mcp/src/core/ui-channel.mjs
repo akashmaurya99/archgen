@@ -121,7 +121,7 @@ export async function sendUiCommand(projectRoot, toolAction, args = {}, opts = {
     expiresAt: new Date(Date.now() + CMD_TTL_MS).toISOString(),
   };
 
-  writeFileAtomic(cmdPath, JSON.stringify(command, null, 2) + '\n');
+  writeFileAtomic(cmdPath, JSON.stringify(command, null, 2) + '\n', { root: projectRoot });
   pruneQueue(runtime);
 
   const timeoutMs = Math.min(opts.timeoutMs ?? DEFAULT_ACK_TIMEOUT_MS, MAX_ACK_TIMEOUT_MS);

@@ -65,10 +65,10 @@ const FR_ID_SOURCE = '(?<![A-Za-z0-9_])FR-[A-Z0-9]+-\\d+(?![A-Za-z0-9_])';
  * @param {string} input
  * @returns {{slugDir: string, repoRoot: string, slug: string}}
  */
-export function resolveDocScope(input) {
+export function resolveDocScope(input, projectRoot = null) {
   let scoped;
   try {
-    scoped = resolveSlugInput(input);
+    scoped = resolveSlugInput(input, projectRoot);
   } catch (e) {
     if (e instanceof ScopeError) throw invalidInput(`doc-index: ${e.message}`, { input });
     throw invalidInput(`cannot read ${input} (missing or not a directory)`, { input });
@@ -178,7 +178,7 @@ export function docIndex(input, opts = {}) {
   const sectionRef = opts.section ?? null;
   const fileScopeArg = opts.file ?? null;
 
-  const { slugDir, repoRoot, slug } = resolveDocScope(input);
+  const { slugDir, repoRoot, slug } = resolveDocScope(input, opts.projectRoot ?? null);
   const relFromRoot = (abs) => relative(repoRoot, abs).split(sep).join('/');
   const relFromSlug = (abs) => relative(slugDir, abs).split(sep).join('/');
   const parsedDocAt = makeDocCache();

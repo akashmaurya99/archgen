@@ -20,7 +20,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { assertNotSymlink, assertWithinRoot, writeFileAtomic } from './fs-safety.mjs';
+import { assertNotSymlink, assertWithinRoot, withFileLock, writeFileAtomic } from './fs-safety.mjs';
 import { invalidInput } from './errors.mjs';
 
 /**
@@ -142,6 +142,12 @@ export function readJsonConfig(abs) {
 /**
  * Merge a server entry into a JSON MCP config.
  *
+ * The read-merge-write runs under an exclusive lock on the config file. The
+ * write itself is atomic, but that only stops a reader seeing a half-written
+ * file — two writers still lose each other's work: one merges the archgen
+ * entry, the other merges the codegraph entry, and whichever lands last
+ * discards the first.
+ *
  * @param {string} abs absolute config path
  * @param {string} key the top-level key ('mcpServers' | 'servers' | 'mcp' | 'context_servers')
  * @param {string} serverId the entry name inside the bucket ('codegraph' | 'archgen')
@@ -150,6 +156,16 @@ export function readJsonConfig(abs) {
  * @returns {{status:'written'|'unchanged'|'skipped'|'planned'|'error', detail?:string, path?:string}}
  */
 export function writeJsonConfig(abs, key, serverId, entry, opts) {
+  const { approved, dryRun = false, root } = opts;
+  try {
+    return withFileLock(abs, () => mergeJsonConfig(abs, key, serverId, entry, opts));
+  } catch (e) {
+    return { status: 'error', detail: e.message, path: abs };
+  }
+}
+
+/** The merge itself. Runs with the config file's lock held. */
+function mergeJsonConfig(abs, key, serverId, entry, opts) {
   const { approved, dryRun = false, root } = opts;
   const { data, existed, error } = readJsonConfig(abs);
   if (error) {
@@ -171,7 +187,7 @@ export function writeJsonConfig(abs, key, serverId, entry, opts) {
   try {
     if (root) assertWithinRoot(root, abs);
     assertNotSymlink(abs);
-    writeFileAtomic(abs, JSON.stringify(obj, null, 2) + '\n');
+    writeFileAtomic(abs, JSON.stringify(obj, null, 2) + '\n', { root });
   } catch (e) {
     return { status: 'error', detail: e.message, path: abs };
   }
@@ -218,6 +234,15 @@ export function entryToToml(entry) {
  * @param {{approved: boolean, dryRun?: boolean, root?: string}} opts
  */
 export function writeTomlConfig(abs, serverId, entry, opts) {
+  try {
+    return withFileLock(abs, () => mergeTomlConfig(abs, serverId, entry, opts));
+  } catch (e) {
+    return { status: 'error', detail: e.message, path: abs };
+  }
+}
+
+/** The merge itself. Runs with the config file's lock held. */
+function mergeTomlConfig(abs, serverId, entry, opts) {
   const { approved, dryRun = false, root } = opts;
   const existed = existsSync(abs);
   let raw = '';
@@ -260,7 +285,7 @@ export function writeTomlConfig(abs, serverId, entry, opts) {
   try {
     if (root) assertWithinRoot(root, abs);
     assertNotSymlink(abs);
-    writeFileAtomic(abs, out);
+    writeFileAtomic(abs, out, { root });
   } catch (e) {
     return { status: 'error', detail: e.message, path: abs };
   }
@@ -365,7 +390,7 @@ export function recordWiring(projectRoot, serverId, entries) {
   }
   existing.servers[serverId] = { writtenAt: new Date().toISOString(), entries };
   try {
-    writeFileAtomic(p, JSON.stringify(existing, null, 2) + '\n');
+    writeFileAtomic(p, JSON.stringify(existing, null, 2) + '\n', { root: projectRoot });
   } catch {
     /* the manifest is a convenience, never a blocker */
   }
@@ -425,7 +450,7 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
         }
         let next = start + 1;
         while (next < lines.length && !/^\s*\[/.test(lines[next])) next++;
-        writeFileAtomic(abs, [...lines.slice(0, start), ...lines.slice(next)].join('\n'));
+        writeFileAtomic(abs, [...lines.slice(0, start), ...lines.slice(next)].join('\n'), { root: projectRoot });
         removed.push(abs);
       } else {
         const { data } = readJsonConfig(abs);
@@ -439,7 +464,7 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
           continue;
         }
         delete bucket[serverId];
-        writeFileAtomic(abs, JSON.stringify(data, null, 2) + '\n');
+        writeFileAtomic(abs, JSON.stringify(data, null, 2) + '\n', { root: projectRoot });
         removed.push(abs);
       }
     } catch (e) {

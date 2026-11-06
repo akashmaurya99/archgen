@@ -19,7 +19,7 @@
 //   - Everything else throws ScopeError. Missing/unreadable inputs surface as
 //     the underlying realpath/stat error so callers keep their own messages.
 import { realpathSync, statSync } from 'node:fs';
-import { basename, dirname, sep } from 'node:path';
+import { basename, dirname, resolve, sep } from 'node:path';
 
 export class ScopeError extends Error {
   constructor(input) {
@@ -34,6 +34,18 @@ function segmentsOf(abs) {
   return process.platform === 'win32' ? abs.split(/[\\/]+/).filter(Boolean) : abs.split(sep).filter(Boolean);
 }
 
+/**
+ * Resolve a path to the artifact space it names.
+ *
+ * A path qualifies when it is a `.archgen/<slug>/` directory (or the
+ * `tasks.yaml` inside one). When `root` is given, the artifact space must
+ * also be INSIDE that root — otherwise the gate would accept
+ * `/somewhere/else/.archgen/demo`, which is not this project's artifacts.
+ *
+ * @param {string} rawInput
+ * @param {string|null} [root] the project root the artifact space must be inside
+ * @returns {{kind: 'dir'|'tasks', root: string, slug: string}}
+ */
 export function resolveSlugInput(rawInput, root = null) {
   let real;
   try {
@@ -53,13 +65,35 @@ export function resolveSlugInput(rawInput, root = null) {
     const depthFromArchgen = parts.length - 1 - i; // segments after this `.archgen`
     if (st.isDirectory() && depthFromArchgen === 1) {
       // (a) `<...>/.archgen/<slug>` — the slug dir itself
-      return { kind: 'dir', root: real, slug: parts[i + 1] };
+      const slugRoot = real;
+      if (root && !isWithin(slugRoot, root)) throw new ScopeError(rawInput);
+      return { kind: 'dir', root: slugRoot, slug: parts[i + 1] };
     }
     if (st.isFile() && basename(real) === 'tasks.yaml' && depthFromArchgen === 2) {
       // (b) `<...>/.archgen/<slug>/tasks.yaml` — direct tasks.yaml mode
       const slugRoot = dirname(real);
+      if (root && !isWithin(slugRoot, root)) throw new ScopeError(rawInput);
       return { kind: 'tasks', root: slugRoot, slug: basename(slugRoot) };
     }
   }
   throw new ScopeError(rawInput);
+}
+
+/**
+ * True when `abs` is inside `root`.
+ *
+ * The REAL comparison is authoritative when both paths exist: it is what
+ * catches a symlinked parent pointing out of the tree. The lexical
+ * comparison only stands in when the target does not exist yet.
+ */
+function isWithin(abs, root) {
+  const resolvedRoot = resolve(root);
+  const resolved = resolve(abs);
+  try {
+    const realRoot = realpathSync(resolvedRoot);
+    const real = realpathSync(resolved);
+    return real === realRoot || real.startsWith(realRoot + sep);
+  } catch {
+    return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + sep);
+  }
 }

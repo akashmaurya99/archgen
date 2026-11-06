@@ -138,6 +138,7 @@ export function registerPlanTools(server) {
             mermaid: format === 'mermaid',
             status: args.status === true,
             module: args.module ?? null,
+            projectRoot: ctx.projectRoot,
           });
         }
         default:

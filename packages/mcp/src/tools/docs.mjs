@@ -37,20 +37,20 @@ export function registerDocTools(server) {
       const slugDir = resolveSlugDir(ctx, args.slugDir);
       switch (args.action) {
         case 'index':
-          return docIndex(slugDir, { mode: 'overview', file: args.file ?? null });
+          return docIndex(slugDir, { mode: 'overview', file: args.file ?? null, projectRoot: ctx.projectRoot });
         case 'digest':
-          return docIndex(slugDir, { mode: 'digest', file: args.file ?? null });
+          return docIndex(slugDir, { mode: 'digest', file: args.file ?? null, projectRoot: ctx.projectRoot });
         case 'validate':
-          return docIndex(slugDir, { mode: 'validate', file: args.file ?? null });
+          return docIndex(slugDir, { mode: 'validate', file: args.file ?? null, projectRoot: ctx.projectRoot });
         case 'refs':
           if (!args.token) throw invalidInput('refs requires a token', { action: args.action });
-          return docIndex(slugDir, { mode: 'refs', token: args.token, file: args.file ?? null });
+          return docIndex(slugDir, { mode: 'refs', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
         case 'map':
           if (!args.token) throw invalidInput('map requires a token', { action: args.action });
-          return docIndex(slugDir, { mode: 'map', token: args.token, file: args.file ?? null });
+          return docIndex(slugDir, { mode: 'map', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
         case 'section':
           if (!args.section) throw invalidInput('section requires a section path', { action: args.action });
-          return docIndex(slugDir, { mode: 'section', section: args.section, file: args.file ?? null });
+          return docIndex(slugDir, { mode: 'section', section: args.section, file: args.file ?? null, projectRoot: ctx.projectRoot });
         default:
           throw invalidInput(`unknown action '${args.action}'`, { action: args.action });
       }
