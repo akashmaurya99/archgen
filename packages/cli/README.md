@@ -130,11 +130,12 @@ are supported for all of them.
 
 ## VS Code extension (optional)
 
-A read-only visual layer that renders `.archgen/` as a live task DAG, your
+A visual layer that renders `.archgen/` as a live task DAG, your
 code-dependency graph, and rendered docs — with a ▶ button that hands any task to
 your agent. Install it from the VS Code Marketplace or from a `.vsix` on
 [GitHub Releases](https://github.com/akashmaurya99/archgen/releases). It never
-edits anything: uninstalling it loses nothing.
+edits your plan, your tasks, or your code — only its own runtime state under
+`.archgen/.runtime/`, so uninstalling it loses nothing.
 
 ## Documentation
 

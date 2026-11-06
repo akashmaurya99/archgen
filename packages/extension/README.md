@@ -1,6 +1,6 @@
 # ArchGen
 
-**Read-only visualization of your `.archgen/` folder: live task DAG, code dependency graph, and rendered docs.**
+**Visualization of your `.archgen/` folder: live task DAG, code dependency graph, and rendered docs.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/akashmaurya99/archgen/blob/main/LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%E2%89%A51.90-239cd0)](https://code.visualstudio.com)

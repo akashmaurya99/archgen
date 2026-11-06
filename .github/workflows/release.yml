@@ -41,11 +41,13 @@ jobs:
           body: |
             The visual layer for archgen — live task DAG, code-dependency graph, rendered docs, and a ▶ button that hands any task to your coding agent.
 
+            **This release is part of the MCP-first archgen.** The extension used to shell out to the skill's `scripts/next-tasks.mjs`; those scripts no longer exist. All deterministic capability now lives in the **archgen MCP server** (`archgen-mcp`), and the extension calls that same server — one implementation, three ways in (the agent over MCP, the installer over `archgen-mcp bootstrap`, the extension over `archgen-mcp exec`).
+
             **Install:** download `archgen-extension-${{ steps.meta.outputs.version }}.vsix` below, then run *Extensions: Install from VSIX…* in VS Code (Cursor, Windsurf, and VSCodium work too).
 
             **Privacy:** the extension never edits your plan, your tasks, or your code. It writes only its own runtime state under `.archgen/.runtime/` (a heartbeat and the command acknowledgements the archgen MCP server uses to drive the board). No telemetry, no LLM calls.
 
-            The archgen skill itself installs with `npx archgen-skill init`, which also wires the `archgen-mcp` MCP server into every detected harness — see the [repo README](https://github.com/akashmaurya99/archgen).
+            **The rest of archgen:** `npx archgen-skill init` installs the skill and wires the `archgen-mcp` MCP server into every detected harness — see the [repo README](https://github.com/akashmaurya99/archgen).
           files: packages/extension/*.vsix
           fail_on_unmatched_files: true
           generate_release_notes: true

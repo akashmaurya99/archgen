@@ -1,7 +1,7 @@
 {
   "name": "archgen-extension",
   "displayName": "ArchGen",
-  "description": "Read-only visual layer for your .archgen folder: live task DAG, code dependency graph, and rendered docs. Never edits your repository.",
+  "description": "Visual layer for your .archgen folder: live task DAG, code dependency graph, and rendered docs. Never edits your plan, tasks, or code — only its own runtime state under .archgen/.runtime/.",
   "version": "0.0.6",
   "publisher": "archgen",
   "license": "MIT",

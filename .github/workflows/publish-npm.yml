@@ -5,19 +5,27 @@ name: Publish to npm
 #   vmcp-<version>  ->  archgen-mcp    (the MCP server)
 #   vcli-<version>  ->  archgen-skill  (the CLI + the skill)
 #
-# WHY OIDC (npm trusted publishing) and not a token: there is no long-lived
-# credential to store, rotate, or leak. The job proves it is the tagged
-# commit from this repository, and npm grants a short-lived token for exactly
-# that one publish.
+# TWO AUTHENTICATION PATHS, IN ORDER — npm tries OIDC first and falls back to
+# the token only if the OIDC exchange is refused:
 #
-# ONE-TIME SETUP (per package, on npmjs.com):
-#   Settings -> Trusted Publishers -> GitHub Actions
-#     organization/user : the npm account that owns the package
-#     repository       : akashmaurya99/archgen
-#     workflow filename: publish-npm.yml
-#     environment      : (leave empty)
-# Without it, the publish step fails with a clear npm error — it never
-# publishes something wrong.
+#   1. OIDC TRUSTED PUBLISHING (preferred, no secret at all).
+#      npm exchanges the GitHub Actions OIDC token for a short-lived publish
+#      credential. There is no long-lived credential in this repository to
+#      store, rotate, or leak.
+#      Requires, ONCE PER PACKAGE, on npmjs.com:
+#        Package -> Settings -> Trusted Publishers -> GitHub Actions
+#          organization/user : the npm account that owns the package
+#          repository       : akashmaurya99/archgen
+#          workflow filename: publish-npm.yml
+#          environment      : (leave empty)
+#      And npm CLI >= 11.5.1 (this workflow installs Node 24, which ships it).
+#
+#   2. NPM_TOKEN (fallback / first publish).
+#      A classic npm automation token, stored as the GitHub secret NPM_TOKEN.
+#      npm's OIDC exchange NEVER throws — when the trusted publisher is not
+#      configured, npm logs it at verbose level and keeps using the token.
+#      This is the ONLY way to publish archgen-mcp the first time, because a
+#      package that does not exist yet has no "Trusted Publishers" page.
 #
 # PUBLISH ORDER: archgen-mcp FIRST. `archgen-skill init` resolves the MCP
 # server from the registry, so advertising a server that does not exist yet
@@ -32,7 +40,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # OIDC: this is the entire credential
+  id-token: write # OIDC: this is the entire credential for path 1
 
 jobs:
   publish:
@@ -52,7 +60,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 ships npm 11.x. npm's trusted publishing needs npm CLI
+          # >= 11.5.1, and Node 22 still ships npm 10.x — so the publish job
+          # runs on 24 on purpose. The check below makes the requirement
+          # explicit instead of leaving it to whichever patch release CI
+          # happens to install.
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
 
       # The tag must name the package's CURRENT version. A tag left over from
@@ -73,6 +86,34 @@ jobs:
           fi
           echo "publishing=$pkg@$version" >> "$GITHUB_OUTPUT"
 
+      # Fail HERE — with an actionable message — rather than at the publish
+      # step with a bare 401. Two ways to be ready:
+      #   * npm trusted publishing configured for this package (no secret), or
+      #   * the NPM_TOKEN secret set in this repository.
+      - name: Check that a publish credential is available
+        run: |
+          version="$(npm --version)"
+          node -e '
+            const v = process.argv[1];
+            const [maj, min, pat] = v.split(".").map(Number);
+            const oidcOk = maj > 11 || (maj === 11 && (min > 5 || (min === 5 && pat >= 1)));
+            const hasToken = Boolean(process.env.NPM_TOKEN);
+            if (oidcOk) {
+              console.log(`npm CLI ${v} supports trusted publishing (OIDC).`);
+              return;
+            }
+            if (hasToken) {
+              console.log(`::warning::npm CLI ${v} cannot do trusted publishing (needs >= 11.5.1); publishing with the NPM_TOKEN secret instead.`);
+              return;
+            }
+            console.error(`::error::No publish credential. npm CLI ${v} cannot do trusted publishing (needs >= 11.5.1) and the NPM_TOKEN secret is not set.`);
+            console.error(`::error::Fix: add the NPM_TOKEN secret to this repository, OR configure npm trusted publishing for ${process.env.PACKAGE_NAME} (npmjs.com -> Settings -> Trusted Publishers -> GitHub Actions, workflow publish-npm.yml).`);
+            process.exit(1);
+          ' "$version"
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGE_NAME: ${{ matrix.name }}
+
       - name: Install
         working-directory: ${{ matrix.dir }}
         run: npm ci --no-audit --no-fund
@@ -83,14 +124,21 @@ jobs:
 
       - name: Publish
         working-directory: ${{ matrix.dir }}
-        # No NODE_AUTH_TOKEN: with npm trusted publishing, npm exchanges the
-        # OIDC token for a short-lived publish credential. Setting an empty
-        # NODE_AUTH_TOKEN here would make npm try to authenticate with it and
-        # fail with ENEEDAUTH, so the environment is left clean on purpose.
-        run: npm publish --provenance --access public
+        # npm tries OIDC first (the exchange never throws, so it falls back to
+        # the token on its own). The token is put in the environment ONLY when
+        # it exists: an EMPTY NODE_AUTH_TOKEN would make npm authenticate with
+        # "" and fail with ENEEDAUTH instead of using OIDC.
+        run: |
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "::notice::the NPM_TOKEN secret is present; npm will use it if the OIDC exchange is refused"
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          fi
+          npm publish --provenance --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # The package name in the log proves which package went out; the npm URL
       # is the canonical landing page.
       - name: Summary
         run: |
-          echo "::notice::published ${{ steps.verify.outputs.publishing }}"
+          echo "::notice::published ${{ steps.verify.outputs.publishing }} — https://www.npmjs.com/package/${{ matrix.name }}"

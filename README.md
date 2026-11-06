@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/akashmaurya99/archgen/actions/workflows/ci.yml/badge.svg)](https://github.com/akashmaurya99/archgen/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 Describe what you want to build. archgen interviews you (or surveys your existing
@@ -84,7 +84,7 @@ Prefer shell? Clone this repo and run `./install.sh` (same behavior, plus
 The CLI itself has zero npm dependencies; the MCP server it installs depends on
 the official Model Context Protocol SDK.
 
-**VS Code extension** (optional, read-only visual layer): download the latest
+**VS Code extension** (optional, visual layer): download the latest
 `.vsix` from [GitHub Releases](https://github.com/akashmaurya99/archgen/releases)
 (built by CI on every tag — never committed to the repo) and install it via
 *Extensions: Install from VSIX…*
@@ -104,8 +104,9 @@ The optional VS Code extension renders `.archgen/` as a live task DAG (running
 tasks pulse, edges animate), your real code-dependency graph, and rendered docs —
 with a ▶ button that launches your agent on any task. An activity-bar cockpit
 complements the editor board with glanceable progress, status-grouped tasks with
-quick build, and quick-open docs. It is strictly a viewer:
-uninstalling it loses nothing.
+quick build, and quick-open docs. It never edits your plan, your tasks, or your
+code — only its own runtime state under `.archgen/.runtime/`, so uninstalling it
+loses nothing.
 
 ## Monorepo map
 
@@ -113,7 +114,7 @@ uninstalling it loses nothing.
 | --- | --- | --- |
 | [`skill/`](skill/) | The agent skill — `SKILL.md` + `references/code-standards.md` (guidance only; the MCP server owns every capability) | vendored into npm; installed by `install.sh` |
 | [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
-| [`packages/mcp/`](packages/mcp/) | The MCP server — every deterministic capability, 10 domain tools | npm: `archgen-mcp` |
+| [`packages/mcp/`](packages/mcp/) | The MCP server — every deterministic capability, 10 tools (9 domain + `archgen_help`) | npm: [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp) |
 | [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button · activity-bar cockpit | `.vsix` attached to [GitHub Releases](https://github.com/akashmaurya99/archgen/releases) by CI |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
 | [`fixtures/`](fixtures/) | Deterministic E2E demos + shared YAML corpus | repo-only |

@@ -96,10 +96,14 @@ State the **publish order** and the three tags.
 
 ```sh
 git commit -m "chore(release): x.y.z"
-git tag vcli-x.y.z
-git tag vmcp-x.y.z
-git tag vextension-x.y.z
-git push && git push --tags
+
+# in THIS order — one tag at a time, and check each run before the next
+git tag -a vmcp-x.y.z      -m "archgen-mcp x.y.z — the MCP server that owns every archgen capability"
+git push origin vmcp-x.y.z          # → npm publish archgen-mcp
+git tag -a vcli-x.y.z      -m "archgen-skill x.y.z — the installer; wires the MCP server into every detected harness"
+git push origin vcli-x.y.z          # → npm publish archgen-skill
+git tag -a vextension-x.y.z -m "ArchGen extension x.y.z — the UI bridge and the MCP client"
+git push origin vextension-x.y.z    # → GitHub Release with the .vsix
 ```
 
 **PUBLISH ORDER — the MCP server FIRST.** The CLI's installer resolves
@@ -107,7 +111,7 @@ git push && git push --tags
 server before it exists hands every user a broken bootstrap. The extension is
 version-agnostic and can ship in any order.
 
-Pushing the tags triggers three automations:
+Pushing each tag triggers its automation:
 
 | Tag | Workflow | What it does |
 |---|---|---|
@@ -119,16 +123,26 @@ Each publish job first checks that the tag's version equals the package's
 current version, so a tag left over from an older commit is refused rather
 than publishing the wrong thing.
 
-### 7. One-time npm setup (per package)
+> **Push the tags one at a time and wait for each run.** If `vmcp-x.y.z`
+> fails, `archgen-skill` would advertise a server that is not on the registry
+> yet. After fixing the cause, you do NOT need to re-tag: open the failed
+> run in GitHub Actions and click **Re-run failed jobs**.
 
-npm publishing uses **OIDC trusted publishing** — there is no long-lived
-credential in this repository to store, rotate, or leak. The job proves it is
-the tagged commit from this repo, and npm grants a short-lived token for
-exactly that one publish.
+### 7. npm credentials (one-time setup)
+
+The publish job supports **two** authentication paths. npm tries OIDC first and
+falls back to the token only if the OIDC exchange is refused — npm's OIDC
+exchange never throws, it just leaves the existing credentials in place.
+
+#### Path A — OIDC trusted publishing (recommended; no secret at all)
+
+There is no long-lived credential in this repository to store, rotate, or leak.
+The job proves it is the tagged commit from this repo, and npm grants a
+short-lived token for exactly that one publish.
 
 Configure it once per package on npmjs.com:
 
-> Settings → Trusted Publishers → GitHub Actions
+> Package → Settings → Trusted Publishers → GitHub Actions
 >
 > | field | value |
 > |---|---|
@@ -137,10 +151,40 @@ Configure it once per package on npmjs.com:
 > | workflow filename | `publish-npm.yml` |
 > | environment | *(leave empty)* |
 
-Without it the publish step fails with a clear npm error. It never publishes
-something wrong. The workflow also runs `npm publish --provenance`, so the
-published tarball carries an attestation linking it to this repository and
-commit.
+Requirements npm enforces: **npm CLI ≥ 11.5.1** and **Node ≥ 22.14.0**. The
+publish job runs on Node 24 (which ships npm 11.x) and checks the npm version
+before publishing, so the requirement is verified rather than assumed.
+
+> **The chicken-and-egg with a brand-new package.** `archgen-mcp` did not
+> exist on npm before this release, and a package that does not exist yet has
+> no "Trusted Publishers" page to configure. So the FIRST publish of
+> `archgen-mcp` must use Path B (a token). After it exists, configure Path A
+> for it — and every later release needs no secret at all.
+
+#### Path B — an npm automation token (the `NPM_TOKEN` secret)
+
+Use this for the first publish of a new package, or as a permanent fallback.
+
+1. Create a token: npmjs.com → the account menu → **Access Tokens** →
+   **Generate New Token** → **Automation**. Scope it to the two packages
+   (`archgen-mcp`, `archgen-skill`) and to **read and write** on the registry.
+2. Store it in the repository:
+   **GitHub → the repo → Settings → Secrets and variables → Actions → New
+   repository secret**, name `NPM_TOKEN`, value = the token.
+   (Use an *environment* secret instead if you prefer a manual approval gate.)
+
+The workflow only puts the token in the environment when it exists — an empty
+`NODE_AUTH_TOKEN` would make npm authenticate with `""` and fail with
+`ENEEDAUTH` instead of using OIDC.
+
+#### What happens if neither is configured
+
+The publish job fails **before** the publish step, with an explicit message
+naming both fixes. It never publishes something wrong, and it never fails
+half-way.
+
+The workflow runs `npm publish --provenance`, so the published tarball carries
+an attestation linking it to this repository and commit.
 
 ---
 

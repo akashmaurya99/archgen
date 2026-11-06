@@ -9,10 +9,11 @@ archgen has ONE implementation of every deterministic capability, and it is the
 orchestration guidance for the agent. Three consumers reach the same
 implementation:
 
-1. **Agent.** The MCP server over stdio. Eight domain tools
+1. **Agent.** The MCP server over stdio. Nine domain tools
    (`archgen_plan`, `archgen_tasks`, `archgen_docs`, `archgen_registry`,
-   `archgen_codegraph`, `archgen_setup`, `archgen_ui`, `archgen_help`); every
-   result is a typed envelope `{ ok, data, error, meta }`.
+   `archgen_codegraph`, `archgen_setup`, `archgen_ui`, `archgen_skills`,
+   `archgen_refs`) plus `archgen_help`; every result is a typed envelope
+   `{ ok, data, error, meta }`.
 2. **CLI installer.** `archgen-skill init` / `install` shells out to
    `archgen-mcp bootstrap` to wire the MCP server into every detected harness
    and ensure CodeGraph. The CLI itself stays zero-dependency.
@@ -39,7 +40,7 @@ No task executes until two gates pass, in order — never skipped, even for SMAL
 
 - **One worker per task.** Workers receive: task id + title, acceptance criteria verbatim, their `file_ownership` globs ("edit NOTHING outside these"), the code-standards reference, and the done/failed status command. Workers never talk to each other; coordination happens only through `tasks.yaml` state.
 - **Disjoint globs per wave.** Two same-wave tasks may not overlap on file ownership — enforced by the resolver and rejected by the verifier.
-- **Dispatch tiers** (`references/orchestration.md`): Tier 1 uses native sub-agents where the harness is strong (Claude Code background agents with worktree isolation; Cursor background subagents; Antigravity `invoke_subagent`; Codex flattened plans; Gemini hub-and-spoke for read-only waves). Tier 2 is a universal bash fallback spawning parallel workers over headless CLIs (`claude -p`, `opencode run`, `codex exec`, `gemini`, `agy`), with git-worktree isolation when ownership borders are tight.
+- **Dispatch tiers** (`archgen_refs` → `orchestration.md`): Tier 1 uses native sub-agents where the harness is strong (Claude Code background agents with worktree isolation; Cursor background subagents; Antigravity `invoke_subagent`; Codex flattened plans; Gemini hub-and-spoke for read-only waves). Tier 2 is a universal bash fallback spawning parallel workers over headless CLIs (`claude -p`, `opencode run`, `codex exec`, `gemini`, `agy`), with git-worktree isolation when ownership borders are tight.
 - **Failure policy:** worker failure marks the task `failed` — never auto-retried. Downstream tasks stay blocked via `blockedByFailure`. The user sees the failed id, log path, and a proposed fix task; fix tasks get fresh ids and inherit the failed task's ownership.
 
 ## Git as the VCS decision
@@ -58,7 +59,8 @@ harness from env/config markers in order (`.claude/`, `.cursor/`, `.windsurf/`,
 `.trae/`) and returns its capability row — skill install paths, MCP config file +
 top-level key + entry shape, the MCP CLI, restart semantics, and the sub-agent
 dispatch mechanism. The canonical data is
-`packages/mcp/assets/platform-capabilities.json`; `references/platforms.md` keeps
+`packages/mcp/assets/platform-capabilities.json`; `archgen_refs` →
+`platforms.md` keeps
 the narrative and the detection order. If no platform matches, the orchestrator
 uses its web-search tool to find official docs for skill/MCP config locations,
 proposes findings, and proceeds only after user approval.
