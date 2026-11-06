@@ -16,7 +16,6 @@ const schema = z.object({
   location: z.enum(['project', 'global', 'both']).optional().describe('Which scope to wire. Defaults to both.'),
   approve: z.boolean().optional().describe('Required to write any MCP config. Without it you get the plan and nothing is written.'),
   telemetry: z.enum(['keep', 'off', 'on']).optional().describe('Telemetry preference. Defaults to keep (leave as-is).'),
-  noUpgrade: z.boolean().optional().describe('Do not upgrade an existing CodeGraph CLI.'),
   noInstall: z.boolean().optional().describe('Do not install the CLI; use the npx fallback in configs.'),
   projectRoot: projectRootArg,
 });
@@ -45,7 +44,6 @@ export function registerCodegraphTools(server) {
         location,
         approved: args.approve === true,
         telemetry: args.telemetry ?? 'keep',
-        noUpgrade: args.noUpgrade === true,
         noInstall: args.noInstall === true,
         home: ctx.home,
         env: ctx.env,

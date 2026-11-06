@@ -15,7 +15,7 @@
 //
 // SAFETY: MCP configs are written only with approval (otherwise the plan is
 // reported); non-JSON configs are reported, never rewritten.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -38,6 +38,66 @@ export function run(cmd, args, opts = {}) {
   });
   if (r.error) return { ok: false, status: -1, stdout: '', stderr: String(r.error.message ?? r.error) };
   return { ok: r.status === 0, status: r.status ?? -1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
+}
+
+/**
+ * Run a command asynchronously; never throws. Returns {ok, status, stdout, stderr}.
+ *
+ * The SYNCHRONOUS form blocks the event loop for the child's whole lifetime,
+ * and the stdio MCP server cannot answer a single request while that
+ * happens — a global install or a full index can take minutes, so every
+ * other request simply queues behind it.
+ *
+ * 'close' (not 'exit') decides the outcome: 'exit' fires when the process is
+ * gone, while its output may still be in flight, and the last chunk of a
+ * long install log would be lost.
+ */
+export function runAsync(cmd, args, opts = {}) {
+  const { timeout = 120000, cwd, env, shell } = opts;
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(cmd, args, {
+        cwd,
+        env: env ? { ...process.env, ...env } : process.env,
+        shell: shell === true,
+      });
+    } catch (e) {
+      resolve({ ok: false, status: -1, stdout: '', stderr: String(e?.message ?? e) });
+      return;
+    }
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+    const timer =
+      timeout > 0
+        ? setTimeout(() => {
+            try {
+              child.kill('SIGKILL');
+            } catch {
+              /* already gone */
+            }
+          }, timeout)
+        : null;
+    child.stdout?.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr?.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', (e) => {
+      finish({ ok: false, status: -1, stdout, stderr: String(e?.message ?? e) });
+    });
+    child.on('close', (code) => {
+      finish({ ok: code === 0, status: code ?? -1, stdout, stderr });
+    });
+  });
 }
 
 /** Locate an executable on PATH (cross-platform, no shell). */
@@ -102,7 +162,6 @@ export function telemetryState(bin) {
  *   approved?: boolean,
  *   dryRun?: boolean,
  *   telemetry?: 'keep'|'off'|'on',
- *   noUpgrade?: boolean,
  *   noInstall?: boolean,
  *   home?: string,
  *   env?: Record<string, string|undefined>,
@@ -119,7 +178,6 @@ export async function manageCodegraph(opts) {
     approved = false,
     dryRun = false,
     telemetry = 'keep',
-    noUpgrade = false,
     noInstall = false,
     home = homedir(),
     env = process.env,
@@ -140,11 +198,26 @@ export async function manageCodegraph(opts) {
     ok: true,
   };
 
-  /** Install CodeGraph when missing; upgrade to the latest published version. */
-  const ensureCli = () => {
+  /**
+   * Resolve the CodeGraph CLI.
+   *
+   * THE RULE: install it when it is MISSING, and leave it alone when it is
+   * ALREADY THERE.
+   *
+   * An installed CodeGraph is the user's to manage. Upgrading it behind
+   * their back changes a program they may have pinned, and the upgrade ran
+   * on every bootstrap — so a plain `npx archgen-skill init` could rewrite a
+   * working installation. The version that is already on the machine is the
+   * version the MCP config points at, and it works.
+   *
+   * `install` lets a caller ask for the RESOLUTION only — the binary's path
+   * without touching the machine. That is what `wire` needs: wiring is a
+   * configuration change; installing a program globally is not.
+   */
+  const ensureCli = async ({ install = true } = {}) => {
     let found = findCodegraph(env);
     if (!found) {
-      if (noInstall) {
+      if (noInstall || !install) {
         // Caller manages the CLI — fall back to the npx form in the MCP config.
         report.cli.action = 'absent';
         report.cli.detail = `not installed and installation was skipped — the MCP config will use "npx -y ${CODEGRAPH_PACKAGE} serve --mcp"`;
@@ -156,7 +229,7 @@ export async function manageCodegraph(opts) {
       }
       // Official install path; always the latest published release.
       const inv = npmInvocation(['install', '-g', CODEGRAPH_PACKAGE], env);
-      const r = run(inv.command, inv.args, { timeout: 600000, shell: inv.shell, env });
+      const r = await runAsync(inv.command, inv.args, { timeout: 600000, shell: inv.shell, env });
       found = findCodegraph(env);
       if (!found) {
         report.cli.action = 'failed';
@@ -166,37 +239,17 @@ export async function manageCodegraph(opts) {
       }
       report.cli.action = 'installed';
     } else {
+      // Already installed: report it and stop. No upgrade, no version check.
       report.cli.action = 'present';
     }
     report.cli.present = true;
     report.cli.bin = found.bin;
     report.cli.version = found.version;
-
-    if (noUpgrade) return found;
-
-    // Freshness via the official updater (no-op when already current).
-    const chk = run(found.bin, ['upgrade', '--check'], { timeout: 120000, env });
-    const m = /latest\s+v?([0-9][^\s]*)/i.exec((chk.stdout ?? '') + (chk.stderr ?? ''));
-    report.cli.latest = m ? m[1] : null; // informational only
-    if (dryRun) {
-      report.cli.action += '+upgrade';
-      return found;
-    }
-    const up = run(found.bin, ['upgrade'], { timeout: 600000, env });
-    const after = findCodegraph(env);
-    if (after) {
-      report.cli.version = after.version;
-      report.cli.bin = after.bin;
-      report.cli.action += /already up to date/i.test(up.stdout ?? '') ? '+current' : '+upgraded';
-    } else {
-      report.cli.action += '+upgrade-failed';
-      report.ok = false;
-    }
     return found;
   };
 
   /** Wire the MCP server into every detected harness (native + fallback). */
-  const wireHarnesses = (cli) => {
+  const wireHarnesses = async (cli) => {
     const detected = detectHarnesses(registry, projectRoot, home);
     const wanted = targets ?? detected.map((d) => d.id);
     const selected = detected.filter((d) => wanted.includes(d.id));
@@ -222,7 +275,7 @@ export async function manageCodegraph(opts) {
           report.wiring.native.push({ targets: uniqueNative.join(','), location: loc, status: 'planned' });
           continue;
         }
-        const r = run(
+        const r = await runAsync(
           cli.bin ?? 'codegraph',
           ['install', `--target=${uniqueNative.join(',')}`, `--location=${loc}`, '--yes'],
           {
@@ -258,6 +311,7 @@ export async function manageCodegraph(opts) {
       binPath: cli.bin,
       fallbackCommand: 'codegraph',
       skipHarnesses: selected.filter((d) => d.spec.codegraphTarget).map((d) => d.id),
+      targets: selected.map((d) => d.id),
     });
     for (const w of manual.wired) {
       report.wiring.manual.push({ harness: w.harness, path: w.path, key: w.key, ...w });
@@ -290,7 +344,7 @@ export async function manageCodegraph(opts) {
   };
 
   /** Index the project: `codegraph init` builds `.codegraph/` + the first graph. */
-  const initIndex = (cli) => {
+  const initIndex = async (cli) => {
     const codegraphDir = join(projectRoot, '.codegraph');
     if (existsSync(codegraphDir)) {
       report.index.action = 'already-indexed';
@@ -311,7 +365,7 @@ export async function manageCodegraph(opts) {
       return;
     }
     // Official indexing command: creates .codegraph/ AND builds the graph.
-    const r = run(cli.bin ?? 'codegraph', ['init', projectRoot], { timeout: 900000, env });
+    const r = await runAsync(cli.bin ?? 'codegraph', ['init', projectRoot], { timeout: 900000, env });
     if (!r.ok) {
       report.index.action = 'failed';
       report.index.detail = (r.stderr || r.stdout || 'codegraph init failed').trim().split('\n')[0];
@@ -332,7 +386,7 @@ export async function manageCodegraph(opts) {
     }
   };
 
-  const applyTelemetry = (cli) => {
+  const applyTelemetry = async (cli) => {
     const state = telemetryState(cli.bin);
     report.telemetry.state = state;
     if (telemetry === 'keep' || !cli.bin) return;
@@ -356,7 +410,7 @@ export async function manageCodegraph(opts) {
     report.cli.version = cli?.version ?? null;
     // Official freshness check — reports what "latest" means today, no pin.
     if (cli) {
-      const chk = run(cli.bin, ['upgrade', '--check'], { timeout: 120000, env });
+      const chk = await runAsync(cli.bin, ['upgrade', '--check'], { timeout: 120000, env });
       const m = /latest\s+v?([0-9][^\s]*)/i.exec((chk.stdout ?? '') + (chk.stderr ?? ''));
       report.cli.latest = m ? m[1] : null;
     }
@@ -382,23 +436,32 @@ export async function manageCodegraph(opts) {
     }
     report.index.action = existsSync(join(projectRoot, '.codegraph')) ? 'indexed' : 'not-indexed';
   } else if (mode === 'init') {
-    const cli = ensureCli();
-    applyTelemetry(cli);
-    initIndex(cli);
+    const cli = await ensureCli();
+    await applyTelemetry(cli);
+    await initIndex(cli);
+  } else if (mode === 'wire') {
+    // WIRE ONLY. It resolves the binary (so the config can point at it) but
+    // never installs, never upgrades and never writes a global setting: a
+    // wiring request is a request to change the MCP CONFIGS.
+    const cli = await ensureCli({ install: false });
+    const detected = await wireHarnesses(cli);
+    report.detected = detected.map((d) => d.id);
   } else {
-    // ensure | wire
-    const cli = ensureCli();
-    applyTelemetry(cli);
-    const detected = wireHarnesses(cli);
+    // ensure — install the CLI if it is MISSING (an installed one is left
+    // exactly as it is), wire the configs, and index the project.
+    const cli = await ensureCli();
+    await applyTelemetry(cli);
+    const detected = await wireHarnesses(cli);
     if (mode === 'ensure') {
       if (!approved && !dryRun) {
-        // Without approval: print the plan, write no MCP config. The CLI itself
-        // is still installed/upgraded (a program, not a user config).
+        // Without approval: print the plan, write no MCP config. The CLI
+        // itself is still installed if it was missing (a program, not a user
+        // config); an existing one is never touched.
         report.ok = true;
         report.planned = true;
         report.index.action = 'would-index';
       } else {
-        initIndex(cli);
+        await initIndex(cli);
       }
     }
     report.detected = detected.map((d) => d.id);

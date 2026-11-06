@@ -283,6 +283,7 @@ export function writeTomlConfig(abs, serverId, entry, opts) {
  *   binPath?: string|null,
  *   fallbackCommand?: string,
  *   skipHarnesses?: string[],
+ *   targets?: string[]|null,
  * }} opts
  * @returns {{detected: string[], wired: Array<Record<string, unknown>>, skipped: Array<Record<string, unknown>>, planned: boolean}}
  */
@@ -300,14 +301,19 @@ export function wireServer(opts) {
     binPath = null,
     fallbackCommand = serverId,
     skipHarnesses = [],
+    targets = null,
   } = opts;
 
   const detected = detectHarnesses(registry, projectRoot, home);
+  // A caller that narrowed the set of harnesses must get exactly that set.
+  // The native path honoured the filter and this one did not, so a request
+  // for two harnesses wired ten.
+  const selected = targets ? detected.filter((d) => targets.includes(d.id)) : detected;
   const wantedLocations = location === 'both' ? ['global', 'project'] : [location];
   const wired = [];
   const skipped = [];
 
-  for (const d of detected) {
+  for (const d of selected) {
     if (skipHarnesses.includes(d.id)) {
       skipped.push({ harness: d.id, reason: 'skipped by request' });
       continue;
@@ -335,7 +341,7 @@ export function wireServer(opts) {
   }
 
   return {
-    detected: detected.map((d) => d.id),
+    detected: selected.map((d) => d.id),
     wired,
     skipped,
     planned: !approved && !dryRun && wired.some((w) => w.status === 'planned'),

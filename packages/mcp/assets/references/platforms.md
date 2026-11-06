@@ -111,12 +111,14 @@ release and refreshes it in place. The MCP server exposes its own tool set to
 the agent, so the skill does not restate the CLI's command surface — read it
 from the installed CLI (`codegraph help`) or the MCP tools themselves.
 
-> **Entry point — the `archgen_codegraph` tool.** It installs/upgrades the CLI,
-> wires every DETECTED harness with the correct per-platform shape, and builds
-> the project index — idempotently, with an approval gate before any config
-> write. It drives the official CLI; it never reimplements it.
+> **Entry point — the `archgen_codegraph` tool.** It installs the CLI **if it
+> is missing** (an installed CodeGraph is the user's to manage and is never
+> upgraded behind their back), wires every DETECTED harness with the correct
+> per-platform shape, and builds the project index — idempotently, with an
+> approval gate before any config write. It drives the official CLI; it never
+> reimplements it.
 > ```
-> archgen_codegraph { action: 'ensure' }   # install + wire + index
+> archgen_codegraph { action: 'ensure' }   # install if missing + wire + index
 > archgen_codegraph { action: 'status' }   # what is installed/wired/indexed
 > ```
 

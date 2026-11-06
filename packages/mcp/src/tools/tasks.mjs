@@ -11,7 +11,29 @@ import { loadAsset } from '../context.mjs';
 import { setTaskStatus, STATUSES } from '../core/status-mutator.mjs';
 import { writeResumeSnapshot } from '../core/resume-snapshot.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { resolveSlugInput, ScopeError } from '../core/scope.mjs';
 import { dirname, join } from 'node:path';
+
+/**
+ * The `.archgen/<slug>/` directory a tasks file belongs to.
+ *
+ * A tasks.yaml outside the artifact space has no slug directory, so there is
+ * nowhere the snapshot may be written — and the worker contract says the
+ * snapshot is NEVER created outside `.archgen/`.
+ */
+function slugDirFor(tasksFile, action) {
+  try {
+    return resolveSlugInput(tasksFile).root;
+  } catch (e) {
+    if (e instanceof ScopeError) {
+      throw invalidInput(
+        `tasks.yaml must live in .archgen/<slug>/ — ${tasksFile} does not`,
+        { action, file: tasksFile },
+      );
+    }
+    throw e;
+  }
+}
 
 const ACTION_DESC = 'next | set_status | list | snapshot | contract — see archgen_help.';
 
@@ -60,7 +82,11 @@ export function registerTaskTools(server) {
         case 'snapshot': {
           if (!args.tasksYaml) throw invalidInput('tasksYaml is required for snapshot', { action });
           const tasksFile = ctx.contain(args.tasksYaml);
-          const slugDir = dirname(tasksFile);
+          // The snapshot belongs to the artifact space: `<slug>/.agent/`.
+          // Deriving it from the tasks file's PARENT wrote it wherever that
+          // file happened to be — `<project>/plans/.agent/resume.md`, outside
+          // `.archgen/`, which is exactly what the worker contract forbids.
+          const slugDir = slugDirFor(tasksFile, action);
           const waves = resolveWaves(tasksFile).waves;
           return writeResumeSnapshot(slugDir, waves);
         }
@@ -116,9 +142,16 @@ export function registerTaskTools(server) {
           // The code-standards reference: resolved from the INSTALLED skill when
           // the caller does not name it. The worker needs a real path, and the
           // agent should not have to guess where the skill lives.
-          const codeStandardsPath =
-            args.codeStandardsPath ??
-            (ctx.skill ? join(ctx.skill.path, 'references', 'code-standards.md') : null);
+          //
+          // A caller-supplied path is CONTAINED, exactly like every other
+          // path argument: it ends up verbatim in a prompt a worker reads,
+          // so an uncontained one would point the worker anywhere on the
+          // machine.
+          const codeStandardsPath = args.codeStandardsPath
+            ? ctx.contain(args.codeStandardsPath)
+            : ctx.skill
+              ? join(ctx.skill.path, 'references', 'code-standards.md')
+              : null;
 
           const contract = buildWorkerContract({
             tasksYaml: tasksFile,

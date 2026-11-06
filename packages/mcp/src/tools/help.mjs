@@ -134,7 +134,7 @@ Installs, wires and indexes CodeGraph — the source-symbol index — and its ow
 **Actions**
 | action | what it does | required args |
 |---|---|---|
-| \`ensure\` | install/upgrade the CLI + wire the MCP + build the index | projectRoot?, approve? |
+| \`ensure\` | install the CLI if missing + wire the MCP + build the index | projectRoot?, approve? |
 | \`status\` | what is installed / wired / indexed (read-only) | projectRoot? |
 | \`wire\` | wire the MCP into detected harnesses only | projectRoot?, approve? |
 

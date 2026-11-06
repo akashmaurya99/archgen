@@ -34,7 +34,7 @@ function segmentsOf(abs) {
   return process.platform === 'win32' ? abs.split(/[\\/]+/).filter(Boolean) : abs.split(sep).filter(Boolean);
 }
 
-export function resolveSlugInput(rawInput) {
+export function resolveSlugInput(rawInput, root = null) {
   let real;
   try {
     real = realpathSync(rawInput); // follows symlinks: judge the TARGET, not the link
@@ -57,8 +57,8 @@ export function resolveSlugInput(rawInput) {
     }
     if (st.isFile() && basename(real) === 'tasks.yaml' && depthFromArchgen === 2) {
       // (b) `<...>/.archgen/<slug>/tasks.yaml` — direct tasks.yaml mode
-      const root = dirname(real);
-      return { kind: 'tasks', root, slug: basename(root) };
+      const slugRoot = dirname(real);
+      return { kind: 'tasks', root: slugRoot, slug: basename(slugRoot) };
     }
   }
   throw new ScopeError(rawInput);
