@@ -122,6 +122,29 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_NAME: ${{ matrix.name }}
 
+      # The CLI's installer resolves `archgen-mcp` from the registry, so
+      # publishing the CLI before the server would hand every user a broken
+      # bootstrap. This makes that ordering a RULE, not a habit — and it is
+      # checked against the REGISTRY, not against this repository, because
+      # what matters is what a user's `npm install` will find.
+      - name: Verify the MCP server is already on the registry
+        if: startsWith(github.ref_name, 'vcli')
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#vcli-}"
+          for attempt in 1 2 3 4 5 6; do
+            status="$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/archgen-mcp/$version")"
+            if [ "$status" = "200" ]; then
+              echo "archgen-mcp@$version is on the registry."
+              exit 0
+            fi
+            echo "attempt $attempt: archgen-mcp@$version -> HTTP $status"
+            sleep 10
+          done
+          echo "::error::archgen-mcp@$version is not on the registry yet (HTTP $status)."
+          echo "::error::Publish the MCP server FIRST: push the vmcp-$version tag and let that workflow finish, then re-run this job."
+          exit 1
+
       - name: Install
         if: startsWith(github.ref_name, matrix.tag)
         working-directory: ${{ matrix.dir }}
