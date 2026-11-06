@@ -8,10 +8,13 @@
 //
 // SIZE-TIER AUTO-MODE: when the host supplies vm.fileRollup, the largest
 // component's symbol count picks the presentation — ≤60 keeps radial rings,
-// 61–300 aggregates to FILE nodes (dagre blocks per file-component) with a
-// click-through symbol focus per file, >300 boots into the top hub's file
-// neighborhood (≤40 files) behind a "Show all" banner. No rollup → legacy
+// 61–300 aggregates to FILE nodes (one card per file, click-through to that
+// file's symbols), >300 uses the same file-level view. No rollup → legacy
 // behavior for any size.
+//
+// NODE CAP: the DOM graph renders at most MAX_RENDERED_NODES nodes — a repo
+// with thousands of isolated symbols must not build a huge flow model. The
+// most connected slice is kept and a notice says how much is hidden.
 //
 // ZOOM LOD: one quantized zoom value lives HERE (never per-node React state).
 // A bridge child inside <ReactFlow> subscribes via useStore(transform[2]),
@@ -50,14 +53,16 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '../../media/webview/dag.css';
-import type { CodegraphVM } from '../shared/protocol';
+import type { CodegraphVM, ThemeKind } from '../shared/protocol';
 import { ArchGenIcon } from './states';
+import { GraphMap } from './GraphMap';
 import {
   CODE_NODE_HEIGHT,
   CODE_NODE_WIDTH,
   EDGE_KINDS,
   SEARCH_DEBOUNCE_MS,
   UNLINKED_COMPONENT_ID,
+  capNodesByDegree,
   colorForEdgeKind,
   colorForKind,
   connectedComponents,
@@ -69,22 +74,20 @@ import {
   shouldVirtualize,
 } from './graph-model';
 import {
-  FOCUS_FILE_CAP,
   HUB_DEGREE_THRESHOLD,
   RADIAL_TIER_MAX_NODES,
   adjustLodForHub,
   basename,
   buildFileNodes,
   degreeMap,
-  focusNeighborhoodFiles,
   layoutFlowGrouped,
   layoutRadialGrouped,
   lodTierFor,
-  pickTopHub,
   quantizeZoom,
   selectSizeTier,
   type FileRollupEdge,
   type GraphSizeTier,
+  type GroupedLayout,
   type LodTier,
 } from './graph-grouped';
 
@@ -120,7 +123,7 @@ type RingData = {
 };
 type RingFlowNode = Node<RingData, 'ring'>;
 
-type LayoutMode = 'radial' | 'flow';
+type LayoutMode = 'radial' | 'flow' | 'map';
 
 interface LaidOutSeed {
   id: string;
@@ -451,9 +454,22 @@ export interface CodeGraphViewProps {
   vm: CodegraphVM;
   /** test/automation hook: fires once with the live xyflow instance */
   onFlowInit?: (instance: ReactFlowInstance) => void;
+  /** theme hint for the Canvas MAP layer's fallback palette */
+  themeKind?: ThemeKind;
 }
 
-export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
+/** Empty layout used while the Canvas MAP layer owns the canvas. */
+const EMPTY_GROUPED: GroupedLayout = {
+  placements: [],
+  circles: [],
+  anchors: [],
+  labels: [],
+  regions: [],
+  width: 0,
+  height: 0,
+};
+
+export function CodeGraphView({ vm, onFlowInit, themeKind }: CodeGraphViewProps) {
   // rawQuery = what the input shows (urgent); query = debounced filter input.
   const [rawQuery, setRawQuery] = useState('');
   const [query, setQuery] = useState('');
@@ -462,6 +478,9 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
   const [mode, setMode] = useState<LayoutMode>('radial');
   const [focusFile, setFocusFile] = useState<string | null>(null);
   const [zoomStep, setZoomStep] = useState(() => quantizeZoom(1));
+  // The MAP layer keeps its own selection: its universe is the whole symbol
+  // set, not the (capped) DOM universe.
+  const [mapSelectedId, setMapSelectedId] = useState<string | null>(null);
 
   const nodes = vm.nodes ?? [];
   const edges = vm.edges ?? [];
@@ -516,7 +535,12 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
   }, [fileUniverse, focusFile, nodes, edges]);
 
   const visibleEdges = useMemo(() => filterEdges(active.edges, enabledKinds), [active.edges, enabledKinds]);
-  const visibleNodes = useMemo(() => (active.nodes ?? []).filter((n) => matchesQuery(n, query)), [active.nodes, query]);
+  const matchedNodes = useMemo(() => (active.nodes ?? []).filter((n) => matchesQuery(n, query)), [active.nodes, query]);
+  // NODE CAP: the DOM graph never renders more than MAX_RENDERED_NODES nodes.
+  // The most connected ones survive the cut; the rest stay reachable through
+  // the search box.
+  const capped = useMemo(() => capNodesByDegree(matchedNodes, active.edges), [matchedNodes, active.edges]);
+  const visibleNodes = capped.nodes;
   const visibleIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes]);
 
   const searchableEdges = useMemo(
@@ -539,8 +563,10 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
     for (const [id, deg] of degrees) {
       if (deg >= HUB_DEGREE_THRESHOLD) hubs.add(id);
     }
+    // The host's top hubs stay flagged even when their visible degree is low.
+    for (const h of vm.hubs ?? []) hubs.add(h.id);
     return hubs;
-  }, [degrees]);
+  }, [degrees, vm.hubs]);
 
   const metaById = useMemo(() => {
     if (active.kind === 'files') {
@@ -596,6 +622,8 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
   }, [visibleNodes, routableEdges]);
 
   const grouped = useMemo(() => {
+    // The MAP layer owns the canvas in map mode — no dagre layout needed.
+    if (mode === 'map') return EMPTY_GROUPED;
     const routed = routableEdges.map(({ e }) => e);
     const radialAllowed = mode === 'radial' && largestComponent <= RADIAL_TIER_MAX_NODES;
     if (active.kind === 'files') return layoutFlowGrouped(visibleNodes, routed);
@@ -813,35 +841,51 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
         <input
           type="search"
           className="archgen-cg-search"
-          placeholder={vm.hasFts ? 'Search symbols (FTS-backed index)…' : 'Search symbols…'}
+          placeholder="Search symbols…"
           aria-label="Search nodes by name"
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
         />
-        {tier === 'radial' ? (
-          <div className="archgen-cg-mode" role="group" aria-label="Graph layout mode">
-            <button
-              type="button"
-              className={`archgen-cg-mode-btn${mode === 'radial' ? ' is-active' : ''}`}
-              aria-pressed={mode === 'radial'}
-              onClick={() => setMode('radial')}
-            >
-              ◉ Radial
-            </button>
-            <button
-              type="button"
-              className={`archgen-cg-mode-btn${mode === 'flow' ? ' is-active' : ''}`}
-              aria-pressed={mode === 'flow'}
-              onClick={() => setMode('flow')}
-            >
-              ⇥ Flow
-            </button>
-          </div>
-        ) : (
+        {capped.truncated > 0 && (
+          <span className="archgen-cg-tier-badge" role="status" data-testid="cg-cap-notice">
+            {`showing ${visibleNodes.length} of ${matchedNodes.length} symbols — narrow the search`}
+          </span>
+        )}
+        {tier !== 'radial' && (
           <span className="archgen-cg-tier-badge" data-testid="cg-tier-badge" role="status">
             {`${fileUniverse?.totalFiles ?? 0} files`}
           </span>
         )}
+        <div className="archgen-cg-mode" role="group" aria-label="Graph layout mode">
+          {tier === 'radial' && (
+            <>
+              <button
+                type="button"
+                className={`archgen-cg-mode-btn${mode === 'radial' ? ' is-active' : ''}`}
+                aria-pressed={mode === 'radial'}
+                onClick={() => setMode('radial')}
+              >
+                ◉ Radial
+              </button>
+              <button
+                type="button"
+                className={`archgen-cg-mode-btn${mode === 'flow' ? ' is-active' : ''}`}
+                aria-pressed={mode === 'flow'}
+                onClick={() => setMode('flow')}
+              >
+                ⇥ Flow
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className={`archgen-cg-mode-btn${mode === 'map' ? ' is-active' : ''}`}
+            aria-pressed={mode === 'map'}
+            onClick={() => setMode('map')}
+          >
+            ▦ Map
+          </button>
+        </div>
 
         <div className="archgen-cg-chips" role="group" aria-label="Edge kind filters">
           {EDGE_KINDS.map((k) => (
@@ -881,40 +925,56 @@ export function CodeGraphView({ vm, onFlowInit }: CodeGraphViewProps) {
             </span>
           </nav>
         )}
-        <ReactFlow
-          nodeTypes={graphNodeTypes}
-          edgeTypes={graphEdgeTypes}
-          nodes={flowNodes}
-          edges={flowEdges}
-          onlyRenderVisibleElements={shouldVirtualize(nodes.length)}
-          fitView
-          fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-          minZoom={0.04}
-          maxZoom={4}
-          zoomOnScroll
-          zoomOnPinch
-          zoomOnDoubleClick={false}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          onInit={handleFlowInit}
-          onNodeClick={handleNodeClick}
-          onPaneClick={clearSelection}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-          <ZoomLodBridge onZoom={handleZoomChange} />
-          <CanvasToolbar chips={chips} hasSelection={selectedId !== null} onClear={clearSelection} />
-          <Controls showInteractive={false} />
-          <MiniMap
-            pannable
-            ariaLabel="Code graph minimap"
-            nodeColor={(n) => {
-              if (n.type === 'ring') return 'transparent';
-              return colorForKind((n.data as GraphNodeData)?.kind ?? '');
-            }}
-          />
-        </ReactFlow>
+        {mode === 'map' ? (
+          // CANVAS MAP LAYER: the whole constellation (every indexed symbol),
+          // painted on a canvas — the DOM graph stays bounded at
+          // MAX_RENDERED_NODES nodes.
+          <div className="archgen-cg-map" data-testid="cg-map-layer">
+            <GraphMap
+              nodes={nodes}
+              edges={edges}
+              kindColorFor={colorForKind}
+              selectedId={mapSelectedId}
+              onSelect={setMapSelectedId}
+              themeKind={themeKind}
+            />
+          </div>
+        ) : (
+          <ReactFlow
+            nodeTypes={graphNodeTypes}
+            edgeTypes={graphEdgeTypes}
+            nodes={flowNodes}
+            edges={flowEdges}
+            onlyRenderVisibleElements={shouldVirtualize(nodes.length)}
+            fitView
+            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+            minZoom={0.04}
+            maxZoom={4}
+            zoomOnScroll
+            zoomOnPinch
+            zoomOnDoubleClick={false}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            onInit={handleFlowInit}
+            onNodeClick={handleNodeClick}
+            onPaneClick={clearSelection}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+            <ZoomLodBridge onZoom={handleZoomChange} />
+            <CanvasToolbar chips={chips} hasSelection={selectedId !== null} onClear={clearSelection} />
+            <Controls showInteractive={false} />
+            <MiniMap
+              pannable
+              ariaLabel="Code graph minimap"
+              nodeColor={(n) => {
+                if (n.type === 'ring') return 'transparent';
+                return colorForKind((n.data as GraphNodeData)?.kind ?? '');
+              }}
+            />
+          </ReactFlow>
+        )}
       </div>
       <span hidden data-testid="cg-counts">
         nodes={flowNodes.length} edges={flowEdges.length}

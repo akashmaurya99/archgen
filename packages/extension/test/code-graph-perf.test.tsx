@@ -125,7 +125,6 @@ describe('reconcileCachedNodes — memo discipline', () => {
 describe('commit budget across a status-less highlight toggle', () => {
   const VM: CodegraphVM = {
     product: 'colby',
-    hasFts: false,
     nodes: [
       { id: 'a', label: 'Alpha', kind: 'class', file: 'a.ts', line: 1 },
       { id: 'b', label: 'Beta', kind: 'function', file: 'b.ts', line: 2 },

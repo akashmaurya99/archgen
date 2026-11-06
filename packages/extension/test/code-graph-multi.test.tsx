@@ -18,7 +18,6 @@ installFlowDomStubs();
    c1 = {p,q,r} (q→p, r→q), c2 = {s,t} (t→s), unlinked = {m1,m2,m3}. */
 const MULTI_VM: CodegraphVM = {
   product: 'colby',
-  hasFts: false,
   nodes: [
     { id: 'p', label: 'Piper', kind: 'class', file: 'p.ts', line: 1 },
     { id: 'q', label: 'Quinn', kind: 'function', file: 'q.ts', line: 2 },

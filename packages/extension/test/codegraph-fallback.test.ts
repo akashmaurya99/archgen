@@ -50,7 +50,6 @@ const nodeSqliteAvailable = (() => {
       const snap = reader.snapshot();
       expect(snap.totalNodes).toBe(6);
       expect(snap.totalEdges).toBe(5);
-      expect(reader.searchNodes('parse').map((h) => h.id)).toContain('n1');
     } finally {
       reader.close();
     }

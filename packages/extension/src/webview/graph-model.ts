@@ -60,28 +60,6 @@ export function matchesQuery(n: GraphNodeLike, query: string): boolean {
 }
 
 /**
- * Direct neighborhood of `id`: the node itself plus every node one hop away,
- * and the indexes of the connecting edges.
- */
-export function neighborhoodOf(
-  edges: readonly GraphEdgeLike[],
-  id: string,
-): { nodeIds: Set<string>; edgeIdx: Set<number> } {
-  const nodeIds = new Set<string>([id]);
-  const edgeIdx = new Set<number>();
-  edges.forEach((e, i) => {
-    if (e.source === id) {
-      nodeIds.add(e.target);
-      edgeIdx.add(i);
-    } else if (e.target === id) {
-      nodeIds.add(e.source);
-      edgeIdx.add(i);
-    }
-  });
-  return { nodeIds, edgeIdx };
-}
-
-/**
  * FULL connected component of `id`: the transitive closure over BOTH
  * directions (upstream sources and downstream targets), cycle-safe via a
  * visited-set BFS. Returns every node id in the component plus the indexes of
@@ -221,16 +199,32 @@ export function layoutRadial<T extends { id: string }>(
   });
 }
 
-/** Ring bounding-box origin for the background SVG node in radial mode. */
-export function radialRingBounds(nodeCount: number, opts: { radius?: number; cardOffset?: number } = {}): {
-  x: number;
-  y: number;
-  size: number;
-  radius: number;
-} {
-  const radius = opts.radius ?? Math.max(280, nodeCount * 34);
-  const pad = (opts.cardOffset ?? 96) + Math.max(CODE_NODE_WIDTH, CODE_NODE_HEIGHT) / 2 + 8;
-  return { x: 0, y: 0, size: (radius + pad) * 2, radius };
+/**
+ * Hard cap on the nodes the DOM graph hands to xyflow. A repo with thousands
+ * of isolated symbols must not build a huge flow model — the graph shows the
+ * most connected slice and the rest stays reachable through search.
+ */
+export const MAX_RENDERED_NODES = 300;
+
+/**
+ * Trim a node set to `cap` entries, keeping the most connected nodes first
+ * (degree DESC, id ASC). Returns the kept nodes plus how many were dropped.
+ */
+export function capNodesByDegree<T extends GraphNodeLike>(
+  nodes: readonly T[],
+  edges: readonly GraphEdgeLike[],
+  cap: number = MAX_RENDERED_NODES,
+): { nodes: T[]; truncated: number } {
+  if (nodes.length <= cap) return { nodes: [...nodes], truncated: 0 };
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+  const ordered = [...nodes].sort(
+    (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  return { nodes: ordered.slice(0, cap), truncated: nodes.length - cap };
 }
 
 /* ==== Per-component decomposition — one canvas per connected component ==== */

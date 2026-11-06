@@ -472,14 +472,12 @@ describe('codegraph edge cases', () => {
     expect(d.reason).toContain('workspace-local');
   });
 
-  it('reader.close() then reuse: listNodes throws typed error, hasFts degrades safely', () => {
-    // ACTUAL: queries after close() throw UnsupportedProductError('reader closed');
-    // boolean probes (hasFts/tableExists) degrade to safe negatives instead.
+  it('reader.close() then reuse: listNodes throws typed error', () => {
+    // ACTUAL: queries after close() throw UnsupportedProductError('reader closed').
     const reader = CodegraphReader.open(join(FIXTURES, 'ws-colby', '.codegraph', 'codegraph.db'), 'colby');
     reader.close();
     expect(() => reader.listNodes()).toThrowError(new UnsupportedProductError('reader closed'));
     expect(() => reader.listEdges()).toThrowError(/reader closed/);
-    expect(reader.hasFts()).toBe(false);
     reader.close(); // idempotent
   });
 
@@ -492,7 +490,7 @@ describe('codegraph edge cases', () => {
     expect(ghost).toEqual({ exists: false, size: 0, mtimeMs: 0 });
   });
 
-  it('searchNodes falls back to LIKE scan (with escaping) when nodes_fts is absent', () => {
+  it('listNodes reads the label column of an optave-shaped schema', () => {
     const dir = scratch();
     const dbPath = join(dir, 'graph.db');
     const db = new Database(dbPath);
@@ -504,13 +502,9 @@ describe('codegraph edge cases', () => {
 
     const reader = CodegraphReader.open(dbPath, 'optave');
     try {
-      expect(reader.hasFts()).toBe(false);
-      const hits = reader.searchNodes('alpha');
-      expect(hits.map((h) => h.id)).toEqual(['n1']);
-      // LIKE wildcards in user input are escaped via ESCAPE '!'.
-      expect(reader.searchNodes('%')).toEqual([]);
-      expect(reader.searchNodes('_fn')).toHaveLength(2);
-      expect(reader.searchNodes('   ')).toEqual([]); // blank query short-circuits
+      const nodes = reader.listNodes().nodes;
+      expect(nodes.map((n) => n.id)).toEqual(['n1', 'n2']);
+      expect(nodes[0]?.label).toBe('alpha_fn');
     } finally {
       reader.close();
     }
@@ -556,8 +550,8 @@ describe('codegraph edge cases', () => {
     try {
       expect(reader.listNodes().nodes[0]).toEqual({ id: 'n1', label: 'n1', kind: 'unknown', file: '', line: 0 });
       expect(reader.listEdges().edges[0]).toEqual({ source: 'n1', target: 'n1', kind: 'references' });
-      // ACTUAL: LIKE scans match on the label column — NULL labels never match.
-      expect(reader.searchNodes('n1')).toEqual([]);
+      // ACTUAL: NULL labels fall back to the node id.
+      expect(reader.listNodes().nodes[0]?.label).toBe('n1');
     } finally {
       reader.close();
     }
@@ -579,7 +573,6 @@ describe('codegraph edge cases', () => {
     const reader = CodegraphReader.open(dbPath, 'optave');
     try {
       expect(() => reader.listNodes()).toThrowError();
-      expect(() => reader.searchNodes('x')).toThrowError();
     } finally {
       reader.close();
     }

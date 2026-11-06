@@ -17,7 +17,6 @@ import {
   UNLINKED_COMPONENT_ID,
   connectedComponents,
   layoutRadial,
-  radialRingBounds,
 } from '../src/webview/graph-model';
 import type { GraphEdgeLike, GraphNodeLike } from '../src/webview/graph-model';
 import { layoutFlowGrouped, selectSizeTier, type FileRollup } from '../src/webview/graph-grouped';
@@ -276,21 +275,6 @@ describe('layoutFlowGrouped — dagre cache eliminates the double pass (todo 13)
   });
 });
 
-describe('radialRingBounds — default + explicit opts', () => {
-  it('derives radius and pad from defaults when opts is omitted', () => {
-    const b = radialRingBounds(10);
-    expect(b.radius).toBe(Math.max(280, 10 * 34));
-    expect(b.x).toBe(0);
-    expect(b.y).toBe(0);
-    expect(b.size).toBe((b.radius + 96 + Math.max(232, 64) / 2 + 8) * 2);
-  });
-
-  it('honors explicit radius and cardOffset over the defaults', () => {
-    const b = radialRingBounds(10, { radius: 500, cardOffset: 20 });
-    expect(b.radius).toBe(500);
-    expect(b.size).toBe((500 + 20 + Math.max(232, 64) / 2 + 8) * 2);
-  });
-});
 
 describe('layoutRadial — degenerate inputs', () => {
   it('returns [] for an empty node list', () => {

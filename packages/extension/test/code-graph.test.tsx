@@ -18,7 +18,6 @@ import {
   filterEdges,
   impactCount,
   matchesQuery,
-  neighborhoodOf,
   shouldVirtualize,
 } from '../src/webview/graph-model';
 import { CodeGraphView } from '../src/webview/CodeGraphView';
@@ -44,7 +43,6 @@ installFlowDomStubs();
 
 const VM: CodegraphVM = {
   product: 'colby',
-  hasFts: true,
   nodes: [
     { id: 'n1', label: 'UserService', kind: 'class', file: 'a.ts', line: 1 },
     { id: 'n2', label: 'getUser', kind: 'function', file: 'b.ts', line: 10 },
@@ -65,7 +63,6 @@ const VM: CodegraphVM = {
 // (z and w are not neighbors).
 const SPLIT_VM: CodegraphVM = {
   product: 'colby',
-  hasFts: false,
   nodes: [
     { id: 'a', label: 'Alpha', kind: 'class', file: 'a.ts', line: 1 },
     { id: 'b', label: 'Beta', kind: 'function', file: 'b.ts', line: 2 },
@@ -155,12 +152,6 @@ describe('graph-model helpers', () => {
     expect(matchesQuery(first, 'b.ts')).toBe(false);
     expect(matchesQuery(second, 'b.ts')).toBe(true);
     expect(matchesQuery(first, '')).toBe(true);
-  });
-
-  it('neighborhoodOf returns one-hop nodes + connecting edge indexes', () => {
-    const { nodeIds, edgeIdx } = neighborhoodOf(VM.edges ?? [], 'n1');
-    expect(nodeIds).toEqual(new Set(['n1', 'n2', 'n4']));
-    expect(edgeIdx).toEqual(new Set([0, 2]));
   });
 
   it('connectedComponentOf closes transitively over BOTH directions', () => {
@@ -527,7 +518,6 @@ describe('focus/selection lifecycle across live vm updates (todo 11)', () => {
         ];
     return {
       product: 'colby',
-      hasFts: false,
       nodes,
       edges,
       fileRollup: {

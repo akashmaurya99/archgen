@@ -13,13 +13,9 @@ import type { ReactFlowInstance } from '@xyflow/react';
 import {
   adjustLodForHub,
   basename,
-  focusNeighborhoodFiles,
   lodTierFor,
-  pickTopHub,
   quantizeZoom,
   selectSizeTier,
-  FOCUS_FILE_CAP,
-  HUB_DEGREE_THRESHOLD,
 } from '../src/webview/graph-grouped';
 import { CodeGraphView, reconcileCachedNodes, type GraphFlowNode, type GraphNodeMeta } from '../src/webview/CodeGraphView';
 import type { CodegraphVM } from '../src/shared/protocol';
@@ -105,7 +101,7 @@ function rollupFor(nodes: readonly Sym[], edges: readonly SymEdge[]): NonNullabl
 
 function vmFrom(spec: ChainSpec, hubs?: CodegraphVM['hubs']): CodegraphVM {
   const { nodes, edges } = buildChain(spec);
-  return { product: 'colby', hasFts: false, nodes, edges, fileRollup: rollupFor(nodes, edges), hubs };
+  return { product: 'colby', nodes, edges, fileRollup: rollupFor(nodes, edges), hubs };
 }
 
 const SMALL_VM = vmFrom({ files: 4, symsPerFile: 2 }); // largest comp 8 → radial
@@ -234,24 +230,6 @@ describe('LOD ladder — pure helpers', () => {
   it('basename strips directories', () => {
     expect(basename('src/webview/CodeGraphView.tsx')).toBe('CodeGraphView.tsx');
     expect(basename('plain.ts')).toBe('plain.ts');
-  });
-
-  it('pickTopHub takes max degree with id tie-break; focus BFS caps files', () => {
-    expect(pickTopHub([])).toBeNull();
-    expect(pickTopHub(undefined)).toBeNull();
-    const hubs = [
-      { id: 'b', label: 'B', kind: 'class', file: 'b.ts', degree: 5 },
-      { id: 'a', label: 'A', kind: 'class', file: 'a.ts', degree: 9 },
-      { id: 'c', label: 'C', kind: 'class', file: 'c.ts', degree: 9 },
-    ];
-    expect(pickTopHub(hubs)?.id).toBe('a');
-
-    const fileEdges = Array.from({ length: 60 }, (_, i) => ({ source: `f${i}.ts`, target: `f${i + 1}.ts`, kind: 'imports', count: 1 }));
-    const hood = focusNeighborhoodFiles('f0.ts', fileEdges);
-    expect(hood.length).toBe(FOCUS_FILE_CAP);
-    expect(hood[0]).toBe('f0.ts');
-    expect(hood).toContain('f39.ts');
-    expect(hood).not.toContain('f40.ts');
   });
 });
 
@@ -481,7 +459,6 @@ describe('file focus empty-open guard', () => {
     for (const n of nodes) fileCounts.set(n.file, (fileCounts.get(n.file) ?? 0) + 1);
     const vm: CodegraphVM = {
       product: 'colby',
-      hasFts: false,
       nodes,
       edges,
       fileRollup: {

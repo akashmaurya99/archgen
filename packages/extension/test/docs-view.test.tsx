@@ -2,10 +2,11 @@
 // per-diagram error isolation, sidebar select + open-in-editor postMessage.
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement } from 'react';
 import {
   DocsView,
+  mountDiagramViewport,
   renderMermaidBlocks,
   resetMermaidForTests,
   groupDocs,
@@ -336,5 +337,128 @@ describe('DocsView — code frame + viewport + mermaid degradation branches', ()
     });
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     await waitFor(() => expect(msg()).toContain('non-error-retry'));
+  });
+
+  it('a successful retry installs ONE zoom viewport — it replaces the old one instead of nesting', async () => {
+    const mod = await import('mermaid');
+    resetMermaidForTests();
+    const renderFn = vi.mocked(mod.default.render);
+    renderFn.mockImplementationOnce(async () => {
+      throw new Error('broken on purpose');
+    });
+    const host = document.createElement('div');
+    host.innerHTML = '<pre><code class="language-mermaid">graph TD; x-->y;</code></pre>';
+    document.body.appendChild(host);
+    await renderMermaidBlocks(host);
+    const box = host.querySelector<HTMLElement>('.archgen-diagram-error');
+    expect(box).toBeTruthy();
+    // The failed diagram has no viewport yet.
+    expect(host.querySelectorAll('.archgen-diagram-wrap')).toHaveLength(0);
+
+    // The retry succeeds → the box becomes a diagram and gets a viewport.
+    const retry = box?.querySelector<HTMLButtonElement>('.archgen-diagram-retry');
+    retry?.click();
+    await waitFor(() => expect(host.querySelectorAll('.archgen-diagram-wrap')).toHaveLength(1));
+
+    // A SECOND mount on the same box must REPLACE the viewport, never nest.
+    mountDiagramViewport(box!);
+    expect(host.querySelectorAll('.archgen-diagram-wrap')).toHaveLength(1);
+    expect(host.querySelectorAll('.archgen-diagram-viewport')).toHaveLength(1);
+    expect(host.querySelector('.archgen-diagram-wrap .archgen-diagram-wrap')).toBeNull();
+    host.remove();
+    resetMermaidForTests();
+  });
+});
+
+describe('DocsView — copy button timer hygiene', () => {
+  it('clears the pending "Copied!" reset when the view unmounts (no leaked timer)', async () => {
+    vi.useFakeTimers();
+    try {
+      const DOC = ['# T', '', '```js', 'const a = 1;', '```'].join('\n');
+      const view = render(createElement(DocsView, {
+        docs: DOCS,
+        active: { path: 'plan.md', content: DOC },
+        onSelect: vi.fn(),
+        onOpenInEditor: vi.fn(),
+      }));
+      // The code frame (and its copy button) is created by an effect.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const btn = view.container.querySelector<HTMLButtonElement>('.archgen-copy-btn');
+      expect(btn).toBeTruthy();
+      await act(async () => {
+        fireEvent.click(btn!);
+        await Promise.resolve();
+      });
+      expect(btn!.textContent).toBe('Copied!');
+      expect(vi.getTimerCount()).toBe(1);
+      view.unmount();
+      // The timer must not outlive the view.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a second click replaces the pending reset instead of stacking timers', async () => {
+    vi.useFakeTimers();
+    try {
+      const DOC = ['# T', '', '```js', 'const a = 1;', '```'].join('\n');
+      const view = render(createElement(DocsView, {
+        docs: DOCS,
+        active: { path: 'plan.md', content: DOC },
+        onSelect: vi.fn(),
+        onOpenInEditor: vi.fn(),
+      }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const btn = view.container.querySelector<HTMLButtonElement>('.archgen-copy-btn');
+      await act(async () => {
+        fireEvent.click(btn!);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        fireEvent.click(btn!);
+        await Promise.resolve();
+      });
+      expect(vi.getTimerCount()).toBe(1);
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never mutates a copy button that already left the document', async () => {
+    vi.useFakeTimers();
+    try {
+      const DOC = ['# T', '', '```js', 'const a = 1;', '```'].join('\n');
+      const view = render(createElement(DocsView, {
+        docs: DOCS,
+        active: { path: 'plan.md', content: DOC },
+        onSelect: vi.fn(),
+        onOpenInEditor: vi.fn(),
+      }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const btn = view.container.querySelector<HTMLButtonElement>('.archgen-copy-btn');
+      await act(async () => {
+        fireEvent.click(btn!);
+        await Promise.resolve();
+      });
+      // The document is swapped away — the button is detached but its timer
+      // may still be pending.
+      btn!.remove();
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(btn!.textContent).toBe('Copied!');
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

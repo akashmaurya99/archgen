@@ -196,10 +196,9 @@ vi.mock('../src/host/codegraph', () => ({
     return {
       reader: {
         product: 'colby' as const,
-        snapshot: (): { nodes: CgNode[]; edges: CgEdge[]; hasFts: boolean } => ({
+        snapshot: (): { nodes: CgNode[]; edges: CgEdge[] } => ({
           nodes: state.snapshotNodes,
           edges: state.snapshotEdges,
-          hasFts: false,
         }),
         fileRollup: (): never => {
           throw new Error('rollup unavailable in this test');

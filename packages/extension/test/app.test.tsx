@@ -117,6 +117,98 @@ describe('App shell', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('shows a non-blocking notice for info status messages (clipboard confirmations)', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: MODEL }));
+    });
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'status', kind: 'info', message: "Copied 'T1' prompt to clipboard." },
+      }));
+    });
+    const notice = screen.getByTestId('archgen-notice');
+    expect(notice.textContent).toContain('Copied');
+    expect(notice.getAttribute('data-kind')).toBe('info');
+    // Non-blocking: the board content is still there.
+    expect(screen.getByTestId('archgen-root')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notice' }));
+    expect(screen.queryByTestId('archgen-notice')).toBeNull();
+  });
+
+  it('shows a warn notice for warning status messages', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: MODEL }));
+    });
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'status', kind: 'warn', message: 'harness not configured' },
+      }));
+    });
+    const notice = screen.getByTestId('archgen-notice');
+    expect(notice.getAttribute('data-kind')).toBe('warn');
+    expect(notice.textContent).toContain('harness not configured');
+  });
+
+  it('reflects the REAL .archgen folder state in the empty state', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { ...MODEL, tasks: [], docs: [], codegraph: { product: 'unsupported' }, hasArchgenFolder: false },
+      }));
+    });
+    // No .archgen folder → the CTA points at the install command.
+    expect(screen.getByText(/folder yet/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Copy install command/i })).toBeTruthy();
+  });
+
+  it('tells the user the folder exists when the host says so', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { ...MODEL, tasks: [], docs: [], codegraph: { product: 'unsupported' }, hasArchgenFolder: true },
+      }));
+    });
+    expect(screen.getByText(/no readable tasks yet/i)).toBeTruthy();
+  });
+
+  it('focusView message lands the board on the requested view', () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: MODEL }));
+    });
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: { type: 'focusView', view: 'DOCS' } }));
+    });
+    expect(screen.getByRole('tab', { name: 'DOCS' }).getAttribute('aria-selected')).toBe('true');
+    expect(api.state).toEqual({ tab: 'DOCS' });
+  });
+
+  it('replays an update that arrives BEFORE the first model onto the fresh store', async () => {
+    const api = makeApi();
+    render(createElement(App, { api }));
+    // The diff beats the snapshot — it must not be dropped.
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'update', changed: [{ id: 'B', status: 'failed' }] },
+      }));
+    });
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: MODEL }));
+    });
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    });
+    const chip = document.querySelector('[data-task-id="B"] [data-status]');
+    expect(chip?.getAttribute('data-status')).toBe('failed');
+  });
+
   it('applies update diffs without replacing the whole model', async () => {
     const api = makeApi();
     render(createElement(App, { api }));

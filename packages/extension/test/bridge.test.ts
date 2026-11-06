@@ -5,19 +5,22 @@
 // a stale queue, a foreign workspace, an unknown action, or a malformed file
 // must never execute.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   BRIDGE_PROTOCOL,
+  MAX_PROCESSED_IDS,
   UI_ACTIONS,
   ackDirFor,
   cmdDirFor,
   createBridgeCore,
   isCommandFile,
+  isValidCommandId,
   parseBridgeCommand,
   runtimeDirFor,
   writeAtomic,
+  type BridgeAck,
   type BridgeCommand,
 } from '../src/host/bridge';
 
@@ -103,6 +106,29 @@ describe('parseBridgeCommand', () => {
     const check = parseBridgeCommand(JSON.stringify(command({ id: '' })), { workspaceRoot: root });
     expect(check.ok).toBe(false);
     if (!check.ok) expect(check.reason).toMatch(/no id/i);
+  });
+
+  // The id becomes the ack FILE NAME, so it must be a safe single segment.
+  it.each([
+    '../../../../package.json',
+    '../escape',
+    'a/b',
+    'a\\b',
+    'cmd 1',
+    'cmd.json',
+    '',
+    'x'.repeat(129),
+  ])('refuses id %j — it is never a valid ack file name', (id) => {
+    expect(isValidCommandId(id)).toBe(false);
+    const check = parseBridgeCommand(JSON.stringify(command({ id })), { workspaceRoot: root });
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toMatch(/file name|no id/i);
+  });
+
+  it.each(['cmd-1', 'A_B-9', 'x'.repeat(128)])('accepts the safe id %j', (id) => {
+    expect(isValidCommandId(id)).toBe(true);
+    const check = parseBridgeCommand(JSON.stringify(command({ id })), { workspaceRoot: root });
+    expect(check.ok).toBe(true);
   });
 
   it('rejects a command with no workspaceRoot', () => {
@@ -195,6 +221,30 @@ describe('createBridgeCore', () => {
     expect(executed).toHaveLength(0);
   });
 
+  it('refuses a traversal id: the command never runs and NO file is written outside the ack dir', () => {
+    const core = createBridgeCore({
+      workspaceRoot: root,
+      execute: (c) => {
+        executed.push(c);
+      },
+    });
+    // The victim sits at the workspace root — the ack path would reach it
+    // with '../../package.json' from <root>/.archgen/.runtime/ack/.
+    const victim = join(root, 'package.json');
+    writeFileSync(victim, '{"name":"victim"}', 'utf8');
+    const p = writeCommand('evil', command({ id: '../../package.json' }));
+    const ack = core.handleCommandFile(p);
+    expect(ack).toBeNull();
+    expect(executed).toHaveLength(0);
+    // The victim file is untouched.
+    expect(readFileSync(victim, 'utf8')).toBe('{"name":"victim"}');
+    // No stray file next to it (atomic write leftovers) and no ack at all.
+    expect(existsSync(join(root, 'package.json.tmp-1-1'))).toBe(false);
+    const ackDir = ackDirFor(root);
+    const written = existsSync(ackDir) ? readdirSync(ackDir) : [];
+    expect(written).toEqual([]);
+  });
+
   it('reports an execution failure as an error ack, not a crash', () => {
     const core = createBridgeCore({
       workspaceRoot: root,
@@ -256,6 +306,46 @@ describe('createBridgeCore', () => {
     expect(ack).toBeNull();
     expect(lines.join('\n')).toMatch(/cannot read/);
   });
+
+  it('never throws from the error path — the original failure survives a broken ack write', () => {
+    const lines: string[] = [];
+    // A FILE where the ack directory belongs makes every ack write fail.
+    mkdirSync(runtimeDirFor(root), { recursive: true });
+    writeFileSync(ackDirFor(root), 'not-a-directory', 'utf8');
+    const core = createBridgeCore({
+      workspaceRoot: root,
+      execute: () => {
+        throw new Error('boom');
+      },
+      log: (l) => lines.push(l),
+    });
+    const p = writeCommand('a6', command({ id: 'a6' }));
+    const acks: Array<BridgeAck | null> = [];
+    expect(() => {
+      acks.push(core.handleCommandFile(p));
+    }).not.toThrow();
+    expect(acks[0]?.status).toBe('error');
+    expect(acks[0]?.message).toBe('boom');
+    const log = lines.join('\n');
+    expect(log).toMatch(/cannot write ack/);
+    // The ORIGINAL failure is still reported.
+    expect(log).toMatch(/command a6 failed: boom/);
+  });
+
+  it('bounds the processed-id window: recent ids stay idempotent, old ones are forgotten', () => {
+    const core = createBridgeCore({ workspaceRoot: root, execute: () => undefined });
+    const ids = Array.from({ length: MAX_PROCESSED_IDS + 5 }, (_, i) => `cmd-${i}`);
+    for (const id of ids) {
+      core.handleCommandFile(writeCommand(id, command({ id })));
+    }
+    expect(core.processed.size).toBe(MAX_PROCESSED_IDS);
+    expect(core.processed.has('cmd-0')).toBe(false);
+    const newest = ids[ids.length - 1]!;
+    expect(core.processed.has(newest)).toBe(true);
+    // The newest id is still idempotent.
+    const replay = core.handleCommandFile(writeCommand(newest, command({ id: newest })));
+    expect(replay?.status).toBe('ignored');
+  });
 });
 
 describe('writeAtomic', () => {
@@ -303,7 +393,13 @@ describe('isCommandFile', () => {
     expect(isCommandFile('/a/b/cmd-1.json')).toBe(true);
   });
 
-  it('rejects a temporary file', () => {
+  it('rejects the REAL atomic-write temporary shape', () => {
+    // writeAtomic writes `<path>.tmp-<pid>-<clock>` — the temporary never
+    // ends in `.json`, and the predicate knows that shape explicitly.
+    expect(isCommandFile('/a/b/cmd-1.json.tmp-1234-1700000000000')).toBe(false);
+  });
+
+  it('rejects a legacy .tmp suffix too', () => {
     expect(isCommandFile('/a/b/cmd-1.json.tmp')).toBe(false);
   });
 

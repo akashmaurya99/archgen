@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { SetupStateLike, TaskStatus } from '../shared/protocol';
+import type { SetupStateLike, TaskStatus, ViewTab } from '../shared/protocol';
+
+/** Tab definition shared by App shell (canonical list lives in the protocol). */
+export type { ViewTab };
+export const VIEW_TABS: ViewTab[] = ['TASKS', 'CODE', 'DOCS'];
 
 export const STATUS_ORDER: TaskStatus[] = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 
@@ -135,16 +139,8 @@ export function StaleChip({ since }: { since: number }) {
   );
 }
 
-/** Tab definition shared by App shell. */
-export type ViewTab = 'TASKS' | 'CODE' | 'DOCS';
-export const VIEW_TABS: ViewTab[] = ['TASKS', 'CODE', 'DOCS'];
-
 // Webviews restored from an older build can carry the removed 'SETUP' tab in
 // persisted state — sanitize on read so a dead value never blanks the board.
 export function initialTab(persisted: unknown): ViewTab {
   return VIEW_TABS.find((t) => t === persisted) ?? 'TASKS';
-}
-
-export function useTabState(initial: ViewTab = 'TASKS'): [ViewTab, (t: ViewTab) => void] {
-  return useState<ViewTab>(initial);
 }

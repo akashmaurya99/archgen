@@ -807,6 +807,12 @@ body,
   min-height: 420px;
 }
 
+/* Canvas MAP layer fills the same canvas slot as the xyflow graph. */
+.archgen-cg-map {
+  position: absolute;
+  inset: 0;
+}
+
 .archgen-cg-fit-chip {
   display: inline-flex;
   align-items: center;
@@ -1101,6 +1107,50 @@ body,
 .archgen-hint {
   color: var(--archgen-text-muted);
   font-size: 14px;
+}
+
+/* Notice bar floats TOP-CENTER (non-blocking confirmations) */
+.archgen-notice {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: var(--archgen-space-3, 12px);
+  max-width: min(640px, calc(100% - var(--archgen-space-6, 24px)));
+  padding: 8px 16px;
+  border-radius: var(--archgen-radius-pill, 9999px);
+  border: 1px solid var(--archgen-status-ready);
+  background: color-mix(in srgb, var(--archgen-status-ready) 16%, var(--archgen-surface-elevated));
+  backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  -webkit-backdrop-filter: var(--archgen-frosted-filter, saturate(180%) blur(20px));
+  box-shadow: var(--archgen-shadow-floating, 0 12px 36px rgba(0, 0, 0, 0.35));
+  color: var(--archgen-text);
+  font-size: var(--archgen-font-size-sm);
+  font-weight: 500;
+}
+
+.archgen-notice[data-kind='warn'] {
+  border-color: var(--archgen-status-blocked);
+  background: color-mix(in srgb, var(--archgen-status-blocked) 18%, var(--archgen-surface-elevated));
+}
+
+.archgen-notice button {
+  border: none;
+  background: transparent;
+  color: var(--archgen-text);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity var(--archgen-motion-fast);
+}
+
+.archgen-notice button:hover {
+  opacity: 1;
 }
 
 /* Error banner floats TOP-CENTER */

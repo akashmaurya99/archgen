@@ -243,9 +243,10 @@ describe('DEFAULT_TEMPLATES coverage', () => {
 describe('outfileForTask (path-traversal hardening, todo 4)', () => {
   const tmp = resolve(tmpdir());
 
-  it('keeps benign ids intact', () => {
-    expect(outfileForTask('T-123')).toBe(join(tmp, 'archgen-T-123.json'));
-    expect(outfileForTask('wave_2_task_9')).toBe(join(tmp, 'archgen-wave_2_task_9.json'));
+  it('keeps benign ids recognizable and pins them inside tmpdir', () => {
+    expect(basename(outfileForTask('T-123'))).toMatch(/^archgen-T-123-[0-9a-f]{8}\.json$/);
+    expect(basename(outfileForTask('wave_2_task_9'))).toMatch(/^archgen-wave_2_task_9-[0-9a-f]{8}\.json$/);
+    expect(dirname(resolve(outfileForTask('T-123')))).toBe(tmp);
   });
 
   // tasks.yaml is repository-controlled input (supply-chain surface): hostile
@@ -262,13 +263,21 @@ describe('outfileForTask (path-traversal hardening, todo 4)', () => {
   );
 
   it('replaces every character outside [a-zA-Z0-9_-] with an underscore', () => {
-    expect(basename(outfileForTask('a/b'))).toBe('archgen-a_b.json');
-    expect(basename(outfileForTask('a\0b'))).toBe('archgen-a_b.json');
-    expect(basename(outfileForTask('../../etc/cron'))).toBe('archgen-______etc_cron.json');
+    expect(basename(outfileForTask('a/b'))).toMatch(/^archgen-a_b-[0-9a-f]{8}\.json$/);
+    expect(basename(outfileForTask('a\0b'))).toMatch(/^archgen-a_b-[0-9a-f]{8}\.json$/);
+    expect(basename(outfileForTask('../../etc/cron'))).toMatch(/^archgen-______etc_cron-[0-9a-f]{8}\.json$/);
   });
 
-  it('falls back to a fixed name for an empty id and keeps underscore-only sanitizations', () => {
-    expect(basename(outfileForTask(''))).toBe('archgen-task.json');
-    expect(basename(outfileForTask('///'))).toBe('archgen-___.json');
+  it('falls back to a fixed prefix for an empty id and keeps underscore-only sanitizations', () => {
+    expect(basename(outfileForTask(''))).toMatch(/^archgen-task-[0-9a-f]{8}\.json$/);
+    expect(basename(outfileForTask('///'))).toMatch(/^archgen-___-[0-9a-f]{8}\.json$/);
+  });
+
+  it('never maps two different task ids onto the same transcript file', () => {
+    // 'a/b' and 'a_b' sanitize to the same prefix — the hash of the ORIGINAL
+    // id keeps their transcripts apart.
+    expect(outfileForTask('a/b')).not.toBe(outfileForTask('a_b'));
+    expect(outfileForTask('a/b')).not.toBe(outfileForTask('a.b'));
+    expect(outfileForTask('T-1')).toBe(outfileForTask('T-1'));
   });
 });

@@ -47,8 +47,9 @@ export interface FileRollupEdge {
 }
 
 /**
- * File-level aggregation of the code graph — feeds the DOM graph (which never
- * renders >300 nodes) while the full constellation goes to the Canvas MAP layer.
+ * File-level aggregation of the code graph — feeds the DOM graph, which never
+ * renders more than 300 nodes at a time (the rest is reachable through search
+ * and the file-level rollup).
  */
 export interface FileRollupVM {
   files: FileRollupEntry[];
@@ -56,7 +57,7 @@ export interface FileRollupVM {
   totals: { files: number; symbols: number; edges: number };
 }
 
-/** High-degree node (in+out) anchoring the Canvas MAP constellation view. */
+/** High-degree node (in+out) flagged by the host for emphasis in the graph. */
 export interface HubVM {
   id: string;
   label: string;
@@ -70,8 +71,6 @@ export interface CodegraphVM {
   /** present when product !== 'unsupported' */
   nodes?: Array<{ id: string; label: string; kind: string; file: string; line: number }>;
   edges?: Array<{ source: string; target: string; kind: string }>;
-  /** whether the index exposes a nodes_fts table (host-side search available) */
-  hasFts?: boolean;
   /** human-readable reason when unsupported */
   unsupportedReason?: string;
   /**
@@ -92,6 +91,9 @@ export interface FeatureInfo {
   updatedAt: number;
 }
 
+/** The three board views. */
+export type ViewTab = 'TASKS' | 'CODE' | 'DOCS';
+
 /** Full snapshot sent on open/refresh. */
 export interface ArchgenModelMessage {
   type: 'model';
@@ -108,9 +110,19 @@ export interface ArchgenModelMessage {
   features: FeatureInfo[];
   /** Slug whose DAG `tasks` currently holds — persisted choice or most-recent. */
   activeSlug: string;
+  /**
+   * Whether the workspace really has an `.archgen/` folder. Optional for
+   * backward compatibility; when absent the webview derives it from the
+   * model content (features/docs imply the folder exists).
+   */
+  hasArchgenFolder?: boolean;
 }
 
-/** Minimal diff sent when only statuses changed (watcher pipeline). */
+/**
+ * Minimal diff sent when ONLY task statuses changed (the host's watcher
+ * pipeline compares the new snapshot with the previous one and ships the
+ * delta instead of a full model).
+ */
 export interface ArchgenUpdateMessage {
   type: 'update';
   changed: Array<{ id: string; status: TaskStatus }>;
@@ -153,6 +165,12 @@ export interface WebviewRevealDocMessage {
   path: string;
 }
 
+/** Bridge `focus` intent: land the board on one view. */
+export interface WebviewFocusViewMessage {
+  type: 'focusView';
+  view: ViewTab;
+}
+
 /** SETUP-tab card button: copy the install prompt for any agent chat. */
 export interface WebviewCopyInstallMessage {
   type: 'copyInstall';
@@ -170,7 +188,7 @@ export interface WebviewCopyUpdateMessage {
   type: 'copyUpdate';
 }
 
-export type HostToWebview = ArchgenModelMessage | ArchgenUpdateMessage | ArchgenStatusMessage | ArchgenDocContentMessage | ArchgenSetupMessage | WebviewRevealTaskMessage | WebviewRevealSetupMessage | WebviewRevealDocMessage | { type: 'theme'; themeKind: ThemeKind };
+export type HostToWebview = ArchgenModelMessage | ArchgenUpdateMessage | ArchgenStatusMessage | ArchgenDocContentMessage | ArchgenSetupMessage | WebviewRevealTaskMessage | WebviewRevealSetupMessage | WebviewRevealDocMessage | WebviewFocusViewMessage | { type: 'theme'; themeKind: ThemeKind };
 
 export interface WebviewReadyMessage {
   type: 'ready';
@@ -178,7 +196,7 @@ export interface WebviewReadyMessage {
 
 export interface WebviewOpenFileMessage {
   type: 'openFile';
-  /** absolute or workspace-relative fs path */
+  /** path relative to <workspace>/.archgen, or an absolute path inside the workspace */
   path: string;
   line?: number;
 }

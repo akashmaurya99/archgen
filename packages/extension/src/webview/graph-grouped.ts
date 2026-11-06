@@ -290,21 +290,11 @@ export interface FileRollup {
   totals: FileRollupTotals;
 }
 
-/** High-degree symbol flagged by the host for focus-first seeding. */
-export interface HubEntry {
-  id: string;
-  label: string;
-  kind: string;
-  file: string;
-  degree: number;
-}
-
 export type GraphSizeTier = 'radial' | 'file-hub' | 'focus-first';
 
 export const RADIAL_TIER_MAX_NODES = 60;
-export const HUB_TIER_MAX_NODES = 300;
-/** focus-first initial canvas shows at most this many FILE nodes. */
-export const FOCUS_FILE_CAP = 40;
+/** Largest LINKED component that still fits the file-hub tier. */
+const HUB_TIER_MAX_NODES = 300;
 
 /** Final path segment — file-hub node labels. */
 export function basename(path: string): string {
@@ -344,52 +334,6 @@ export function fileNodeFor(entry: FileRollupEntry): GraphNodeLike {
 
 export function buildFileNodes(rollup: FileRollup): GraphNodeLike[] {
   return rollup.files.map(fileNodeFor);
-}
-
-/**
- * Highest-degree hub (degree DESC, id ASC tie-break); null when absent/empty.
- * Defensive max-scan — the host is expected to send hubs pre-sorted.
- */
-export function pickTopHub(hubs?: readonly HubEntry[] | null): HubEntry | null {
-  if (!hubs || hubs.length === 0) return null;
-  let top = hubs[0]!;
-  for (const h of hubs) {
-    if (h.degree > top.degree || (h.degree === top.degree && h.id < top.id)) top = h;
-  }
-  return top;
-}
-
-/**
- * BFS over undirected file edges from `hubFile`, returning at most `cap` file
- * paths (hub first, then neighbors outward). Pure.
- */
-export function focusNeighborhoodFiles(
-  hubFile: string,
-  fileEdges: readonly FileRollupEdge[],
-  cap: number = FOCUS_FILE_CAP,
-): string[] {
-  const adjacency = new Map<string, string[]>();
-  const link = (a: string, b: string): void => {
-    const list = adjacency.get(a);
-    if (list) list.push(b);
-    else adjacency.set(a, [b]);
-  };
-  for (const e of fileEdges) {
-    link(e.source, e.target);
-    link(e.target, e.source);
-  }
-  const visited = new Set<string>([hubFile]);
-  const order: string[] = [hubFile];
-  for (let head = 0; head < order.length && order.length < cap; head++) {
-    for (const next of adjacency.get(order[head]!) ?? []) {
-      if (order.length >= cap) break;
-      if (!visited.has(next)) {
-        visited.add(next);
-        order.push(next);
-      }
-    }
-  }
-  return order;
 }
 
 /* ---- Zoom Level-of-Detail ladder (pure; consumed by view + tests) ---- */

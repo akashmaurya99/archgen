@@ -4,15 +4,18 @@
 // postMessage from the host; every user intent leaves via postMessage.
 //
 // LIVE WIRING (todo 10): full snapshots ('model') rebuild the StatusStore;
-// watcher diffs ('update') flow through store.applyBatch — an rAF-batched,
-// immutable patch application — so TasksView re-renders only changed nodes
-// instead of remapping the whole tasks array on every message.
+// the host's watcher ships status-only diffs ('update') which flow through
+// store.applyBatch — an rAF-batched, immutable patch application — so
+// TasksView re-renders only changed nodes instead of remapping the whole
+// tasks array on every message. A diff that arrives BEFORE the first model
+// is buffered and replayed onto the fresh store.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { assertNever } from '../shared/protocol';
 import type {
   ArchgenModelMessage,
   ArchgenSetupMessage,
   HostToWebview,
+  TaskStatus,
   TaskVM,
   ThemeKind,
 } from '../shared/protocol';
@@ -40,6 +43,22 @@ function applyTheme(themeKind: ThemeKind | undefined): void {
   document.documentElement.dataset['theme'] = themeKind;
 }
 
+/**
+ * Non-blocking notice for 'info'/'warn' status messages — the user gets an
+ * in-panel confirmation ("Copied … to clipboard.") without the content being
+ * blocked or replaced.
+ */
+function NoticeBar({ notice, onDismiss }: { notice: { kind: 'info' | 'warn'; message: string }; onDismiss(): void }) {
+  return (
+    <div className="archgen-notice" role="status" data-kind={notice.kind} data-testid="archgen-notice">
+      <span>{notice.message}</span>
+      <button type="button" onClick={onDismiss} aria-label="Dismiss notice">
+        ×
+      </button>
+    </div>
+  );
+}
+
 // READY WATCHDOG (todo 2): on restart-restore the webview's first `ready` can
 // land before the host's message listener exists, leaving a blank shell. Re-post
 // `ready` until the first `model` arrives — 750ms for the first 10 re-posts,
@@ -52,10 +71,16 @@ const WATCHDOG_SLOW_MS = 5_000;
 const WATCHDOG_CAP_MS = 120_000;
 const WAITING_FOR_HOST_ERROR = 'ArchGen: waiting for host — click Retry';
 
+/** How long a non-blocking notice stays on screen before it fades itself. */
+const NOTICE_TIMEOUT_MS = 4000;
+
 export function App(props: AppProps) {
   const vscode = useMemo(() => props.api ?? getVsCodeApi(), [props.api]);
   const [model, setModel] = useState<ArchgenModelMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Non-blocking notice for 'info'/'warn' status messages (clipboard
+  // confirmations, dispatch receipts). Errors keep using the alert banner.
+  const [notice, setNotice] = useState<{ kind: 'info' | 'warn'; message: string } | null>(null);
   const [docContent, setDocContent] = useState<{ path: string; content: string } | null>(null);
   const [setup, setSetup] = useState<ArchgenSetupMessage | null>(null);
   const [lastModelAt, setLastModelAt] = useState<number>(() => Date.now());
@@ -80,6 +105,9 @@ export function App(props: AppProps) {
   const watchdogPostsRef = useRef(0);
   const watchdogStartedAtRef = useRef(0);
   const watchdogCappedRef = useRef(false);
+  // Status diffs that arrived before the first model: the store does not
+  // exist yet, so they are replayed onto the fresh one.
+  const pendingUpdatesRef = useRef<Array<{ id: string; status: TaskStatus }>>([]);
 
   const stopWatchdog = useCallback((): void => {
     if (watchdogTimerRef.current !== null) {
@@ -120,6 +148,14 @@ export function App(props: AppProps) {
     if (el) el.open = false;
   }, []);
 
+  // NOTICE AUTO-DISMISS: a confirmation must stay long enough to be read,
+  // then get out of the way.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), NOTICE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   // Native <details> never closes on outside clicks — supply that dismissal.
   useEffect(() => {
     const onDocClick = (e: MouseEvent): void => {
@@ -154,6 +190,12 @@ export function App(props: AppProps) {
           hasReceivedModelRef.current = true;
           stopWatchdog();
           storeRef.current = new StatusStore<TaskVM>(msg.tasks);
+          // Diffs that beat the first model are newer than it — replay them
+          // onto the fresh store instead of dropping them.
+          if (pendingUpdatesRef.current.length > 0) {
+            storeRef.current.applyBatch(pendingUpdatesRef.current);
+            pendingUpdatesRef.current = [];
+          }
           setStoreVersion((v) => v + 1);
           setModel(msg);
           setLastModelAt(Date.now());
@@ -177,13 +219,21 @@ export function App(props: AppProps) {
         case 'update':
           // Batched into ONE rAF flush by the store; no setState here —
           // subscribers (TasksView) re-render only what changed.
-          storeRef.current?.applyBatch(msg.changed.map((c) => ({ id: c.id, status: c.status })));
+          if (storeRef.current) {
+            storeRef.current.applyBatch(msg.changed.map((c) => ({ id: c.id, status: c.status })));
+          } else {
+            pendingUpdatesRef.current.push(...msg.changed);
+          }
           break;
         case 'status':
           if (msg.kind === 'error') setError(msg.message);
+          else setNotice({ kind: msg.kind, message: msg.message });
           break;
         case 'theme':
           applyTheme(msg.themeKind);
+          break;
+        case 'focusView':
+          selectTab(msg.view);
           break;
         case 'revealTask':
           // Same selectTab path as a manual click ⇒ persisted-tab behavior
@@ -256,12 +306,16 @@ export function App(props: AppProps) {
     return (
       <main className="archgen-root">
         <ErrorBanner message={error} onDismiss={() => setError(null)} />
+        {notice && <NoticeBar notice={notice} onDismiss={() => setNotice(null)} />}
         <LoadingState />
       </main>
     );
   }
 
   const hasArchgenContent = model.tasks.length > 0 || model.docs.length > 0 || model.codegraph.product !== 'unsupported';
+  // The host states whether the workspace really has an .archgen/ folder;
+  // older hosts are inferred from the model content (features/docs imply it).
+  const hasArchgenFolder = model.hasArchgenFolder ?? (model.features.length > 0 || model.docs.length > 0);
 
   // ERROR STATE (todo 13): the last-good model stays mounted and interactive
   // content is dimmed via CSS while the dismissible top-center banner shows.
@@ -270,6 +324,7 @@ export function App(props: AppProps) {
   return (
     <main className={`archgen-root${dimmed ? ' archgen-root--dimmed' : ''}`} data-testid="archgen-root">
       <ErrorBanner message={error} onDismiss={() => setError(null)} />
+      {notice && <NoticeBar notice={notice} onDismiss={() => setNotice(null)} />}
       <nav className="archgen-tabs" role="tablist" aria-label="ArchGen views">
         {VIEW_TABS.map((t) => (
           <button
@@ -340,7 +395,7 @@ export function App(props: AppProps) {
 
       {!hasArchgenContent ? (
         <EmptyState
-          hasArchgenFolder={model.warnings.some((w) => w.includes('.archgen'))}
+          hasArchgenFolder={hasArchgenFolder}
           setup={setup?.state ?? null}
           onOpenKickoffDraft={openKickoffDraft}
         />
@@ -355,13 +410,13 @@ export function App(props: AppProps) {
           />
         ) : (
           <EmptyState
-            hasArchgenFolder
+            hasArchgenFolder={hasArchgenFolder}
             setup={setup?.state ?? null}
             onOpenKickoffDraft={openKickoffDraft}
           />
         )
       ) : tab === 'CODE' ? (
-        <CodeGraphView vm={model.codegraph} />
+        <CodeGraphView vm={model.codegraph} themeKind={model.themeKind} />
       ) : (
         <DocsView
           docs={model.docs}

@@ -43,18 +43,33 @@ export class TemplateNotFoundError extends Error {
 }
 
 /**
+ * FNV-1a hex digest — a short, stable fingerprint used to keep sanitized
+ * file names injective (two different task ids never share one transcript).
+ */
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
  * Resolve the harness transcript outfile for one task id, hardened against
  * path traversal. Task ids come from repository-controlled tasks.yaml (a
  * supply-chain surface), so every character outside [a-zA-Z0-9_-] is
- * replaced with `_` (an id that sanitizes to nothing falls back to "task"),
- * and the result is pinned inside os.tmpdir() — a hostile id like
- * `../../etc/cron` can never escape the temp directory. The containment
- * assert is defense-in-depth: after sanitization the id cannot contain a
- * separator, so the join alone is already safe.
+ * replaced with `_` — and a short hash of the ORIGINAL id is appended, so
+ * two different ids can never sanitize to the same file name (`a/b` and
+ * `a_b` used to share one transcript). The result is pinned inside
+ * os.tmpdir(): a hostile id like `../../etc/cron` can never escape the temp
+ * directory. The containment assert is defense-in-depth: after sanitization
+ * the id cannot contain a separator, so the join alone is already safe.
  */
 export function outfileForTask(taskId: string): string {
   const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'task';
-  const outfile = join(tmpdir(), `archgen-${safeId}.json`);
+  const digest = fnv1a(taskId);
+  const outfile = join(tmpdir(), `archgen-${safeId}-${digest}.json`);
   if (!resolve(outfile).startsWith(resolve(tmpdir()) + sep)) {
     throw new Error(`Refusing to write harness outfile outside the temp directory for task "${taskId}".`);
   }

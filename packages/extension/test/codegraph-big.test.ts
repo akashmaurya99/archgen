@@ -65,21 +65,6 @@ describeBig('codegraph at scale (generated 5k fixture)', () => {
     expect(reader.topHubs().length).toBeLessThanOrEqual(25);
   });
 
-  it('neighborhood(depth 2) around the top hub stays within the limit', () => {
-    const hub = reader.topHubs(1)[0];
-    expect(hub).toBeDefined();
-    if (!hub) return;
-    const hood = reader.neighborhood(hub.id, 2, 300);
-    expect(hood.nodes.length).toBeLessThanOrEqual(300);
-    expect(hood.nodes.length).toBeGreaterThan(1);
-    expect(hood.nodes.some((n) => n.id === hub.id)).toBe(true);
-    const ids = new Set(hood.nodes.map((n) => n.id));
-    for (const e of hood.edges) {
-      expect(ids.has(e.source)).toBe(true);
-      expect(ids.has(e.target)).toBe(true);
-    }
-  });
-
   it(`PERF SMOKE: fileRollup and topHubs each finish < ${EDGE_BUDGET_MS}ms at 5k`, () => {
     let t0 = performance.now();
     reader.fileRollup();
@@ -96,6 +81,5 @@ describeBig('codegraph at scale (generated 5k fixture)', () => {
     expect(snap.totalNodes).toBe(BIG_NODES);
     expect(snap.nodes).toHaveLength(BIG_NODES);
     expect(snap.edges).toHaveLength(edgeCount);
-    expect(snap.hasFts).toBe(true);
   });
 });

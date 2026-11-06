@@ -172,7 +172,6 @@ describe('virtualization switch at 501 nodes', () => {
   function cgVm(n: number): CodegraphVM {
     return {
       product: 'colby',
-      hasFts: false,
       nodes: Array.from({ length: n }, (_, i) => ({
         id: `n${i}`, label: `sym${i}`, kind: 'function', file: `f${i}.ts`, line: 1,
       })),
@@ -190,11 +189,14 @@ describe('virtualization switch at 501 nodes', () => {
     expect(document.querySelector('[data-testid="code-graph-view"]')?.getAttribute('data-virtualized')).toBe('false');
   });
 
-  it('501 nodes: virtualization ON', { timeout: 30_000 }, () => {
+  it('501 nodes: virtualization ON and the DOM graph stays under the 300-node cap', { timeout: 30_000 }, () => {
     render(createElement(CodeGraphView, { vm: cgVm(501) }));
     const section = document.querySelector('[data-testid="code-graph-view"]');
     expect(section?.getAttribute('data-virtualized')).toBe('true');
-    expect(document.querySelectorAll('.archgen-gnode').length).toBe(501);
+    // NODE CAP: a repo with hundreds of symbols must never build a flow
+    // model bigger than MAX_RENDERED_NODES.
+    expect(document.querySelectorAll('.archgen-gnode').length).toBe(300);
+    expect(document.querySelector('[data-testid="cg-cap-notice"]')?.textContent).toContain('300 of 501');
   });
 });
 
@@ -217,7 +219,6 @@ describe('CSP-violation scan across tab switches', () => {
         docs: [{ path: 'plan.md', title: 'plan.md' }],
         codegraph: {
           product: 'colby',
-          hasFts: true,
           nodes: [{ id: 'n0', label: 'alpha', kind: 'class', file: 'a.ts', line: 1 }],
           edges: [],
         },

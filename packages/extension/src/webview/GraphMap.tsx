@@ -1,8 +1,9 @@
 // GraphMap.tsx — the whole-repo MAP layer: a Canvas2D constellation view that
 // renders the ENTIRE codegraph (50k+ symbols) with pan/zoom/LOD and
-// click-to-select, driving the existing DOM graph from OUTSIDE it.
+// click-to-select. The CODE tab renders it as its "▦ Map" mode, next to the
+// bounded DOM graph (which never exceeds MAX_RENDERED_NODES nodes).
 //
-// Self-contained by contract (integration into App happens later):
+// Contract:
 //   <GraphMap nodes edges? kindColorFor selectedId? onSelect themeKind? />
 //
 // Performance model:

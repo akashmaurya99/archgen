@@ -13,7 +13,8 @@ import {
   workspace,
 } from 'vscode';
 import { assertNever } from '../shared/protocol';
-import type { ArchgenModelMessage, HostToWebview, ThemeKind, WebviewCopyInitPlanMessage, WebviewToHost } from '../shared/protocol';
+import type { ArchgenModelMessage, HostToWebview, ThemeKind, ViewTab, WebviewCopyInitPlanMessage, WebviewToHost } from '../shared/protocol';
+import { resolveOpenFileTarget } from './path-policy';
 
 export const VIEW_TYPE = 'archgen.taskBoard';
 
@@ -97,6 +98,8 @@ export class ArchgenPanel {
   // cold-open lands model → reveals → revealDoc+docContent in channel order
   // (the webview must hold the model before the DOCS tab can render a doc).
   private pendingDoc: string | null = null;
+  // Bridge `focus` intent — parked until the webview completed its handshake.
+  private pendingFocusView: ViewTab | null = null;
   // Flips true once this webview completed its `ready` handshake.
   private readySeen = false;
 
@@ -199,6 +202,9 @@ export class ArchgenPanel {
           this.pendingRevealSetup = false;
           this.post({ type: 'revealSetup' });
         }
+        const focusView = this.pendingFocusView;
+        this.pendingFocusView = null;
+        if (focusView !== null) this.post({ type: 'focusView', view: focusView });
         const docPath = this.pendingDoc;
         this.pendingDoc = null;
         if (docPath !== null) this.opts.onRevealDoc?.(docPath);
@@ -208,9 +214,16 @@ export class ArchgenPanel {
       case 'openFile': {
         void (async () => {
           try {
-            const root = workspace.workspaceFolders?.[0]?.uri ?? this.context.extensionUri;
-            const abs = msg.path.startsWith('/') ? Uri.file(msg.path) : Uri.joinPath(root, msg.path);
-            const doc = await workspace.openTextDocument(abs);
+            // ONE base for every producer: relative paths are anchored at
+            // <wsRoot>/.archgen (where the DOCS list lives) and absolute
+            // paths must stay inside the workspace.
+            const wsRoot = workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
+            const target = resolveOpenFileTarget(msg.path, wsRoot);
+            if (!target) {
+              void window.showErrorMessage(`ArchGen: refusing to open ${msg.path} — outside the workspace.`);
+              return;
+            }
+            const doc = await workspace.openTextDocument(Uri.file(target));
             const selection = msg.line
               ? new Range(Math.max(0, msg.line - 1), 0, Math.max(0, msg.line - 1), 0)
               : undefined;
@@ -315,6 +328,19 @@ export class ArchgenPanel {
     this.pendingDoc = path;
   }
 
+  /**
+   * Schedule a view focus on this board — same parking contract as
+   * setPendingReveal: parks until the `ready` handshake on a freshly created
+   * webview, flushes at once on an already-loaded board.
+   */
+  setPendingFocusView(view: ViewTab): void {
+    if (this.readySeen) {
+      this.post({ type: 'focusView', view });
+      return;
+    }
+    this.pendingFocusView = view;
+  }
+
   private renderHtml(webview: Webview): string {
     const scriptUri = Uri.joinPath(this.context.extensionUri, 'media', 'webview', 'main.js');
     const cssMain = Uri.joinPath(this.context.extensionUri, 'media', 'webview', 'tokens.css');
@@ -354,6 +380,7 @@ export class ArchgenPanel {
     this.pendingReveal = null;
     this.pendingRevealSetup = false;
     this.pendingDoc = null;
+    this.pendingFocusView = null;
     this.panel = undefined;
     if (ArchgenPanel.current === this) ArchgenPanel.current = null;
   }

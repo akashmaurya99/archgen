@@ -144,6 +144,16 @@ function layoutTopToBottom<T extends { id: string }>(
   });
 }
 
+/**
+ * Drop cached node objects whose id left the board (model swap, feature
+ * switch) — a stale cache would keep those node objects alive forever.
+ */
+export function pruneNodeCache(cache: Map<string, TaskFlowNode>, placedIds: ReadonlySet<string>): void {
+  for (const id of [...cache.keys()]) {
+    if (!placedIds.has(id)) cache.delete(id);
+  }
+}
+
 export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: TasksViewProps) {
   // Staleness guard (render-time, deterministic): a model refresh may drop the
   // revealed task — highlight falls back to none instead of a ghost id.
@@ -186,7 +196,11 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
   }, []);
   const resetFilters = useCallback(() => setActiveFilters(new Set()), []);
 
-  const key = useMemo(() => structureKeyOf(tasks), [tasks]);
+  const structureKey = useMemo(() => structureKeyOf(tasks), [tasks]);
+  // LAYOUT MEMO (perf): the dagre pass depends on the STRUCTURE only. The
+  // task array is a new object on every model push, so the layout is keyed
+  // on the structural signature — a status-only change must not re-run dagre.
+  const layoutTasks = useMemo(() => tasks, [structureKey]);
 
   const counts = useMemo(() => {
     const c: Record<TaskStatus, number> = { pending: 0, ready: 0, running: 0, blocked: 0, done: 0, failed: 0 };
@@ -208,7 +222,7 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
   // Layout depends only on structure + direction — status/filter flips never
   // recompute it.
   const laidOut = useMemo(() => {
-    const seeds = tasks.map((t) => ({
+    const seeds = layoutTasks.map((t) => ({
       id: t.id,
       position: { x: 0, y: 0 },
       // Top-level width/height make nodes "initialized" without waiting for
@@ -217,9 +231,9 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
       height: DEFAULT_NODE_HEIGHT,
       style: { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
     }));
-    const edgesIn = tasks.flatMap((t) => t.dependsOn.map((d) => ({ source: d, target: t.id })));
+    const edgesIn = layoutTasks.flatMap((t) => t.dependsOn.map((d) => ({ source: d, target: t.id })));
     return direction === 'LR' ? layoutLeftToRight(seeds, edgesIn) : layoutTopToBottom(seeds, edgesIn);
-  }, [tasks, direction]);
+  }, [layoutTasks, direction]);
 
   // BEST-EFFORT CENTERING: pan so the revealed node sits mid-view at the
   // current zoom. Runs one rAF after commit (xyflow measures the fresh canvas
@@ -251,8 +265,10 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
   // object identity.
   const cacheRef = useRef(new Map<string, TaskFlowNode>());
   const nodes = useMemo<TaskFlowNode[]>(
-    () =>
-      laidOut.map((n) => {
+    () => {
+      const placed = new Set<string>();
+      const out = laidOut.map((n) => {
+        placed.add(n.id);
         const status = statuses[n.id] ?? 'pending';
         const hidden = !isVisibleStatus(status);
         const highlighted = n.id === effectiveHighlight;
@@ -288,11 +304,16 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
         };
         cacheRef.current.set(n.id, next);
         return next;
-      }),
+      });
+      // Prune stale entries: ids that left the board (model swap, feature
+      // switch) must not keep holding cached node objects.
+      pruneNodeCache(cacheRef.current, placed);
+      return out;
+    },
     [laidOut, statuses, tasks, isVisibleStatus, sourcePos, targetPos, dispatchBuild, effectiveHighlight],
   );
 
-  const edges = useMemo<Edge[]>(() => deriveEdges(tasks, statuses, isNodeVisible), [tasks, statuses, isNodeVisible]);
+  const edges = useMemo<Edge[]>(() => deriveEdges(layoutTasks, statuses, isNodeVisible), [layoutTasks, statuses, isNodeVisible]);
 
   // ESCAPE GUARDRAIL: nodes are non-selectable, so the ring to clear is the
   // native focus ring — blur whatever holds focus inside this view.
@@ -377,7 +398,7 @@ export function TasksView({ tasks, store, highlightId, onBuild, onStartWork }: T
 
       <div className="archgen-dag-canvas">
         <ReactFlow
-          key={`${key}:${direction}`}
+          key={`${structureKey}:${direction}`}
           nodeTypes={taskNodeTypes}
           nodes={nodes}
           edges={edges}

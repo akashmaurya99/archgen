@@ -4,8 +4,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { createElement } from 'react';
-import { neighborhoodOf, impactCount, matchesQuery } from '../src/webview/graph-model';
-import { StatusChip, LoadingState, EmptyState, ErrorBanner, useTabState } from '../src/webview/states';
+import { impactCount, matchesQuery } from '../src/webview/graph-model';
+import { StatusChip, LoadingState, EmptyState, ErrorBanner } from '../src/webview/states';
 import { App } from '../src/webview/App';
 import type { ArchgenModelMessage, HostToWebview } from '../src/shared/protocol';
 import { resetVsCodeApiForTests } from '../src/webview/vscode';
@@ -18,17 +18,12 @@ beforeEach(() => {
 });
 
 describe('graph-model edge cases', () => {
-  it('neighborhoodOf includes UPSTREAM nodes when id is an edge target', () => {
+  it('impactCount counts the incoming edges of a node', () => {
     const edges = [
       { source: 'a', target: 'b', kind: 'calls' },
       { source: 'b', target: 'c', kind: 'imports' },
       { source: 'z', target: 'z2', kind: 'references' },
     ];
-    const { nodeIds, edgeIdx } = neighborhoodOf(edges, 'b');
-    expect(nodeIds.has('a')).toBe(true);
-    expect(nodeIds.has('c')).toBe(true);
-    expect(nodeIds.has('z')).toBe(false);
-    expect(edgeIdx.size).toBe(2);
     expect(impactCount(edges, 'b')).toBe(1);
     expect(impactCount(edges, 'nope')).toBe(0);
   });
@@ -77,16 +72,6 @@ describe('states edge cases', () => {
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 
-  it('useTabState defaults to TASKS when no initial value is passed', () => {
-    function Probe(): React.ReactElement {
-      const [tab, setTab] = useTabState();
-      return createElement('button', { onClick: (): void => setTab('CODE') }, tab);
-    }
-    render(createElement(Probe, null));
-    expect(screen.getByRole('button').textContent).toBe('TASKS');
-    fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByRole('button').textContent).toBe('CODE');
-  });
 });
 
 describe('App DOCS tab branch', () => {

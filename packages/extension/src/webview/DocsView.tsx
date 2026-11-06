@@ -124,6 +124,23 @@ function readDomThemeKind(): ThemeKind | undefined {
 
 let diagramSeq = 0;
 
+/**
+ * Remove a previously mounted zoom viewport and put the box back where the
+ * wrapper was. A retry must REPLACE the viewport — nesting a second one
+ * would install two zoom controllers on the same diagram.
+ */
+export function unmountDiagramViewport(box: HTMLElement): void {
+  const parent = box.parentElement;
+  if (!parent) return;
+  // The box sits inside the viewport, which sits inside the wrapper.
+  const wrap = parent.classList.contains('archgen-diagram-wrap') ? parent : parent.parentElement;
+  if (!wrap || !wrap.classList.contains('archgen-diagram-wrap')) return;
+  const outer = wrap.parentNode;
+  if (!outer) return;
+  outer.insertBefore(box, wrap);
+  wrap.remove();
+}
+
 /** Re-render ONE failed diagram block in place (Retry button). */
 function wireRetry(box: HTMLElement, retryBtn: HTMLButtonElement): void {
   retryBtn.addEventListener('click', () => {
@@ -152,7 +169,9 @@ const ZOOM_MAX = 3;
 const ZOOM_STEP = 0.2;
 
 /** Wrap a rendered diagram box in a toolbar + scrollable pan/zoom viewport. */
-function mountDiagramViewport(box: HTMLElement): void {
+export function mountDiagramViewport(box: HTMLElement): void {
+  // Never nest: a second mount on the same box replaces the first viewport.
+  unmountDiagramViewport(box);
   const wrap = document.createElement('div');
   wrap.className = 'archgen-diagram-wrap';
 
@@ -407,6 +426,19 @@ export function applySearch(root: HTMLElement, query: string): HTMLElement[] {
 /* Code frames (E): language chip + copy button around fenced blocks   */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Pending "Copied!" reset timers, one per button. They are cleared when the
+ * button is clicked again and when the view unmounts — a leaked timer would
+ * mutate a button that is no longer in the document.
+ */
+const copyTimers = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>();
+
+/** Drop every pending "Copied!" reset (unmount / document switch). */
+export function clearCopyTimers(): void {
+  for (const timer of copyTimers.values()) clearTimeout(timer);
+  copyTimers.clear();
+}
+
 async function copyCode(text: string, btn: HTMLButtonElement): Promise<void> {
   try {
     await navigator.clipboard?.writeText(text);
@@ -415,10 +447,24 @@ async function copyCode(text: string, btn: HTMLButtonElement): Promise<void> {
   }
   btn.textContent = 'Copied!';
   btn.classList.add('is-copied');
-  setTimeout(() => {
-    btn.textContent = 'Copy';
-    btn.classList.remove('is-copied');
-  }, 1400);
+  // One timer per button: a second click replaces the pending reset.
+  const pending = copyTimers.get(btn);
+  if (pending !== undefined) clearTimeout(pending);
+  for (const [other, timer] of [...copyTimers]) {
+    if (!other.isConnected) {
+      clearTimeout(timer);
+      copyTimers.delete(other);
+    }
+  }
+  copyTimers.set(
+    btn,
+    setTimeout(() => {
+      copyTimers.delete(btn);
+      if (!btn.isConnected) return;
+      btn.textContent = 'Copy';
+      btn.classList.remove('is-copied');
+    }, 1400),
+  );
 }
 
 /** Wrap every non-mermaid fenced block in a frame with lang chip + Copy. */
@@ -594,6 +640,9 @@ export function DocsView({ docs, active, onSelect, onOpenInEditor, themeKind }: 
     container.addEventListener('scroll', onScroll, { passive: true });
     return () => container.removeEventListener('scroll', onScroll);
   }, []);
+
+  /* Copy-button reset timers must not outlive the view. */
+  useEffect(() => () => clearCopyTimers(), []);
 
   /* Scroll-spy: IntersectionObserver when available, scroll fallback otherwise. */
   useEffect(() => {

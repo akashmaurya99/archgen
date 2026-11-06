@@ -330,7 +330,6 @@ describe('codegraph digest caching (todo 6: DB-stat gate, no multi-MB re-stringi
   function bigCodegraph(n: number): ArchgenModelMessage['codegraph'] {
     return {
       product: 'colby',
-      hasFts: false,
       nodes: Array.from({ length: n }, (_, i) => ({
         id: `n${i}`, label: `sym${i}`, kind: 'function', file: `f${i % 100}.ts`, line: i,
       })),

@@ -11,7 +11,7 @@ import {
   window,
   Disposable,
 } from 'vscode';
-import { ArchgenPanel, PanelHostOptions, registerBoard } from './panel';
+import { ArchgenPanel, PanelHostOptions, registerBoard, themeKindOf } from './panel';
 import { ModelHub } from './hub';
 import {
   composeStartWorkPayload,
@@ -35,6 +35,8 @@ import {
 } from './bridge';
 import { codegraphDbStat, detectCodegraph, openCodegraph } from './codegraph';
 import { activeFeatureKey, buildScopedModel, discoverFeatures } from './features';
+import { DocRevealer } from './doc-access';
+import { diffTaskStatuses, isStatusOnlyChange } from './task-diff';
 import {
   composeInitPlanPrompt,
   composeInstallPrompt,
@@ -55,7 +57,7 @@ import {
   probeSkillPath,
   type HarnessId,
 } from './harness';
-import type { ArchgenModelMessage, ArchgenSetupMessage, WebviewCopyInitPlanMessage } from '../shared/protocol';
+import type { ArchgenModelMessage, ArchgenSetupMessage, ThemeKind, ViewTab, WebviewCopyInitPlanMessage } from '../shared/protocol';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -72,6 +74,29 @@ const INITIAL_SETUP: SetupState = {
 /** Strict-semver guard for untyped packageJSON surfaces; anything else falls back so comparisons stay numeric. */
 function semverOr(value: unknown, fallback: string): string {
   return typeof value === 'string' && /^\d+\.\d+\.\d+$/.test(value) ? value : fallback;
+}
+
+/**
+ * The theme VS Code is ACTUALLY using right now. The panel's observer only
+ * fires on a theme CHANGE, so the model must read the live theme at build
+ * time — otherwise a light/high-contrast workspace renders dark until the
+ * user switches themes once.
+ */
+function currentThemeKind(): ThemeKind {
+  const theme = (window as unknown as { activeColorTheme?: { kind?: number } }).activeColorTheme;
+  return themeKindOf(typeof theme?.kind === 'number' ? theme.kind : 2);
+}
+
+/**
+ * Map a bridge `focus` request onto one board view. The advertised names are
+ * board / tasks / docs / codegraph (see README); the canonical tab names are
+ * accepted too. An unknown view falls back to the board itself.
+ */
+function focusViewOf(raw: unknown): ViewTab {
+  const view = String(raw ?? '').trim().toLowerCase();
+  if (view === 'docs' || view === 'doc') return 'DOCS';
+  if (view === 'code' || view === 'codegraph' || view === 'code-graph') return 'CODE';
+  return 'TASKS';
 }
 
 export function activate(context: ExtensionContext): void {
@@ -138,6 +163,16 @@ export function activate(context: ExtensionContext): void {
   let lastCodegraphDbPath: string | null = null;
   let lastCodegraphStat: { mtimeMs: number; size: number } | null = null;
   let lastCodegraphSlice: ArchgenModelMessage['codegraph'] | null = null;
+  // The "no index" slice keeps a STABLE identity: the status-diff pipeline
+  // compares codegraph slices by identity, so a fresh object per push would
+  // look like a content change and suppress every diff.
+  let unsupportedCodegraphSlice: ArchgenModelMessage['codegraph'] | null = null;
+  function unsupportedCodegraph(reason: string): ArchgenModelMessage['codegraph'] {
+    if (unsupportedCodegraphSlice === null || unsupportedCodegraphSlice.unsupportedReason !== reason) {
+      unsupportedCodegraphSlice = { product: 'unsupported', unsupportedReason: reason };
+    }
+    return unsupportedCodegraphSlice;
+  }
 
   /** Read .archgen/ (ALL features; DAG scoped to the active slug) + codegraph snapshot. */
   function buildModel(): ArchgenModelMessage {
@@ -150,15 +185,16 @@ export function activate(context: ExtensionContext): void {
       tasks: scoped.tasks,
       docs: scoped.docs,
       codegraph,
-      themeKind: 'dark',
+      themeKind: currentThemeKind(),
       warnings: scoped.warnings,
       features: scoped.features,
       activeSlug: scoped.activeSlug,
+      hasArchgenFolder: wsRoot !== null && fs.existsSync(path.join(wsRoot, '.archgen')),
     };
   }
 
   function readCodegraph(wsRoot: string | null): ArchgenModelMessage['codegraph'] {
-    if (!wsRoot) return { product: 'unsupported', unsupportedReason: 'No workspace folder open.' };
+    if (!wsRoot) return unsupportedCodegraph('No workspace folder open.');
     // Stat check BEFORE any SQLite work; detectCodegraph is existsSync-cheap.
     const detected = detectCodegraph(wsRoot);
     const stat = detected.dbPath !== null ? codegraphDbStat(detected.dbPath) : null;
@@ -176,14 +212,13 @@ export function activate(context: ExtensionContext): void {
     try {
       const { reader } = openCodegraph(wsRoot);
       try {
-        // Raised snapshot caps: the full constellation rides to the Canvas MAP
-        // layer; the DOM graph consumes fileRollup instead of raw nodes.
+        // Snapshot caps: the DOM graph consumes the file rollup and never
+        // renders more than 300 nodes at a time.
         const snap = reader.snapshot();
         const vm: ArchgenModelMessage['codegraph'] = {
           product: reader.product,
           nodes: snap.nodes,
           edges: snap.edges,
-          hasFts: snap.hasFts,
         };
         try {
           vm.fileRollup = reader.fileRollup();
@@ -207,23 +242,36 @@ export function activate(context: ExtensionContext): void {
       lastCodegraphDbPath = null;
       lastCodegraphStat = null;
       lastCodegraphSlice = null;
-      return {
-        product: 'unsupported' as const,
-        unsupportedReason: e instanceof Error ? e.message : String(e),
-      };
+      return unsupportedCodegraph(e instanceof Error ? e.message : String(e));
     }
   }
+
+  /** Last model handed to the webview — the diff pipeline compares against it. */
+  let lastPostedModel: ArchgenModelMessage | null = null;
 
   /**
    * Build one snapshot, fan it out through the hub, then post to the board.
    * `force` invalidates ONLY the panel's fingerprint dedupe (re-send); the
    * codegraph DB stat gate above decides whether the index is re-read.
+   *
+   * A push whose ONLY difference is task statuses ships the DIFF instead of
+   * a full snapshot — the webview patches the changed nodes and never
+   * remaps the whole task array.
    */
   function pushModel(force = false): void {
     const model = buildModel();
     hub.fire(model);
     const panel = ArchgenPanel.active;
+    const previous = lastPostedModel;
+    lastPostedModel = model;
     if (!panel) return;
+    if (previous && isStatusOnlyChange(previous, model)) {
+      const changed = diffTaskStatuses(previous.tasks, model.tasks);
+      if (changed.length > 0) {
+        panel.post({ type: 'update', changed });
+        return;
+      }
+    }
     if (force) panel.invalidateModel();
     panel.post(model);
   }
@@ -315,10 +363,19 @@ export function activate(context: ExtensionContext): void {
     const wsRoot = root();
     if (!wsRoot) return;
     if (!discoverFeatures(wsRoot).some((f) => f.slug === slug)) return;
-    void context.workspaceState.update(activeFeatureKey(wsRoot), slug).then(() => {
-      pushModel(true);
-      openBoard();
-    });
+    void Promise.resolve(context.workspaceState.update(activeFeatureKey(wsRoot), slug))
+      .then(() => {
+        pushModel(true);
+        openBoard();
+      })
+      .catch((e: unknown) => {
+        // A rejected write must not vanish: the feature switch never happens,
+        // so say why instead of leaving the board on the old slug.
+        const msg = e instanceof Error ? e.message : String(e);
+        out.appendLine(`[features] cannot persist active feature '${slug}': ${msg}`);
+        void window.showErrorMessage(`ArchGen: cannot switch to '${slug}': ${msg}`);
+        ArchgenPanel.active?.post({ type: 'status', kind: 'error', message: `Cannot switch to '${slug}': ${msg}` });
+      });
   }
 
   /**
@@ -518,24 +575,27 @@ export function activate(context: ExtensionContext): void {
     ArchgenPanel.active?.setPendingDoc(rel);
   }
 
-  /** Flush one parked/opened doc request: traversal guard, then revealDoc + docContent. */
+  /**
+   * Flush one parked/opened doc request: realpath containment, then
+   * revealDoc + docContent. The revealer sequences concurrent reads so the
+   * LAST request always wins (a slow first read must not overwrite the
+   * document the user just picked).
+   */
+  const docRevealer = new DocRevealer({
+    wsRoot: () => root(),
+    read: (absPath) => fs.promises.readFile(absPath, 'utf8'),
+  });
   function revealDoc(rel: string): void {
     void (async () => {
-      const wsRoot = root();
-      if (!wsRoot) return;
-      const abs = path.resolve(wsRoot, '.archgen', rel);
-      if (!abs.startsWith(path.resolve(wsRoot, '.archgen') + path.sep)) {
-        ArchgenPanel.active?.post({ type: 'status', kind: 'error', message: `Refusing to open ${rel} outside .archgen/.` });
+      const outcome = await docRevealer.reveal(rel);
+      if (outcome.kind === 'stale') return;
+      const panel = ArchgenPanel.active;
+      if (outcome.kind === 'error') {
+        panel?.post({ type: 'status', kind: 'error', message: outcome.message });
         return;
       }
-      try {
-        const content = await fs.promises.readFile(abs, 'utf8');
-        const panel = ArchgenPanel.active;
-        panel?.post({ type: 'revealDoc', path: rel });
-        panel?.post({ type: 'docContent', path: rel, content });
-      } catch (e) {
-        ArchgenPanel.active?.post({ type: 'status', kind: 'error', message: `Cannot read ${rel}: ${e instanceof Error ? e.message : String(e)}` });
-      }
+      panel?.post({ type: 'revealDoc', path: outcome.path });
+      panel?.post({ type: 'docContent', path: outcome.path, content: outcome.content });
     })();
   }
 
@@ -686,8 +746,9 @@ export function activate(context: ExtensionContext): void {
         return `opened ${rel}`;
       }
       case 'focus': {
-        const view = String(command.args.view ?? 'board');
+        const view = focusViewOf(command.args.view);
         openBoard();
+        ArchgenPanel.active?.setPendingFocusView(view);
         return `focused ${view}`;
       }
       case 'refresh': {

@@ -1,7 +1,7 @@
 // codegraph.ts — read-only reader over a local codegraph SQLite index.
 //
 // Product detection (todo 4):
-//   <ws>/.codegraph/codegraph.db  → 'colby'   (nodes/edges/files/nodes_fts FTS5)
+//   <ws>/.codegraph/codegraph.db  → 'colby'   (nodes/edges/files)
 //   <ws>/.codegraph/graph.db      → 'optave'  (same shape + confidence columns)
 //   ~/.codegraph/graph.db         → unsupported (global indexes are not readable
 //                                    by this extension; typed error → UI banner)
@@ -45,7 +45,6 @@ export interface GraphSnapshot {
   edges: GraphEdge[];
   totalNodes: number;
   totalEdges: number;
-  hasFts: boolean;
 }
 
 export interface DetectedProduct {
@@ -147,31 +146,7 @@ export function detectCodegraph(workspaceRoot: string, home = homedir()): Detect
   return { product: 'unsupported', dbPath: null, reason: `No .codegraph/ index found in this workspace.` };
 }
 
-const NODE_COLUMNS = ['id', 'name', 'kind', 'file_path', 'start_line'] as const;
 const EDGE_COLUMNS = ['source', 'target', 'kind'] as const;
-
-/** IN-clause batch size — stays under conservative SQLITE_MAX_VARIABLE_NUMBER floors. */
-const NEIGHBORHOOD_PARAM_CHUNK = 400;
-
-/** Record one BFS edge and enqueue its not-yet-seen endpoint for the next round. */
-function absorbNeighbor(
-  row: Record<string, unknown>,
-  visited: Set<string>,
-  roundSeen: Set<string>,
-  discovered: string[],
-  edgeByKey: Map<string, GraphEdge>,
-): void {
-  const source = String(row['source']);
-  const target = String(row['target']);
-  const kind = String(row['kind'] ?? 'references');
-  edgeByKey.set(`${source}\u0000${target}\u0000${kind}`, { source, target, kind });
-  for (const candidate of [target, source]) {
-    if (!visited.has(candidate) && !roundSeen.has(candidate)) {
-      roundSeen.add(candidate);
-      discovered.push(candidate);
-    }
-  }
-}
 
 /** Column aliases tolerated across schema variants (colby vs optave confidence columns etc.). */
 function pickColumn(available: Set<string>, candidates: string[], fallback: string): string {
@@ -227,19 +202,9 @@ export class CodegraphReader {
     }
   }
 
-  private tableExists(table: string): boolean {
-    if (!this.handle) return false;
-    const row = this.handle.get(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?`, table);
-    return Number(row?.['n'] ?? 0) > 0;
-  }
-
-  hasFts(): boolean {
-    return this.tableExists('nodes_fts');
-  }
-
   /**
    * Read a page of nodes ordered by id. LIMIT/OFFSET pagination keeps huge
-   * graphs from blowing up the webview (view layer virtualizes beyond 500).
+   * graphs from blowing up the webview (the view caps what it renders).
    */
   listNodes(limit = 1000, offset = 0): { nodes: GraphNode[]; total: number } {
     if (!this.handle) throw new UnsupportedProductError('reader closed');
@@ -289,14 +254,13 @@ export class CodegraphReader {
   }
 
   /**
-   * Snapshot caps sized for 50k-scale indexes: the full constellation rides to
-   * the Canvas MAP layer while the DOM graph renders file rollups instead.
-   * Explicit limits keep older callers working unchanged.
+   * Snapshot caps sized for 50k-scale indexes: the whole constellation is
+   * shipped once, and the webview renders a bounded slice of it.
    */
   snapshot(nodeLimit = 60000, edgeLimit = 150000): GraphSnapshot {
     const n = this.listNodes(nodeLimit);
     const e = this.listEdges(edgeLimit);
-    return { nodes: n.nodes, edges: e.edges, totalNodes: n.total, totalEdges: e.total, hasFts: this.hasFts() };
+    return { nodes: n.nodes, edges: e.edges, totalNodes: n.total, totalEdges: e.total };
   }
 
   /** Resolved node column aliases for SELECTs (schema-variant tolerant). */
@@ -418,120 +382,6 @@ export class CodegraphReader {
       kind: String(r['kind'] ?? 'unknown'),
       file: String(r['file'] ?? ''),
       degree: Number(r['degree'] ?? 0),
-    }));
-  }
-
-  /**
-   * BFS subgraph around `id` via iterative SQL rounds: per depth level, one
-   * parameter-batched `WHERE source IN (?)` + one `WHERE target IN (?)` round
-   * trip against cached prepared statements. Node budget `limit` bounds both
-   * expansion and result size; returned edges always have BOTH endpoints in
-   * the returned node set.
-   */
-  neighborhood(id: string, depth: 1 | 2, limit = 300): { nodes: GraphNode[]; edges: GraphEdge[] } {
-    if (!this.handle) throw new UnsupportedProductError('reader closed');
-    this.requireEdgesTable();
-
-    const visited = new Set<string>([id]);
-    const edgeByKey = new Map<string, GraphEdge>();
-    let frontier: string[] = [id];
-
-    for (let d = 0; d < depth && frontier.length > 0 && visited.size < limit; d++) {
-      const discovered: string[] = [];
-      const roundSeen = new Set<string>();
-      for (let i = 0; i < frontier.length; i += NEIGHBORHOOD_PARAM_CHUNK) {
-        const batch = frontier.slice(i, i + NEIGHBORHOOD_PARAM_CHUNK);
-        const placeholders = batch.map(() => '?').join(',');
-        const outgoing = this.handle.all(`SELECT source, target, kind FROM edges WHERE source IN (${placeholders})`, ...batch);
-        for (const r of outgoing) absorbNeighbor(r, visited, roundSeen, discovered, edgeByKey);
-        const incoming = this.handle.all(`SELECT source, target, kind FROM edges WHERE target IN (${placeholders})`, ...batch);
-        for (const r of incoming) absorbNeighbor(r, visited, roundSeen, discovered, edgeByKey);
-      }
-      const admitted = discovered.slice(0, Math.max(0, limit - visited.size));
-      for (const nid of admitted) visited.add(nid);
-      frontier = admitted;
-    }
-
-    const nc = this.nodeCols();
-    const nodes: GraphNode[] = [];
-    const wanted = [...visited];
-    for (let i = 0; i < wanted.length; i += NEIGHBORHOOD_PARAM_CHUNK) {
-      const batch = wanted.slice(i, i + NEIGHBORHOOD_PARAM_CHUNK);
-      const placeholders = batch.map(() => '?').join(',');
-      const rows = this.handle.all(
-        `SELECT ${quoteIdent(nc.id)} AS id, ${quoteIdent(nc.label)} AS label, ${quoteIdent(nc.kind)} AS kind, ${quoteIdent(nc.file)} AS file, ${quoteIdent(nc.line)} AS line
-         FROM nodes WHERE ${quoteIdent(nc.id)} IN (${placeholders})`,
-        ...batch,
-      );
-      for (const r of rows) {
-        nodes.push({
-          id: String(r['id']),
-          label: String(r['label'] ?? r['id']),
-          kind: String(r['kind'] ?? 'unknown'),
-          file: String(r['file'] ?? ''),
-          line: Number(r['line'] ?? 0),
-        });
-      }
-    }
-    nodes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    const edges = [...edgeByKey.values()]
-      .filter((e) => visited.has(e.source) && visited.has(e.target))
-      .sort((a, b) => (a.source < b.source ? -1 : a.source > b.source ? 1 : a.target < b.target ? -1 : a.target > b.target ? 1 : 0));
-    return { nodes, edges };
-  }
-
-  /**
-   * FTS search over nodes_fts when present. User input is wrapped as a quoted
-   * phrase + prefix so arbitrary text cannot inject FTS syntax; falls back to
-   * a LIKE scan when no FTS table exists.
-   */
-  searchNodes(query: string, limit = 50): GraphNode[] {
-    if (!this.handle || query.trim() === '') return [];
-    if (this.hasFts()) {
-      const safe = query.replace(/"/g, '""');
-      const cols = this.tableColumns('nodes');
-      const idC = pickColumn(cols, ['id'], 'id');
-      const labelC = pickColumn(cols, ['name', 'label', 'qualified_name'], 'name');
-      const kindC = pickColumn(cols, ['kind'], 'kind');
-      const fileC = pickColumn(cols, ['file_path', 'file', 'path'], 'file_path');
-      const lineC = pickColumn(cols, ['start_line', 'line'], 'start_line');
-      try {
-        const rows = this.handle.all(
-          `SELECT n.${quoteIdent(idC)} AS id, n.${quoteIdent(labelC)} AS label, n.${quoteIdent(kindC)} AS kind, n.${quoteIdent(fileC)} AS file, n.${quoteIdent(lineC)} AS line
-           FROM nodes_fts f JOIN nodes n ON n.rowid = f.rowid
-           WHERE nodes_fts MATCH ?
-           LIMIT ?`,
-          `"${safe}"*`, limit,
-        );
-        return rows.map((r) => ({
-          id: String(r['id']),
-          label: String(r['label'] ?? r['id']),
-          kind: String(r['kind'] ?? 'unknown'),
-          file: String(r['file'] ?? ''),
-          line: Number(r['line'] ?? 0),
-        }));
-      } catch {
-        // fall through to LIKE scan
-      }
-    }
-    const like = `%${query.replace(/[%_]/g, '!' )}%`;
-    const cols2 = this.tableColumns('nodes');
-    const idC = pickColumn(cols2, ['id'], 'id');
-    const labelC = pickColumn(cols2, ['name', 'label', 'qualified_name'], 'name');
-    const kindC = pickColumn(cols2, ['kind'], 'kind');
-    const fileC = pickColumn(cols2, ['file_path', 'file', 'path'], 'file_path');
-    const lineC = pickColumn(cols2, ['start_line', 'line'], 'start_line');
-    const rows = this.handle.all(
-      `SELECT ${quoteIdent(idC)} AS id, ${quoteIdent(labelC)} AS label, ${quoteIdent(kindC)} AS kind, ${quoteIdent(fileC)} AS file, ${quoteIdent(lineC)} AS line
-       FROM nodes WHERE ${quoteIdent(labelC)} LIKE ? ESCAPE '!' LIMIT ?`,
-      like, limit,
-    );
-    return rows.map((r) => ({
-      id: String(r['id']),
-      label: String(r['label'] ?? r['id']),
-      kind: String(r['kind'] ?? 'unknown'),
-      file: String(r['file'] ?? ''),
-      line: Number(r['line'] ?? 0),
     }));
   }
 
