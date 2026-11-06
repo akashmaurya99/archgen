@@ -18,4 +18,19 @@ labels: enhancement
 
 ## Scope
 
-<!-- Which part? skill / packages/cli / packages/extension / schemas / install.sh -->
+<!--
+Which part?
+  archgen-mcp (packages/mcp)   — a tool, the core, or a registry/asset
+  skill                         — the guidance the agent follows
+  packages/cli                  — the installer
+  packages/extension            — the VS Code views / the UI bridge
+  schemas / docs / install.sh
+-->
+
+## Context
+
+<!--
+If this touches the MCP server, name the TOOL and the ACTION
+(e.g. `archgen_plan { action: 'scaffold' }`). If it touches the agent's
+workflow, name the MODE and the `§` section it lives in.
+-->

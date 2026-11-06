@@ -3,20 +3,21 @@
 # ZERO LLM calls: the SURVEY sub-agent is simulated by a static-analysis stub
 # (find/grep over the real fixture project) writing codebase-map.md; planning
 # is a committed MEDIUM-sized artifact pair. Under test: right-sizing (artifact
-# set equality), ownership against real paths, impact.mjs pin, verifier APPROVE.
+# set equality), ownership against real paths, impact pin, verifier APPROVE.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARCHGEN_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SCRIPTS="$ARCHGEN_ROOT/skill/scripts"
+MCP="$ARCHGEN_ROOT/packages/mcp/bin/archgen-mcp.mjs"
+YAML="$ARCHGEN_ROOT/packages/mcp/src/core/yaml.mjs"
 SLUG="demo-brownfield"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 command -v node >/dev/null 2>&1 || fail "node not found"
-[ "$(node -p 'parseInt(process.versions.node)')" -ge 18 ] || fail "node >= 18 required"
-[ -f "$SCRIPTS/impact.mjs" ] || fail "skill scripts not found at $SCRIPTS"
+[ "$(node -p 'parseInt(process.versions.node)')" -ge 20 ] || fail "node >= 20 required"
+[ -f "$MCP" ] || fail "archgen MCP server not found at $MCP"
 
 # ── [1/7] sandbox git repo seeded with the pre-existing TS project ──────────
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/archgen-brownfield.XXXXXX")"
@@ -33,6 +34,9 @@ pass "[1/7] sandbox ready with existing TS project (server, routes, index, share
 
 DOT="$SANDBOX/.archgen/$SLUG"
 mkdir -p "$DOT/plans"
+
+# mcp_exec <tool> <json-args> — run one archgen MCP tool inside the sandbox.
+mcp_exec() { node "$MCP" exec "$1" "$2" --project "$SANDBOX"; }
 
 # ── [2/7] SURVEY step — static stub per orchestration.md §survey contract ───
 # Real read-only analysis of the seeded tree feeds the four required sections;
@@ -84,13 +88,13 @@ pass "[2/7] survey stub wrote codebase-map.md (all 4 sections, evidence paths ve
 cp "$SCRIPT_DIR/tasks.template.yaml"     "$DOT/tasks.yaml"
 cp "$SCRIPT_DIR/plans/add-rate-limit.md" "$DOT/plans/add-rate-limit.md"
 TASKS="$DOT/tasks.yaml"
-node "$SCRIPTS/validate.mjs" "$TASKS" 2>&1 | sed 's/^/       /'
-node "$SCRIPTS/validate.mjs" "$TASKS" 2>/dev/null || fail "validate.mjs rejected brownfield tasks.yaml"
+mcp_exec archgen_plan "{\"action\":\"validate\",\"tasksYaml\":\"$TASKS\"}" >/dev/null 2>&1 \
+  || fail "archgen_plan{validate} rejected brownfield tasks.yaml"
 pass "[3/7] MEDIUM artifacts written and validated (plan + tasks only)"
 
 # ── [4/7] ownership references EXISTING project paths ───────────────────────
-SCRIPTS="$SCRIPTS" node --input-type=module -e '
-const { parseYaml } = await import("file://" + process.env.SCRIPTS + "/lib/yaml.mjs");
+YAML="$YAML" node --input-type=module -e '
+const { parseYaml } = await import("file://" + process.env.YAML);
 import { readFileSync } from "node:fs";
 const { data } = parseYaml(readFileSync(process.argv[1], "utf8"), { filename: "tasks.yaml" });
 const globs = data.tasks.flatMap((t) => t.file_ownership ?? []);
@@ -120,14 +124,19 @@ fi
 pass "[5/7] artifact set == exactly {codebase-map.md, tasks.yaml, plans/add-rate-limit.md}"
 
 # ── [6/7] impact pin: changing RL1 ripples to exactly RL2+RL3 ───────────────
-if ! diff -u "$SCRIPT_DIR/expected-impact.json" <(node "$SCRIPTS/impact.mjs" "$TASKS" RL1); then
-  fail "impact.mjs output differs from pinned expected-impact.json"
+if ! diff -u "$SCRIPT_DIR/expected-impact.json" <(mcp_exec archgen_plan "{\"action\":\"impact\",\"tasksYaml\":\"$TASKS\",\"target\":\"RL1\"}" | node -e '
+let d = ""; process.stdin.on("data", (c) => d += c).on("end", () => {
+  const env = JSON.parse(d);
+  if (!env.ok) { console.error(JSON.stringify(env.error)); process.exit(1); }
+  console.log(JSON.stringify(env.data, null, 2));
+});'); then
+  fail "archgen_plan{impact} output differs from pinned expected-impact.json"
 fi
-pass "[6/7] impact.mjs(RL1) byte-equals pinned expected-impact.json"
+pass "[6/7] archgen_plan{impact}(RL1) byte-equals pinned expected-impact.json"
 
 # ── [7/7] verifier checklist produced with APPROVE ──────────────────────────
-verdict_json="$(node "$SCRIPTS/verify-plan.mjs" "$TASKS" --plan "$DOT/plans")" \
-  || fail "verify-plan rejected: $verdict_json"
+verdict_json="$(mcp_exec archgen_plan "{\"action\":\"verify\",\"tasksYaml\":\"$TASKS\",\"planDir\":\"$DOT/plans\"}")" \
+  || fail "the verifier rejected: $verdict_json"
 printf '%s' "$verdict_json" | grep -q '"verdict": "APPROVE"' || fail "verdict not APPROVE: $verdict_json"
 echo "   verifier checklist: $verdict_json" | tr '\n' ' '; echo
 pass "[7/7] verifier gate APPROVE"

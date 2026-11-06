@@ -1,55 +1,144 @@
 # Releasing
 
-Two independently released artifacts: the npm CLI and the VS Code extension.
-Both share ONE version, single-sourced in [`archgen.config.json`](../archgen.config.json)
-at the repo root; the root [`CHANGELOG.md`](../CHANGELOG.md) records every release.
+Three independently released artifacts: the **MCP server**, the **npm CLI**,
+and the **VS Code extension**. All share ONE version, single-sourced in
+[`archgen.config.json`](../archgen.config.json) at the repo root; the root
+[`CHANGELOG.md`](../CHANGELOG.md) records every release.
 
-## Version bumps (single source)
+| Artifact | Published as | Tag | Distribution |
+|---|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-<version>` | npm |
+| `packages/cli` | `archgen-skill` | `vcli-<version>` | npm |
+| `packages/extension` | ArchGen | `vextension-<version>` | GitHub Release (`.vsix`) |
+| `skill/` | — | — | ships inside the CLI's vendor copy |
+
+---
+
+## The release checklist
+
+Work top to bottom. Every step is verified by a CI gate, so a skipped step
+fails the build rather than shipping.
+
+### 1. Bump the canonical version
 
 The version lives in exactly one place: the `version` field of
-`archgen.config.json`. Every derived location — `skill/archgen.config.json`,
-the `skill/SKILL.md` frontmatter, `packages/cli/package.json`,
-`packages/extension/package.json`, and the vendored skill copy — is generated
-from it. Never edit a derived file by hand; run the sync instead:
+`archgen.config.json`.
 
 ```sh
-# 1. Bump the canonical version
-#    edit archgen.config.json → "version": "x.y.z"
-
-# 2. Propagate to every derived target (config + SKILL.md + both package.json),
-#    then mirror skill/ into packages/cli/vendor/skills/archgen
-node packages/cli/scripts/sync-config.mjs && node packages/cli/scripts/sync-vendor.mjs
-#    (equivalent npm script: npm --prefix packages/cli run sync)
-
-# 3. Verify zero drift (writes nothing; exits 1 and lists drift if any)
-npm --prefix packages/cli run sync:check
+# edit archgen.config.json → "version": "x.y.z"
 ```
 
-`sync-vendor` is idempotent and leaves already-correct files byte-identical.
-CI's `vendor-check` job runs `sync:check` plus a `sync` + `git diff --exit-code`
-gate, so a release committed without the sync step fails the build.
+### 2. Bump the capability contract (if the skill needs a newer server)
 
-One more derived location lives outside the sync script: `install.sh` embeds
-the managed-block text as two heredocs, each carrying an
-`<!-- archgen:block vX.Y.Z -->` provenance line. Update both lines to the new
-version — they must stay byte-identical to `renderManagedBlockText()` /
-`renderClaudeBridgeText()` (the CLI suite's install.sh parity tests enforce
-this and fail the bump otherwise).
+The skill declares the server version it requires:
 
-Then record and tag the release:
+```yaml
+# skill/SKILL.md frontmatter
+metadata:
+  requires:
+    archgen_mcp: ">=x.y.z"
+```
 
-1. Add a section to the root `CHANGELOG.md` under a `## [x.y.z] - YYYY-MM-DD`
-   heading (Keep a Changelog format).
-2. Tag the release `v<pkg>-<version>` — e.g. `vcli-0.0.5`, `vextension-0.0.5` —
-   so both packages can tag independently on one repo even though they share
-   the same version number.
+**Raise it whenever the skill starts calling a tool or an action that only
+exists in the new server** — a skill that silently calls a removed action fails
+without an error. `metadata.requires` is NOT derived by the sync script; it is
+edited by hand, on purpose: it is a human decision, not a derived fact.
+
+`npm run test:contract` proves the declaration is satisfiable by this release.
+
+### 3. Propagate to every derived target
 
 ```sh
-git commit -m "chore(release): 0.0.5"
-git tag vcli-0.0.5
-git tag vextension-0.0.5
+npm run sync          # sync-config + sync-vendor
+```
+
+This regenerates `skill/archgen.config.json`, the `skill/SKILL.md` frontmatter
+version, all three `package.json` files, and the vendored skill copy. Never
+edit a derived file by hand.
+
+Two derived locations live OUTSIDE the sync script:
+
+- **`install.sh`** embeds the managed-block text as two heredocs, each carrying
+  an `<!-- archgen:block vX.Y.Z -->` provenance line. Update **both** — they must
+  stay byte-identical to `renderManagedBlockText()` / `renderClaudeBridgeText()`.
+  The CLI suite's install.sh parity tests enforce this and fail the bump otherwise.
+- **the two committed lockfiles** (`packages/mcp/package-lock.json`,
+  `packages/extension/package-lock.json`) carry the package version in two
+  places each. Regenerate them:
+
+  ```sh
+  npm --prefix packages/mcp install --package-lock-only --no-audit --no-fund
+  npm --prefix packages/extension install --package-lock-only --no-audit --no-fund
+  ```
+
+### 4. Verify — zero drift, everything green
+
+```sh
+npm run sync:check     # derived files match archgen.config.json (writes nothing)
+npm run test:contract  # the declared minimum is satisfiable by this release
+npm run test:budget    # the always-on context is within its ceiling
+npm test               # every suite CI runs
+npm run test:fixtures  # the three end-to-end drivers, against the real tools
+npm run test:immutable # the suites did not mutate the repository
+```
+
+CI runs the same set: `vendor-check` (drift), `capability-contract`,
+`context-budget`, `mcp`, `cli`, `extension`, `fixtures`, `immutable`, `audit`
+(high-severity advisories in both npm packages) and `secret-scan`.
+
+### 5. Write the changelog
+
+Add a `## [x.y.z] - YYYY-MM-DD` section to the root `CHANGELOG.md` (Keep a
+Changelog format) and the matching one to `packages/extension/CHANGELOG.md`.
+State the **publish order** and the three tags.
+
+### 6. Commit, tag, publish
+
+```sh
+git commit -m "chore(release): x.y.z"
+git tag vcli-x.y.z
+git tag vmcp-x.y.z
+git tag vextension-x.y.z
 git push && git push --tags
 ```
+
+**Publish order — the MCP server FIRST.** The CLI's installer resolves
+`archgen-mcp` from the npm registry, so a release that advertises the MCP
+server before it exists hands every user a broken bootstrap. The extension is
+version-agnostic and can ship in any order.
+
+```sh
+# 1. the MCP server
+cd packages/mcp && npm ci && npm test && npm publish
+
+# 2. the CLI (its prepublishOnly re-derives the version and re-syncs the vendor copy)
+cd packages/cli && npm test && npm publish
+
+# 3. the extension — CI publishes the GitHub Release on the tag push.
+#    Local smoke build: cd packages/extension && npm run package
+```
+
+---
+
+## MCP server (`packages/mcp`)
+
+The MCP server is the runtime that owns every deterministic capability. It is
+published separately because the CLI stays zero-dependency while the server
+depends on the official MCP SDK.
+
+```sh
+cd packages/mcp
+npm ci                   # the committed lockfile is the source of truth
+npm test                 # gates first
+npm publish              # prepublishOnly re-derives the version from archgen.config.json
+```
+
+The published tarball contains only `bin/`, `src/`, `assets/` and `README.md`
+(see the `files` field). `assets/` carries the canonical registries
+(`harness-mcp.json`, `skill-registry.json`, `depth-ladder.json`,
+`platform-capabilities.json`), the dispatch briefs, the artifact templates AND
+the protocol references — they ship WITH the server so a tool and its data can
+never be a version apart.
 
 ## CLI (`packages/cli`)
 
@@ -64,7 +153,7 @@ npm test                 # gates first
 npm publish              # syncs config + vendor automatically via prepublishOnly
 ```
 
-The published tarball contains only `bin/`, `lib/`, `vendor/`, and `README.md`
+The published tarball contains only `bin/`, `lib/`, `vendor/` and `README.md`
 (see the `files` field).
 
 ## Extension (`packages/extension`)
@@ -95,3 +184,7 @@ externalized `better-sqlite3` native binding from the vsix.
 The skill is not published separately. It ships inside the CLI vendor copy and
 is installed from this repo by `install.sh` / `archgen install`. Release it
 implicitly with every CLI release.
+
+It is **guidance only** — no code, no assets. Every deterministic capability
+lives in the MCP server, which the skill's installer wires into each detected
+harness.

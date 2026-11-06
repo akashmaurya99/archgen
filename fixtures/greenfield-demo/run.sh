@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
 # greenfield-demo/run.sh — deterministic GENERATE (LARGE) end-to-end driver.
 # Simulates the full archgen greenfield flow with ZERO LLM calls:
-#   interview answers file → artifact generation (templates) → validate.mjs
-#   → verify-plan APPROVE → wave walk via next-tasks/set-status → final checks
+#   interview answers file → artifact generation (templates) → validate
+#   → verify APPROVE → wave walk via next-tasks/set-status → final checks
 #   → git-cleanliness proof → tamper test.
-# The scripts+templates+conventions are what is under test; "workers" are the
-# driver marking statuses and writing simulated logs inside .archgen/ only.
+# The MCP server + templates + conventions are what is under test; "workers" are
+# the driver marking statuses and writing simulated logs inside .archgen/ only.
+#
+# Every step goes through the REAL archgen MCP tool surface
+# (`archgen-mcp exec <tool> '<json>'`) — the same code path an agent uses.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARCHGEN_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SCRIPTS="$ARCHGEN_ROOT/skill/scripts"
+MCP="$ARCHGEN_ROOT/packages/mcp/bin/archgen-mcp.mjs"
+YAML="$ARCHGEN_ROOT/packages/mcp/src/core/yaml.mjs"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 command -v node >/dev/null 2>&1 || fail "node not found"
-[ "$(node -p 'parseInt(process.versions.node)')" -ge 18 ] || fail "node >= 18 required"
-[ -f "$SCRIPTS/validate.mjs" ] || fail "skill scripts not found at $SCRIPTS"
+[ "$(node -p 'parseInt(process.versions.node)')" -ge 20 ] || fail "node >= 20 required"
+[ -f "$MCP" ] || fail "archgen MCP server not found at $MCP"
+[ -d "$ARCHGEN_ROOT/packages/mcp/node_modules" ] || fail "run 'npm ci --prefix packages/mcp' first"
 
 # ── [1/8] sandbox: throwaway git repo so cleanliness is provable ────────────
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/archgen-greenfield.XXXXXX")"
@@ -49,9 +54,9 @@ cp "$SCRIPT_DIR"/decisions/*.md             "$DOT/decisions/"
 
 # conventions conformance: architecture.yaml carries every normative top-level
 # key and its slug names the dot-folder (schemas/architecture-conventions.md).
-SCRIPTS="$SCRIPTS" node --input-type=module -e '
+YAML="$YAML" node --input-type=module -e '
 import { readFileSync } from "node:fs";
-const { parseYaml } = await import("file://" + process.env.SCRIPTS + "/lib/yaml.mjs");
+const { parseYaml } = await import("file://" + process.env.YAML);
 const { data } = parseYaml(readFileSync(process.argv[1], "utf8"), { filename: "architecture.yaml" });
 for (const k of ["name", "slug", "stack", "structure", "modules", "decisions"]) {
   if (data[k] === undefined) { console.error("architecture.yaml missing key: " + k); process.exit(1); }
@@ -65,14 +70,17 @@ pass "[3/8] LARGE artifact set generated under .archgen/demo/"
 
 TASKS="$DOT/tasks.yaml"
 
-# ── [4/8] self-check: validate.mjs must exit 0 ──────────────────────────────
-node "$SCRIPTS/validate.mjs" "$TASKS" 2>&1 | sed 's/^/       /'
-node "$SCRIPTS/validate.mjs" "$TASKS" 2>/dev/null || fail "validate.mjs rejected fresh tasks.yaml"
-pass "[4/8] validate.mjs exit 0 on generated tasks.yaml"
+# mcp_exec <tool> <json-args> — run one archgen MCP tool inside the sandbox.
+mcp_exec() { node "$MCP" exec "$1" "$2" --project "$SANDBOX"; }
 
-# ── [5/8] verifier gate: verify-plan.mjs must APPROVE ───────────────────────
-verdict_json="$(node "$SCRIPTS/verify-plan.mjs" "$TASKS" --plan "$DOT/plans")" \
-  || fail "verify-plan rejected: $verdict_json"
+# ── [4/8] self-check: archgen_plan{validate} must succeed ───────────────────
+mcp_exec archgen_plan "{\"action\":\"validate\",\"tasksYaml\":\"$TASKS\"}" >/dev/null 2>&1 \
+  || fail "archgen_plan{validate} rejected fresh tasks.yaml"
+pass "[4/8] archgen_plan{validate} ok on generated tasks.yaml"
+
+# ── [5/8] verifier gate: archgen_plan{verify} must APPROVE ─────────────────
+verdict_json="$(mcp_exec archgen_plan "{\"action\":\"verify\",\"tasksYaml\":\"$TASKS\",\"planDir\":\"$DOT/plans\"}")" \
+  || fail "verifier rejected: $verdict_json"
 printf '%s' "$verdict_json" | grep -q '"verdict": "APPROVE"' || fail "verdict not APPROVE: $verdict_json"
 pass "[5/8] verifier gate APPROVE"
 
@@ -81,36 +89,40 @@ wave_no=0
 while :; do
   wave_no=$((wave_no + 1))
   [ "$wave_no" -gt 12 ] && fail "wave walk did not converge after 12 waves"
-  out="$(node "$SCRIPTS/next-tasks.mjs" "$TASKS")" || fail "next-tasks failed on wave $wave_no"
+  out="$(mcp_exec archgen_tasks "{\"action\":\"next\",\"tasksYaml\":\"$TASKS\"}")" || fail "next wave failed on wave $wave_no"
   ids="$(printf '%s' "$out" | node -e '
 let d = ""; process.stdin.on("data", (c) => d += c).on("end", () => {
-  const j = JSON.parse(d);
+  const env = JSON.parse(d);
+  if (!env.ok) { console.error("tool error: " + JSON.stringify(env.error)); process.exit(5); }
+  const j = env.data;
   if ((j.blockedByFailure ?? []).length) { console.error("blockedByFailure: " + j.blockedByFailure.join(",")); process.exit(5); }
   console.log((j.waves[0] ?? []).map((t) => t.id).join(" "));
-});') " || fail "next-tasks reported blockedByFailure or bad JSON on wave $wave_no"
+});') " || fail "next wave reported blockedByFailure or bad JSON on wave $wave_no"
   [ -z "${ids// }" ] && break
   echo "   wave $wave_no: $ids"
   for id in $ids; do
-    node "$SCRIPTS/set-status.mjs" "$TASKS" "$id" running >/dev/null || fail "set-status running $id"
+    mcp_exec archgen_tasks "{\"action\":\"set_status\",\"tasksYaml\":\"$TASKS\",\"taskId\":\"$id\",\"status\":\"running\"}" >/dev/null \
+      || fail "set_status running $id"
     # simulated worker success: log lands INSIDE .archgen/ only
     echo "simulated worker ok for $id ($(date -u +%FT%TZ))" > "$DOT/results/$id.log"
-    node "$SCRIPTS/set-status.mjs" "$TASKS" "$id" done >/dev/null || fail "set-status done $id"
+    mcp_exec archgen_tasks "{\"action\":\"set_status\",\"tasksYaml\":\"$TASKS\",\"taskId\":\"$id\",\"status\":\"done\"}" >/dev/null \
+      || fail "set_status done $id"
   done
 done
 pass "[6/8] wave walk complete ($((wave_no - 1)) waves, all workers succeeded)"
 
 # ── [7/8] final assertions: validate passes, every status done ──────────────
-node "$SCRIPTS/validate.mjs" "$TASKS" 2>/dev/null || fail "final validate failed"
-SCRIPTS="$SCRIPTS" node --input-type=module -e '
+mcp_exec archgen_plan "{\"action\":\"validate\",\"tasksYaml\":\"$TASKS\"}" >/dev/null 2>&1 || fail "final validate failed"
+YAML="$YAML" node --input-type=module -e '
 import { readFileSync } from "node:fs";
-const { parseYaml } = await import("file://" + process.env.SCRIPTS + "/lib/yaml.mjs");
+const { parseYaml } = await import("file://" + process.env.YAML);
 const { data } = parseYaml(readFileSync(process.argv[1], "utf8"), { filename: "tasks.yaml" });
 const bad = data.tasks.filter((t) => t.status !== "done");
 if (bad.length) { console.error("not done: " + bad.map((t) => t.id).join(",")); process.exit(1); }
 console.log("all " + data.tasks.length + " tasks status=done");
 ' "$TASKS" || fail "not all tasks reached done"
 for f in "$DOT"/results/*.log; do [ -s "$f" ] || fail "empty worker log: $f"; done
-pass "[7/8] final validate exit 0 and every task marked done"
+pass "[7/8] final validate ok and every task marked done"
 
 # ── git cleanliness: NOTHING outside .archgen/ may appear ───────────────────
 cd "$SANDBOX" || fail "cannot cd sandbox"
@@ -122,7 +134,7 @@ git diff HEAD --quiet || fail "tracked files were modified"
 changed_count="$(printf '%s\n' "$porcelain" | grep -c '^?? \.archgen/')"
 pass "git clean: $changed_count new paths, all under .archgen/; zero tracked modifications"
 
-# ── tamper test: corrupted copy MUST be caught by validate.mjs ──────────────
+# ── tamper test: a corrupted copy MUST be caught by the validator ───────────
 cp "$TASKS" "$DOT/tasks-tamper.yaml"
 node -e '
 const fs = require("fs");
@@ -130,11 +142,13 @@ const p = process.argv[1];
 if (!fs.readFileSync(p, "utf8").includes("status: done")) process.exit(3);
 fs.writeFileSync(p, fs.readFileSync(p, "utf8").replace("status: done", "status: cancelled"));
 ' "$DOT/tasks-tamper.yaml" || fail "tamper setup failed"
-if node "$SCRIPTS/validate.mjs" "$DOT/tasks-tamper.yaml" 2>"$DOT/tamper.err"; then
-  fail "validate.mjs accepted corrupted tasks.yaml (status cancelled)"
-fi
-grep -q "invalid status 'cancelled'" "$DOT/tamper.err" || fail "validate error text unexpected: $(cat "$DOT/tamper.err")"
-rm -f "$DOT/tasks-tamper.yaml" "$DOT/tamper.err"
+tamper_json="$(mcp_exec archgen_plan "{\"action\":\"validate\",\"tasksYaml\":\"$DOT/tasks-tamper.yaml\"}" 2>&1 || true)"
+# The CALL succeeds (the tool ran); the VERDICT is invalid. Assert on data.valid.
+printf '%s' "$tamper_json" | grep -q '"valid": false' \
+  || fail "the validator accepted corrupted tasks.yaml (status cancelled): $tamper_json"
+printf '%s' "$tamper_json" | grep -q "invalid status 'cancelled'" \
+  || fail "validate error text unexpected: $tamper_json"
+rm -f "$DOT/tasks-tamper.yaml"
 pass "tamper test: corrupted copy rejected with named enum error"
 
 echo "GREENFIELD E2E: ALL CHECKS PASSED"

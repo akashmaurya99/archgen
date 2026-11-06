@@ -4,7 +4,7 @@
 
 ## Which gates ran?
 
-- [ ] `node --test skill/scripts/test/*.test.mjs`
+- [ ] `npm --prefix packages/mcp test` (the MCP server suite — the skill ships no code)
 - [ ] `cd packages/cli && npm test`
 - [ ] `cd packages/extension && npm run typecheck && npm run compile && npm test`
 

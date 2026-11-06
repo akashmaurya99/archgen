@@ -39,23 +39,30 @@ guarantee rather than a hope:
 ## How it works
 
 ```text
- interview (greenfield)  ·  survey (brownfield)
-              │
-              ▼
-   .archgen/<slug>/  ── architecture.yaml · docs · ADRs · plans · tasks.yaml
-              │
-              ▼
-   VERIFIER GATE ──issues──► fix & re-verify
-              │ APPROVE
-              ▼
-   USER GATE ────reject───► revise
-              │ approve
-              ▼
-   WAVES ── topological order · one sub-agent per task · disjoint ownership
-              │
-              ▼
-   final report: done / failed / blocked · commits · follow-ups
+ agent  ──MCP tools (archgen-mcp)──►  .archgen/<slug>/
+   │                                      architecture.yaml · docs · ADRs
+   │                                      plans · tasks.yaml
+   │                                              │
+   │  interview (greenfield) · survey (brownfield)  │
+   ▼                                              ▼
+   ├──── VERIFIER GATE ──issues──► fix & re-verify
+   │          │ APPROVE
+   │          ▼
+   │     USER GATE ────reject───► revise
+   │          │ approve
+   │          ▼
+   └──── WAVES ── topological order · one sub-agent per task · disjoint ownership
+                     │
+                     ▼
+        final report: done / failed / blocked · commits · follow-ups
 ```
+
+**One runtime, three ways in.** Every deterministic capability — validation,
+the wave resolver, status mutation, the artifact templates, the dispatch
+briefs, the worker prompt, CodeGraph, harness wiring — lives in the
+`archgen-mcp` server. The agent calls it over MCP; the installer calls
+`archgen-mcp bootstrap`; the extension calls `archgen-mcp exec`. One
+implementation, so the three can never disagree.
 
 ## Installation
 
@@ -73,8 +80,9 @@ npx archgen-skill install          # symlinks; --copy for real copies
 ```
 
 Prefer shell? Clone this repo and run `./install.sh` (same behavior, plus
-`--init [dir]`, `--project <dir>`, `--uninstall`). Requires Node.js ≥ 18.
-The skill itself has zero npm dependencies.
+`--init [dir]`, `--project <dir]`, `--uninstall`). Requires Node.js ≥ 20.
+The CLI itself has zero npm dependencies; the MCP server it installs depends on
+the official Model Context Protocol SDK.
 
 **VS Code extension** (optional, read-only visual layer): download the latest
 `.vsix` from [GitHub Releases](https://github.com/akashmaurya99/archgen/releases)
@@ -103,8 +111,9 @@ uninstalling it loses nothing.
 
 | Path | What | Distributed as |
 | --- | --- | --- |
-| [`skill/`](skill/) | The agent skill — `SKILL.md`, `references/`, zero-dep `scripts/`, `assets/` | vendored into npm; installed by `install.sh` |
+| [`skill/`](skill/) | The agent skill — `SKILL.md` + `references/code-standards.md` (guidance only; the MCP server owns every capability) | vendored into npm; installed by `install.sh` |
 | [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
+| [`packages/mcp/`](packages/mcp/) | The MCP server — every deterministic capability, 10 domain tools | npm: `archgen-mcp` |
 | [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button · activity-bar cockpit | `.vsix` attached to [GitHub Releases](https://github.com/akashmaurya99/archgen/releases) by CI |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
 | [`fixtures/`](fixtures/) | Deterministic E2E demos + shared YAML corpus | repo-only |
@@ -117,14 +126,14 @@ One-command flow from the repo root:
 
 ```sh
 npm run setup   # once — installs extension dependencies
-npm test        # skill + CLI + extension suites (same set CI runs)
+npm test        # internal + MCP + CLI + extension suites (same set CI runs)
 ```
 
 Or per-package:
 
 ```sh
-# Skill suite (node:test, zero deps)
-node --test skill/scripts/test/*.test.mjs
+# MCP server — the runtime that owns every capability (contract + transport + core)
+cd packages/mcp && npm ci && npm test
 
 # CLI — single-store installer, doctor, uninstall --project
 cd packages/cli && npm test
@@ -132,7 +141,8 @@ cd packages/cli && npm test
 # Extension — feature picker, probe order, ≥90% coverage enforced (Node 22 toolchain)
 cd packages/extension && npm ci && npm run typecheck && npm run compile && npm test
 
-# Deterministic end-to-end drivers (no LLM calls)
+# Deterministic end-to-end drivers (no LLM calls) — they drive the REAL MCP
+# tool surface, so a broken tool fails the fixtures.
 bash fixtures/greenfield-demo/run.sh && bash fixtures/brownfield-demo/run.sh
 bash fixtures/verifier-negative/run.sh
 ```

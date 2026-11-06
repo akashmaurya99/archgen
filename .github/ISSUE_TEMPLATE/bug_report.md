@@ -25,6 +25,12 @@ labels: bug
 ## Harness & platform
 
 - Harness (Claude Code / OpenCode / Cursor / Codex / Gemini CLI / Antigravity / VS Code extension):
+- Component (MCP server `archgen-mcp` / skill / CLI / extension):
 - archgen version (or commit):
+- archgen-mcp version (`archgen-mcp --version`):
 - OS:
 - Node version:
+
+> If the MCP server misbehaves, `archgen_setup { action: 'doctor' }` prints the
+> capability contract, the skill install, the MCP wiring and CodeGraph state —
+> paste it here.

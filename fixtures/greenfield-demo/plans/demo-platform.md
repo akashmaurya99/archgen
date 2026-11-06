@@ -3,7 +3,7 @@
 Intent: stand up a two-feature service (notes API plus admin web console)
 with a shared kernel, a docs track, and an end-to-end verification gate.
 
-Wave plan (resolved by next-tasks.mjs):
+Wave plan (resolved by archgen_tasks{action:'next'}):
 
 1. SCAFFOLD — project skeleton plus typed config loading
 2. SHARED and DOCS — shared kernel helpers; user guide and decision records

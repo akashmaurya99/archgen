@@ -1,148 +1,139 @@
-# Changelog
+## [0.0.6] - 2026-11-06
 
-All notable changes to this project will be documented in this file.
+### Changed — BREAKING: the MCP server owns every capability
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+- **The skill ships no code.** `skill/scripts/*.mjs` (11 scripts + 5 lib
+  modules) and their test suite are **deleted**. The skill is now guidance only.
+- **New package `packages/mcp/`** (npm: `archgen-mcp`): the MCP server that
+  owns all deterministic capability, built on the official
+  `@modelcontextprotocol/server` v2 (2026-07-28 spec) with Zod v4.
+  - 10 domain tools: `archgen_plan`, `archgen_tasks`, `archgen_docs`,
+    `archgen_registry`, `archgen_codegraph`, `archgen_setup`, `archgen_ui`,
+    `archgen_skills`, `archgen_refs`, `archgen_help`.
+  - Every result is a typed envelope `{ ok, data, error, meta }` with a stable
+    error-code taxonomy (`INVALID_INPUT`, `NOT_FOUND`, `CYCLE`,
+    `OWNERSHIP_CONFLICT`, `CONFLICT`, `PERMISSION_DENIED`, `UNAVAILABLE`,
+    `TIMEOUT`, `INTERNAL`).
+  - A CLI facade (`archgen-mcp exec|bootstrap|doctor|uninstall-mcp`) lets the
+    CLI installer and the VS Code extension reach the SAME handlers the agent
+    uses — one implementation, three ways in.
+- **One generic harness writer.** `core/harness-wiring.mjs` writes MCP entries
+  for BOTH archgen and CodeGraph — one approval gate, one symlink guard, one
+  idempotency check, one manifest-scoped uninstall. JSON and TOML (Codex CLI).
+- **Real-time UI control.** `archgen_ui` drives the VS Code extension over a
+  filesystem command queue (`.archgen/.runtime/cmd/` → `ack/`) with an
+  allowlist, a workspace-root check, expiry, and idempotent replay. The data
+  plane already worked (the extension's watcher); this adds the control plane.
+- **CodeGraph** is installed, wired and indexed by the MCP server, which drives
+  the official CLI and never reimplements it.
+- **Installer wiring.** `archgen-skill init` / `install` now wire the archgen
+  MCP server into every detected harness (new `--no-mcp` flag alongside
+  `--no-codegraph`) and report an MCP-wired check in `doctor`.
+- **Node floor raised to >= 20** (the official MCP SDK v2 requires it).
 
-## [Unreleased]
+### Added — the capability contract
 
-### Added
+The skill calls the MCP server's tools — that is a dependency, and an
+undeclared dependency is a latent outage: a skill at v1 driving a server at v2
+whose action names changed fails SILENTLY (the agent calls a removed action and
+improvises). It is now declared and enforced:
 
-- **CodeGraph bootstrap everywhere** — install.sh, `archgen init`, and
-  `archgen install` (global) now ensure the CodeGraph CLI is present and
-  up-to-date, wire the MCP server into every DETECTED harness, and build the
-  project index — all through the new `scripts/codegraph.mjs`. `--no-codegraph`
-  (CLI) / `--no-codegraph` (install.sh) / `ARCHGEN_CODEGRAPH=0` (env) opt out;
-  the bootstrap is never fatal to the skill install. The CLI suite no longer
-  touches the developer's real global MCP configs (`ARCHGEN_CODEGRAPH=0` is set
-  for `npm test`).
-- **CodeGraph command shape corrected** — the MCP server is `codegraph serve
-  --mcp` (stdio). There is no `codegraph mcp` subcommand (it prints the
-  top-level help and exits, so a server declared that way never connects).
-  `serve --mcp` keeps the file watcher ON, so the index stays live in real
-  time once it is built — no re-indexing, ever.
-- **Per-harness MCP wiring is now data-driven** via new
-  `assets/harness-mcp.json` (11 harnesses; correct top-level key per platform —
-  `mcpServers` / `servers` / `mcp` / `context_servers` — and codegraph's own
-  native target list `claude,cursor,codex,opencode,gemini,antigravity,kiro`;
-  Windsurf, VS Code/Copilot, Zed and Trae are written by the script itself).
-  The writer never rewrites an unparseable config (JSONC stays untouched), is
-  idempotent, and resolves harness `local` install paths from the project root.
-- **Real-time index on every new project** — `codegraph init` (1.6.x indexes
-  by default) builds `.codegraph/` once; the MCP server's watcher
-  (`--no-watch` never passed) keeps it synchronized in real time.
-- **Internal context-budget tool** — `internal/tools/context-budget.mjs`
-  (repo-only, never shipped): token cost of the skill payload, per-slug
-  artifacts, and load scenarios as a percentage of 32k/64k/128k/200k/1M
-  windows; `--budget <n>` exits 1 when any scenario exceeds it;
-  `--tokenizer <pkg>` swaps in an exact tokenizer. Internal QA only — it does
-  not ship in the npm payload or installed stores, like all of `internal/`.
-  The shipped skill only carries the runtime retrieval lenses (`--digest` /
-  `--section` / `--map`).
-- **Section-level artifact retrieval** — `scripts/lib/docs.mjs` +
-  `doc-index.mjs --digest` (sections with line ranges), `--section
-  <path>[#anchor]` (fetch exactly one section), `--map <token>` (which
-  SECTIONS mention a task/FR/ADR). Workers can now pull one section instead of
-  a whole plan. No token reporting ships — the retrieval lenses carry only
-  structure.
-- **Anchor validation** — `doc-index.mjs --validate` now resolves markdown
-  heading anchors against the target document's GitHub-exact slugs (duplicate
-  headings get `-1`, `-2`); a link to a deleted/renamed section is a broken
-  `anchor`, previously a silent pass.
-- **GitHub-exact heading slugs** — `slugifyHeading()` matches GitHub (each
-  whitespace char → one hyphen, runs are NOT collapsed), with a tolerant
-  collapsed-hyphen comparison for hand-typed anchors.
-- **CRLF corpus fixture** (`fixtures/yaml-corpus/crlf.yaml`) — both YAML
-  parsers normalize `\r\n` identically; locked by 2 new corpus tests.
-- **Extension YAML parser parity fixes** — CRLF normalization, duplicate-key
-  rejection (mappings and flat flow mappings), mirroring skill/scripts/lib/yaml.mjs.
-- **tests**: `codegraph.test.mjs`, `docs.test.mjs`, `skill-registry.test.mjs`
-  (skill); `codegraph.test.mjs` (CLI); `context-budget.test.mjs` (internal).
-  30+ new tests; skill suite now 183, CLI suite now 100, internal suite new (11).
+```yaml
+# skill/SKILL.md frontmatter
+metadata:
+  requires:
+    archgen_mcp: ">=0.0.6"
+```
 
-### Added (hardening)
-- **Anti-compaction rules** — new Hard rule 9 (assume compaction: the FIRST
-  tool call after summarization must be re-reading `.archgen/<slug>/tasks.yaml`
-  + `next-tasks.mjs` + `.agent/resume.md`; tasks.yaml is ground truth; never
-  cite state un re-read) and `.agent/resume.md`, an ≤10-line re-entry snapshot
-  rewritten after every wave (slug, wave index, done/failed/blocked ids, the
-  resume command, remaining plan sections).
-- **CodeGraph for understanding** — the skill now directs agents to prefer
-  CodeGraph (`codegraph_explore` / `codegraph node`) whenever they need to
-  understand the codebase, and the worker prompt contract carries the same
-  directive. Never re-index: the server's file watcher keeps the index live.
-- **Drift guards** — `.githooks/pre-commit` (sync single-source check),
-  CI `.codegraph/` never-tracked guard, `skill-registry` whole-word matcher
-  test, documented Windows parity path (`npx archgen-skill`), internal-vs-
-  shipped import boundary in CONTRIBUTING.md.
+- `archgen_setup{action:'doctor'}` reports a `CAPABILITY MISMATCH` row.
+- `archgen_setup{action:'bootstrap'}` reports the contract before wiring.
+- A CI gate (`internal/tools/check-capability-contract.mjs`) refuses to ship a
+  skill whose declared minimum exceeds the server's version.
 
-### Changed
-- **The skill no longer restates CodeGraph's command surface.** Once the MCP
-  server is wired it exposes its own tool set to the agent, so the shipped
-  skill keeps only the rules that matter (bootstrap once, never re-index, use
-  the MCP tools for comprehension, telemetry is on by default) and points at
-  the installed CLI for command syntax. The official command list now lives
-  only in the runtime script and `assets/harness-mcp.json` (data the writer
-  needs), not in the agent-facing docs.
-- **"Init once" is now stated identically everywhere** — SKILL.md, platforms.md,
-  orchestration.md, interview.md and the script output all say: the index is
-  built once per project, the server's watcher keeps it live, and nothing is
-  re-indexed by hand. Manual index/sync is documented only as the escape hatch
-  for a disabled watcher.
-- **Comment + prose diet** (token size): the agent-facing surface was trimmed
-  to essentials — `codegraph.mjs` 80 → ~55 comment lines, `lib/docs.mjs` 66 →
-  26, `lib/spawn-npm.js` 30 → 11, `cli/lib/codegraph.js` 26 → 11,
-  `internal/tools/tokens.mjs` 33 → 20; SKILL.md's CodeGraph section, Hard rule
-  9 and the platforms.md CodeGraph section were rewritten tighter. Shipped
-  payload: 76.3k → 74.3k tokens; the always-loaded SKILL.md: 6.2k → 5.9k.
-- **CodeGraph bootstrap now drives ONLY the official commands** (verified against
-  the official docs): `npm i -g @colbymchenry/codegraph` (install, always the
-  latest published release — **no version is pinned anywhere**),
-  `codegraph upgrade` / `codegraph upgrade --check` (freshness, official
-  updater), `codegraph install --target=<ids> --location=<global|local> --yes`
-  (wiring), `codegraph init <path>` (creates `.codegraph/` AND builds the
-  graph in one step), `codegraph status --json` (verification),
-  `codegraph telemetry status|on|off` (disclosure). The custom script only
-  adds what the official installer does not cover: detection of DETECTED
-  harnesses, the approval gate before any config write, telemetry disclosure,
-  and the config write for harnesses codegraph does not target (VS Code /
-  Copilot, Windsurf, Zed, Trae) with the per-platform key from
-  `assets/harness-mcp.json`.
-- **No codegraph version is referenced in the shipped skill** — the docs point
-  at `codegraph help <command>` for the current surface, and the installer
-  always takes the latest published release.
+### Added — `archgen_refs`, and the references moved into the package
+
+The five orchestrator-facing protocol documents (`interview`, `orchestration`,
+`artifact-templates`, `platforms`, `mcp-and-skills`) moved from
+`skill/references/` into `packages/mcp/assets/references/` and are served
+**section by section** by the new `archgen_refs` tool (`list` / `index` /
+`read` / `search`).
+
+**Why:** the references describe how to use the tools, so they must be the SAME
+VERSION as the tools — and they must not be copied into every project that runs
+`archgen-skill init` (56 KB per project, identical everywhere). Serving a
+section costs ~1–2 KB against ~11 KB for a whole document, so the agent's
+on-demand context went DOWN, not up.
+
+`code-standards.md` stays a plain file in the skill: WORKER sub-agents read it
+with their native file tools and may have no MCP server at all.
+
+### Changed — the skill payload
+
+The shipped skill tree is now `SKILL.md` + `references/code-standards.md` +
+`archgen.config.json` — **9,190 tokens, down from 25,793**. Every `§` mark in
+`SKILL.md` is an obligation ("load this section before acting"), the mode table
+names the sections to load, and Hard rule 9 requires re-loading them after a
+compaction.
+
+### Added — the deterministic output became tool output
+
+The skill keeps the **judgment** (policy, rules, when-to-use); the MCP server
+owns the **deterministic output**. Four new actions, no new tools:
+
+| Action | Replaces hand-assembly in |
+|---|---|
+| `archgen_plan{action:'scaffold'}` | the depth ladder's artifact set + the templates |
+| `archgen_plan{action:'brief'}` | the verifier / review / survey / investigate briefs |
+| `archgen_tasks{action:'contract'}` | the worker prompt contract (8 rules, assembled) |
+| `archgen_setup{action:'harness_info'}` | the harness capability tables |
+
+New canonical assets: `depth-ladder.json`, `platform-capabilities.json`,
+`briefs/*.md`, `templates/*`. The artifact templates moved from prose examples
+into `templates/*`, so the tool serves them and a copy can never drift.
+
+### Added — capability skills as a tool
+
+`archgen_skills` (match / install / installed / load / list) replaces the
+skill's FETCH-SKILL prose and its JSON registry. Verified against the official
+repos: the `skills` CLI installs ONE named skill non-interactively
+(`npx -y skills add <repo> --skill <slug> --agent <agent> --yes --json`) and
+lands it at `<project>/.agents/skills/<slug>/SKILL.md`. No clustering — a
+capability DOMAIN maps to ONE precise skill.
+
+### Release
+
+This release ships **three** artifacts at the same version (single-sourced from
+`archgen.config.json`):
+
+| Artifact | npm / distribution | Tag |
+|---|---|---|
+| `archgen-mcp` — the MCP server | npm | `vmcp-0.0.6` |
+| `archgen-skill` — the CLI + the skill | npm | `vcli-0.0.6` |
+| The VS Code extension | GitHub Release (`.vsix`) | `vextension-0.0.6` |
+
+**Publish order: the MCP server first.** The CLI's installer resolves
+`archgen-mcp` from the registry, so a release that advertises the MCP server
+before it exists would hand users a broken bootstrap. The extension is
+version-agnostic and can ship in any order.
 
 ### Fixed
-- **Windows npm spawn (EINVAL)** — `npm` was spawned unshelled, which fails on
-  Windows since the CVE-2024-27980 hardening, so `update` always reported
-  "could not reach the npm registry". Root fix: `lib/spawn-npm.js` invokes
-  npm's JS entry point with the current node binary (no shim, no shell), with
-  a portable PATH lookup replacing the POSIX-only `command -v`. The Windows-only
-  regression test was rewritten as two cross-platform tests — the CLI suite now
-  reports **0 skipped** (was 1).
 
-
-- **install.sh shipped the dev-only `scripts/test` suite** into every installed
-  store (the CLI prunes it via `DEV_ONLY_RELPATHS`); both `--init` and global
-  `--copy` now prune `scripts/test` and OS junk, matching the CLI.
-- **install.sh `--init` skipped the CodeGraph bootstrap** entirely; it now
-  runs the same engine as the CLI (`node scripts/codegraph.mjs ensure --yes`).
-- **Vendor mirror drift** — new `scripts/codegraph.mjs`, `scripts/lib/docs.mjs`,
-  `scripts/lib/yaml.mjs` parity fixes and `assets/harness-mcp.json` were not in
-  the npm payload until re-synced. (The token/context QA tooling was
-  deliberately moved out of the payload into `internal/` in the same pass.)
-- **platforms.md CodeGraph section was written against v1.0.1** (install flags,
-  target list, Node 22/24 requirement, "100% local" telemetry claim). Updated to
-  v1.6.2: `codegraph install --target=...`, `init` indexes by default,
-  telemetry ON by default with a machine ID (`codegraph telemetry
-  status|on|off`; disclosed, never auto-disabled without consent).
-- **assets/mcp-template.json used the non-existent `codegraph mcp` subcommand**
-  in every variant; all now use `codegraph serve --mcp`.
-- **`.gitignore` now excludes `.codegraph/`** (14 MB local index was
-  accidentally created in the repo by the test suite before the
-  `ARCHGEN_CODEGRAPH=0` guard existed — removed).
-
+- The extension's YAML port and the MCP core's parser now have a **parity
+  test** over the shared corpus, so the two can never drift silently.
+- Duplicate mapping keys are rejected consistently by both parsers (a plan
+  file with a duplicate key is corrupt — silently taking the last value hid it).
+- **Three latent template bugs**: the canonical artifact templates were prose
+  examples that were never validated, and three of them carried YAML the parser
+  REJECTS (`notes: >= 0` parsed as a block scalar; an unquoted
+  `enum(a,b,c)` inside a flow mapping; a plain scalar containing `": "`).
+  Moving them into the tool — where a test parses them — exposed and fixed all
+  three.
+- **The YAML-subset guidance was wrong**: flow mappings and sequences ARE
+  supported (the parser accepts them and the corpus proves it). Only block
+  scalars, duplicate keys and unterminated flow sequences are rejected.
+- `references/platforms.md` drift corrected against the official docs
+  (Antigravity's global path, Codex's legacy `~/.codex/skills/`, VS Code /
+  Copilot's project path, Trae CN, and the Gemini → Antigravity transition).
 
 ## [0.0.5] - 2026-08-27
 
@@ -464,6 +455,7 @@ extension.
   Cursor, GitHub Copilot (project-local), plus `install.sh` symlink/copy
   installer with uninstall manifest.
 
+[0.0.6]: https://github.com/akashmaurya99/archgen/releases/tag/vextension-0.0.6
 [0.0.5]: https://github.com/akashmaurya99/archgen/releases/tag/vextension-0.0.5
 [0.0.4]: https://github.com/akashmaurya99/archgen/releases/tag/vcli-0.0.4
 [0.0.2]: https://github.com/akashmaurya99/archgen/releases/tag/vcli-0.0.2
