@@ -1,8 +1,28 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
+
+// The wall-clock perf budget in parsers.perf.test.ts is measured on an
+// UNINSTRUMENTED run: v8 coverage adds ~10-30% overhead to the hot parser,
+// which made the 500ms budget flaky under `npm run coverage`. The budget is
+// still enforced by the plain `npm test` run (CI "extension" job), where no
+// instrumentation is active and timing is valid.
+//
+// The exclusion therefore applies to the COVERAGE RUN ONLY — it is switched
+// on by the `ARCHGEN_COVERAGE=1` env var that `npm run coverage` sets, never
+// unconditionally.
+//
+// The list is built from configDefaults on purpose: a CLI `--exclude`
+// REPLACES the default exclude list, which would silently un-exclude
+// node_modules from test discovery. Spreading configDefaults.exclude and
+// adding our own keeps both.
+const coverageRun = process.env['ARCHGEN_COVERAGE'] === '1';
+const exclude = coverageRun
+  ? [...configDefaults.exclude, '**/parsers.perf.test.ts']
+  : configDefaults.exclude;
 
 export default defineConfig({
   test: {
     include: ['test/**/*.test.{ts,tsx}'],
+    exclude,
     environment: 'node',
     // NOTE: run this suite on Node 22 (see .github/workflows/ci.yml).
     // better-sqlite3 (native addon) inside vitest worker pools is only

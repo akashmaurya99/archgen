@@ -194,7 +194,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage --exclude '**/parsers.perf.test.ts'",
+    "coverage": "ARCHGEN_COVERAGE=1 vitest run --coverage",
     "cross-mode": "node scripts/cross-mode-check.mjs",
     "package": "npx @vscode/vsce package",
     "build:fixture-db": "node scripts/build-fixture-db.mjs",

@@ -53,6 +53,14 @@ function binFor(script: string): McpBinary {
   return { bin: script, source: 'override', command: script, args: [] };
 }
 
+// These tests exercise a real SUBPROCESS transport, so their runtime measures
+// process startup, not the code under test. Vitest's default 5s timeout is
+// not enough on a contended CI runner (the first spawn in a worker pays the
+// whole child_process warm-up), so every spawning test gets an explicit,
+// generous timeout. A hang in the transport should still fail — just not at
+// an arbitrary 5 seconds.
+const SPAWN_TIMEOUT_MS = 30_000;
+
 describe('whichOnPath', () => {
   it('finds an executable on PATH', () => {
     const dir = join(work, 'bin');
@@ -171,7 +179,7 @@ describe('callMcpTool', () => {
     });
     expect(env.ok).toBe(true);
     expect(env.data).toEqual({ waves: [[{ id: 'T-1' }]] });
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('rejects with the server error message', async () => {
     const script = fakeServer(
@@ -180,28 +188,28 @@ describe('callMcpTool', () => {
     await expect(
       callMcpTool('archgen_tasks', {}, { projectRoot: work, binary: binFor(script) }),
     ).rejects.toThrow(/no tasks\.yaml/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('rejects with a generic message when the error carries none', async () => {
     const script = fakeServer(JSON.stringify({ ok: false }));
     await expect(
       callMcpTool('archgen_tasks', {}, { projectRoot: work, binary: binFor(script) }),
     ).rejects.toThrow(/unknown error/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('rejects when the server prints something that is not JSON', async () => {
     const script = fakeServer('not json at all', 3);
     await expect(
       callMcpTool('archgen_tasks', {}, { projectRoot: work, binary: binFor(script) }),
     ).rejects.toThrow(/produced no JSON \(exit 3\)/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('rejects when the server prints nothing at all', async () => {
     const script = fakeServer('', 1);
     await expect(
       callMcpTool('archgen_tasks', {}, { projectRoot: work, binary: binFor(script) }),
     ).rejects.toThrow(/produced no JSON \(exit 1\)/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('rejects when the binary does not exist', async () => {
     await expect(
@@ -211,7 +219,7 @@ describe('callMcpTool', () => {
         { projectRoot: work, binary: { bin: join(work, 'ghost'), source: 'override', command: join(work, 'ghost'), args: [] } },
       ),
     ).rejects.toThrow();
-  });
+  }, SPAWN_TIMEOUT_MS);
 });
 
 describe('loadWaves', () => {
@@ -234,31 +242,31 @@ describe('loadWaves', () => {
     const script = fakeServer(JSON.stringify(good));
     const waves = await loadWaves(work, join(work, 'tasks.yaml'), binFor(script));
     expect(waves).toEqual([['T-1', 'T-2'], ['T-3']]);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('requires a tasks.yaml path', async () => {
     const script = fakeServer(JSON.stringify(good));
     await expect(loadWaves(work, '', binFor(script))).rejects.toThrow(/tasks\.yaml path is required/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('rejects an envelope with no waves array', async () => {
     const script = fakeServer(JSON.stringify({ ok: true, data: {} }));
     await expect(
       loadWaves(work, join(work, 'tasks.yaml'), binFor(script)),
     ).rejects.toThrow(/returned no waves array/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('rejects a wave that is not an array', async () => {
     const script = fakeServer(JSON.stringify({ ok: true, data: { waves: ['nope'] } }));
     await expect(
       loadWaves(work, join(work, 'tasks.yaml'), binFor(script)),
     ).rejects.toThrow(/waves\[0\] is not an array/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('rejects a task without a string id', async () => {
     const script = fakeServer(JSON.stringify({ ok: true, data: { waves: [[{ title: 'no id' }]] } }));
     await expect(
       loadWaves(work, join(work, 'tasks.yaml'), binFor(script)),
     ).rejects.toThrow(/waves\[0\]\[0\] has no string id/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 });

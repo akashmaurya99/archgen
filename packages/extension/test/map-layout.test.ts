@@ -62,7 +62,15 @@ describe('packByFile', () => {
     process.stdout.write(`[map-layout] packByFile(50k nodes / ${clusters} files) best-of-3 = ${best.toFixed(1)}ms\n`);
     // Ceiling sized for CI/suite contention: a real complexity regression
     // (O(n²)-ish at 50k) lands in seconds, far above this line.
-    expect(best).toBeLessThan(750);
+    //
+    // A wall-clock budget is only meaningful on an UNINSTRUMENTED run: v8
+    // coverage adds overhead, so under `npm run coverage` the number
+    // measures the instrumentation rather than the code. The budget is still
+    // enforced by the plain `npm test` run (CI "extension" job), and the
+    // correctness assertion below runs in BOTH.
+    if (process.env['ARCHGEN_COVERAGE'] !== '1') {
+      expect(best).toBeLessThan(750);
+    }
     expect(packByFile(nodes).positions.size).toBe(50_000);
   });
 

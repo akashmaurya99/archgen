@@ -36,7 +36,14 @@ describe('QuadTree.build', () => {
     const ms = performance.now() - t0;
     process.stdout.write(`[map-quadtree] build(10k points) = ${ms.toFixed(1)}ms\n`);
     console.log(`[map-quadtree] build 10k: ${ms.toFixed(1)}ms`);
-    expect(ms).toBeLessThan(750);
+    // A wall-clock budget is only meaningful on an UNINSTRUMENTED run: v8
+    // coverage adds overhead, so under `npm run coverage` the number
+    // measures the instrumentation rather than the code. The budget is still
+    // enforced by the plain `npm test` run (CI "extension" job), and the
+    // correctness assertion below runs in BOTH.
+    if (process.env['ARCHGEN_COVERAGE'] !== '1') {
+      expect(ms).toBeLessThan(750);
+    }
     expect(tree.size).toBe(10_000);
   });
 

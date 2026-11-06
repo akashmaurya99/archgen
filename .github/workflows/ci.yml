@@ -90,6 +90,17 @@ jobs:
         working-directory: packages/extension
       - run: npm run coverage
         working-directory: packages/extension
+      # The coverage report is the DIAGNOSIS for a threshold failure: the
+      # step's own log is enough to see "89.57% < 90%", but not enough to see
+      # WHICH file fell below. Upload it so a failure is readable without
+      # re-running the job locally.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extension-coverage
+          path: packages/extension/coverage
+          if-no-files-found: ignore
+          retention-days: 7
 
   # End-to-end fixture suites: the greenfield / brownfield / verifier-negative
   # flows now drive the REAL archgen MCP tool surface, not the old scripts.
