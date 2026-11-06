@@ -97,27 +97,41 @@ jobs:
       # step with a bare 401. Two ways to be ready:
       #   * npm trusted publishing configured for this package (no secret), or
       #   * the NPM_TOKEN secret set in this repository.
+      #
+      # Plain shell, on purpose: an inline `node -e` script is a quoting
+      # hazard (a top-level `return` in it is a SyntaxError — which is
+      # exactly how this check silently failed the first time).
       - name: Check that a publish credential is available
         if: startsWith(github.ref_name, matrix.tag)
         run: |
           version="$(npm --version)"
-          # NOTE: no top-level `return` — `node -e` runs in a module wrapper,
-          # where a top-level return is a SyntaxError.
-          node -e '
-            const v = process.argv[1];
-            const [maj, min, pat] = v.split(".").map(Number);
-            const oidcOk = maj > 11 || (maj === 11 && (min > 5 || (min === 5 && pat >= 1)));
-            const hasToken = Boolean(process.env.NPM_TOKEN);
-            if (oidcOk) {
-              console.log(`npm CLI ${v} supports trusted publishing (OIDC).`);
-            } else if (hasToken) {
-              console.log(`::warning::npm CLI ${v} cannot do trusted publishing (needs >= 11.5.1); publishing with the NPM_TOKEN secret instead.`);
-            } else {
-              console.error(`::error::No publish credential. npm CLI ${v} cannot do trusted publishing (needs >= 11.5.1) and the NPM_TOKEN secret is not set.`);
-              console.error(`::error::Fix: add the NPM_TOKEN secret to this repository, OR configure npm trusted publishing for ${process.env.PACKAGE_NAME} on npmjs.com (Package -> Settings -> Trusted Publishers -> GitHub Actions, repository akashmaurya99/archgen, workflow publish-npm.yml).`);
-              process.exit(1);
-            }
-          ' "$version"
+          major="${version%%.*}"
+          rest="${version#*.}"
+          minor="${rest%%.*}"
+          patch="${rest#*.}"
+          patch="${patch%%-*}"
+
+          # npm's trusted publishing needs npm CLI >= 11.5.1.
+          oidc_ok=0
+          if [ "$major" -gt 11 ]; then
+            oidc_ok=1
+          elif [ "$major" -eq 11 ]; then
+            if [ "$minor" -gt 5 ]; then
+              oidc_ok=1
+            elif [ "$minor" -eq 5 ] && [ "$patch" -ge 1 ]; then
+              oidc_ok=1
+            fi
+          fi
+
+          if [ "$oidc_ok" -eq 1 ]; then
+            echo "npm CLI $version supports trusted publishing (OIDC)."
+          elif [ -n "${NPM_TOKEN:-}" ]; then
+            echo "::warning::npm CLI $version cannot do trusted publishing (needs >= 11.5.1); publishing with the NPM_TOKEN secret instead."
+          else
+            echo "::error::No publish credential. npm CLI $version cannot do trusted publishing (needs >= 11.5.1) and the NPM_TOKEN secret is not set."
+            echo "::error::Fix: add the NPM_TOKEN secret to this repository, OR configure npm trusted publishing for $PACKAGE_NAME on npmjs.com (Package -> Settings -> Trusted Publishers -> GitHub Actions, repository akashmaurya99/archgen, workflow publish-npm.yml)."
+            exit 1
+          fi
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_NAME: ${{ matrix.name }}
