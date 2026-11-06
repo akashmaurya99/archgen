@@ -29,7 +29,7 @@
     "test:contract": "node internal/tools/check-capability-contract.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "license": "MIT",
   "repository": {
