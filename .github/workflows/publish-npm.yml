@@ -52,9 +52,12 @@ jobs:
           - tag: vmcp
             dir: packages/mcp
             name: archgen-mcp
+            has_lockfile: true
           - tag: vcli
             dir: packages/cli
             name: archgen-skill
+            # The CLI is zero-dependency and ships no lockfile on purpose.
+            has_lockfile: false
     # Each matrix leg handles ONE tag prefix. Without this guard, pushing
     # `vmcp-0.0.6` also ran the archgen-skill leg, which then refused the
     # mismatched tag and turned the whole run red for a reason that was not a
@@ -162,7 +165,18 @@ jobs:
       - name: Install
         if: startsWith(github.ref_name, matrix.tag)
         working-directory: ${{ matrix.dir }}
-        run: npm ci --no-audit --no-fund
+        run: |
+          if [ "${{ matrix.has_lockfile }}" = "true" ]; then
+            npm ci --no-audit --no-fund
+          else
+            # packages/cli is ZERO-DEPENDENCY and deliberately ships NO
+            # lockfile: there is nothing to install, and `npm ci` REFUSES a
+            # missing lockfile (EUSAGE: "can only install with an existing
+            # package-lock.json"). A lockfile is generated only so npm can
+            # resolve the (empty) tree — it is never committed.
+            echo "packages/cli has no dependencies and no lockfile — nothing to install."
+            npm install --package-lock-only --no-audit --no-fund
+          fi
 
       - name: Test
         if: startsWith(github.ref_name, matrix.tag)
