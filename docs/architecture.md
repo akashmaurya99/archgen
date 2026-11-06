@@ -27,6 +27,30 @@ All three read the same artifacts and the same task-file schema
 plus a parity test keep the MCP core's parser and the extension's TS port from
 diverging.
 
+## The containment model
+
+The server takes paths from a model, and a model can be talked into reading a
+private key. So the server owns a boundary:
+
+- The **anchor** is the directory the server was started in — the project the
+  CLI named, or the cwd an MCP client started it in. It does not change per
+  call.
+- A tool's `projectRoot` argument is a **selector**: it must resolve inside
+  the anchor, or the call is refused with `PERMISSION_DENIED`. It cannot
+  redefine the boundary — that is what made the old containment checks
+  worthless, since they were measured against a root the model supplied.
+- Every path derived from a project root is resolved through the anchor and
+  contained again, and a symlinked parent is caught by comparing **real**
+  paths, not by a textual prefix.
+- A file inside a contained directory is still checked: a document whose real
+  path lands outside the artifact space is refused, because a repository can
+  ship `.archgen/leak.md → ~/.aws/credentials`.
+
+The same principle runs through the other two packages: the extension
+validates a bridge command's id as a **file name** before it runs (the id
+becomes the acknowledgement file's name), and the installer asserts
+containment **before** it mutates anything.
+
 ## The two-gate flow
 
 No task executes until two gates pass, in order — never skipped, even for SMALL scopes:

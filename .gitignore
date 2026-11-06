@@ -26,6 +26,11 @@ packages/cli/vendor/skills/archgen/.archgen-version
 # CodeGraph indexes are local machine state — never commit them
 .codegraph/
 
+# The VS Code extension's runtime state inside .archgen/.runtime/ — a heartbeat
+# and the command acknowledgements. Machine state, like the index above: it
+# changes on every run and belongs to the machine, not to the repository.
+.archgen/.runtime/
+
 # The CLI is zero-dependency and deliberately ships NO lockfile. CI's audit job
 # generates one in the workspace only to resolve the dependency tree; it must
 # never be committed, or a transitive bump would land in the repo unnoticed.

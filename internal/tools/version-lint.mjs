@@ -69,14 +69,16 @@ const SKIP = [
 ];
 
 /**
- * Lines that are a REAL version surface even inside a scanned file: the
- * managed-block stamp install.sh writes, and a manifest/frontmatter version
- * field. Everything else in the same file is prose.
+ * Lines that are a REAL version surface even inside a scanned file.
+ *
+ * Only the install.sh managed-block stamp qualifies: the manifest,
+ * lockfile and frontmatter version fields all live in files that are
+ * already exempt as a whole, so exempting them LINE-WISE here would only
+ * open a hole — a doc could then show a bare version field on a line of its
+ * own and slip through.
  */
 const ALLOWED_LINE = [
   /<!--\s*archgen:block\s+v\d+\.\d+\.\d+\s*-->/,
-  /^\s*"?version"?\s*:\s*"?\d+\.\d+\.\d+"?\s*,?\s*$/,
-  /^\s*version:\s*\d+\.\d+\.\d+\s*$/,
 ];
 
 /**

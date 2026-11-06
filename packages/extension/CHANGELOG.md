@@ -3,10 +3,47 @@
 All notable changes to the ArchGen extension are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semver.
 
-## [0.0.7] - 2026-11-06
+## [0.0.7] - 2026-11-07
 
 ### Fixed
 
+- **The bridge could be talked into writing anywhere.** A command file is data
+  on disk inside a repository, and a repository is a supply-chain surface. The
+  command's protocol, action, workspace and expiry were all validated — but
+  not its ID, and the ID is what the acknowledgement file is named after. An
+  ID of `../../../../package.json` escaped the acknowledgement directory and
+  overwrote the workspace's `package.json` with the acknowledgement JSON, with
+  no error and no warning. IDs are now validated as file names when the
+  command is parsed, so the command never runs and no path is ever built from
+  an unvalidated ID.
+- **The DOCS "open in editor" button always opened the wrong path.** The
+  document list publishes paths relative to `<workspace>/.archgen`, but the
+  panel joined them against the workspace root. The two "open a document"
+  routes now share one base, and an absolute path is contained to the
+  workspace.
+- **A symlinked document could be read out of the artifact space.**
+  `.archgen/leak.md → ~/.aws/credentials` passed a lexical prefix check and
+  its contents were rendered in the panel. The real path of both the target
+  and the `.archgen` root are compared now.
+- **Two document reads could finish out of order**, leaving the DOCS tab
+  showing the first document while the sidebar highlighted the second. Only
+  the newest request may publish now.
+- **The board rendered dark in a light theme** until the user switched
+  themes once: the model hardcoded `themeKind: 'dark'` and the real theme
+  only arrived on a theme *change*. The model carries the actual theme.
+- **The host's "copied to clipboard" and "dispatched" messages were
+  discarded by the webview**, so the user got no confirmation of the action
+  they had just triggered. `info` and `warn` now render a visible notice.
+- **The task board re-laid out its whole DAG on every model push**, although
+  the layout depends only on the structure. It is memoized on the structural
+  signature now, so a status change no longer re-runs the layout.
+- **The per-task node cache was never pruned**, the copy button's timer was
+  never cleared, a mermaid retry nested a second zoom viewport, the empty
+  state claimed a `.archgen/` folder that did not exist, a rejected
+  workspace-state write left the board on the wrong feature, the bridge's
+  `focus` action ignored the view it was given, two task ids could collide on
+  one transcript file, the processed-command set grew for the life of the
+  extension, and the bridge's error path could itself throw.
 - **The MCP client read the server's response on the wrong event.** It
   collected stdout and decided what to do with it on the child's `'exit'`
   event — but `'exit'` fires when the *process* is gone, while its stdout
@@ -22,11 +59,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semver.
 
 ### Changed
 
+- The `update` protocol message finally has a producer: the host ships a
+  status-only change instead of a full snapshot, and a diff that arrives
+  before the first model is buffered and replayed. The dead exports and the
+  comments that described behaviour the code did not have are gone.
 - The extension's dependencies were updated to clear every live advisory in
   the published tree: `markdown-it` 15.0.3 (four quadratic-time DoS paths),
   `mermaid` 12.3.0 (pulls the patched KaTeX), `vitest` 4.1.12 (mock-registration
   code injection, and the patched Vite). `npm audit` now reports **0
   vulnerabilities**.
+
+### Added
+
+- `path-policy`, `doc-access` and `task-diff` — one containment policy, one
+  guarded document reader, and the change the `update` message carries.
+
+Tests: 702 → 772 in 53 files. Coverage holds: branches 91.63%, statements
+96.29%, functions 96.27%, lines 98.19%.
 
 ## [0.0.6] - 2026-11-06
 

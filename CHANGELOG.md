@@ -1,29 +1,126 @@
-## [0.0.7] - 2026-11-06
+## [0.0.7] - 2026-11-07
 
-### Fixed
+This release is the hardening pass that followed the MCP-first cutover. A
+line-by-line audit of all three packages found 50 defects; every one is fixed
+here, each at its root cause rather than at its symptom. The ones that
+changed what the tool DOES are listed first.
 
-- **Generated artifacts now record the version that produced them.** The
-  `scaffold` action wrote a bare `# generator: archgen` — no version at all —
-  even though the server knows its own version exactly. The provenance header
-  therefore said nothing about which release created the file, and the only
-  guidance for the agent was a placeholder it could copy literally. The tool
-  now writes the running server's version, and the reference tells the agent
-  to paste that header verbatim and never type a version itself.
-- **`--project` is a flag, never a directory name.** `archgen-skill init`,
-  `doctor` and `update` took the project directory *positionally*, so
-  `init --project .` silently created a directory literally named
-  `--project` in the current directory and installed the skill into it — no
-  error, no warning. `--project <dir>` and `--project=<dir>` are now accepted
-  everywhere the positional form is, and an **unknown flag is a usage error**
-  rather than a directory name (`init --no-mcpx` refuses instead of creating
-  `--no-mcpx/`). The same rule `migrate` and the MCP server already followed.
-- **The extension read the MCP server's response on `'exit'`**, which fires
-  before stdout is drained. On a fast runner the client could see an empty
-  buffer from a server that had answered correctly and report
-  `produced no JSON (exit 0)`. It now reads on `'close'`, which fires after
-  the stdio streams are closed. The same race in `launchHarness` (its output
-  tail could lose its last lines) and in the dispatch toast is fixed too. A
-  deterministic regression test reproduces the original failure byte-for-byte.
+### Fixed — security
+
+- **The MCP server's boundary was model-controlled.** Every containment check
+  was relative to a root the MODEL chose, so naming a different
+  `projectRoot` moved the edge of what the server would read or write. The
+  server now owns an **anchor** — the directory it was started in — and a
+  tool's `projectRoot` is a *selector*: it must resolve inside the anchor, or
+  the call is refused with `PERMISSION_DENIED`.
+- **The extension's bridge could be talked into writing anywhere.** A command
+  id became the acknowledgement file's name, and an id of
+  `../../../../package.json` overwrote the workspace's `package.json`. Ids
+  are now validated as file names at parse time, so the command never runs.
+- **A symlinked document could be read out of the artifact space.**
+  `.archgen/leak.md -> ~/.aws/credentials` passed a lexical prefix check and
+  its contents were rendered. The real path of both the target and the
+  `.archgen` root is compared now.
+- **Restoring a snapshot removed every other installed skill.** The vault
+  recorded a top-level directory name and the restore rebuilt the whole tree
+  from it. It now records the exact backed-up paths and restores exactly
+  those.
+- **`archgen uninstall <dir>` performed a GLOBAL uninstall.** The positional
+  form was accepted and then dropped, so it removed every archgen copy from
+  the user's home directories. A positional directory now routes to the
+  project uninstall.
+- **The wiring manifest's paths were untrusted input.** The manifest is a
+  file in the repository, so a clone could ship one naming any file on the
+  machine and have `uninstall_mcp` edit it. Recorded paths are contained now.
+- **The CLI's containment guard ran after the destructive step.** `install`
+  deleted the existing Claude copy before asserting it was inside the
+  project. The assertion comes first.
+- **The global uninstall guard was a suffix test.** Any manifest path ending
+  in `skills/archgen` was removed, including one outside the known harness
+  directories; an edited copy was removed with no backup. The guard is an
+  exact allow-list now, and an edited copy is backed up first.
+- **On Windows the MCP server was spawned with a shell and unquoted
+  arguments**, including the user's project path — a path with spaces was
+  split and a path with `&` was interpreted by `cmd.exe`. The shim's JS
+  entry point is invoked with node, with no shell.
+- **The scope gate accepted any `.archgen` segment on the machine.** The
+  artifact space is anchored to the project root now.
+
+### Fixed — correctness
+
+- **A status update could destroy the plan.** The emitter quoted VALUES but
+  wrote KEYS verbatim, so a quoted key like `"odd: key"` was re-emitted
+  unquoted and the file no longer parsed — every later tool call then failed.
+  Keys are encoded exactly like values now.
+- **Two workers in one wave could lose each other's status update.** The
+  whole read-modify-write now runs under an exclusive on-disk lock: the
+  workers are separate processes, so the guard has to live on disk.
+- **The coverage report was inverted.** It said every UNCOVERED task was
+  covered, because it re-derived "is this task mentioned?" from the checker's
+  NEGATIVE findings — and an uncovered task's finding names the task. The
+  checker now returns what it computed.
+- **`archgen_setup{action:'uninstall_mcp'}` always failed** — the function was
+  never imported.
+- **Wiring any MCP config crashed when Codex CLI was installed.** The
+  registry named an entry shape the writer did not know, so the loop threw
+  and every harness after it was never configured. The registry and the
+  writer now agree, and a test makes that agreement structural.
+- **The npx fallback produced a command that could never start** — the npx
+  form and the installed form are DIFFERENT COMMANDS, not one command with a
+  swapped executable.
+- **The wiring manifest recorded the wrong key**, so uninstall removed the
+  wrong section.
+- **`archgen_codegraph{action:'wire'}` installed and upgraded CodeGraph.**
+  Its own help said it would not. It now only wires.
+- **An installed CodeGraph is never upgraded.** The upgrade ran on every
+  bootstrap, so a plain `npx archgen-skill init` could rewrite a working
+  installation the user had pinned. CodeGraph is installed when it is
+  MISSING and left alone when it is there.
+- **A dispatched brief could contain `<slug dir>`.** Seven placeholders, two
+  substituted, and the `slug dir` one given the bare slug. Every placeholder
+  is filled in from ONE source now, and a brief that would still carry one
+  is refused.
+- **The resume snapshot could say "wave 3 of 2"**, and could be written
+  outside `.archgen/`. One formula is used by both the file and the response,
+  and the snapshot resolves its slug directory through the scope gate.
+- **A missing file came back as `INTERNAL`.** The agent is told to branch on
+  the code; "the file is not there" is a fact it can act on.
+- **The DOCS "open in editor" button always opened the wrong path** — the two
+  "open a document" routes disagreed about their base directory.
+- **The board rendered dark in a light theme** until the user switched
+  themes once.
+- **The task board re-laid out its whole DAG on every model push**, although
+  the layout depends only on the structure.
+- **The long-running child processes blocked the whole stdio server.** A
+  global install or an index build meant the server could not answer a
+  single other request for up to fifteen minutes. Those operations are async
+  now.
+- **Two document reads could finish out of order**, leaving the DOCS tab
+  showing the first document while the sidebar highlighted the second.
+- **The host's "copied to clipboard" messages were discarded by the
+  webview**, so the user got no confirmation of the action they triggered.
+
+### Fixed — the installer
+
+- **The store swap was not atomic**, despite the header saying it was: the
+  old store was deleted before the new one was renamed in, so a failed rename
+  left no store at all.
+- **A migration could mutate a file it never backed up** — the framework and
+  the migration computed their file lists at different moments.
+- **The doctor could crash instead of reporting**: one unreadable file
+  aborted the whole run, and a manifest without `entries` was a TypeError.
+  A `FAIL` row now sets a non-zero exit code, which it did not.
+- **A failed MCP bootstrap was reported as success.**
+- **`--project` was a flag on `init` but a directory name**, so
+  `init --project .` created a directory called `--project`. It is now
+  accepted as a flag everywhere, and an unknown flag is a usage error rather
+  than a directory name.
+- **The global uninstall skipped a failed entry and then deleted the
+  manifest**, so that entry could never be cleaned up.
+- **The CLAUDE.md managed block was never version-upgraded** — it stayed
+  frozen at the version of the first-ever init.
+- **A non-semver registry version slipped past the refusal guard**, because
+  the comparison returned "equal" for anything it could not parse.
 
 ### Changed
 
@@ -42,6 +139,11 @@
   examples now use the `>=x.y.z` placeholder the repo already used in
   `docs/releasing.md`, and `internal/tools/version-lint.mjs` keeps them that
   way — so no release ever has to go and update a comment again.
+- **The UI command queue is pruned** by age and by count, so it is bounded by
+  construction instead of growing for the life of the project.
+- **`archgen_codegraph{action:'wire'}` no longer installs** anything, and the
+  manual config writer honours the same `targets` filter the native path
+  honoured.
 
 ### Added
 
@@ -59,6 +161,26 @@
   version's `MAJOR.MINOR`, so the gate adapts as the project moves.
 - **The coverage report is uploaded as a CI artifact**, so a threshold
   failure says *which* file fell below without a local reproduction.
+- **`archgen_plan{action:'brief'}` accepts the inputs a brief genuinely
+  needs** — a feature request, a topic, a round — and refuses a brief that
+  would still carry a placeholder.
+
+### Fixed — from the previous section
+
+- **Generated artifacts now record the version that produced them.** The
+  `scaffold` action wrote a bare `# generator: archgen` — no version at all —
+  even though the server knows its own version exactly. The provenance header
+  therefore said nothing about which release created the file, and the only
+  guidance for the agent was a placeholder it could copy literally. The tool
+  now writes the running server's version, and the reference tells the agent
+  to paste that header verbatim and never type a version itself.
+- **The extension read the MCP server's response on `'exit'`**, which fires
+  before stdout is drained. On a fast runner the client could see an empty
+  buffer from a server that had answered correctly and report
+  `produced no JSON (exit 0)`. It now reads on `'close'`, which fires after
+  the stdio streams are closed. The same race in `launchHarness` (its output
+  tail could lose its last lines) and in the dispatch toast is fixed too. A
+  deterministic regression test reproduces the original failure byte-for-byte.
 
 ## [0.0.6] - 2026-11-06
 

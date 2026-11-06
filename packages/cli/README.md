@@ -42,6 +42,13 @@ copies are backed up to `.archgen/.backup/<timestamp>/` before refresh, and lega
 dual-copy layouts are migrated to symlinks automatically. Verify anytime with
 `archgen-skill doctor`.
 
+Every destructive step is behind a rail: the project root is asserted **before**
+anything is written or deleted, a symlinked target is never written through, the
+store swap is atomic (the old store is moved aside, not deleted, and restored if
+the swap fails), and a restore puts back exactly the paths the snapshot recorded
+— never a sibling skill. `archgen-skill uninstall <dir>` removes that project;
+the global uninstall happens only when no project is named.
+
 **Or install globally** into every detected harness:
 
 ```bash

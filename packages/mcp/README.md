@@ -42,7 +42,7 @@ Requires **Node.js >= 20** (the official MCP SDK v2 floor).
 | `archgen_tasks` | next wave · set status · list · resume snapshot · **contract** (the assembled worker prompt) |
 | `archgen_docs` | navigate markdown artifacts: section index, one section, token map, reference integrity |
 | `archgen_registry` | refresh / read the AGENTS.md features registry |
-| `archgen_codegraph` | install + wire + index CodeGraph and its MCP |
+| `archgen_codegraph` | install CodeGraph if it is missing · wire its MCP · index the project |
 | `archgen_setup` | doctor · bootstrap servers · install/remove the MCP · list harnesses · **harness_info** (a platform's capabilities) |
 | `archgen_ui` | drive the VS Code extension in real time |
 | `archgen_skills` | match / install / load external capability skills |
@@ -112,14 +112,23 @@ implementation of any capability, only a second way to reach it.
 
 ## Safety
 
+- The server owns a **boundary**: the directory it was started in. A tool's
+  `projectRoot` argument selects a directory *inside* that boundary — it
+  cannot redefine it, so a model cannot move the edge by naming a different
+  root.
 - Every path argument is resolved against the project root and refused if it
-  escapes; symlinked targets are never written through.
+  escapes; symlinked targets are never written through, and a symlinked
+  *parent* is caught by comparing real paths.
+- The artifact space is anchored to the project: a `.archgen` directory
+  elsewhere on the machine is not this project's artifacts.
 - MCP-config writes are approval-gated (`approve: true` / `--yes`); without
   approval the tool reports its **plan** and writes nothing.
 - A config file that cannot be parsed is reported, never rewritten.
 - Writes are atomic (temp file + rename): readers see old-or-new, never a
-  partial file.
-- UI commands are allowlisted, workspace-scoped, expiring, and idempotent.
+  partial file. A read-modify-write — a status update, a config merge — runs
+  under an exclusive lock, so two workers cannot lose each other's change.
+- UI commands are allowlisted, workspace-scoped, expiring, and idempotent;
+  the command queue is pruned, so it cannot grow without bound.
 
 ## License
 
