@@ -55,10 +55,16 @@ jobs:
           - tag: vcli
             dir: packages/cli
             name: archgen-skill
+    # Each matrix leg handles ONE tag prefix. Without this guard, pushing
+    # `vmcp-0.0.6` also ran the archgen-skill leg, which then refused the
+    # mismatched tag and turned the whole run red for a reason that was not a
+    # real problem.
     steps:
       - uses: actions/checkout@v4
+        if: startsWith(github.ref_name, matrix.tag)
 
       - uses: actions/setup-node@v4
+        if: startsWith(github.ref_name, matrix.tag)
         with:
           # Node 24 ships npm 11.x. npm's trusted publishing needs npm CLI
           # >= 11.5.1, and Node 22 still ships npm 10.x — so the publish job
@@ -73,6 +79,7 @@ jobs:
       # duplicate), and npm refuses re-publishes — so fail early and loudly.
       - name: Verify the tag matches the package version
         id: verify
+        if: startsWith(github.ref_name, matrix.tag)
         working-directory: ${{ matrix.dir }}
         run: |
           set -euo pipefail
@@ -91,8 +98,11 @@ jobs:
       #   * npm trusted publishing configured for this package (no secret), or
       #   * the NPM_TOKEN secret set in this repository.
       - name: Check that a publish credential is available
+        if: startsWith(github.ref_name, matrix.tag)
         run: |
           version="$(npm --version)"
+          # NOTE: no top-level `return` — `node -e` runs in a module wrapper,
+          # where a top-level return is a SyntaxError.
           node -e '
             const v = process.argv[1];
             const [maj, min, pat] = v.split(".").map(Number);
@@ -100,45 +110,54 @@ jobs:
             const hasToken = Boolean(process.env.NPM_TOKEN);
             if (oidcOk) {
               console.log(`npm CLI ${v} supports trusted publishing (OIDC).`);
-              return;
-            }
-            if (hasToken) {
+            } else if (hasToken) {
               console.log(`::warning::npm CLI ${v} cannot do trusted publishing (needs >= 11.5.1); publishing with the NPM_TOKEN secret instead.`);
-              return;
+            } else {
+              console.error(`::error::No publish credential. npm CLI ${v} cannot do trusted publishing (needs >= 11.5.1) and the NPM_TOKEN secret is not set.`);
+              console.error(`::error::Fix: add the NPM_TOKEN secret to this repository, OR configure npm trusted publishing for ${process.env.PACKAGE_NAME} on npmjs.com (Package -> Settings -> Trusted Publishers -> GitHub Actions, repository akashmaurya99/archgen, workflow publish-npm.yml).`);
+              process.exit(1);
             }
-            console.error(`::error::No publish credential. npm CLI ${v} cannot do trusted publishing (needs >= 11.5.1) and the NPM_TOKEN secret is not set.`);
-            console.error(`::error::Fix: add the NPM_TOKEN secret to this repository, OR configure npm trusted publishing for ${process.env.PACKAGE_NAME} (npmjs.com -> Settings -> Trusted Publishers -> GitHub Actions, workflow publish-npm.yml).`);
-            process.exit(1);
           ' "$version"
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_NAME: ${{ matrix.name }}
 
       - name: Install
+        if: startsWith(github.ref_name, matrix.tag)
         working-directory: ${{ matrix.dir }}
         run: npm ci --no-audit --no-fund
 
       - name: Test
+        if: startsWith(github.ref_name, matrix.tag)
         working-directory: ${{ matrix.dir }}
         run: npm test
 
       - name: Publish
+        if: startsWith(github.ref_name, matrix.tag)
         working-directory: ${{ matrix.dir }}
         # npm tries OIDC first (the exchange never throws, so it falls back to
         # the token on its own). The token is put in the environment ONLY when
         # it exists: an EMPTY NODE_AUTH_TOKEN would make npm authenticate with
         # "" and fail with ENEEDAUTH instead of using OIDC.
         run: |
+          set -o pipefail
           if [ -n "${NPM_TOKEN:-}" ]; then
             echo "::notice::the NPM_TOKEN secret is present; npm will use it if the OIDC exchange is refused"
             export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          else
+            echo "::notice::no NPM_TOKEN secret — publishing via npm trusted publishing (OIDC)"
           fi
-          npm publish --provenance --access public
+          npm publish --provenance --access public 2>&1 | tee publish.log || {
+            echo "::error::npm publish failed for ${{ matrix.name }}. If this says ENEEDAUTH or 401, the npm trusted publisher is not configured for it."
+            echo "::error::Fix: npmjs.com -> Packages -> ${{ matrix.name }} -> Settings -> Trusted Publishers -> GitHub Actions (repository akashmaurya99/archgen, workflow publish-npm.yml), OR add the NPM_TOKEN secret to this repository."
+            exit 1
+          }
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # The package name in the log proves which package went out; the npm URL
       # is the canonical landing page.
       - name: Summary
+        if: startsWith(github.ref_name, matrix.tag)
         run: |
           echo "::notice::published ${{ steps.verify.outputs.publishing }} — https://www.npmjs.com/package/${{ matrix.name }}"
