@@ -17,9 +17,9 @@
 // These semantics are inherited verbatim from the CLI's store.js and from
 // skill/scripts/set-status.mjs — the MCP server must not be weaker than the
 // scripts it replaces.
-import { lstatSync, mkdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
-import { permissionDenied } from './errors.mjs';
+import { conflict, permissionDenied } from './errors.mjs';
 
 /** Canonical refusal message — identical wording to the CLI's. */
 export function refuseSymlinkMessage(absPath) {
@@ -105,10 +105,13 @@ export function containPath(rootAbs, candidate) {
  *
  * @param {string} file absolute target path
  * @param {string|Buffer} content
- * @param {{eol?: string}} [opts]
+ * @param {{eol?: string, root?: string}} [opts] `root` adds a containment
+ *   check for the whole parent chain, so a symlinked PARENT cannot redirect
+ *   the write outside the tree.
  */
 export function writeFileAtomic(file, content, opts = {}) {
   mkdirSync(dirname(file), { recursive: true });
+  if (opts.root) assertWithinRoot(opts.root, file);
   assertNotSymlink(file);
   let tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
   for (let attempt = 0; ; attempt++) {
@@ -134,6 +137,72 @@ export function writeFileAtomic(file, content, opts = {}) {
     throw e;
   }
   return file;
+}
+
+/**
+ * Run `fn` while holding an exclusive lock on `file`.
+ *
+ * WHY. An atomic write stops a READER seeing a half-written file. It does
+ * not stop two WRITERS losing each other's work: worker A reads tasks.yaml,
+ * worker B reads the same bytes, A writes its status change, B writes its
+ * own from the stale snapshot — and A's change is gone. The parallel
+ * workers are separate processes by design, so the guard has to live on
+ * disk, not in memory.
+ *
+ * The lock is a sibling `<file>.lock` created with O_EXCL. A lock older than
+ * `staleMs` is a crashed holder's leftover and is broken. The lock is always
+ * released, including when `fn` throws.
+ *
+ * @param {string} file the file being mutated
+ * @param {() => any} fn
+ * @param {{timeoutMs?: number, staleMs?: number, pollMs?: number}} [opts]
+ * @returns {any} whatever `fn` returns
+ */
+export function withFileLock(file, fn, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const staleMs = opts.staleMs ?? 30_000;
+  const pollMs = opts.pollMs ?? 50;
+  const lockPath = `${file}.lock`;
+  const deadline = Date.now() + timeoutMs;
+
+  mkdirSync(dirname(lockPath), { recursive: true });
+  for (;;) {
+    try {
+      writeFileSync(lockPath, String(process.pid), { flag: 'wx' });
+      break;
+    } catch (e) {
+      if (e?.code !== 'EEXIST') throw e;
+      // A lock older than staleMs belongs to a holder that died.
+      try {
+        const age = Date.now() - statSync(lockPath).mtimeMs;
+        if (age > staleMs) {
+          unlinkSync(lockPath);
+          continue;
+        }
+      } catch {
+        continue; // the lock vanished between the EEXIST and the stat
+      }
+      if (Date.now() > deadline) {
+        throw conflict(`timed out after ${timeoutMs}ms waiting for the lock on ${file}`, { file, lockPath });
+      }
+      sleepSync(pollMs);
+    }
+  }
+
+  try {
+    return fn();
+  } finally {
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      /* the lock is already gone */
+    }
+  }
+}
+
+/** Block the current thread for `ms` milliseconds. */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 

@@ -17,7 +17,7 @@
 import { readFileSync } from 'node:fs';
 import { parseYaml, stringifyYaml } from './yaml.mjs';
 import { conflict, invalidInput } from './errors.mjs';
-import { writeFileAtomic } from './fs-safety.mjs';
+import { writeFileAtomic, withFileLock } from './fs-safety.mjs';
 
 export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 
@@ -30,6 +30,23 @@ export function detectEol(raw) {
   const crlfCount = (raw.match(/\r\n/g) ?? []).length;
   const loneLfCount = (raw.match(/(?<!\r)\n/g) ?? []).length;
   return crlfCount > loneLfCount ? '\r\n' : '\n';
+}
+
+/**
+ * Do two task ids name the same task?
+ *
+ * Textually equal ids match. A NUMERIC id also matches by value, because
+ * YAML resolves `id: 007` to the number 7 — the agent holds the text it
+ * read and the parser holds the value. A QUOTED id is text and matches
+ * exactly: `id: "7"` and "07" are different tasks.
+ */
+export function sameId(a, b) {
+  const sa = String(a ?? '');
+  const sb = String(b ?? '');
+  if (sa === sb) return true;
+  if (typeof a !== 'number') return false;
+  const nb = Number(sb);
+  return sb.trim() !== '' && Number.isFinite(nb) && a === nb;
 }
 
 /**
@@ -48,6 +65,15 @@ export function setTaskStatus(file, taskId, nextStatus, opts = {}) {
     throw invalidInput(`invalid status '${nextStatus}' (allowed: ${STATUSES.join('|')})`, { status: nextStatus });
   }
 
+  // The whole read-modify-write runs under an exclusive lock. Atomic writes
+  // keep a reader from seeing a half-written file, but two writers still
+  // lose each other's changes without this: parallel workers in one wave
+  // each read the same bytes and each write its own status over the other's.
+  return withFileLock(file, () => mutateStatus(file, taskId, nextStatus, force));
+}
+
+/** The read-modify-write itself. Runs with the file's lock held. */
+function mutateStatus(file, taskId, nextStatus, force) {
   let raw;
   try {
     raw = readFileSync(file, 'utf8');
@@ -71,7 +97,11 @@ export function setTaskStatus(file, taskId, nextStatus, opts = {}) {
   const tasks = data?.tasks;
   if (!Array.isArray(tasks)) throw invalidInput(`${file}: missing 'tasks:' sequence`, { file });
 
-  const task = tasks.find((t) => t && t.id === taskId);
+  // Ids are matched as TEXT, and — when both sides are numeric — as NUMBERS.
+  // YAML reads `id: 007` as the number 7, so the id the agent holds ("007")
+  // and the id the file holds (7) are different strings for the same task.
+  // A strict comparison made such a task permanently unaddressable.
+  const task = tasks.find((t) => t && sameId(t.id, taskId));
   if (!task) throw invalidInput(`task '${taskId}' not found in ${file}`, { file, taskId });
 
   const prev = task.status ?? 'pending';
@@ -82,9 +112,10 @@ export function setTaskStatus(file, taskId, nextStatus, opts = {}) {
     );
   }
 
+  const changed = prev !== nextStatus;
   task.status = nextStatus;
   const content = stringifyYaml(data, comments, { eol });
   writeFileAtomic(file, content);
 
-  return { taskId, from: prev, to: nextStatus, changed: true, file };
+  return { taskId, from: prev, to: nextStatus, changed, file };
 }

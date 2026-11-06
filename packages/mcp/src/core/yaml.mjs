@@ -432,6 +432,31 @@ function samePath(a, b) {
   return true;
 }
 
+/**
+ * Encode a mapping key.
+ *
+ * Keys are written the way VALUES are written: quoted whenever a plain key
+ * would be misread. A key containing ": ", starting with a YAML indicator,
+ * or looking like a number or a keyword is quoted, so the file the emitter
+ * writes always parses back to the key it was given.
+ *
+ * Without this, a key like `odd: key` was emitted verbatim and produced a
+ * file that no longer parsed — and a single `set_status` could destroy the
+ * plan it was updating.
+ */
+function encodeKey(k) {
+  const s = String(k);
+  if (s === '') return '""';
+  if (
+    /^[A-Za-z_][A-Za-z0-9_-]*$/.test(s) &&
+    !/^(true|false|null|yes|no|on|off)$/i.test(s) &&
+    !/^-?\d+(\.\d+)?$/.test(s)
+  ) {
+    return s;
+  }
+  return JSON.stringify(s);
+}
+
 function emitValue(out, v, indent, comments, used, path) {
   const pad = ' '.repeat(indent);
   if (Array.isArray(v)) {
@@ -450,7 +475,7 @@ function emitValue(out, v, indent, comments, used, path) {
         const [k0, v0] = entries[0];
         const k0path = [...itemPath, k0];
         preComments(out, comments, used, k0path);
-        out.push(pad + '- ' + k0 + ': ' + encodeScalar(v0));
+        out.push(pad + '- ' + encodeKey(k0) + ': ' + encodeScalar(v0));
         inlineCommentFor(out, comments, used, k0path);
         emitEntries(out, entries.slice(1), indent + INDENT_UNIT, comments, used, itemPath);
       } else {
@@ -473,13 +498,13 @@ function emitEntries(out, entries, indent, comments, used, basePath) {
     const kpath = [...basePath, k];
     preComments(out, comments, used, kpath);
     if (val !== null && typeof val === 'object') {
-      if (Object.keys(val).length === 0 && !Array.isArray(val)) { out.push(pad + k + ': {}'); inlineCommentFor(out, comments, used, kpath); continue; }
-      if (Array.isArray(val) && val.length === 0) { out.push(pad + k + ': []'); inlineCommentFor(out, comments, used, kpath); continue; }
-      out.push(pad + k + ':');
+      if (Object.keys(val).length === 0 && !Array.isArray(val)) { out.push(pad + encodeKey(k) + ': {}'); inlineCommentFor(out, comments, used, kpath); continue; }
+      if (Array.isArray(val) && val.length === 0) { out.push(pad + encodeKey(k) + ': []'); inlineCommentFor(out, comments, used, kpath); continue; }
+      out.push(pad + encodeKey(k) + ':');
       inlineCommentFor(out, comments, used, kpath);
       emitValue(out, val, indent + INDENT_UNIT, comments, used, kpath);
     } else {
-      out.push(pad + k + ': ' + encodeScalar(val));
+      out.push(pad + encodeKey(k) + ': ' + encodeScalar(val));
       inlineCommentFor(out, comments, used, kpath);
     }
   }
