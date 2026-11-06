@@ -45,6 +45,8 @@ Usage:
                                 store at .agents/skills/archgen, symlink
                                 .claude/skills/archgen -> ../../.agents/skills/archgen,
                                 and generate AGENTS.md / CLAUDE.md pointer blocks.
+    [--project <dir>]              the project directory (same as the positional
+                                   form; give it once, not both)
     [--force]                     proceed automatically; divergent copies are
                                   backed up to .archgen/.backup/ (never destroyed)
     [--no-codegraph]              skip the CodeGraph bootstrap
@@ -52,6 +54,7 @@ Usage:
   npx archgen-skill doctor [dir]      Health-check a project install: store integrity,
                                 version stamp, claude link, managed blocks,
                                 manifest. Repairs safe issues in place.
+    [--project <dir>]              the project directory (same as the positional form)
     [--check]                     report only - change nothing
   npx archgen-skill install           Install into global harness skill dirs
     [--copy]                      real copies instead of symlinks
@@ -89,8 +92,60 @@ function flag(name) {
   return true;
 }
 
+/**
+ * Consume an option that takes a value: `--name <value>` or `--name=<value>`.
+ *
+ * Returns null when the option is absent, '' when it is present with no
+ * value ("use the default"), and the value otherwise.
+ */
+function takeValue(name) {
+  const eq = rest.findIndex((a) => a.startsWith(name + '='));
+  if (eq !== -1) {
+    const v = rest[eq].slice(name.length + 1);
+    rest.splice(eq, 1);
+    return v;
+  }
+  const i = rest.indexOf(name);
+  if (i === -1) return null;
+  rest.splice(i, 1);
+  const v = rest[i];
+  if (v === undefined || v.startsWith('-')) return '';
+  rest.splice(i, 1);
+  return v;
+}
+
+/**
+ * The project directory for a command.
+ *
+ * Accepts a POSITIONAL dir (`init myproj`) and `--project <dir>` alike. The
+ * same flag name is used by `uninstall` and `restore`, and the MCP server's
+ * own commands take `--project` too — so a user who typed one form must
+ * never get a directory literally named "--project" created in their cwd.
+ */
+function targetDir() {
+  const explicit = takeValue('--project');
+  const positional = rest.find((a) => !a.startsWith('-'));
+  if (explicit && positional !== undefined && resolve(explicit) !== resolve(positional)) {
+    throw new Error('give the project directory once: either positionally or with --project');
+  }
+  const dir = explicit || positional;
+  return dir ? resolve(dir) : process.cwd();
+}
+
+/**
+ * Refuse an option we do not understand.
+ *
+ * An unknown flag is a TYPO. It is never a directory name — creating a
+ * directory called "--no-mcp" because the flag was misspelled is exactly the
+ * kind of silent mess this check exists to prevent.
+ */
+function assertNoUnknownFlags() {
+  const unknown = rest.find((a) => a.startsWith('-'));
+  if (unknown) throw new Error(`unknown option: ${unknown}`);
+}
+
 function positionalDir() {
-  return rest[0] ? resolve(rest[0]) : process.cwd();
+  return targetDir();
 }
 
 try {
@@ -99,7 +154,9 @@ try {
       flag('--force');
       const noCodegraph = flag('--no-codegraph');
       const noMcp = flag('--no-mcp');
-      const r = initProject(positionalDir(), PACKAGE_ROOT, { codegraph: !noCodegraph, mcp: !noMcp });
+      const dir = targetDir();
+      assertNoUnknownFlags();
+      const r = initProject(dir, PACKAGE_ROOT, { codegraph: !noCodegraph, mcp: !noMcp });
       console.log('archgen: project ready (single-store layout)');
       console.log('  + store ' + r.storePath);
       if (r.claudeLink === 'created') console.log('  + link  .claude/skills/archgen -> ../../.agents/skills/archgen');
@@ -117,7 +174,9 @@ try {
     }
     case 'doctor': {
       const check = flag('--check');
-      const r = doctorProject(positionalDir(), PACKAGE_ROOT, { check });
+      const dir = targetDir();
+      assertNoUnknownFlags();
+      const r = doctorProject(dir, PACKAGE_ROOT, { check });
       console.log('archgen doctor — ' + r.root + (check ? '  (check mode: no changes made)' : ''));
       for (const c of r.checks) console.log(`  [${c.status.toLowerCase().padEnd(9)}] ${c.msg}`);
       const t = r.tally;
@@ -138,8 +197,11 @@ try {
       break;
     }
     case 'uninstall': {
-      if (flag('--project')) {
-        const r = uninstallProject(positionalDir(), PACKAGE_ROOT);
+      // `--project` may carry a directory (`uninstall --project myproj`) or
+      // stand alone (`uninstall --project` → this directory).
+      const projectTarget = takeValue('--project');
+      if (projectTarget !== null) {
+        const r = uninstallProject(projectTarget ? resolve(projectTarget) : process.cwd(), PACKAGE_ROOT);
         console.log('archgen: project uninstall — ' + r.root);
         if (r.linkRemoved) console.log('  - .claude/skills/archgen (link)');
         if (r.strippedBlocks.length) console.log('  - managed blocks stripped from ' + r.strippedBlocks.join(', '));
@@ -166,7 +228,8 @@ try {
       break;
     }
     case 'update': {
-      const dir = positionalDir();
+      const dir = targetDir();
+      assertNoUnknownFlags();
       const current = cliVersion();
       console.log('archgen update — running v' + current + ', checking npm registry…');
       const latest = fetchLatestVersion('archgen-skill');
