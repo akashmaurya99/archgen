@@ -4,12 +4,13 @@
 //   node context-budget.mjs [--skill-dir <dir>] [--project <dir>] [--slug <name>]
 //                           [--json] [--windows <list>] [--budget <n>] [--tokenizer <pkg>]
 // Exit 0 ok · 1 over --budget · 2 invalid input · 4 unreadable input.
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { estimateTokens, exactTokens, fmtTokens, pctOf } from './tokens.mjs';
 
-const USAGE = 'usage: context-budget.mjs [--skill-dir <dir>] [--project <dir>] [--slug <name>] [--json] [--windows <list>] [--budget <n>] [--tokenizer <pkg>]';
+const USAGE = 'usage: context-budget.mjs [--skill-dir <dir>] [--project <dir>] [--slug <name>] [--mcp-dir <dir>] [--json] [--windows <list>] [--budget <n>] [--max-always-on <n>] [--tokenizer <pkg>]';
 const DEFAULT_WINDOWS = [32768, 65536, 131072, 200000, 1000000];
 
 function die(msg, code = 4) { console.error(`context-budget: ${msg}`); process.exit(code); }
@@ -23,7 +24,9 @@ const opts = {
   json: false,
   windows: DEFAULT_WINDOWS,
   budget: null,
+  maxAlwaysOn: null,
   tokenizer: null,
+  mcpDir: null,
 };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -33,7 +36,9 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--json') opts.json = true;
   else if (a === '--windows') opts.windows = String(argv[++i] ?? '').split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n) && n > 0);
   else if (a === '--budget') opts.budget = parseInt(argv[++i], 10);
+  else if (a === '--max-always-on') opts.maxAlwaysOn = parseInt(argv[++i], 10);
   else if (a === '--tokenizer') opts.tokenizer = argv[++i];
+  else if (a === '--mcp-dir') opts.mcpDir = argv[++i];
   else if (a.startsWith('--')) die(`${USAGE} — unknown option '${a}'`);
   else die(`${USAGE} — unexpected argument '${a}'`);
 }
@@ -42,6 +47,7 @@ if (opts.skillDir === undefined || opts.project === undefined || opts.slug === u
 }
 if (opts.windows.length === 0) die(`${USAGE} — --windows needs at least one positive integer`);
 if (opts.budget !== null && (!Number.isFinite(opts.budget) || opts.budget <= 0)) die(`${USAGE} — --budget needs a positive integer`);
+if (opts.maxAlwaysOn !== null && (!Number.isFinite(opts.maxAlwaysOn) || opts.maxAlwaysOn <= 0)) die(`${USAGE} — --max-always-on needs a positive integer`);
 
 // --- skill dir resolution ----------------------------------------------------
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -49,7 +55,7 @@ function resolveSkillDir() {
   const candidates = [
     opts.skillDir ? resolve(opts.skillDir) : null,
     join(SCRIPT_DIR, '..'), // installed layout: <skill>/scripts/context-budget.mjs
-    join(SCRIPT_DIR, '..', '..', '..', 'skill'), // repo layout: <repo>/skill/scripts/...
+    join(SCRIPT_DIR, '..', '..', '..', 'skill'), // repo layout: <repo>/skill/
   ].filter(Boolean);
   for (const c of candidates) {
     if (existsSync(join(c, 'SKILL.md'))) return c;
@@ -130,6 +136,9 @@ const MODE_REFERENCES = {
 };
 
 /** Dev-only subtrees that never ship to users (mirrors the CLI's DEV_ONLY_RELPATHS). */
+// The skill ships no code any more, so the only dev-only subtree left to
+// exclude is the legacy scripts/test (never shipped). The obsolete scripts/
+// tree is pruned by the installer, not excluded here.
 const DEV_ONLY_RELPATHS = ['scripts/test'];
 
 function isDevOnly(rel) {
@@ -182,7 +191,7 @@ async function auditSkill() {
     id: 'skill-full',
     label: 'entire shipped skill tree (worst case: agent reads every file)',
     tokens: shippedTotal,
-    note: 'includes scripts — normally invoked, never read',
+    note: 'the guidance tree — normally read selectively, never in full',
   });
   return {
     dir: skillDir,
@@ -236,6 +245,61 @@ async function auditArtifacts(projectRoot, slugFilter) {
   return results;
 }
 
+// --- MCP tool catalog --------------------------------------------------------
+//
+// THE CATALOG IS A PERMANENT CONTEXT TAX. Every MCP client injects every
+// tool's name, description and JSON schema into the model's context on every
+// request — so the catalog costs as much as the SKILL.md, forever. Measuring
+// it is the only way to keep a growing tool surface honest.
+//
+// The catalog is measured from the LIVE tool registry (the same specs the
+// server registers), not from a hand-written copy, so it can never drift.
+
+/**
+ * Measure the injected cost of the MCP tool catalog.
+ *
+ * The number comes from the SERVER's OWN output (`archgen-mcp --catalog`),
+ * which prints exactly what a client injects: each tool's name, description
+ * and JSON schema. Measuring a hand-written copy would let the budget drift
+ * from reality — the whole point of this tool is that it cannot.
+ *
+ * @param {string} mcpDir the packages/mcp directory
+ * @returns {Promise<{available: boolean, tools: Array<{name: string, tokens: number}>, totalTokens: number, bytes: number, reason?: string}>}
+ */
+async function auditCatalog(mcpDir) {
+  const bin = join(mcpDir, 'bin', 'archgen-mcp.mjs');
+  if (!existsSync(bin)) {
+    return { available: false, tools: [], totalTokens: 0, bytes: 0, reason: `no MCP package at ${mcpDir}` };
+  }
+  let stdout;
+  try {
+    const r = spawnSync(process.execPath, [bin, '--catalog'], { encoding: 'utf8', timeout: 30000 });
+    if (r.status !== 0) throw new Error(r.stderr?.trim().split('\n')[0] || `exit ${r.status}`);
+    stdout = r.stdout;
+  } catch (e) {
+    return {
+      available: false,
+      tools: [],
+      totalTokens: 0,
+      bytes: 0,
+      reason: `the MCP catalog could not be read (${e instanceof Error ? e.message : String(e)}) — run: npm ci --prefix packages/mcp`,
+    };
+  }
+  let catalog;
+  try {
+    catalog = JSON.parse(stdout);
+  } catch (e) {
+    return { available: false, tools: [], totalTokens: 0, bytes: 0, reason: `the MCP catalog is not valid JSON: ${e.message}` };
+  }
+  const tools = catalog.map((t) => ({ name: t.name, tokens: estimateTokens(JSON.stringify(t)) }));
+  return {
+    available: true,
+    tools,
+    totalTokens: tools.reduce((n, t) => n + t.tokens, 0),
+    bytes: stdout.length,
+  };
+}
+
 // --- report ------------------------------------------------------------------
 function windowRows(scenarios) {
   return opts.windows.map((w) => {
@@ -261,6 +325,10 @@ function statusFor(pct) {
 }
 
 const skill = skillDir ? await auditSkill() : null;
+// The MCP catalog is measured from the live server; a missing/unloadable MCP
+// package degrades to "not measured" rather than failing the whole report.
+const mcpDir = resolve(opts.mcpDir ?? join(SCRIPT_DIR, '..', '..', 'packages', 'mcp'));
+const catalog = await auditCatalog(mcpDir);
 const projectRoot = opts.project ? resolve(opts.project) : process.cwd();
 const artifacts = await auditArtifacts(projectRoot, opts.slug);
 
@@ -268,6 +336,22 @@ const artifacts = await auditArtifacts(projectRoot, opts.slug);
 const scenarios = [];
 if (skill) {
   for (const s of skill.scenarios) scenarios.push(s);
+}
+if (catalog.available) {
+  scenarios.push({
+    id: 'mcp-catalog',
+    label: 'MCP tool catalog (injected into EVERY request)',
+    tokens: catalog.totalTokens,
+    note: `${catalog.tools.length} tools — the permanent context tax`,
+  });
+  if (skill) {
+    scenarios.push({
+      id: 'always-on',
+      label: 'ALWAYS-ON: SKILL.md + MCP tool catalog',
+      tokens: skill.scenarios[0].tokens + catalog.totalTokens,
+      note: 'what the agent pays before it does anything',
+    });
+  }
 }
 for (const a of artifacts) {
   scenarios.push({
@@ -296,11 +380,26 @@ if (skill && artifacts.length) {
 const windows = windowRows(scenarios);
 const overBudget = opts.budget !== null ? scenarios.filter((s) => s.tokens > opts.budget) : [];
 
+// The ALWAYS-ON gate: what the agent pays before it does anything (the
+// skill prompt + the MCP tool catalog) is the number that actually decides
+// whether this design is token-efficient. It has a hard ceiling.
+const alwaysOn = scenarios.find((s) => s.id === 'always-on');
+const alwaysOnOver = opts.maxAlwaysOn !== null && alwaysOn !== undefined && alwaysOn.tokens > opts.maxAlwaysOn;
+
 const report = {
   generator: 'archgen context-budget',
   tokenModel: opts.tokenizer ? `exact:${opts.tokenizer}` : 'estimator (±10%)',
   windows: opts.windows,
   budget: opts.budget,
+  maxAlwaysOn: opts.maxAlwaysOn,
+  alwaysOn: alwaysOn ? { tokens: alwaysOn.tokens, over: alwaysOnOver } : null,
+  catalog: {
+    available: catalog.available,
+    reason: catalog.reason ?? null,
+    totalTokens: catalog.totalTokens,
+    bytes: catalog.bytes,
+    tools: catalog.tools,
+  },
   skill: skill && {
     dir: skill.dir,
     totalTokens: skill.total,
@@ -350,6 +449,18 @@ if (opts.json) {
     line();
   }
 
+  if (catalog.available) {
+    line('MCP TOOL CATALOG (injected into every request)');
+    line(`  total ${fmtTokens(catalog.totalTokens)} tokens across ${catalog.tools.length} tools`);
+    for (const t of [...catalog.tools].sort((a, b) => b.tokens - a.tokens)) {
+      line(`    ${String(t.tokens).padStart(8)}  ${t.name}`);
+    }
+    line();
+  } else if (catalog.reason) {
+    line(`MCP TOOL CATALOG — not measured: ${catalog.reason}`);
+    line();
+  }
+
   line('LOAD SCENARIOS');
   for (const s of scenarios) {
     const worst = opts.windows.map((w) => ({ w, pct: pctOf(s.tokens, w) })).reduce((m, c) => (c.pct > m.pct ? c : m));
@@ -373,4 +484,4 @@ if (opts.json) {
   }
 }
 
-if (overBudget.length) process.exit(1);
+if (overBudget.length || alwaysOnOver) process.exit(1);

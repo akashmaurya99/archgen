@@ -1,0 +1,58 @@
+name: Acme Shop
+slug: acme-shop            # becomes .archgen/acme-shop/
+stack:
+  language: typescript
+  runtime: node20
+  framework: nextjs
+  database: postgres
+structure:                 # planned folder tree — planned BEFORE code exists
+  - path: src/features/<feature>/
+    purpose: feature modules (api, internal, tests colocated)
+  - path: src/shared/
+    purpose: cross-feature utilities, no feature imports
+  - path: src/config/
+    purpose: env parsing + constants
+naming_conventions:        # filled during generation; referenced by EVERY task
+  file_naming: kebab-case files, feature folder mirrors module name
+  dir_layout: "<module>/{api,internal,tests}; shared code only in src/shared/"
+  symbol_casing: PascalCase types, camelCase functions, SCREAMING_SNAKE env
+  test_placement: colocated <name>.test.ts next to unit under test
+modules:
+  - name: catalog
+    responsibility: product browsing + search
+    owns: ["src/features/catalog/**"]
+    depends_on_modules: []            # acyclic; drives task depends_on edges
+    key_interfaces:                   # what OTHER modules may import — nothing else
+      - CatalogApi (src/features/catalog/api/index.ts)
+  - name: checkout
+    responsibility: cart → payment orchestration
+    owns: ["src/features/checkout/**"]
+    depends_on_modules: [catalog]
+    key_interfaces:
+      - CheckoutApi (src/features/checkout/api/index.ts)
+data_contracts:           # schemas/entities; field tables, not prose
+  orders:
+    storage: postgres table orders (migration migrations/NNNN_orders.sql)
+    fields:
+      - {field: id,         type: uuid,        required: true, notes: pk}
+      - {field: session_id, type: uuid,        required: true, notes: fk sessions}
+      - {field: total_cents, type: integer,    required: true, notes: ">= 0"}
+      - {field: status,     type: "enum(pending,paid,failed)", required: true}
+      - {field: created_at, type: timestamptz, required: true, notes: db default now()}
+api_contracts:            # endpoint/method/auth/payload/error-shape tables
+  payments:
+    - endpoint: /api/checkout/pay
+      method: POST
+      auth: session cookie; 401 when absent
+      request_payload: {order_id: uuid}
+      success: "200 {payment_id: uuid, status: paid}"
+      error_shape: {code: string, message: string, retryable: boolean}
+environment_matrix:       # vars per env; unparsed vars fail fast in src/config/
+  - {var: DATABASE_URL, dev: local docker postgres, ci: ephemeral service, prod: secret ref, required: true}
+  - {var: PAYMENT_API_KEY, dev: stub key, ci: stub key, prod: secret ref, required: true}
+decisions:                 # ADR-lite; full ADRs live in decisions/
+  - id: D1
+    title: Postgres over MongoDB
+    context: transactional orders + reporting queries
+    decision: Postgres 16 with Prisma
+    consequences: schema migrations required per release

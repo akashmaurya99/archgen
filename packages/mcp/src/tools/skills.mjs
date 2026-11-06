@@ -1,0 +1,135 @@
+// skills.mjs — the `archgen_skills` tool: capability-skill matching,
+// installation and loading.
+//
+// This tool replaces the skill's FETCH-SKILL PROSE. The agent no longer reads
+// a registry, shells out to an installer, or hand-composes a follow-instruction:
+// it asks this tool which capability skills a task needs, installs exactly
+// those, and gets the file path a worker must follow.
+import { z } from 'zod/v4';
+import { registerTool, projectRootArg } from './_register.mjs';
+import { loadAsset } from '../context.mjs';
+import { invalidInput } from '../core/errors.mjs';
+import {
+  matchSkills,
+  installSkill,
+  loadSkill,
+  listInstalled,
+  findInstalledSkill,
+  followInstruction,
+  HARNESS_AGENT_IDS,
+} from '../core/skill-manager.mjs';
+
+const ACTION_DESC =
+  'match = which capability skills a task needs; ' +
+  'install = install ONE capability skill (needs approve); ' +
+  'installed = what is already installed; ' +
+  'load = read a skill SKILL.md for prompt injection; ' +
+  'list = the registry.';
+
+const schema = z.object({
+  action: z.enum(['match', 'install', 'installed', 'load', 'list']).describe(ACTION_DESC),
+  title: z.string().optional().describe('Task title (match).'),
+  summary: z.string().optional().describe('Task summary (match).'),
+  fileOwnership: z.array(z.string()).optional().describe('Task file_ownership globs (match).'),
+  skillId: z.string().optional().describe('Registry skill id or slug (install, load).'),
+  harness: z.string().optional().describe('Harness id to install for (install). Defaults to universal.'),
+  global: z.boolean().optional().describe('Install for the user instead of the project (install).'),
+  approve: z.boolean().optional().describe('Required to install. Without it you get the plan and nothing is written.'),
+  projectRoot: projectRootArg,
+});
+
+/**
+ * @param {import('@modelcontextprotocol/server').McpServer} server
+ */
+export function registerSkillTools(server) {
+  registerTool(server, 'archgen_skills', {
+    title: 'ArchGen skills',
+    description:
+      'Match a task against the capability-skill registry, install exactly the matched skill, and load its ' +
+      'SKILL.md for prompt injection. Use before dispatching a worker whose work touches a registered capability ' +
+      'domain (UI, accessibility, motion, design systems…).',
+    inputSchema: schema,
+    readOnly: false,
+    destructive: false,
+    idempotent: true,
+    handler: (ctx, args) => {
+      const registry = loadAsset('skill-registry.json');
+
+      if (args.action === 'list') {
+        return {
+          version: registry.version,
+          installer: registry.installer,
+          skills: registry.skills.map((s) => ({
+            id: s.id,
+            slug: s.slug,
+            family: s.family,
+            repo: s.repo,
+            purpose: s.purpose,
+            policy: s.policy,
+            matches: s.matches,
+          })),
+        };
+      }
+
+      if (args.action === 'match') {
+        const matched = matchSkills(registry, {
+          title: args.title,
+          summary: args.summary,
+          fileOwnership: args.fileOwnership,
+        });
+        return {
+          matched,
+          required: matched.filter((m) => m.policy === 'required'),
+          installed: matched.map((m) => {
+            const found = findInstalledSkill(ctx.projectRoot, m.slug, { home: ctx.home });
+            return { ...m, installed: found.installed, path: found.path, scope: found.scope };
+          }),
+          note: matched.length
+            ? 'Install every required skill before dispatching the worker.'
+            : 'No capability domain matched — no external skill is needed.',
+        };
+      }
+
+      if (args.action === 'installed') {
+        return { installed: listInstalled({ projectRoot: ctx.projectRoot, registry, home: ctx.home }) };
+      }
+
+      // install | load
+      const wanted = args.skillId;
+      if (!wanted) throw invalidInput('skillId is required for this action', { action: args.action });
+      const entry =
+        registry.skills.find((s) => s.id === wanted || s.slug === wanted) ??
+        (registry.routing && (registry.routing.id === wanted || registry.routing.slug === wanted)
+          ? registry.routing
+          : null);
+      if (!entry) {
+        throw invalidInput(`unknown skill '${wanted}' — call archgen_skills { action: 'list' }`, { skillId: wanted });
+      }
+
+      if (args.action === 'load') {
+        const found = findInstalledSkill(ctx.projectRoot, entry.slug, { home: ctx.home });
+        const loaded = loadSkill({ projectRoot: ctx.projectRoot, slug: entry.slug, home: ctx.home });
+        return {
+          skill: entry.slug,
+          purpose: entry.purpose,
+          ...loaded,
+          followInstruction: loaded.loaded ? followInstruction({ slug: entry.slug, path: loaded.path }) : null,
+          hint: loaded.loaded ? null : 'not installed — call archgen_skills { action: "install" } first',
+        };
+      }
+
+      return installSkill({
+        registry,
+        entry,
+        projectRoot: ctx.projectRoot,
+        harness: args.harness ?? 'universal',
+        global: args.global === true,
+        approved: args.approve === true,
+        home: ctx.home,
+        env: ctx.env,
+      });
+    },
+  });
+}
+
+export { HARNESS_AGENT_IDS };

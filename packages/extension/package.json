@@ -2,7 +2,7 @@
   "name": "archgen-extension",
   "displayName": "ArchGen",
   "description": "Read-only visual layer for your .archgen folder: live task DAG, code dependency graph, and rendered docs. Never edits your repository.",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "archgen",
   "license": "MIT",
   "categories": [
@@ -162,10 +162,10 @@
           },
           "description": "Command templates per harness. Placeholders: {{prompt}}, {{task}}, {{outfile}}."
         },
-        "archgen.scriptsPath": {
+        "archgen.skillPath": {
           "type": "string",
           "default": "",
-          "description": "Explicit path to the archgen scripts directory (next-tasks.mjs, set-status.mjs). Probed in order: this setting, <workspace>/.agents/skills/archgen/scripts, <workspace>/.claude/skills/archgen/scripts, <workspace>/skills/archgen/scripts, ~/.agents/skills/archgen/scripts, ~/.claude/skills/archgen/scripts."
+          "description": "Explicit path to the installed archgen skill directory. Probed in order: this setting, <workspace>/.agents/skills/archgen, <workspace>/.claude/skills/archgen, <workspace>/skills/archgen, ~/.agents/skills/archgen, ~/.claude/skills/archgen."
         },
         "archgen.delivery.mode": {
           "type": "string",

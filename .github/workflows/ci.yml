@@ -7,7 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  skill:
+  # The MCP server is the runtime that owns every deterministic capability
+  # (the skill ships no code). Node >= 20 is the SDK v2 floor.
+  mcp:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -18,7 +20,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      - run: node --test skill/scripts/test/*.test.mjs
+      - run: npm ci
+        working-directory: packages/mcp
+      - run: npm test
+        working-directory: packages/mcp
 
   cli:
     runs-on: ubuntu-latest
@@ -81,6 +86,64 @@ jobs:
       - run: npm run coverage
         working-directory: packages/extension
 
+  # End-to-end fixture suites: the greenfield / brownfield / verifier-negative
+  # flows now drive the REAL archgen MCP tool surface, not the old scripts.
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+        working-directory: packages/mcp
+      - run: bash fixtures/greenfield-demo/run.sh
+      - run: bash fixtures/brownfield-demo/run.sh
+      - run: bash fixtures/verifier-negative/run.sh
+
+  # Context-budget gate: the ALWAYS-ON cost (SKILL.md + the MCP tool catalog
+  # injected into every request) must not regress. Measured 12,672 tokens; the
+  # ceiling leaves ~7% headroom. The ON-DEMAND cost is the other half of the
+  # story: the reference documents moved into the package, so the shipped skill
+  # tree dropped from 25,793 to 9,190 tokens and a section load is ~1-2 KB
+  # instead of an 11 KB document.
+  context-budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+        working-directory: packages/mcp
+      - run: node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13600
+
+  # Capability contract: the skill declares the MCP server version it needs,
+  # and that requirement must be satisfiable by THIS release.
+  capability-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node internal/tools/check-capability-contract.mjs
+
+  # Repo immutability: the suites must never mutate the repository (a suite
+  # that silently deletes a tracked file looks like a green run).
+  immutable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+        working-directory: packages/extension
+      - run: npm ci --no-audit --no-fund
+        working-directory: packages/mcp
+      - run: node internal/tools/repo-immutable.mjs -- npm test
+
   # Model↔view parity: the extension's own parser must read the
   # greenfield-demo fixture into exactly the view model the DAG renders.
   cross-mode:
@@ -109,7 +172,7 @@ jobs:
           node-version: 22
       - run: npm --prefix packages/cli run sync:check
       - run: npm --prefix packages/cli run sync
-      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/extension/package.json
+      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/extension/package.json packages/mcp/package.json
       # Never commit a CodeGraph index (local machine state).
       - run: |
           if git ls-files | grep -qE '(^|/)\.codegraph/'; then
@@ -134,6 +197,9 @@ jobs:
         working-directory: packages/cli
       - run: npm audit --audit-level=high
         working-directory: packages/cli
+      # The MCP server depends on the official MCP SDK + Zod.
+      - run: npm audit --audit-level=high
+        working-directory: packages/mcp
 
   # Supply-chain gate: gitleaks scans full history and fails on any secret.
   secret-scan:

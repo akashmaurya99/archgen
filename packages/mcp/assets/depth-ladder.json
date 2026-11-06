@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "_readme": [
+    "Canonical depth ladder: scope class -> the artifact set a plan MUST have.",
+    "",
+    "This is the machine-readable twin of references/artifact-templates.md § Plan",
+    "depth by scope class. The reference keeps the AUTHORING RULES; this file",
+    "owns the ARTIFACT SET, so the orchestrator never guesses which files a",
+    "SMALL/MEDIUM/LARGE plan needs. `archgen_plan{action:'scaffold'}` serves it.",
+    "",
+    "A drift test (packages/mcp/test/core/depth-ladder.test.mjs) pins this file",
+    "against the reference's stated minimums."
+  ],
+  "classes": {
+    "SMALL": {
+      "label": "SMALL — add or touch a few things",
+      "intentDefaults": ["BROWNFIELD-CHANGE"],
+      "roundCap": 3,
+      "artifacts": [
+        { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
+        { "path": ".archgen/<slug>/plans/<slug>-note.md", "required": true, "purpose": "a lean plan note" }
+      ],
+      "planSections": ["Intent", "Tasks", "Risks"],
+      "minEdgeCasesPerTask": 0,
+      "requires": [],
+      "forbids": ["docs/prd.md", "architecture.yaml", "decisions/"],
+      "notes": [
+        "Every task entry STILL carries repo-root-relative paths verbatim in file_ownership, in each step, and in verification commands.",
+        "No Context section, no diagrams, no PRD."
+      ]
+    },
+    "MEDIUM": {
+      "label": "MEDIUM — a real feature with real risk",
+      "intentDefaults": ["GREENFIELD-MODULE", "BROWNFIELD-FEATURE"],
+      "roundCap": 3,
+      "artifacts": [
+        { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
+        { "path": ".archgen/<slug>/plans/<slug>.md", "required": true, "purpose": "the full plan" }
+      ],
+      "planSections": ["Context", "Per-task sections", "Verification steps"],
+      "minEdgeCasesPerTask": 3,
+      "requires": ["plan context of 2-4 paragraphs", "per-task sections with approach + edge cases + out-of-scope", "ordered runnable verification steps"],
+      "forbids": ["docs/prd.md", "architecture.yaml"],
+      "notes": [
+        "One `<id> — <title>` heading per task, in dependency order.",
+        "Verification steps are repo-root-relative (no `../`, no `--plan .`), exact, and runnable."
+      ]
+    },
+    "LARGE": {
+      "label": "LARGE — a full professional stack (greenfield from scratch)",
+      "intentDefaults": ["GREENFIELD-SYSTEM"],
+      "roundCap": 6,
+      "artifacts": [
+        { "path": ".archgen/<slug>/answers.yaml", "required": true, "purpose": "the captured requirements" },
+        { "path": ".archgen/<slug>/docs/prd.md", "required": true, "purpose": "the product requirements — FR ids tasks cite" },
+        { "path": ".archgen/<slug>/architecture.yaml", "required": true, "purpose": "the contract source of truth" },
+        { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
+        { "path": ".archgen/<slug>/plans/<slug>.md", "required": true, "purpose": "the full plan" },
+        { "path": ".archgen/<slug>/decisions/NNNN-<title>.md", "required": false, "purpose": "formal ADRs (one per decision)" },
+        { "path": ".archgen/<slug>/docs/<module>.md", "required": false, "purpose": "per-module diagrams (≤15 nodes each)" }
+      ],
+      "planSections": ["Context", "Per-task sections", "Edge-case matrices", "Verification steps"],
+      "minEdgeCasesPerTask": 3,
+      "requires": [
+        "docs/prd.md written BEFORE tasks.yaml (~1 page per major module)",
+        "architecture.yaml with naming_conventions, data_contracts, api_contracts and environment_matrix",
+        "an edge-case matrix per task (every row maps to an acceptance bullet)",
+        "per-module diagrams (≤15 nodes each) plus one integration diagram",
+        "MEDIUM-grade plan sections"
+      ],
+      "forbids": [],
+      "notes": [
+        "Requirement ids (FR-<MODULE>-nn) are defined in docs/prd.md and cited from tasks.yaml acceptance lines.",
+        "architecture.yaml is the anti-hallucination source of truth: tasks cite its keys instead of restating shapes from memory."
+      ]
+    }
+  },
+  "edgeCaseClasses": [
+    "empty/null",
+    "boundary values",
+    "authz denied",
+    "concurrent/conflicting write",
+    "failure/retry path",
+    "i18n/formatting edge"
+  ],
+  "edgeCaseExtras": {
+    "infra": ["partial-failure recovery", "rollback story"],
+    "maxRowsPerMatrix": 10
+  }
+}

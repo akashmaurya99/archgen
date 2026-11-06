@@ -64,7 +64,7 @@ Per-language conventions (professional, descriptive, consistent):
 
 - tasks.yaml acceptance criteria MUST include at least one objectively
   checkable statement (command exit, observable output).
-- The verifier runs verify-plan.mjs AND reads plans against this file;
-  violations = ISSUES, not warnings.
+- The verifier runs `archgen_plan{action:'verify'}` AND reads plans against this
+  file; violations = ISSUES, not warnings.
 - Workers receive this reference in their prompt contract; "I didn't know" is
   not available to them.

@@ -75,6 +75,28 @@ test('context-budget: dev-only test files are excluded from the shipped payload'
   assert.equal(shipped, out.skill.totalTokens);
 });
 
+test('context-budget: the MCP tool catalog is measured from the LIVE server', () => {
+  const r = run(['--skill-dir', SKILL, '--json']);
+  const out = JSON.parse(r.stdout);
+  // The catalog may be unavailable when packages/mcp deps are not installed —
+  // that is a degraded measurement, never a silent zero.
+  if (!out.catalog.available) {
+    assert.match(out.catalog.reason ?? '', /MCP/i);
+    return;
+  }
+  assert.ok(out.catalog.totalTokens > 0, 'the catalog must cost something — it is injected every request');
+  assert.equal(out.catalog.tools.length, out.skill ? out.catalog.tools.length : 0);
+  assert.ok(out.scenarios.some((s) => s.id === 'mcp-catalog'));
+  assert.ok(out.scenarios.some((s) => s.id === 'always-on'), 'the always-on total must be reported');
+});
+
+test('context-budget: --max-always-on is a hard gate', () => {
+  const generous = run(['--skill-dir', SKILL, '--max-always-on', '100000000', '--json']);
+  assert.equal(generous.status, 0, generous.stderr);
+  const tight = run(['--skill-dir', SKILL, '--max-always-on', '1', '--json']);
+  assert.equal(tight.status, 1, 'an impossible always-on budget must fail the run');
+});
+
 test('context-budget: artifact payload is measured for every .archgen slug', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ctx-budget-test-'));
   try {

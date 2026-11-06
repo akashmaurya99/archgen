@@ -1,0 +1,252 @@
+{
+  "version": 1,
+  "_readme": [
+    "Canonical harness capability registry.",
+    "",
+    "This is the machine-readable twin of references/platforms.md. The reference",
+    "keeps the NARRATIVE (detection order, the unknown-platform procedure, the",
+    "CodeGraph indexing scope); this file owns the capability DATA, so the",
+    "orchestrator never has to read a markdown table to learn where skills go,",
+    "how an MCP config is shaped, or whether a harness can dispatch sub-agents.",
+    "",
+    "`archgen_setup{action:'harness_info'}` serves it.",
+    "",
+    "Facts verified against official vendor docs (2026-11). The `skills` CLI",
+    "installs into .agents/skills/ UNIVERSALLY — see the note on each row."
+  ],
+  "detectionOrder": [
+    ".claude/",
+    ".cursor/",
+    ".windsurf/",
+    ".opencode",
+    "opencode.json",
+    ".github/copilot-instructions.md",
+    "~/.codex",
+    ".gemini/",
+    ".kiro/",
+    ".trae/"
+  ],
+  "harnesses": {
+    "claude": {
+      "label": "Claude Code",
+      "detectHome": [".claude", ".claude.json"],
+      "detectProject": [".claude", ".mcp.json"],
+      "skillPaths": {
+        "project": [".claude/skills/<name>/", ".agents/skills/<name>/"],
+        "global": ["~/.claude/skills/<name>/", "~/.agents/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".mcp.json", "key": "mcpServers", "stdioFields": ["command", "args", "env"], "urlField": "url" },
+        "global": { "path": "~/.claude.json", "key": "mcpServers", "stdioFields": ["command", "args", "env"], "urlField": "url" }
+      },
+      "mcpCli": "claude mcp add --scope project|local|user --transport stdio|http|sse",
+      "restart": "hot-reload; project-scope servers prompt for approval on first detection",
+      "subAgents": {
+        "mechanism": "Agent tool + subagent_type",
+        "parallel": true,
+        "parallelLimit": "~20",
+        "isolation": "worktree frontmatter",
+        "note": "the BEST isolation support of any harness"
+      }
+    },
+    "opencode": {
+      "label": "OpenCode",
+      "detectHome": [".config/opencode"],
+      "detectProject": [".opencode", "opencode.json", "opencode.jsonc"],
+      "skillPaths": {
+        "project": [".opencode/skills/<name>/", ".claude/skills/<name>/", ".agents/skills/<name>/"],
+        "global": ["~/.config/opencode/skills/<name>/", "~/.claude/skills/<name>/", "~/.agents/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": "opencode.json", "key": "mcp", "type": "local", "commandIsArray": true, "environmentKey": "environment" },
+        "global": { "path": "~/.config/opencode/opencode.json", "key": "mcp", "type": "local", "commandIsArray": true, "environmentKey": "environment" }
+      },
+      "mcpCli": "opencode mcp add (interactive only)",
+      "restart": "hot-reload",
+      "subAgents": {
+        "mechanism": "task/subagent tool + subagent_type",
+        "parallel": true,
+        "parallelLimit": null,
+        "isolation": "none in core — use file-ownership discipline or team-mode plugin worktrees",
+        "note": "no isolation: keep ownership globs disjoint"
+      }
+    },
+    "cursor": {
+      "label": "Cursor",
+      "detectHome": [".cursor"],
+      "detectProject": [".cursor", ".agents"],
+      "skillPaths": {
+        "project": [".agents/skills/<name>/", ".cursor/skills/<name>/", ".claude/skills/<name>/", ".codex/skills/<name>/"],
+        "global": ["~/.agents/skills/<name>/", "~/.cursor/skills/<name>/", "~/.claude/skills/<name>/", "~/.codex/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".cursor/mcp.json", "key": "mcpServers", "stdioFields": ["command", "args", "env", "cwd"], "urlField": "url" },
+        "global": { "path": "~/.cursor/mcp.json", "key": "mcpServers", "stdioFields": ["command", "args", "env", "cwd"], "urlField": "url" }
+      },
+      "mcpCli": "none (deep-links UNVERIFIED)",
+      "restart": "hot-reload",
+      "subAgents": {
+        "mechanism": "background subagents",
+        "parallel": true,
+        "parallelLimit": null,
+        "isolation": "request isolation when >2 parallel workers",
+        "note": "background subagents; isolation on request"
+      }
+    },
+    "codex": {
+      "label": "Codex CLI",
+      "detectHome": [".codex"],
+      "detectProject": [".codex", ".agents"],
+      "skillPaths": {
+        "project": [".agents/skills/<name>/"],
+        "global": ["~/.agents/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".codex/config.toml", "key": "mcp_servers.<id>", "format": "toml", "stdioFields": ["command", "args", "env", "cwd"], "urlField": "url", "trustGated": true },
+        "global": { "path": "~/.codex/config.toml", "key": "mcp_servers.<id>", "format": "toml", "stdioFields": ["command", "args", "env", "cwd"], "urlField": "url" }
+      },
+      "mcpCli": "codex mcp add <name> --url <url> | codex mcp add <name> -- cmd args",
+      "restart": "hot-reload",
+      "subAgents": {
+        "mechanism": "model-mediated spawn_agent",
+        "parallel": true,
+        "parallelLimit": null,
+        "isolation": "none built-in",
+        "maxDepth": 1,
+        "note": "children cannot nest — flatten the plan"
+      }
+    },
+    "gemini": {
+      "label": "Gemini CLI",
+      "detectHome": [".gemini"],
+      "detectProject": [".gemini", ".agents"],
+      "skillPaths": {
+        "project": [".gemini/skills/<name>/", ".agents/skills/<name>/"],
+        "global": ["~/.gemini/skills/<name>/", "~/.agents/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".gemini/settings.json", "key": "mcpServers", "stdioFields": ["command", "args", "env", "cwd", "trust"], "urlField": "httpUrl" },
+        "global": { "path": "~/.gemini/settings.json", "key": "mcpServers", "stdioFields": ["command", "args", "env", "cwd", "trust"], "urlField": "httpUrl" }
+      },
+      "mcpCli": "gemini mcp add -s user|project -t stdio|sse|http",
+      "restart": "hot-reload",
+      "subAgents": {
+        "mechanism": "subagents-as-tools",
+        "parallel": true,
+        "parallelLimit": null,
+        "isolation": "none",
+        "note": "hub-and-spoke only, no nesting — read-only/research waves unless wrapped in worktrees"
+      },
+      "warning": "Google replaced Gemini CLI with Antigravity CLI for many users in 2026 — detect both."
+    },
+    "antigravity": {
+      "label": "Antigravity",
+      "detectHome": [".gemini/antigravity", ".gemini/antigravity-cli"],
+      "detectProject": [".agents", ".agent"],
+      "skillPaths": {
+        "project": [".agents/skills/<name>/"],
+        "global": ["~/.gemini/antigravity/skills/<name>/", "~/.gemini/antigravity-cli/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".agents/mcp_config.json", "key": "mcpServers", "stdioFields": ["command", "args", "env", "cwd"], "urlField": "serverUrl", "urlRequired": true },
+        "global": { "path": "~/.gemini/config/mcp_config.json", "key": "mcpServers", "stdioFields": ["command", "args", "env", "cwd"], "urlField": "serverUrl", "urlRequired": true }
+      },
+      "mcpCli": "none (/mcp overlay manager)",
+      "restart": "hot-reload",
+      "subAgents": {
+        "mechanism": "invoke_subagent (async by design)",
+        "parallel": true,
+        "parallelLimit": null,
+        "isolation": "not UNVERIFIED",
+        "note": "fork subagent for context isolation"
+      }
+    },
+    "windsurf": {
+      "label": "Windsurf",
+      "detectHome": [".codeium/windsurf"],
+      "detectProject": [".windsurf"],
+      "skillPaths": {
+        "project": [".windsurf/skills/<name>/"],
+        "global": ["~/.codeium/windsurf/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "global": { "path": "~/.codeium/windsurf/mcp_config.json", "key": "mcpServers", "stdioFields": ["command", "args", "env"], "urlField": "serverUrl", "urlFieldAlternative": "url" }
+      },
+      "mcpCli": "none (Marketplace UI/deeplink)",
+      "restart": "FULL RESTART",
+      "subAgents": null
+    },
+    "copilot": {
+      "label": "VS Code + Copilot",
+      "detectHome": [".copilot"],
+      "detectProject": [".vscode", ".github/copilot-instructions.md"],
+      "skillPaths": {
+        "project": [".github/skills/<name>/", ".claude/skills/<name>/", ".agents/skills/<name>/"],
+        "global": ["~/.copilot/skills/<name>/", "~/.claude/skills/<name>/", "~/.agents/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".vscode/mcp.json", "key": "servers", "stdioFields": ["command", "args", "env"], "urlField": "url" }
+      },
+      "mcpCli": "copilot mcp add; palette \"MCP: Add Server\"",
+      "restart": "hot-reload",
+      "subAgents": null
+    },
+    "zed": {
+      "label": "Zed",
+      "detectHome": [".config/zed"],
+      "detectProject": [".zed"],
+      "skillPaths": {
+        "project": [".agents/skills/<name>/"],
+        "global": ["~/.agents/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".zed/settings.json", "key": "context_servers", "stdioFields": ["command", "args", "env"], "urlField": "url", "oauth": true },
+        "global": { "path": "~/.config/zed/settings.json", "key": "context_servers", "stdioFields": ["command", "args", "env"], "urlField": "url", "oauth": true }
+      },
+      "mcpCli": "none (Settings UI writes file)",
+      "restart": "FULL RESTART",
+      "subAgents": null,
+      "note": "FLAT layout — no nesting; worktree-trust gate on project skills"
+    },
+    "kiro": {
+      "label": "Kiro",
+      "detectHome": [".kiro"],
+      "detectProject": [".kiro"],
+      "skillPaths": {
+        "project": [".kiro/skills/<name>/"],
+        "global": ["~/.kiro/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".kiro/settings/mcp.json", "key": "mcpServers", "stdioFields": ["command", "args", "env", "disabled", "autoApprove"], "urlField": "url", "oauth": true },
+        "global": { "path": "~/.kiro/settings/mcp.json", "key": "mcpServers", "stdioFields": ["command", "args", "env", "disabled", "autoApprove"], "urlField": "url", "oauth": true }
+      },
+      "mcpCli": "/mcp add",
+      "restart": "hot-reload",
+      "subAgents": {
+        "mechanism": "custom agents need explicit resources: [\"skill://.kiro/skills/**/*.md\"]",
+        "parallel": false
+      }
+    },
+    "trae": {
+      "label": "Trae",
+      "detectHome": [".trae"],
+      "detectProject": [".trae"],
+      "skillPaths": {
+        "project": [".trae/skills/<name>/", ".agents/skills/<name>/"],
+        "global": ["~/.trae/skills/<name>/", "~/.trae-cn/skills/<name>/"]
+      },
+      "mcpConfig": {
+        "project": { "path": ".trae/mcp.json", "key": "mcpServers", "stdioFields": ["command", "args", "env"], "urlField": "url", "type": "sse" }
+      },
+      "mcpCli": "none (UI manual add)",
+      "restart": "hot-reload",
+      "subAgents": null
+    }
+  },
+  "universal": {
+    "label": "Universal fallback",
+    "skillPaths": { "project": [".agents/skills/<name>/"], "global": ["~/.agents/skills/<name>/"] },
+    "note": "The `skills` CLI installs into .agents/skills/ UNIVERSALLY — never .opencode/skills/ or .cursor/skills/. Every harness reads .agents/skills/, so that is the path to point a worker at.",
+    "distribution": "npx -y skills add <repo> --skill <slug> --agent <agent> --yes"
+  }
+}

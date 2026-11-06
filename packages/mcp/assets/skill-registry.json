@@ -1,0 +1,119 @@
+{
+  "version": 2,
+  "_readme": [
+    "Capability-skill registry — the SINGLE source of truth for which external",
+    "skill a task needs, where it comes from, and how it is installed.",
+    "",
+    "It lives with the MCP server (not in the skill) because the `archgen_skills`",
+    "TOOL owns the matching + installation. The agent never edits this file and",
+    "never shells out to an installer by hand.",
+    "",
+    "INSTALL MODEL — install EXACTLY ONE skill, never a bundle:",
+    "  npx -y skills add <repo> --skill <slug> --agent <agent> --yes --json",
+    "The `skills` CLI (npm package `skills`, from vercel-labs/skills) is",
+    "INTERACTIVE without --yes/--agent, so an automated install MUST pass them.",
+    "",
+    "ON DISK — every skill lands as a DIRECTORY <root>/<slug>/SKILL.md:",
+    "  project: <project>/.agents/skills/<slug>/SKILL.md",
+    "  global:  ~/.agents/skills/<slug>/SKILL.md",
+    "The installer writes .agents/skills/ universally (plus a .claude/skills/",
+    "symlink for Claude Code); it never writes .opencode/skills/ or",
+    ".cursor/skills/ directly. Every harness READS .agents/skills/.",
+    "",
+    "NO CLUSTERING: a task matches ONE precise skill. `policy: required` means",
+    "the skill is mandatory for that domain; `policy: on-demand` means it is",
+    "installed only when the task names the capability explicitly."
+  ],
+  "installer": {
+    "package": "skills",
+    "version": "^1.7.6",
+    "nodeEngine": ">=22.20.0",
+    "addCommand": "npx -y skills add",
+    "listCommand": "npx -y skills list --json",
+    "telemetryEnv": { "DISABLE_TELEMETRY": "1", "DO_NOT_TRACK": "1" }
+  },
+  "skills": [
+    {
+      "id": "ui-baseline",
+      "slug": "baseline-ui",
+      "family": "ui-skills",
+      "repo": "ibelick/ui-skills",
+      "purpose": "Baseline UI conventions — spacing, typography, color, component primitives. The default UI quality bar.",
+      "matches": ["frontend", "ui", "ux", "design", "component", "baseline", "layout", "typography", "color", "style", "styling", "theme"],
+      "policy": "required"
+    },
+    {
+      "id": "ui-motion",
+      "slug": "fixing-motion-performance",
+      "family": "ui-skills",
+      "repo": "ibelick/ui-skills",
+      "purpose": "Motion and animation performance — jank-free transitions, transform/opacity discipline.",
+      "matches": ["animation", "motion", "transition", "easing", "spring", "jank", "60fps"],
+      "policy": "required"
+    },
+    {
+      "id": "ui-interaction",
+      "slug": "fixing-accessibility",
+      "family": "ui-skills",
+      "repo": "ibelick/ui-skills",
+      "purpose": "Accessibility — keyboard, focus, semantics, screen readers, ARIA correctness.",
+      "matches": ["accessibility", "a11y", "aria", "keyboard", "screen reader", "focus", "wcag"],
+      "policy": "required"
+    },
+    {
+      "id": "ui-metadata",
+      "slug": "fixing-metadata",
+      "family": "ui-skills",
+      "repo": "ibelick/ui-skills",
+      "purpose": "Page/document metadata — titles, descriptions, social previews, canonical URLs.",
+      "matches": ["metadata", "seo", "og image", "open graph", "canonical", "favicon", "manifest"],
+      "policy": "on-demand"
+    },
+    {
+      "id": "ui-improve",
+      "slug": "improve-ui",
+      "family": "ui-skills",
+      "repo": "ibelick/ui-skills",
+      "purpose": "Holistic UI review and improvement pass over an existing interface.",
+      "matches": ["improve ui", "polish", "redesign", "refine ui", "ui review"],
+      "policy": "on-demand"
+    },
+    {
+      "id": "ui-canvas",
+      "slug": "component-canvas",
+      "family": "ui-skills",
+      "repo": "ibelick/ui-skills",
+      "purpose": "Component canvas — building and previewing component variants in isolation.",
+      "matches": ["component canvas", "component gallery", "variant", "storybook", "component lab"],
+      "policy": "on-demand"
+    },
+    {
+      "id": "design-system",
+      "slug": "create-design-md",
+      "family": "ui-skills",
+      "repo": "ibelick/ui-skills",
+      "purpose": "Authoring a DESIGN.md — the token and component contract a codebase's UI follows.",
+      "matches": ["design system", "design.md", "design tokens", "token contract", "ui contract"],
+      "policy": "on-demand"
+    },
+    {
+      "id": "ui-create-canvas",
+      "slug": "create-canvas",
+      "family": "ui-skills",
+      "repo": "ibelick/ui-skills",
+      "purpose": "Scaffolding a new canvas/app shell from a UI brief.",
+      "matches": ["new canvas", "canvas app", "scaffold ui", "new ui shell"],
+      "policy": "on-demand"
+    }
+  ],
+  "routing": {
+    "_readme": "The ui-skills-root entry routes a task to the right specialised skill. It is the fallback when a task touches UI but matches no specific skill above.",
+    "id": "ui-router",
+    "slug": "ui-skills-root",
+    "family": "ui-skills",
+    "repo": "ibelick/ui-skills",
+    "purpose": "Router for the ui-skills family — decides which specialised UI skill applies.",
+    "matches": [],
+    "policy": "on-demand"
+  }
+}

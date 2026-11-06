@@ -33,10 +33,10 @@ Usage: install.sh [--copy] [--project <dir>] [--uninstall] [--no-codegraph]
                     (skipped gracefully when symlinks are unavailable), and
                     generate AGENTS.md / CLAUDE.md pointer blocks so every
                     agent harness auto-discovers archgen (default dir: cwd).
-                    Also bootstraps CodeGraph: installs the latest CLI if
-                    missing, wires the MCP server into every detected
-                    harness, and builds the project index (kept live by the
-                    server's file watcher).
+                    Also bootstraps the servers: wires the archgen MCP server
+                    into every detected harness, and ensures CodeGraph (its
+                    CLI, its MCP entry, and the project index — kept live by
+                    the server's file watcher).
   --no-codegraph    opt out of the CodeGraph bootstrap
   -h, --help        show this help
 
@@ -54,11 +54,15 @@ EOF
 warn() { printf 'install.sh: %s\n' "$*" >&2; }
 die()  { warn "$*"; exit 1; }
 
-# Prune dev-only subtrees from a copied store (CLI parity: DEV_ONLY_RELPATHS
-# in packages/cli/lib/store.js). The repo's own node:test suite never ships to
-# end users; hashDir ignores it on both sides too.
+# Prune dev-only + OBSOLETE subtrees from a copied store (CLI parity:
+# DEV_ONLY_RELPATHS / OBSOLETE_RELPATHS in packages/cli/lib/store.js).
+# The repo's own node:test suite never ships to end users; hashDir ignores it
+# on both sides too. The scripts/ tree is OBSOLETE: the skill no longer ships
+# code (every capability moved into the archgen MCP server), so a store carried
+# over from the pre-MCP layout must shed it.
 prune_dev_only() { # $1 = installed store root
   [ -d "$1/scripts/test" ] && rm -rf -- "$1/scripts/test"
+  [ -d "$1/scripts" ] && rm -rf -- "$1/scripts"
   find "$1" -name '.DS_Store' -o -name 'Thumbs.db' -o -name 'desktop.ini' 2>/dev/null | while IFS= read -r f; do rm -f -- "$f"; done
   return 0
 }
@@ -193,7 +197,7 @@ if [ "$INIT" -eq 1 ]; then
       # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
       cat <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
-<!-- archgen:block v0.0.5 -->
+<!-- archgen:block v0.0.6 -->
 # ArchGen - Architecture Generation & Autonomous Task Execution
 
 This project uses the **archgen** skill, installed at `.agents/skills/archgen/`.
@@ -209,7 +213,7 @@ Quick triggers:
 
 Rules of the road:
 - Generated artifacts live ONLY under `.archgen/<slug>/`
-- Never hand-edit task statuses - use `scripts/set-status.mjs` (comment-safe)
+- Never hand-edit task statuses - call the `archgen_tasks` MCP tool (comment-safe)
 - Two gates before any execution: verifier approval, then human approval
 
 ## Features registry
@@ -239,7 +243,7 @@ BLOCK
       # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
       cat <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
-<!-- archgen:block v0.0.5 -->
+<!-- archgen:block v0.0.6 -->
 @AGENTS.md
 <!-- archgen:end -->
 BLOCK
@@ -247,20 +251,23 @@ BLOCK
   }
   write_bridge "$ROOT/CLAUDE.md"
 
-  # CodeGraph bootstrap (mirrors packages/cli --init): install the latest CLI,
-  # wire the MCP server into every DETECTED harness, build the project index.
-  # Non-fatal by design: an offline machine still gets the skill installed.
-  if [ "$CODEGRAPH" -eq 1 ] && [ -f "$STORE/scripts/codegraph.mjs" ]; then
+  # Server bootstrap (mirrors packages/cli --init): wire the archgen MCP server
+  # into every DETECTED harness AND ensure CodeGraph (its CLI, its MCP entry,
+  # the project index). Non-fatal by design: an offline machine still gets the
+  # skill installed.
+  if [ "$CODEGRAPH" -eq 1 ]; then
     if command -v node >/dev/null 2>&1; then
-      echo 'archgen: bootstrapping CodeGraph (install + MCP wiring + index)…'
-      if ! node "$STORE/scripts/codegraph.mjs" ensure --project "$ROOT" --location both --yes; then
-        warn "CodeGraph bootstrap incomplete — run: node .agents/skills/archgen/scripts/codegraph.mjs ensure --project . --yes"
+      echo 'archgen: bootstrapping servers (archgen MCP + CodeGraph)…'
+      # The MCP server owns every deterministic capability now — the skill
+      # ships no scripts. `npx -y archgen-mcp` resolves it from the registry
+      # (and is cached by npx after the first run); a locally installed
+      # archgen-mcp on PATH is preferred by the server itself.
+      if ! npx -y archgen-mcp bootstrap --project "$ROOT" --location both --yes; then
+        warn "server bootstrap incomplete — run: npx archgen-mcp bootstrap --project . --yes"
       fi
     else
-      warn "node not found on PATH — skipping the CodeGraph bootstrap (skill works without it; uses Glob+Grep)"
+      warn "node not found on PATH — skipping the server bootstrap (the skill needs Node >= 20 for its MCP server)"
     fi
-  elif [ "$CODEGRAPH" -eq 1 ]; then
-    warn "scripts/codegraph.mjs not in this payload — skipping the CodeGraph bootstrap"
   fi
 
 

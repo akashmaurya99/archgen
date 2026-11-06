@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "_readme": [
+    "Authoritative MCP wiring registry. ONE source of truth: the MCP server,",
+    "the CLI installer and the docs must agree.",
+    "",
+    "TWO SERVERS: 'entries'/'npxEntries' describe the CodeGraph server;",
+    "'archgenEntries'/'archgenNpxEntries' describe archgen's own server. Both",
+    "are written by the SAME writer (core/harness-wiring.mjs), so a platform",
+    "that works for one works for the other.",
+    "",
+    "ENTRY SHAPES: every platform has a DIFFERENT top-level key and a DIFFERENT",
+    "server-object shape. The four known top-level keys are mcpServers (claude,",
+    "cursor, windsurf, gemini, antigravity, kiro, trae), servers (vscode/copilot),",
+    "mcp (opencode), context_servers (zed). Codex CLI uses TOML ([mcp_servers.<id>]).",
+    "",
+    "COMMAND SHAPE: the server entries below are the ones the official installers",
+    "write — keep them byte-compatible, or the MCP server never connects.",
+    "The CodeGraph server also runs a FILE WATCHER, so the index stays live after",
+    "the one-time init; nothing is re-indexed by hand.",
+    "",
+    "The command below is the resolved absolute path to the binary when one is",
+    "found on PATH; the wiring layer substitutes it at write time. When no binary",
+    "is available the npx form is used instead."
+  ],
+  "package": "@colbymchenry/codegraph",
+  "entries": {
+    "stdio": { "type": "stdio", "command": "codegraph", "args": ["serve", "--mcp"] },
+    "stdioNoType": { "command": "codegraph", "args": ["serve", "--mcp"] },
+    "opencodeLocal": { "type": "local", "command": ["codegraph", "serve", "--mcp"], "enabled": true }
+  },
+  "npxEntries": {
+    "stdio": { "type": "stdio", "command": "npx", "args": ["-y", "@colbymchenry/codegraph", "serve", "--mcp"] },
+    "stdioNoType": { "command": "npx", "args": ["-y", "@colbymchenry/codegraph", "serve", "--mcp"] },
+    "opencodeLocal": { "type": "local", "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"], "enabled": true }
+  },
+  "archgenPackage": "archgen-mcp",
+  "archgenEntries": {
+    "stdio": { "type": "stdio", "command": "archgen-mcp", "args": [] },
+    "stdioNoType": { "command": "archgen-mcp", "args": [] },
+    "opencodeLocal": { "type": "local", "command": ["archgen-mcp"], "enabled": true }
+  },
+  "archgenNpxEntries": {
+    "stdio": { "type": "stdio", "command": "npx", "args": ["-y", "archgen-mcp"] },
+    "stdioNoType": { "command": "npx", "args": ["-y", "archgen-mcp"] },
+    "opencodeLocal": { "type": "local", "command": ["npx", "-y", "archgen-mcp"], "enabled": true }
+  },
+  "harnesses": {
+    "claude": {
+      "label": "Claude Code",
+      "codegraphTarget": "claude",
+      "detectHome": [".claude", ".claude.json"],
+      "detectProject": [".claude", ".mcp.json"],
+      "configs": {
+        "global": { "path": "~/.claude.json", "key": "mcpServers", "entry": "stdio" },
+        "project": { "path": ".mcp.json", "key": "mcpServers", "entry": "stdio" }
+      }
+    },
+    "cursor": {
+      "label": "Cursor",
+      "codegraphTarget": "cursor",
+      "detectHome": [".cursor"],
+      "detectProject": [".cursor"],
+      "configs": {
+        "global": { "path": "~/.cursor/mcp.json", "key": "mcpServers", "entry": "stdio" },
+        "project": { "path": ".cursor/mcp.json", "key": "mcpServers", "entry": "stdio" }
+      }
+    },
+    "opencode": {
+      "label": "OpenCode",
+      "codegraphTarget": "opencode",
+      "detectHome": [".config/opencode"],
+      "detectProject": [".opencode", "opencode.json", "opencode.jsonc"],
+      "_note": "OpenCode's global config is JSONC (opencode.jsonc) — codegraph's own installer writes it correctly; our writer refuses non-JSON files on purpose, so this entry is a fallback only.",
+      "configs": {
+        "global": { "path": "~/.config/opencode/opencode.json", "key": "mcp", "entry": "opencodeLocal" },
+        "project": { "path": "opencode.json", "key": "mcp", "entry": "opencodeLocal" }
+      }
+    },
+    "codex": {
+      "label": "Codex CLI",
+      "codegraphTarget": "codex",
+      "detectHome": [".codex"],
+      "detectProject": [".codex"],
+      "configs": {
+        "global": { "path": "~/.codex/config.toml", "format": "toml", "key": "mcp_servers.codegraph", "entry": "toml" },
+        "project": { "path": ".codex/config.toml", "format": "toml", "key": "mcp_servers.codegraph", "entry": "toml" }
+      }
+    },
+    "gemini": {
+      "label": "Gemini CLI",
+      "codegraphTarget": "gemini",
+      "detectHome": [".gemini"],
+      "detectProject": [".gemini"],
+      "configs": {
+        "global": { "path": "~/.gemini/settings.json", "key": "mcpServers", "entry": "stdio" },
+        "project": { "path": ".gemini/settings.json", "key": "mcpServers", "entry": "stdio" }
+      }
+    },
+    "antigravity": {
+      "label": "Antigravity",
+      "codegraphTarget": "antigravity",
+      "detectHome": [".gemini/config"],
+      "detectProject": [".agents/mcp_config.json"],
+      "configs": {
+        "global": { "path": "~/.gemini/config/mcp_config.json", "key": "mcpServers", "entry": "stdio" },
+        "project": { "path": ".agents/mcp_config.json", "key": "mcpServers", "entry": "stdio" }
+      }
+    },
+    "kiro": {
+      "label": "Kiro",
+      "codegraphTarget": "kiro",
+      "detectHome": [".kiro"],
+      "detectProject": [".kiro"],
+      "configs": {
+        "global": { "path": "~/.kiro/settings/mcp.json", "key": "mcpServers", "entry": "stdioNoType" },
+        "project": { "path": ".kiro/settings/mcp.json", "key": "mcpServers", "entry": "stdioNoType" }
+      }
+    },
+    "windsurf": {
+      "label": "Windsurf",
+      "codegraphTarget": null,
+      "detectHome": [".codeium/windsurf"],
+      "detectProject": [".windsurf"],
+      "configs": {
+        "global": { "path": "~/.codeium/windsurf/mcp_config.json", "key": "mcpServers", "entry": "stdioNoType" }
+      }
+    },
+    "vscode": {
+      "label": "VS Code / Copilot",
+      "codegraphTarget": null,
+      "detectHome": [],
+      "detectProject": [".vscode", ".github/copilot-instructions.md"],
+      "configs": {
+        "project": { "path": ".vscode/mcp.json", "key": "servers", "entry": "stdio" }
+      }
+    },
+    "zed": {
+      "label": "Zed",
+      "codegraphTarget": null,
+      "detectHome": [".config/zed"],
+      "detectProject": [".zed"],
+      "configs": {
+        "global": { "path": "~/.config/zed/settings.json", "key": "context_servers", "entry": "stdioNoType" },
+        "project": { "path": ".zed/settings.json", "key": "context_servers", "entry": "stdioNoType" }
+      }
+    },
+    "trae": {
+      "label": "Trae",
+      "codegraphTarget": null,
+      "detectHome": [".trae"],
+      "detectProject": [".trae"],
+      "configs": {
+        "project": { "path": ".trae/mcp.json", "key": "mcpServers", "entry": "stdioNoType" }
+      }
+    }
+  },
+  "codegraphNativeTargets": ["claude", "cursor", "opencode", "codex", "gemini", "antigravity", "kiro"]
+}

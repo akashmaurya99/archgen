@@ -1,0 +1,49 @@
+{
+  "name": "archgen-mcp",
+  "version": "0.0.6",
+  "description": "MCP server for archgen — the single runtime that owns architecture-plan validation, wave execution, artifact navigation, CodeGraph bootstrap, harness MCP wiring, and live UI control for coding agents.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "archgen-mcp": "bin/archgen-mcp.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "assets/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "mcp",
+    "model-context-protocol",
+    "architecture",
+    "task-graph",
+    "planning",
+    "codegraph"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akashmaurya99/archgen.git"
+  },
+  "homepage": "https://github.com/akashmaurya99/archgen#readme",
+  "bugs": {
+    "url": "https://github.com/akashmaurya99/archgen/issues"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "inspect": "npx -y @modelcontextprotocol/inspector node bin/archgen-mcp.mjs",
+    "prepublishOnly": "node scripts/sync-config.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0"
+  }
+}
