@@ -6,7 +6,7 @@
 // "which one do I call?" confusion the whole MCP exercise exists to fix.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
-import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR } from '../context.mjs';
+import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
 import { buildScaffold } from '../core/scaffold.mjs';
 import { loadBrief, BRIEF_KINDS } from '../core/briefs.mjs';
 import { validateTasksYaml } from '../core/validator.mjs';
@@ -78,6 +78,11 @@ export function registerPlanTools(server) {
           return buildScaffold(loadAsset('depth-ladder.json'), args.scope, {
             slug: args.slug ?? null,
             templatesDir: TEMPLATES_DIR,
+            // The generator token carries the RUNNING server's version. The
+            // server knows it exactly, so the artifact records the truth
+            // instead of the agent having to guess, copy or type a version —
+            // and no release ever has to update a version written by hand.
+            generator: `archgen v${serverVersion()}`,
           });
         }
         case 'brief': {

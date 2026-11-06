@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadAsset, TEMPLATES_DIR } from '../../src/context.mjs';
+import { loadAsset, TEMPLATES_DIR, serverVersion } from '../../src/context.mjs';
 import { buildScaffold } from '../../src/core/scaffold.mjs';
 import { parseYaml } from '../../src/core/yaml.mjs';
 
@@ -18,6 +18,33 @@ test('every scope class produces a scaffold', () => {
     const s = buildScaffold(ladder, scope, { slug: 'demo' });
     assert.equal(s.scopeClass, scope);
     assert.ok(s.artifacts.length > 0, `${scope} must declare its artifact set`);
+  }
+});
+
+test('the generator token carries the RUNNING server version, so nobody types one', () => {
+  // The provenance header records which version produced an artifact. The
+  // server knows its own version exactly, so it writes it — the agent pastes
+  // the header verbatim and never guesses a version.
+  //
+  // This used to emit a bare "# generator: archgen", which meant every
+  // artifact carried no version at all, and pushed the burden onto the agent
+  // (whose only guidance was a placeholder it could copy literally).
+  const v = serverVersion();
+  const s = buildScaffold(ladder, 'LARGE', { slug: 'demo', generator: `archgen v${v}` });
+  const header = s.skeletons['tasks.yaml'].split('\n').slice(0, 3);
+  assert.equal(header[0], '# schema_version: 1');
+  assert.equal(header[1], `# generator: archgen v${v}`);
+  assert.match(header[2], /^# generated_at: /);
+});
+
+test('every scoped artifact carries the same generator token', () => {
+  const s = buildScaffold(ladder, 'LARGE', { slug: 'demo', generator: 'archgen v1.2.3' });
+  for (const [name, body] of Object.entries(s.skeletons)) {
+    if (typeof body !== 'string' || !body.startsWith('# schema_version:')) continue;
+    assert.ok(
+      body.includes('# generator: archgen v1.2.3'),
+      `${name} carries a different generator token`,
+    );
   }
 });
 

@@ -6,9 +6,17 @@ Begin both files with three YAML comment lines. Comments are ignored by every
 consumer (the MCP server, the VS Code extension, any YAML toolchain), so this is
 purely additive metadata — it can never break a parser:
 
+**NEVER type the version yourself.** The `scaffold` action writes the generator
+line with the RUNNING server's version, and you paste its output verbatim. A
+version you write by hand is either stale or made up — and the provenance
+header exists precisely so it is never either.
+
+The shape of what `scaffold` returns (the version below is a sample of the
+running server's, not a value to copy):
+
 ```yaml
 # schema_version: 1
-# generator: archgen v0.0.4
+# generator: archgen v1.2.3
 # generated_at: 2026-08-26T09:00:00.000Z
 ```
 
@@ -16,11 +24,17 @@ The scaffold action returns these three lines ready to paste.
 
 Version token rules — code-defensive, NEVER guess:
 
-1. If a `.archgen-version` stamp sits next to `SKILL.md` (the installed skill
-   root) and reads as exact `MAJOR.MINOR.PATCH`, write `generator: archgen vX.Y.Z`.
-2. Else if an adjacent `archgen.config.json` carries a semver-shaped
-   `"version"` field, use that value the same way.
-3. Else omit the version token entirely: plain `# generator: archgen`.
+1. The `scaffold` action already resolved the version for you. Copy its
+   header as-is.
+2. If you must write the header yourself (backfilling an artifact the tool
+   did not create), resolve the version in this order and never invent one:
+   a. The `.archgen-version` stamp next to the installed `SKILL.md`, when it
+      reads as exact `MAJOR.MINOR.PATCH`.
+   b. Otherwise the `"version"` field of an adjacent `archgen.config.json`,
+      when it is semver-shaped.
+   c. Otherwise omit the version token entirely: plain `# generator: archgen`.
+3. `npx archgen-skill migrate --apply` applies rules 2(a)–(c) to existing
+   artifacts for you, and backs each file up before it touches it.
 
 `generated_at` is one ISO-8601 timestamp per generation run (all files written
 by the same run share it). Keep the header at the very top of the file; never
