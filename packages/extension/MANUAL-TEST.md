@@ -9,7 +9,7 @@ the deferred half of todo 13 — the CLI-level parity half runs automatically vi
 `npm run cross-mode`.
 
 Setup: `npm install && npm run compile && npm test` must be green first.
-§16 (fork smoke) is a human-executed release checklist for VS Code forks.
+§17 (fork smoke) is a human-executed release checklist for VS Code forks.
 
 ---
 
@@ -53,9 +53,14 @@ Setup: `npm install && npm run compile && npm test` must be green first.
 
 ## 6. ▶ Build / Start Work (harness spawn)
 > Legacy path — requires `archgen.delivery.mode` = `"spawn"` (see §14 for the default clipboard flow).
-1. Set `archgen.scriptsPath` to a dir with stub scripts (`next-tasks.mjs` printing `{"waves":[["TASK_A"]]}`, `set-status.mjs` no-op).
+1. Put a stub `archgen-mcp` on PATH (or set `ARCHGEN_MCP_BIN`) that prints
+   `{"ok":true,"data":{"waves":[[{"id":"TASK_A"}]],"blockedByFailure":[]}}` for
+   `exec archgen_tasks '{"action":"next",…}'`.
 2. Click ▶ on a node; then click **▶ Start Work**.
    - ✅ Node dispatch spawns the configured harness with cwd = workspace root; stdout tail appears in the *ArchGen* output channel; exit 0 → info toast, non-zero → error toast. The extension itself never writes repo files.
+
+> The wave resolver now lives in the MCP server (`archgen-mcp exec archgen_tasks`),
+> not in a skill script — the skill ships no code.
 
 ## 7. DOCS panel
 1. Open DOCS tab; select a markdown file containing two valid mermaid diagrams and one broken.
@@ -86,7 +91,7 @@ regression: the restored webview must render with zero interaction.
    - ✅ Board restores automatically (same view state/tab) without rerunning the command.
 2. Quit + restart (full restart): with the board open, quit VS Code (Cmd+Q on macOS; File → Exit on Windows/Linux), then restart and reopen the same workspace — do NOT rerun the command or click anything.
    - ✅ The board tab restores automatically via the serializer; the restored webview re-runs its `ready` handshake and the host force-pushes the model, so the TASKS graph renders without interaction. No infinite loading spinner, no blank canvas, no Retry card; the stale chip starts counting from "updated 0s ago".
-3. Repeat the quit + restart on a VS Code fork (Cursor, Windsurf) — the full fork smoke checklist is §16.
+3. Repeat the quit + restart on a VS Code fork (Cursor, Windsurf) — the full fork smoke checklist is §17.
    - ✅ Identical restore behavior — the serializer and the ready-handshake force-push ride stable webview APIs, nothing VS Code-specific.
 
 ## 12. CSP hygiene (workbench confirmation)
@@ -147,7 +152,35 @@ Setup opens as a CENTERED DIALOG inside the Task Board (⚙ button beside the �
 14. From ANY board state (empty workspace included), click the **⚙** button beside the **⋯** menu at the right edge of the tab strip — or choose **⋯ → Setup & updates**.
     - ✅ The centered setup dialog opens (and the menu closes); **Copy install prompt** copies without leaving the current view; clicking elsewhere dismisses the menu. With no folder open, entry points show *Open a folder to use ArchGen.* instead of doing nothing.
 
-## 16. Fork smoke checklist (human-executed)
+## 16. Agent-driven UI (the MCP bridge)
+
+> The archgen MCP server can drive this extension over a filesystem command
+> queue. This is the human-executed repro — `packages/extension/test/bridge.test.ts`
+> covers the protocol itself.
+
+1. Open a workspace that has a plan, and open the board.
+2. Check `.archgen/.runtime/bridge.json` exists and contains your workspace root,
+   `protocol: 1`, and the extension version.
+    - ✅ The heartbeat is written on activation and refreshed on every reload.
+3. From a shell in that workspace, drive the server:
+   ```sh
+   npx archgen-mcp exec archgen_ui '{"action":"reveal_task","taskId":"<a real task id>","projectRoot":"'"$PWD"'"}'
+   ```
+    - ✅ The board focuses that task node within ~250 ms; the result reports
+      `available: true, delivered: true, acked: true`.
+4. Repeat with `{"action":"select_feature","slug":"<another feature>"}`,
+   `{"action":"open_doc","path":"<a doc under .archgen/>"}` and
+   `{"action":"focus","view":"docs"}`.
+    - ✅ Each action lands, and each leaves an acknowledgement file in
+      `.archgen/.runtime/ack/`.
+5. Stop the extension, then repeat step 3.
+    - ✅ The result is `available: false` with a reason — NOT an error, and the
+      agent's work is unaffected.
+6. Write a command file by hand with an unknown `action`, and one with a
+   `workspaceRoot` from another directory.
+    - ✅ Both are refused (logged as *ignored*), and neither executes anything.
+
+## 17. Fork smoke checklist (human-executed)
 
 > **Human checklist — not agent-runnable.** Run this fork smoke on each
 > supported VS Code fork before tagging a release and keep the ticked printout

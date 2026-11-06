@@ -1,6 +1,6 @@
 // Corpus parity tests (extension side) — same fixtures as the skill's
 // node:test suite; asserts the TS port parses IDENTICALLY to the committed
-// expectations generated from skill/scripts/lib/yaml.mjs.
+// expectations generated from the MCP core's YAML parser (packages/mcp/src/core/yaml.mjs).
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';

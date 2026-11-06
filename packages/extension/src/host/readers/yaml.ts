@@ -1,10 +1,11 @@
 // yaml.ts — zero-dependency YAML subset parser/writer for archgen contracts.
 //
-// FAITHFUL PORT of skill/scripts/lib/yaml.mjs (todo 3): identical
+// FAITHFUL PORT of the MCP core's YAML parser (packages/mcp/src/core/yaml.mjs):
+// identical behaviour. test/yaml-parity.test.ts pins the two together.
 // public API (parseYaml / stringifyYaml), identical semantics, identical error
 // messages — byte-for-byte where it matters. Both implementations are pinned
 // together by the shared corpus at <repo-root>/fixtures/yaml-corpus/*.yaml +
-// *.expected.json: the skill's node:test suite AND this extension's vitest
+// *.expected.json: the MCP core's node:test suite AND this extension's vitest
 // suite consume the same files and assert identical parse output (parity).
 // If the corpus ever exposes a divergence, fix BOTH sides in one change.
 //

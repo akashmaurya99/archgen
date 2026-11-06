@@ -70,13 +70,13 @@ describe('composeTaskPrompt (spawn/clipboard parity)', () => {
 
 describe('composeStartWorkPayload', () => {
   it('emits the short trigger line when the skill is installed', () => {
-    expect(composeStartWorkPayload('booking-platform', { scriptsDir: '/ws/.agents/skills/archgen/scripts' })).toBe(
+    expect(composeStartWorkPayload('booking-platform', { skillPath: '/ws/.agents/skills/archgen/scripts' })).toBe(
       'Start work on booking-platform.',
     );
   });
 
   it('emits the self-contained brief when the skill is absent', () => {
-    const brief = composeStartWorkPayload('booking-platform', { scriptsDir: null });
+    const brief = composeStartWorkPayload('booking-platform', { skillPath: null });
     expect(brief.split('\n')).toEqual([
       'Read .archgen/booking-platform/tasks.yaml and execute its plan in dependency order.',
       "Implement ONE task at a time; edit only files matched by that task's file_ownership globs.",
@@ -87,7 +87,7 @@ describe('composeStartWorkPayload', () => {
   });
 
   it('brief references tasks.yaml and status guidance but never the scripts dir', () => {
-    const brief = composeStartWorkPayload('demo', { scriptsDir: null });
+    const brief = composeStartWorkPayload('demo', { skillPath: null });
     expect(brief).toContain('.archgen/demo/tasks.yaml');
     expect(brief).toContain('done or failed');
     expect(brief).not.toContain('scripts');
@@ -126,7 +126,7 @@ describe('createDelivery', () => {
   it("'Open Chat' with autoFillChat pre-fills via workbench.action.chat.open", async () => {
     const fake = new FakeVscode();
     fake.pick = 'Open Chat';
-    const payload = composeStartWorkPayload('demo', { scriptsDir: null });
+    const payload = composeStartWorkPayload('demo', { skillPath: null });
     await makeDelivery(fake).deliver('startWork', payload);
     expect(fake.executed).toEqual([
       { id: 'workbench.action.chat.open', arg: { query: payload, isPartialQuery: true } },

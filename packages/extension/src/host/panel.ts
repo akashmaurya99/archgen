@@ -54,7 +54,7 @@ export interface PanelHostOptions {
   onReady?: () => void;
   /** Build intent from the ▶ button (wired to harness spawn in todo 9). */
   onBuild?: (taskId: string) => void;
-  /** Header "Start Work" — dispatches wave-1 of next-tasks.mjs via the harness. */
+  /** Header "Start Work" — dispatches wave-1 (resolved by the MCP server) via the harness. */
   onStartWork?: () => void;
   /** DOCS sidebar click — host parks it so the board lands on that document. */
   onOpenDoc?: (path: string) => void;

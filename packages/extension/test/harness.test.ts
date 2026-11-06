@@ -1,5 +1,5 @@
 // Harness dispatch tests (todo 9): template interpolation, command splitting,
-// scripts-path probing, next-tasks wave parsing, spawn exit-code handling.
+// skill-path probing, spawn exit-code handling.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,10 +10,8 @@ import {
   describeExit,
   interpolateTemplate,
   launchHarness,
-  loadWaves,
   outfileForTask,
-  parseWaves,
-  probeScriptsPath,
+  probeSkillPath,
   splitCommand,
 } from '../src/host/harness';
 
@@ -89,7 +87,7 @@ describe('interpolateTemplate + splitCommand injection-safety invariant', () => 
     '"leading and trailing"',
     '',
     'pre \\" post',
-    'Implement task T1: refactor auth.\n\nSteps:\n1. rotate keys "carefully"\n2. run \\tests\\ locally\n3. report via set-status.mjs',
+    'Implement task T1: refactor auth.\n\nSteps:\n1. rotate keys "carefully"\n2. run \\tests\\ locally\n3. report via the archgen_tasks tool',
     'ends with \\',
   ];
 
@@ -111,114 +109,77 @@ describe('interpolateTemplate + splitCommand injection-safety invariant', () => 
   });
 });
 
-describe('probeScriptsPath', () => {
+describe('probeSkillPath', () => {
   it('prefers the explicit setting', () => {
     const configured = scratch();
     const home = scratch();
-    expect(probeScriptsPath(scratch(), home, configured)).toBe(configured);
+    expect(probeSkillPath(scratch(), home, configured)).toBe(configured);
   });
 
   it('falls back to the legacy bare <ws>/skills layout when no dot-dirs exist', () => {
     const ws = scratch();
-    const wsScripts = join(ws, 'skills', 'archgen', 'scripts');
-    mkdirSync(wsScripts, { recursive: true });
+    const wsSkill = join(ws, 'skills', 'archgen');
+    mkdirSync(wsSkill, { recursive: true });
     const home = scratch();
-    expect(probeScriptsPath(ws, home)).toBe(wsScripts);
+    expect(probeSkillPath(ws, home)).toBe(wsSkill);
 
-    const homeScripts = join(home, '.claude', 'skills', 'archgen', 'scripts');
-    mkdirSync(homeScripts, { recursive: true });
-    expect(probeScriptsPath(scratch(), home)).toBe(homeScripts);
+    const homeSkill = join(home, '.claude', 'skills', 'archgen');
+    mkdirSync(homeSkill, { recursive: true });
+    expect(probeSkillPath(scratch(), home)).toBe(homeSkill);
   });
 
   it('probes canonical <ws>/.agents before <ws>/.claude and the legacy bare layout', () => {
     // tiers in ISOLATED workspaces: an existing higher tier always shadows
     const wsAgents = scratch();
-    const agents = join(wsAgents, '.agents', 'skills', 'archgen', 'scripts');
+    const agents = join(wsAgents, '.agents', 'skills', 'archgen');
     mkdirSync(agents, { recursive: true });
-    expect(probeScriptsPath(wsAgents, scratch())).toBe(agents);
+    expect(probeSkillPath(wsAgents, scratch())).toBe(agents);
 
     const wsClaude = scratch();
-    const claude = join(wsClaude, '.claude', 'skills', 'archgen', 'scripts');
+    const claude = join(wsClaude, '.claude', 'skills', 'archgen');
     mkdirSync(claude, { recursive: true });
-    expect(probeScriptsPath(wsClaude, scratch())).toBe(claude);
+    expect(probeSkillPath(wsClaude, scratch())).toBe(claude);
 
     const wsBare = scratch();
-    const bare = join(wsBare, 'skills', 'archgen', 'scripts');
+    const bare = join(wsBare, 'skills', 'archgen');
     mkdirSync(bare, { recursive: true });
-    expect(probeScriptsPath(wsBare, scratch())).toBe(bare);
+    expect(probeSkillPath(wsBare, scratch())).toBe(bare);
   });
 
   it('prefers workspace-level skill installs over home-level ones', () => {
     const ws = scratch();
     const home = scratch();
-    mkdirSync(join(home, '.claude', 'skills', 'archgen', 'scripts'), { recursive: true });
-    const homeAgents = join(home, '.agents', 'skills', 'archgen', 'scripts');
+    mkdirSync(join(home, '.claude', 'skills', 'archgen'), { recursive: true });
+    const homeAgents = join(home, '.agents', 'skills', 'archgen');
     mkdirSync(homeAgents, { recursive: true });
-    const wsBare = join(ws, 'skills', 'archgen', 'scripts');
+    const wsBare = join(ws, 'skills', 'archgen');
     mkdirSync(wsBare, { recursive: true });
-    expect(probeScriptsPath(ws, home)).toBe(wsBare);
+    expect(probeSkillPath(ws, home)).toBe(wsBare);
 
-    const wsAgents = join(ws, '.agents', 'skills', 'archgen', 'scripts');
+    const wsAgents = join(ws, '.agents', 'skills', 'archgen');
     mkdirSync(wsAgents, { recursive: true });
-    expect(probeScriptsPath(ws, home)).toBe(wsAgents);
+    expect(probeSkillPath(ws, home)).toBe(wsAgents);
   });
 
   it('follows a symlinked <ws>/.claude skill install (skipped on win32)', () => {
     const ws = scratch();
     const real = scratch();
-    const link = join(ws, '.claude', 'skills', 'archgen', 'scripts');
+    const link = join(ws, '.claude', 'skills', 'archgen');
     mkdirSync(dirname(link), { recursive: true });
     symlinkSync(real, link, 'dir');
-    expect(probeScriptsPath(ws, scratch())).toBe(link);
+    expect(probeSkillPath(ws, scratch())).toBe(link);
   });
 
   it('throws ScriptsNotFoundError listing probes when nothing exists', () => {
     const ws = scratch();
     const home = scratch();
     try {
-      probeScriptsPath(ws, home);
+      probeSkillPath(ws, home);
       expect.unreachable();
     } catch (e) {
       expect(e).toBeInstanceOf(ScriptsNotFoundError);
       expect((e as ScriptsNotFoundError).probed.length).toBeGreaterThanOrEqual(3);
     }
-  });
-});
-
-describe('parseWaves / loadWaves', () => {
-  it('validates the {waves:[[...]]} shape', () => {
-    expect(parseWaves('{"waves":[["a","b"],[]]}')).toEqual([['a', 'b'], []]);
-    expect(() => parseWaves('{}')).toThrow(/waves/);
-    expect(() => parseWaves('{"waves":["a"]}')).toThrow(/not an array/);
-    expect(() => parseWaves('not json')).toThrow();
-  });
-
-  it('loadWaves spawns next-tasks.mjs WITH the tasks.yaml argv and parses stdout', async () => {
-    const dir = scratch();
-    const tasksPath = join(dir, 'tasks.yaml');
-    writeFileSync(tasksPath, 'tasks: []\n');
-    // Real-contract stub: echoes back the argv it received so the test asserts
-    // the tasks path is actually forwarded (the old argv-ignoring stub masked
-    // a broken integration where the real script exited 4 on missing usage).
-    writeFileSync(
-      join(dir, 'next-tasks.mjs'),
-      `const [, , file] = process.argv;\n` +
-        `if (!file) { console.error('usage: next-tasks.mjs <tasks.yaml>'); process.exit(4); }\n` +
-        `console.log(JSON.stringify({ waves: [['t1','t2'], ['t3']], argvFile: file }));`,
-    );
-    await expect(loadWaves(dir, tasksPath)).resolves.toEqual([['t1', 't2'], ['t3']]);
-  });
-
-  it('loadWaves rejects when the tasks.yaml path is missing (contract guard)', async () => {
-    const dir = scratch();
-    writeFileSync(join(dir, 'next-tasks.mjs'), `console.log('{}');`);
-    await expect(loadWaves(dir, '')).rejects.toThrow(/tasks\.yaml path is required/);
-  });
-
-  it('loadWaves rejects with stderr context on non-zero exit', async () => {
-    const dir = scratch();
-    writeFileSync(join(dir, 'next-tasks.mjs'), `console.error('kaput'); process.exit(3);`);
-    await expect(loadWaves(dir, join(dir, 'tasks.yaml'))).rejects.toThrow(/kaput|3/);
   });
 });
 

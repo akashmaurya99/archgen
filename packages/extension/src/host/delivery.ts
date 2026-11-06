@@ -38,17 +38,17 @@ export function composeTaskPrompt(taskId: string, taskTitle: string | null): str
 
 export interface StartWorkContext {
   /** Resolved archgen scripts dir; null when the skill is not installed. */
-  scriptsDir: string | null;
+  skillPath: string | null;
 }
 
 /**
- * Compose the start-work payload. When the skill is installed (scriptsDir
+ * Compose the start-work payload. When the skill is installed (skillPath
  * resolved) a short trigger line suffices — SKILL.md routes it. Otherwise the
  * payload must be self-contained so any agent can execute the plan cold,
  * without archgen tooling on disk.
  */
 export function composeStartWorkPayload(slug: string, ctx: StartWorkContext): string {
-  if (ctx.scriptsDir !== null) return `Start work on ${slug}.`;
+  if (ctx.skillPath !== null) return `Start work on ${slug}.`;
   return [
     `Read .archgen/${slug}/tasks.yaml and execute its plan in dependency order.`,
     "Implement ONE task at a time; edit only files matched by that task's file_ownership globs.",

@@ -2,8 +2,8 @@
 //
 // SAFETY CONTRACT: this module NEVER mutates repository files. It only
 // child_process.spawn()s an external agent harness with cwd = workspace root;
-// the spawned agent itself is responsible for any status writes via
-// set-status.mjs. Everything here is vscode-free so vitest (node env) can
+// the spawned agent itself is responsible for any status writes via the
+// `archgen_tasks` MCP tool. Everything here is vscode-free so vitest (node env) can
 // exercise it directly; extension.ts owns OutputChannel + toast wiring.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -27,7 +27,7 @@ export class ScriptsNotFoundError extends Error {
   constructor(readonly probed: string[]) {
     super(
       `ArchGen scripts not found. Probed:\n${probed.map((p) => `  - ${p}`).join('\n')}\n` +
-        `Set "archgen.scriptsPath" or install the archgen skill.`,
+        `Set "archgen.skillPath" or install the archgen skill.`,
     );
     this.name = 'ScriptsNotFoundError';
   }
@@ -122,7 +122,7 @@ export function splitCommand(cmd: string): string[] {
 
 /**
  * Probe order for the archgen scripts directory:
- *   1. explicit archgen.scriptsPath setting (when non-empty)
+ *   1. explicit archgen.skillPath setting (when non-empty)
  *   2. <workspace>/.agents/skills/archgen/scripts  (canonical layout)
  *   3. <workspace>/.claude/skills/archgen/scripts  (symlinked installs follow)
  *   4. <workspace>/skills/archgen/scripts          (legacy bare layout)
@@ -130,74 +130,18 @@ export function splitCommand(cmd: string): string[] {
  *   6. ~/.claude/skills/archgen/scripts
  * Throws ScriptsNotFoundError listing every probe when all are absent.
  */
-export function probeScriptsPath(wsRoot: string | null, home: string, configured?: string): string {
+export function probeSkillPath(wsRoot: string | null, home: string, configured?: string): string {
   const candidates: string[] = [];
   if (configured && configured.trim() !== '') candidates.push(configured.trim());
   if (wsRoot) {
-    candidates.push(join(wsRoot, '.agents', 'skills', 'archgen', 'scripts'));
-    candidates.push(join(wsRoot, '.claude', 'skills', 'archgen', 'scripts'));
-    candidates.push(join(wsRoot, 'skills', 'archgen', 'scripts'));
+    candidates.push(join(wsRoot, '.agents', 'skills', 'archgen'));
+    candidates.push(join(wsRoot, '.claude', 'skills', 'archgen'));
+    candidates.push(join(wsRoot, 'skills', 'archgen'));
   }
-  candidates.push(join(home, '.agents', 'skills', 'archgen', 'scripts'));
-  candidates.push(join(home, '.claude', 'skills', 'archgen', 'scripts'));
+  candidates.push(join(home, '.agents', 'skills', 'archgen'));
+  candidates.push(join(home, '.claude', 'skills', 'archgen'));
   for (const c of candidates) if (existsSync(c)) return c;
   throw new ScriptsNotFoundError(candidates);
-}
-
-/** Shape of next-tasks.mjs output: { waves: [[taskId, ...], ...] }. */
-export interface WavesFile {
-  waves: string[][];
-}
-
-/** Validate parsed next-tasks JSON; throws TypeError on malformed shapes. */
-export function parseWaves(text: string): string[][] {
-  const raw: unknown = JSON.parse(text);
-  const waves = (raw as { waves?: unknown })?.waves;
-  if (!Array.isArray(waves)) throw new TypeError('next-tasks output missing "waves" array');
-  return waves.map((wave, i) => {
-    if (!Array.isArray(wave)) throw new TypeError(`waves[${i}] is not an array`);
-    return wave.map((id, j) => {
-      if (typeof id !== 'string') throw new TypeError(`waves[${i}][${j}] is not a string`);
-      return id;
-    });
-  });
-}
-
-export interface RunResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
-
-/**
- * Run `<node> next-tasks.mjs <tasksYaml>` inside scriptsPath and parse its
- * stdout as a WavesFile. Spawned (not imported) so untrusted plan tooling never
- * loads into the extension host process. The tasks.yaml path is REQUIRED — the
- * real script exits 4 (usage) without it.
- */
-export function loadWaves(scriptsPath: string, tasksYamlPath: string, node = process.execPath): Promise<string[][]> {
-  if (!tasksYamlPath) {
-    return Promise.reject(new Error('loadWaves: tasks.yaml path is required'));
-  }
-  return new Promise((resolve, reject) => {
-    const child = spawn(node, ['next-tasks.mjs', tasksYamlPath], { cwd: scriptsPath });
-    let stdout = '';
-    let stderr = '';
-    child.stdout?.on('data', (d: Buffer) => (stdout += d.toString()));
-    child.stderr?.on('data', (d: Buffer) => (stderr += d.toString()));
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code !== 0) {
-        reject(new Error(`next-tasks.mjs exited ${code}${stderr ? `: ${stderr.trim()}` : ''}`));
-        return;
-      }
-      try {
-        resolve(parseWaves(stdout));
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error(String(e)));
-      }
-    });
-  });
 }
 
 export interface LaunchOptions {

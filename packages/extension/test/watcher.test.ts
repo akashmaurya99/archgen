@@ -457,16 +457,16 @@ describe('workspace folder change — pipeline tear-down/re-create (todo 8)', ()
     activate(ctx);
 
     expect(state.folderListeners).toHaveLength(1); // registered exactly once
-    expect(liveWatchers()).toHaveLength(5); // one pipeline for root A
+    expect(liveWatchers()).toHaveLength(6); // 5 pipeline watchers + 1 UI-bridge command watcher
     expect(liveWatchers().every((w) => w.base.uri.fsPath === wsA)).toBe(true);
     const subscriptionsAfterActivate = ctx.subscriptions.length;
 
     setFolders(wsB);
     fireFoldersChanged();
 
-    expect(liveWatchers()).toHaveLength(5); // exactly ONE live pipeline…
+    expect(liveWatchers()).toHaveLength(6); // exactly ONE live pipeline + the bridge watcher…
     expect(liveWatchers().every((w) => w.base.uri.fsPath === wsB)).toBe(true); // …watching root B
-    expect(state.watchers.filter((w) => w.disposed)).toHaveLength(5); // root A's fully torn down
+    expect(state.watchers.filter((w) => w.disposed)).toHaveLength(6); // root A's fully torn down
     expect(ctx.subscriptions.length).toBe(subscriptionsAfterActivate); // no disposable leak
   });
 
@@ -475,13 +475,13 @@ describe('workspace folder change — pipeline tear-down/re-create (todo 8)', ()
     const ctx = makeContext();
     activate(ctx);
     const subscriptionsAfterActivate = ctx.subscriptions.length;
-    expect(liveWatchers()).toHaveLength(5);
+    expect(liveWatchers()).toHaveLength(6);
 
     state.folders = undefined;
     fireFoldersChanged();
 
     expect(liveWatchers()).toHaveLength(0);
-    expect(state.watchers).toHaveLength(5); // nothing new created
+    expect(state.watchers).toHaveLength(6); // nothing new created
     expect(ctx.subscriptions.length).toBe(subscriptionsAfterActivate);
   });
 
@@ -497,8 +497,8 @@ describe('workspace folder change — pipeline tear-down/re-create (todo 8)', ()
     }
 
     expect(ctx.subscriptions.length).toBe(baseline); // bounded across N swaps
-    expect(liveWatchers()).toHaveLength(5);
-    expect(state.watchers).toHaveLength(20); // 5 initial + 3 swaps × 5
+    expect(liveWatchers()).toHaveLength(6);
+    expect(state.watchers).toHaveLength(24); // 6 initial + 3 swaps × 6
 
     // Deactivation path: the single holder disposable disposes the CURRENT pipeline.
     for (const d of ctx.subscriptions) (d as { dispose?: () => void }).dispose?.();

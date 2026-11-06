@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { parseYaml, stringifyYaml } from '../src/host/readers/yaml.js';
 import { parseTasks, parseArchitecture } from '../src/host/readers/archgen.js';
-import { interpolateTemplate, splitCommand, probeScriptsPath, parseWaves } from '../src/host/harness.js';
+import { interpolateTemplate, splitCommand, probeSkillPath } from '../src/host/harness.js';
 import { detectCodegraph, UnsupportedProductError } from '../src/host/codegraph.js';
 
 describe('yaml.ts edge cases', () => {
@@ -18,9 +18,12 @@ describe('yaml.ts edge cases', () => {
     expect(() => parseYaml('42\n')).toThrow(/expected 'key:' mapping entry/);
   });
 
-  it('duplicate mapping keys: last value wins (documented subset behavior)', () => {
-    const { data } = parseYaml('a: first\na: second\n');
-    expect(data).toEqual({ a: 'second' });
+  it('duplicate mapping keys are REJECTED (a plan file with a duplicate key is corrupt)', () => {
+    // Deliberately NOT "last value wins": silently dropping a shadowed key
+    // hides a real authoring bug in a plan file. The MCP core's YAML parser
+    // (packages/mcp/src/core/yaml.mjs) throws identically — see
+    // test/yaml-parity.test.ts, which pins the two implementations together.
+    expect(() => parseYaml('a: first\na: second\n')).toThrow(/duplicate key 'a'/);
   });
 
   it('round-trips nested seq-of-maps with per-item comments positionally', () => {
@@ -63,26 +66,23 @@ describe('harness template + probe edges', () => {
     expect(splitCommand('claude -p "two words" --flag')).toEqual(['claude', '-p', 'two words', '--flag']);
   });
 
-  it('probeScriptsPath prefers the canonical <ws>/.agents layout over legacy + home', () => {
+  it('probeSkillPath prefers the canonical <ws>/.agents layout over legacy + home', () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
-    const bare = join(ws, 'skills/archgen/scripts');
+    const bare = join(ws, 'skills/archgen');
     mkdirSync(bare, { recursive: true });
-    expect(probeScriptsPath(ws, '/nonexistent-home')).toBe(bare);
+    expect(probeSkillPath(ws, '/nonexistent-home')).toBe(bare);
 
-    const agents = join(ws, '.agents/skills/archgen/scripts');
+    const agents = join(ws, '.agents/skills/archgen');
     mkdirSync(agents, { recursive: true });
-    expect(probeScriptsPath(ws, '/nonexistent-home')).toBe(agents);
+    expect(probeSkillPath(ws, '/nonexistent-home')).toBe(agents);
   });
 
-  it('probeScriptsPath honors a configured override that actually exists', () => {
+  it('probeSkillPath honors a configured override that actually exists', () => {
     const configured = mkdtempSync(join(tmpdir(), 'cfg-'));
     mkdirSync(join(configured), { recursive: true });
-    expect(probeScriptsPath(null, '/nonexistent-home', configured)).toBe(configured);
+    expect(probeSkillPath(null, '/nonexistent-home', configured)).toBe(configured);
   });
 
-  it('parseWaves rejects non-scalar wave entries', () => {
-    expect(() => parseWaves('{"waves":[["a"],["b", 42]]}')).toThrow();
-  });
 });
 
 describe('codegraph detection matrix', () => {

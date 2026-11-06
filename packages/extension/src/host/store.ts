@@ -13,8 +13,6 @@
 //    webview; tests inject a manual scheduler). 100 rapid updateById calls
 //    produce AT MOST ONE flush.
 
-export type NodeStatus = 'pending' | 'ready' | 'running' | 'blocked' | 'done' | 'failed';
-
 export interface ScheduledFlush {
   (): void;
 }

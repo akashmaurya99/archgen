@@ -16,8 +16,7 @@ import {
   describeExit,
   interpolateTemplate,
   launchHarness,
-  loadWaves,
-  probeScriptsPath,
+  probeSkillPath,
 } from '../src/host/harness.js';
 import { StatusStore } from '../src/host/store.js';
 import { createUriDebouncer } from '../src/host/debounce.js';
@@ -269,29 +268,36 @@ describe('harness edge cases', () => {
     const ws = scratch();
     const home = scratch();
     try {
-      probeScriptsPath(ws, home, join(ws, 'cfg-scripts'));
+      probeSkillPath(ws, home, join(ws, 'cfg-skill'));
       expect.unreachable();
     } catch (e) {
       const err = e as ScriptsNotFoundError;
       expect(err.probed).toHaveLength(6); // configured + 3 ws tiers + ~/.agents + ~/.claude
       for (const p of err.probed) expect(err.message).toContain(p);
       expect(err.kind).toBe('scripts-not-found');
-      expect(err.message).toContain('Set "archgen.scriptsPath"');
+      expect(err.message).toContain('Set "archgen.skillPath"');
     }
   });
 
-  it('loadWaves rejects via the child error path when scriptsPath does not exist', async () => {
-    await expect(loadWaves(join(tmpdir(), 'definitely-missing-dir'), 'tasks.yaml')).rejects.toThrow();
+  it('the MCP client rejects when the archgen-mcp binary does not exist', async () => {
+    const { loadWaves } = await import('../src/host/mcp-client');
+    const missing = { bin: null, source: 'npx' as const, command: join(tmpdir(), 'definitely-missing-binary'), args: [] };
+    await expect(loadWaves(tmpdir(), 'tasks.yaml', missing)).rejects.toThrow();
   });
 
-  it('loadWaves surfaces parse failures from exit-0 stdout and silent non-zero exits', async () => {
+  it('the MCP client surfaces parse failures from exit-0 stdout and silent non-zero exits', async () => {
+    const { loadWaves } = await import('../src/host/mcp-client');
     const dirA = scratch();
-    writeFileSync(join(dirA, 'next-tasks.mjs'), `console.log('not json');`);
-    await expect(loadWaves(dirA, join(dirA, 't.yaml'))).rejects.toThrow();
+    const stub = join(dirA, 'stub.mjs');
+    writeFileSync(stub, `console.log('not json');`);
+    const binA = { bin: stub, source: 'override' as const, command: process.execPath, args: [stub] };
+    await expect(loadWaves(dirA, join(dirA, 't.yaml'), binA)).rejects.toThrow();
 
     const dirB = scratch();
-    writeFileSync(join(dirB, 'next-tasks.mjs'), `process.exit(7);`);
-    await expect(loadWaves(dirB, join(dirB, 't.yaml'))).rejects.toThrow(/exited 7/);
+    const stubB = join(dirB, 'stub.mjs');
+    writeFileSync(stubB, `process.exit(7);`);
+    const binB = { bin: stubB, source: 'override' as const, command: process.execPath, args: [stubB] };
+    await expect(loadWaves(dirB, join(dirB, 't.yaml'), binB)).rejects.toThrow(/exit 7|produced no JSON/);
   });
 
   it('launchHarness rejects an empty command and logs signal terminations', async () => {

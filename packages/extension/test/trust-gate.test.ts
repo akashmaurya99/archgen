@@ -146,13 +146,22 @@ vi.mock('vscode', () => {
   };
 });
 
-// Spy seam for "no spawn": everything else (probeScriptsPath, templates,
+// Spy seam for "no spawn": everything else (probeSkillPath, templates,
 // outfileForTask, interpolation) stays the real module.
 vi.mock('../src/host/harness', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/host/harness')>();
   return {
     ...actual,
     launchHarness: vi.fn(() => ({ on: vi.fn() })),
+  };
+});
+
+// The wave resolver now lives in the MCP client — mock it there, so the trust
+// gate still proves "no process ran".
+vi.mock('../src/host/mcp-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/host/mcp-client')>();
+  return {
+    ...actual,
     loadWaves: vi.fn(() => Promise.resolve<string[][]>([])),
   };
 });
@@ -189,7 +198,8 @@ vi.mock('../src/host/hub', async (importOriginal) => {
 });
 
 import { activate } from '../src/host/extension';
-import { launchHarness, loadWaves } from '../src/host/harness';
+import { launchHarness } from '../src/host/harness';
+import { loadWaves } from '../src/host/mcp-client';
 import type { ExtensionContext } from 'vscode';
 
 const dirs: string[] = [];
@@ -315,7 +325,8 @@ describe('workspace trust gate — spawn dispatch (todo 5)', () => {
     await vi.waitFor(() => expect(loadWaves).toHaveBeenCalledTimes(1));
 
     const args = vi.mocked(loadWaves).mock.calls[0] ?? [];
-    expect(args[0]).toBe(join(ws, '.agents', 'skills', 'archgen', 'scripts'));
+    // The MCP client takes the PROJECT ROOT + the tasks.yaml path.
+    expect(args[0]).toBe(ws);
     expect(args[1]).toBe(join(ws, '.archgen', 'demo', 'tasks.yaml'));
     // The stub resolves to zero waves → nothing spawns and an info toast explains.
     expect(launchHarness).not.toHaveBeenCalled();

@@ -39,7 +39,7 @@ export type SetupAction = 'install' | 'initPlan' | 'update' | 'none';
 export interface EvaluateSetupInput {
   /** False when the probe threw (ScriptsNotFoundError) — no skill anywhere. */
   probed: boolean;
-  /** Resolved scripts dir from probeScriptsPath, or null when absent. */
+  /** Resolved scripts dir from probeSkillPath, or null when absent. */
   skillPath: string | null;
   /** Raw .archgen-version file contents (utf8), or null when unreadable/missing. */
   stampRaw: string | null;

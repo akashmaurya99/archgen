@@ -1,5 +1,16 @@
 // extension.ts — activation entry (host bundle: dist/extension.js).
-import { commands, env, ExtensionContext, OutputChannel, workspace, window, Disposable } from 'vscode';
+import {
+  commands,
+  env,
+  ExtensionContext,
+  FileSystemWatcher,
+  OutputChannel,
+  RelativePattern,
+  Uri,
+  workspace,
+  window,
+  Disposable,
+} from 'vscode';
 import { ArchgenPanel, PanelHostOptions, registerBoard } from './panel';
 import { ModelHub } from './hub';
 import {
@@ -12,7 +23,16 @@ import { registerSidebar } from './sidebar';
 import type { SidebarActions } from './sidebar/actions';
 import { registerSetupStatusBar, registerStatusBar } from './statusbar';
 import { createWatchPipeline, type WatchPipeline } from './watchers';
-import { createSingleFollowup, createThrottle } from './debounce';
+import { createSingleFollowup, createThrottle, createUriDebouncer, type Debouncer } from './debounce';
+import {
+  BRIDGE_PROTOCOL,
+  UI_ACTIONS,
+  cmdDirFor,
+  createBridgeCore,
+  isCommandFile,
+  type BridgeCommand,
+  type BridgeCore,
+} from './bridge';
 import { codegraphDbStat, detectCodegraph, openCodegraph } from './codegraph';
 import { activeFeatureKey, buildScopedModel, discoverFeatures } from './features';
 import {
@@ -24,15 +44,15 @@ import {
   resolveSetupAction,
 } from './setup';
 import type { SetupState } from './setup';
+import { loadWaves, resolveMcpBinary } from './mcp-client';
 import {
   DEFAULT_TEMPLATES,
   ScriptsNotFoundError,
   describeExit,
   interpolateTemplate,
   launchHarness,
-  loadWaves,
   outfileForTask,
-  probeScriptsPath,
+  probeSkillPath,
   type HarnessId,
 } from './harness';
 import type { ArchgenModelMessage, ArchgenSetupMessage, WebviewCopyInitPlanMessage } from '../shared/protocol';
@@ -52,11 +72,6 @@ const INITIAL_SETUP: SetupState = {
 /** Strict-semver guard for untyped packageJSON surfaces; anything else falls back so comparisons stay numeric. */
 function semverOr(value: unknown, fallback: string): string {
   return typeof value === 'string' && /^\d+\.\d+\.\d+$/.test(value) ? value : fallback;
-}
-
-/** The skill ROOT sits one level above the probed scripts dir (…/archgen/scripts → …/archgen). */
-function skillRootOf(scriptsPath: string): string {
-  return scriptsPath.replace(/[\\/]+scripts[\\/]?$/, '');
 }
 
 export function activate(context: ExtensionContext): void {
@@ -217,7 +232,7 @@ export function activate(context: ExtensionContext): void {
   function commandForTask(taskId: string): string {
     const wsRoot = root();
     if (!wsRoot) throw new Error('Open a workspace folder before dispatching work.');
-    const scripts = probeScriptsPath(wsRoot, os.homedir(), setting<string>('scriptsPath', ''));
+    const scripts = probeSkillPath(wsRoot, os.homedir(), setting<string>('skillPath', ''));
     out.appendLine(`[harness] scripts resolved at ${scripts}`);
     const harness = setting<HarnessId>('harness.default', 'claude');
     if (!HARNESS_IDS.includes(harness)) throw new Error(`Unknown harness "${harness}".`);
@@ -238,8 +253,9 @@ export function activate(context: ExtensionContext): void {
   }
 
   // ---- Workspace-trust gate (enterprise security, todo 5) ------------------
-  // Spawn mode executes repo-contained skill scripts (next-tasks.mjs via
-  // loadWaves, plus the harness CLI it dispatches) — arbitrary code straight
+  // Spawn mode executes the archgen MCP server (which resolves the wave via
+  // `archgen-mcp exec archgen_tasks`) plus the harness CLI it dispatches —
+  // arbitrary code straight
   // off a freshly cloned repo — so it requires workspace trust. Clipboard
   // mode stays allowed when untrusted: copying a prompt spawns nothing.
   // Distinct from maybeNotifySetup's isTrusted check, which only mutes toasts.
@@ -306,37 +322,37 @@ export function activate(context: ExtensionContext): void {
   /**
    * Header "Start Work". Clipboard mode (default) copies a tiered payload —
    * short trigger when the skill is installed, self-contained brief otherwise;
-   * next-tasks.mjs is never run (the agent recomputes waves itself). "spawn"
-   * keeps the legacy wave-1 dispatch verbatim.
+   * the wave resolver is never run (the agent recomputes waves itself). "spawn"
+   * keeps the wave-1 dispatch verbatim, resolving the wave through the MCP
+   * server.
    */
   function dispatchStartWork(): void {
     void (async () => {
       try {
         const wsRoot = root();
         if (!wsRoot) throw new Error('Open a workspace folder before starting work.');
-        // Before ANY process work: the spawn branch runs next-tasks.mjs (loadWaves)
-        // plus one harness per wave-1 task.
+        // Before ANY process work: the spawn branch resolves the frontier via
+        // the archgen MCP server (loadWaves) plus one harness per wave-1 task.
         if (spawnBlockedByTrust('start-work')) return;
         if (setting<DeliveryMode>('delivery.mode', 'clipboard') !== 'spawn') {
           const scoped = buildScopedModel(wsRoot, storedSlug(wsRoot));
           const active = scoped.features.find((f) => f.slug === scoped.activeSlug);
           if (!active) throw new Error('No .archgen/*/tasks.yaml found in this workspace.');
           // Probe ONCE purely to tier the payload; absence is expected, not an error.
-          let scriptsDir: string | null = null;
+          let skillPath: string | null = null;
           try {
-            scriptsDir = probeScriptsPath(wsRoot, os.homedir(), setting<string>('scriptsPath', ''));
+            skillPath = probeSkillPath(wsRoot, os.homedir(), setting<string>('skillPath', ''));
           } catch {
-            scriptsDir = null;
+            skillPath = null;
           }
-          void delivery.deliver('startWork', composeStartWorkPayload(active.slug, { scriptsDir }));
+          void delivery.deliver('startWork', composeStartWorkPayload(active.slug, { skillPath }));
           ArchgenPanel.active?.post({ type: 'status', kind: 'info', message: 'Copied start-work prompt to clipboard.' });
           return;
         }
-        const scripts = probeScriptsPath(wsRoot, os.homedir(), setting<string>('scriptsPath', ''));
         const scoped = buildScopedModel(wsRoot, storedSlug(wsRoot));
         const active = scoped.features.find((f) => f.slug === scoped.activeSlug);
         if (!active) throw new Error('No .archgen/*/tasks.yaml found in this workspace.');
-        const waves = await loadWaves(scripts, active.tasksPath);
+        const waves = await loadWaves(wsRoot, active.tasksPath, resolveMcpBinary(wsRoot, os.homedir()));
         const wave1 = waves[0] ?? [];
         if (wave1.length === 0) {
           void window.showInformationMessage('ArchGen: next-tasks reports an empty first wave — nothing to start.');
@@ -354,7 +370,7 @@ export function activate(context: ExtensionContext): void {
 
   // ---- Proactive setup UX -------------------------------------------------
   //
-  // Probe ONCE per evaluation (probeScriptsPath try/catch → null-safe), read
+  // Probe ONCE per evaluation (probeSkillPath try/catch → null-safe), read
   // the CLI-written .archgen-version stamp next to SKILL.md, and fold
   // everything into a SetupState. The extension NEVER executes installs — it
   // only composes prompts and hands them to the delivery controller.
@@ -457,7 +473,7 @@ export function activate(context: ExtensionContext): void {
     let skillPath: string | null = null;
     if (wsRoot !== null) {
       try {
-        skillPath = probeScriptsPath(wsRoot, os.homedir(), setting<string>('scriptsPath', ''));
+        skillPath = probeSkillPath(wsRoot, os.homedir(), setting<string>('skillPath', ''));
         probed = true;
       } catch {
         probed = false; // ScriptsNotFoundError — absence is expected, not an error.
@@ -466,7 +482,7 @@ export function activate(context: ExtensionContext): void {
     let stampRaw: string | null = null;
     if (skillPath !== null) {
       try {
-        stampRaw = await fs.promises.readFile(path.join(skillRootOf(skillPath), '.archgen-version'), 'utf8');
+        stampRaw = await fs.promises.readFile(path.join(skillPath, '.archgen-version'), 'utf8');
       } catch {
         stampRaw = null; // Missing/unreadable stamp = unknown legacy install.
       }
@@ -608,19 +624,136 @@ export function activate(context: ExtensionContext): void {
   context.subscriptions.push(
     workspace.onDidChangeWorkspaceFolders(() => {
       disposePipeline();
+      disposeBridge();
       ensurePipeline();
+      ensureBridge();
       // The new root's truth is in no watcher event stream yet: re-converge
       // model + setup for it immediately instead of waiting for an event.
       pushModel(true);
       void evaluateSetupNow();
     }),
     new Disposable(() => disposePipeline()),
+    // ONE holder for the UI bridge — same bounded-subscription rule as the
+    // model pipeline above.
+    new Disposable(() => disposeBridge()),
   );
 
   function openBoard(): void {
     if (!requireWorkspaceFolder()) return;
     ensurePipeline();
     ArchgenPanel.createOrShow(context, panelOpts);
+  }
+
+  // ---- MCP UI bridge -------------------------------------------------------
+  //
+  // The archgen MCP server owns every deterministic capability; this extension
+  // is its UI. The agent drives the UI through a filesystem command queue
+  // (.archgen/.runtime/cmd/<id>.json) and reads the acknowledgements back
+  // (.archgen/.runtime/ack/<id>.json). The protocol and its validation rules
+  // live in src/host/bridge.ts.
+  //
+  // The command channel gets its OWN 50ms debounce — separate from the 300ms
+  // model debounce — because a UI command is user-initiated and must feel
+  // instant, while a model refresh is a bulk convergence.
+
+  const BRIDGE_DEBOUNCE_MS = 50;
+  let bridge: BridgeCore | null = null;
+  let bridgeWatcher: FileSystemWatcher | null = null;
+  let bridgeDebounce: Debouncer | null = null;
+
+  /** Execute one validated bridge command against the UI. */
+  function executeBridgeCommand(command: BridgeCommand): string {
+    switch (command.action) {
+      case 'revealTask': {
+        const taskId = String(command.args.taskId ?? '');
+        if (!taskId) throw new Error('revealTask requires taskId');
+        openBoard();
+        ArchgenPanel.active?.setPendingReveal(taskId);
+        return `revealed ${taskId}`;
+      }
+      case 'selectFeature': {
+        const slug = String(command.args.slug ?? '');
+        if (!slug) throw new Error('selectFeature requires slug');
+        selectFeature(slug);
+        return `selected ${slug}`;
+      }
+      case 'openDoc': {
+        const rel = String(command.args.path ?? '');
+        if (!rel) throw new Error('openDoc requires path');
+        openDoc(rel);
+        return `opened ${rel}`;
+      }
+      case 'focus': {
+        const view = String(command.args.view ?? 'board');
+        openBoard();
+        return `focused ${view}`;
+      }
+      case 'refresh': {
+        pushModel(true);
+        return 'refreshed';
+      }
+      default:
+        // Unreachable: the bridge core validates the action against the
+        // allowlist before the command ever reaches this function.
+        throw new Error(`unsupported bridge action '${String(command.action)}'`);
+    }
+  }
+
+  /** Create (or refresh) the bridge for the current workspace root. */
+  function ensureBridge(): void {
+    const wsRoot = root();
+    if (!wsRoot) return;
+    if (bridge) {
+      // Heartbeat refresh: the agent polls this file to learn we are alive.
+      bridge.writeHeartbeat(extVersion);
+      return;
+    }
+    bridge = createBridgeCore({
+      workspaceRoot: wsRoot,
+      heartbeat: { version: extVersion, capabilities: UI_ACTIONS },
+      log: (line) => out.appendLine(line),
+      execute: executeBridgeCommand,
+    });
+    bridge.writeHeartbeat(extVersion);
+
+    const folder = workspace.workspaceFolders?.[0];
+    if (!folder) return;
+    // The command directory is created by the bridge heartbeat, so the watcher
+    // is registered against an existing path (the dropped-deep-event race the
+    // main watcher pipeline already documents).
+    bridgeWatcher = workspace.createFileSystemWatcher(
+      new RelativePattern(folder, '.archgen/.runtime/cmd/**/*.json'),
+    );
+    bridgeDebounce = createUriDebouncer(BRIDGE_DEBOUNCE_MS, (uris) => {
+      for (const uri of uris) {
+        const abs = Uri.parse(uri).fsPath;
+        if (!isCommandFile(abs)) continue;
+        const ack = bridge?.handleCommandFile(abs);
+        if (ack) out.appendLine(`[bridge] ${ack.id} → ${ack.status}${ack.message ? ` (${ack.message})` : ''}`);
+      }
+    });
+    const push = (uri: Uri): void => {
+      try {
+        bridgeDebounce?.push(uri);
+      } catch (e) {
+        out.appendLine(`[bridge] watcher event failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    };
+    bridgeWatcher.onDidCreate(push);
+    bridgeWatcher.onDidChange(push);
+    // NOT pushed to context.subscriptions: the single holder disposable below
+    // disposes whichever bridge is current at deactivation, so root swaps never
+    // accumulate dead disposables (the same multi-root hygiene rule the model
+    // pipeline follows).
+    out.appendLine(`[bridge] listening on ${cmdDirFor(wsRoot)} (protocol ${BRIDGE_PROTOCOL})`);
+  }
+
+  function disposeBridge(): void {
+    bridgeWatcher?.dispose();
+    bridgeWatcher = null;
+    bridgeDebounce?.dispose();
+    bridgeDebounce = null;
+    bridge = null;
   }
 
   context.subscriptions.push(
@@ -695,6 +828,9 @@ export function activate(context: ExtensionContext): void {
   // activation (not first board open) and the first evaluation happens after
   // the hub is primed above.
   ensurePipeline();
+  // The UI bridge starts at activation too: the agent may drive the board
+  // before anyone opens it.
+  ensureBridge();
   void evaluateSetupNow();
 }
 

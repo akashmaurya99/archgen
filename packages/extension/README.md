@@ -13,9 +13,10 @@ with one click.
 
 ## Privacy & guarantees
 
-ArchGen is strictly a **window** over your repository:
+ArchGen is a **window** over your repository:
 
-- **Never edits anything.** It reads `.archgen/` files and your codegraph index; all writes are done by your agent. Uninstalling loses nothing.
+- **Never edits your artifacts.** It reads `.archgen/` files and your codegraph index; all plan, task and code writes are done by your agent. Uninstalling loses nothing.
+- **Writes only its own runtime state.** It creates `.archgen/.runtime/` — a heartbeat (`bridge.json`) and per-command acknowledgements (`ack/<id>.json`) — which is how the archgen MCP server knows the extension is alive and whether a UI command took effect. Nothing else in your workspace is touched.
 - **No telemetry.** No data leaves your machine.
 - **No LLM calls.** The extension contains no agent runtime — it composes prompts and hands them to the agent you already use.
 - Codegraph indexes are opened read-only.
@@ -32,6 +33,25 @@ ArchGen is strictly a **window** over your repository:
 Also included: a feature picker for repos with multiple `.archgen/<slug>/`
 features, live updates as files change, and keyboard navigation (Tab to a task,
 Enter/Space to build it).
+
+### Agent-driven UI
+
+The archgen MCP server can drive this extension. When an agent calls
+`archgen_ui`, the board reacts in real time:
+
+| Action | Effect |
+| --- | --- |
+| `reveal_task` | focuses the board on one task node |
+| `select_feature` | switches the board to another `.archgen/<slug>/` feature |
+| `open_doc` | opens a document in the DOCS tab |
+| `focus` | brings a view (board / tasks / docs / codegraph) forward |
+| `refresh` | forces a model re-push |
+
+The channel is a filesystem command queue under `.archgen/.runtime/` — the
+extension advertises what it can do in `bridge.json` and answers each command
+with an acknowledgement. Commands are allowlisted, scoped to this workspace,
+expire after five seconds, and are safe to replay. If the extension is closed,
+the tool reports `available: false` — the agent's work continues unaffected.
 
 ## Installation
 
@@ -56,7 +76,7 @@ Enter/Space to build it).
 | --- | --- | --- |
 | `archgen.harness.default` | `claude` | Agent harness invoked by the ▶ build button: `claude` \| `opencode` \| `codex` \| `gemini` \| `custom`. |
 | `archgen.harness.templates` | built-in templates | Command template per harness. Placeholders: `{{prompt}}`, `{{task}}`, `{{outfile}}`. |
-| `archgen.scriptsPath` | *(empty)* | Explicit path to the archgen scripts directory (`next-tasks.mjs`, `set-status.mjs`). When empty, probed in order: `<workspace>/.agents/skills/archgen/scripts`, `<workspace>/.claude/skills/archgen/scripts`, `<workspace>/skills/archgen/scripts`, `~/.agents/skills/archgen/scripts`, `~/.claude/skills/archgen/scripts`. |
+| `archgen.skillPath` | *(empty)* | Explicit path to the installed archgen **skill** directory. When empty, probed in order: `<workspace>/.agents/skills/archgen`, `<workspace>/.claude/skills/archgen`, `<workspace>/skills/archgen`, `~/.agents/skills/archgen`, `~/.claude/skills/archgen`. The skill ships no code — the MCP server (`archgen-mcp`) owns every capability. |
 | `archgen.delivery.mode` | `clipboard` | How ▶ delivers work: `clipboard` copies the composed prompt to paste into any agent chat (works everywhere); `spawn` runs the headless CLI harness and requires a [trusted workspace](https://code.visualstudio.com/api/extension-guides/workspace-trust) — it is refused with a warning otherwise. |
 | `archgen.delivery.autoFillChat` | `true` | After copying, best-effort pre-fill of the IDE's native chat input (ignored where unsupported). |
 

@@ -188,7 +188,7 @@ export interface WebviewBuildMessage {
   taskId: string;
 }
 
-/** Header "Start Work": dispatch wave-1 of next-tasks.mjs through the harness. */
+/** Header "Start Work": dispatch wave-1 (resolved by the MCP server) through the harness. */
 export interface WebviewStartWorkMessage {
   type: 'startWork';
 }

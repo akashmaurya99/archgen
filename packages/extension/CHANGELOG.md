@@ -3,14 +3,55 @@
 All notable changes to the ArchGen extension are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semver.
 
-## [Unreleased]
+## [0.0.6] - 2026-11-06
+
+### Added
+- **The UI bridge** — the archgen MCP server can now drive the board. The
+  extension writes a heartbeat to `.archgen/.runtime/bridge.json`, watches
+  `.archgen/.runtime/cmd/` for commands, and answers each one with an
+  acknowledgement in `.archgen/.runtime/ack/`. Supported actions:
+  `selectFeature`, `revealTask`, `openDoc`, `focus`, `refresh`. Commands are
+  allowlisted, workspace-scoped, expiring, and replay-safe.
+- **The MCP client** — the wave resolver now comes from the MCP server
+  (`archgen-mcp exec archgen_tasks { action: 'next' }`) instead of a skill
+  script. The skill ships no code, so there is nothing left to probe for.
+- Proactive setup UX is now a board-integrated **SETUP** tab (TASKS | CODE |
+  DOCS | SETUP) fed by the same live-update pipeline as the model: summary rows
+  (skill / plan / up-to-date), one action card per pending step with copy-prompt
+  delivery, and the compact "ArchGen is set up." row once resolved. The
+  standalone *ArchGen Setup* window is deleted — notifications, the setup
+  status-bar item and `ArchGen: Open Setup` all open the board with the SETUP
+  tab active. A header **⋯** menu (right of the tab strip, every state including
+  empty workspaces) exposes *Setup & updates* and *Copy install prompt* from any
+  tab, and the empty state gains an *Open Setup & updates* bridge button.
 
 ### Changed
-- Proactive setup UX is now a board-integrated **SETUP** tab (TASKS | CODE | DOCS | SETUP) fed by the same live-update pipeline as the model: summary rows (skill / plan / up-to-date), one action card per pending step with copy-prompt delivery, and the compact "ArchGen is set up." row once resolved. The standalone *ArchGen Setup* window is deleted — notifications, the setup status-bar item and `ArchGen: Open Setup` all open the board with the SETUP tab active. A header **⋯** menu (right of the tab strip, every state including empty workspaces) exposes *Setup & updates* and *Copy install prompt* from any tab, and the empty state gains an *Open Setup & updates* bridge button.
+- **`archgen.scriptsPath` → `archgen.skillPath`** (BREAKING). The setting now
+  points at the installed archgen **skill** directory, not a scripts folder —
+  the skill has no scripts. Probed in order: this setting,
+  `<workspace>/.agents/skills/archgen`, `<workspace>/.claude/skills/archgen`,
+  `<workspace>/skills/archgen`, `~/.agents/skills/archgen`,
+  `~/.claude/skills/archgen`.
+- The extension now writes two files under `.archgen/.runtime/` (the heartbeat
+  and the acknowledgements). It still never edits a plan, a task, or any source
+  file.
 
 ### Fixed
-- Selecting or revealing **SETUP** in a workspace with no ArchGen content rendered the stale "No ArchGen plan found" empty state instead of the setup view (the empty-state fallback short-circuited every tab), so status-bar/notification entry points read as dead buttons in exactly the empty folders where setup matters most. Render order now evaluates the SETUP tab first; opening the board with no workspace folder shows *Open a folder to use ArchGen.* instead of silently doing nothing.
-- File-watcher race on freshly-scaffolded `.agents`/`.archgen` trees left setup state stale until focus or reload: deep globs like `.agents/skills/archgen/**` are registered before their directories exist, so events for files written milliseconds after `mkdir -p` chains were dropped. Root-entry watchers on `{.archgen,.agents,.claude}` now fire on scaffold creation/deletion, trigger an immediate direct filesystem re-probe plus ONE trailing follow-up (~600ms), and a throttled window-focus reconcile (≥3s) converges both setup truth and the board model even if every watch event was lost.
+- The root-entry watcher race on freshly-scaffolded `.agents`/`.archgen` trees
+  left setup state stale until focus or reload: deep globs like
+  `.agents/skills/archgen/**` are registered before their directories exist, so
+  events for files written milliseconds after `mkdir -p` chains were dropped.
+  Root-entry watchers on `{.archgen,.agents,.claude}` now fire on scaffold
+  creation/deletion, trigger an immediate direct filesystem re-probe plus ONE
+  trailing follow-up (~600ms), and a throttled window-focus reconcile (≥3s)
+  converges both setup truth and the board model even if every watch event was
+  lost.
+- Selecting or revealing **SETUP** in a workspace with no ArchGen content
+  rendered the stale "No ArchGen plan found" empty state instead of the setup
+  view, so status-bar/notification entry points read as dead buttons in exactly
+  the empty folders where setup matters most. Render order now evaluates the
+  SETUP tab first; opening the board with no workspace folder shows *Open a
+  folder to use ArchGen.* instead of silently doing nothing.
 
 ## [0.0.4] - 2026-08-25
 
