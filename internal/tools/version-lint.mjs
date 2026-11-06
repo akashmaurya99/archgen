@@ -19,8 +19,9 @@
 //                          lockfiles, the package manifests.
 //   HISTORY                the CHANGELOGs — history is supposed to name
 //                          versions.
-//   TEST DATA              the suites compare versions against versions;
-//                          "0.0.5" against ">=0.0.6" is the assertion.
+//   TEST DATA              the suites compare versions against versions —
+//                          an older version against a minimum is the
+//                          assertion, so those literals are the point.
 //   FROZEN SAMPLES         the shared YAML corpus is a fixed parser-parity
 //                          fixture, not a sample of what this release emits.
 //
