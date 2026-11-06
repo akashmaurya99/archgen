@@ -15,6 +15,7 @@ import {
   MANIFEST_REL,
   STORE_REL,
   VERSION_FILE,
+  assertWithinRoot,
   hashDir,
   pruneEmptyParents,
   rmIfExists,
@@ -60,9 +61,18 @@ export function uninstallProject(projectDir, packageRoot) {
     warnings.push('.claude/skills/archgen is a real directory - left untouched (remove manually if unwanted)');
   }
 
-  // 2. Managed blocks — strip markers, keep all user content.
+  // 2. Managed blocks — strip markers, keep all user content. A symlinked
+  //    managed file is REFUSED (never written through) and skipped, so the
+  //    rest of the uninstall still runs and the project is left in a
+  //    coherent state instead of half-uninstalled.
   for (const name of ['AGENTS.md', 'CLAUDE.md']) {
-    if (stripManagedFile(join(root, name)).hadBlock) strippedBlocks.push(name);
+    const abs = join(root, name);
+    const fileSt = lstatSafe(abs);
+    if (fileSt && fileSt.isSymbolicLink()) {
+      warnings.push(`${name} is a symlink - left untouched (refusing to write through it)`);
+      continue;
+    }
+    if (stripManagedFile(abs).hadBlock) strippedBlocks.push(name);
   }
 
   // 3. Canonical store — remove ONLY if unmodified vs vendor.
@@ -80,8 +90,16 @@ export function uninstallProject(projectDir, packageRoot) {
     let vendor = null;
     try { vendor = hashDir(resolveSkillSource(packageRoot)); } catch { vendor = null; }
     if (vendor !== null && mine === vendor) {
-      rmSync(storeAbs, { recursive: true, force: true });
-      storeRemoved = true;
+      // Containment FIRST: a symlinked `.agents` would make this delete a
+      // tree OUTSIDE the project, so the guard runs before the removal.
+      try {
+        assertWithinRoot(root, storeAbs);
+        rmSync(storeAbs, { recursive: true, force: true });
+        storeRemoved = true;
+      } catch (e) {
+        storeKept = true;
+        warnings.push('canonical store kept at .agents/skills/archgen: ' + e.message);
+      }
     } else {
       storeKept = true;
       warnings.push('canonical store kept at .agents/skills/archgen: modified vs vendor (or unverifiable) - review manually');

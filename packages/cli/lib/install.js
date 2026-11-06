@@ -180,7 +180,7 @@ export function installGlobal(opts = {}) {
       noMcp: opts.mcp === false,
     });
     if (!r.ok) {
-      rows.push(['WARN', '-', 'server bootstrap incomplete — run: npx archgen-mcp bootstrap --location global --yes']);
+      rows.push(['WARN', '-', 'server bootstrap incomplete' + (r.detail ? ` (${r.detail})` : '') + ' — run: npx archgen-mcp bootstrap --location global --yes']);
     }
   }
 
@@ -196,17 +196,70 @@ function stampNote(rows, dest, write) {
   }
 }
 
-export function uninstallGlobal(home = homedir()) {
+/**
+ * The exact destinations a global install may create.
+ *
+ * A manifest entry is acted on ONLY when it names one of them. A plain
+ * suffix test (`endsWith('skills/archgen')`) would let any path with that
+ * ending be removed — including paths outside the known harness dirs.
+ */
+function allowedGlobalDestinations(home) {
+  const set = new Set(globalTargets(home).map((d) => resolve(join(d, 'archgen'))));
+  set.add(resolve(join(process.cwd(), '.github', 'skills', 'archgen')));
+  return set;
+}
+
+/**
+ * Move an edited copy-mode install into the global backup vault before it is
+ * removed: the uninstall must never be the last place those edits exist.
+ * An install that still matches the packaged skill needs no backup.
+ */
+function backupEditedCopy(dest, packageRoot, backups) {
+  let identical = false;
+  try {
+    identical = hashDir(dest) === hashDir(resolveSkillSource(packageRoot));
+  } catch {
+    identical = false; // unverifiable -> preserve it
+  }
+  if (identical) return;
+  const tdir = dirname(dest);
+  const loc = moveToBackupInto(tdir, 'archgen', GLOBAL_BACKUP_REL, nextBackupTs(tdir));
+  backups.push(join(tdir, ...loc.split('/')));
+}
+
+/**
+ * Remove the globally-installed copies recorded in the manifest.
+ *
+ * Only entries that name a known harness destination are removed. An entry
+ * that cannot be verified is SKIPPED and KEPT in the manifest — the manifest
+ * is only removed when nothing was left behind.
+ *
+ * @param {string} home home directory holding the manifest
+ * @param {{packageRoot?: string}} opts
+ */
+export function uninstallGlobal(home = homedir(), opts = {}) {
   const manifest = join(home, MANIFEST_NAME);
   if (!existsSync(manifest)) return { removed: 0, failed: 0, noop: true };
+  const packageRoot = opts.packageRoot ?? PACKAGE_ROOT;
+  const allowed = allowedGlobalDestinations(home);
   let removed = 0, failed = 0;
+  const kept = [];
+  const backups = [];
   for (const line of readFileSync(manifest, 'utf8').split('\n')) {
     if (!line.trim()) continue;
     const [kind, p] = line.split('\t');
-    if (!p || !p.endsWith(join('skills', 'archgen'))) { failed++; continue; } // safety guard
-    try { rmSync(p, { force: true, recursive: true }); removed++; }
-    catch { failed++; }
+    if (!p || !allowed.has(resolve(p))) { failed++; kept.push(line); continue; } // safety guard
+    try {
+      if (kind === 'copy') backupEditedCopy(p, packageRoot, backups);
+      rmSync(p, { force: true, recursive: true }); removed++;
+    } catch { failed++; kept.push(line); }
   }
-  rmSync(manifest, { force: true });
-  return { removed, failed, noop: false };
+  if (kept.length === 0) {
+    try { rmSync(manifest, { force: true }); } catch { failed++; }
+  } else {
+    // The skipped entries stay recorded: the manifest is the only thing that
+    // knows they were never removed.
+    try { writeFileSync(manifest, kept.join('\n') + '\n'); } catch { failed++; }
+  }
+  return { removed, failed, noop: false, backups };
 }

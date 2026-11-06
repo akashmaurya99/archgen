@@ -7,10 +7,18 @@ export function parseSemver(v) {
   return m ? { major: +m[1], minor: +m[2], patch: +m[3] } : null;
 }
 
+/**
+ * Compare two semver strings.
+ *
+ * @returns {number|null} -1 / 0 / 1, or null when either side is not a
+ *   semver. An unparseable version is NOT "equal" to anything: reporting 0
+ *   would make a registry tag like "beta" read as "already up to date" and
+ *   silently skip the caller's refusal path.
+ */
 export function compareSemver(a, b) {
   const x = parseSemver(a);
   const y = parseSemver(b);
-  if (!x || !y) return 0;
+  if (!x || !y) return null;
   for (const k of ['major', 'minor', 'patch']) {
     if (x[k] !== y[k]) return x[k] < y[k] ? -1 : 1;
   }

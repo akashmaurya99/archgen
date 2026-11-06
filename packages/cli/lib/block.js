@@ -16,7 +16,7 @@
 // place on the next init/doctor pass and detectBlockVersion() lets doctor
 // report stale formats precisely.
 
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { loadConfig } from './config.js';
 import { assertNotSymlink } from './store.js';
 
@@ -171,11 +171,14 @@ export function upsertBlock(existing, block, eol = '\n') {
     if (s === -1 || e === -1) {
       throw new Error('found only one archgen marker - fix or remove it manually');
     }
+    const prefix = trimmed.slice(0, s);
     const tail = stripCompleteBlocks(trimmed.slice(e + END.length));
-    if (tail.includes(START) || tail.includes(END)) {
+    // An orphan marker ANYWHERE (before the first block as well as after it)
+    // would survive the rewrite and leave the file broken — refuse instead.
+    if (prefix.includes(START) || prefix.includes(END) || tail.includes(START) || tail.includes(END)) {
       throw new Error('found only one archgen marker - fix or remove it manually');
     }
-    return trimmed.slice(0, s) + fresh + tail;
+    return prefix + fresh + tail;
   }
 
   const startIdx = trimmed.indexOf(START);
@@ -209,13 +212,37 @@ function splitBom(raw) {
   return { bom, body: bom ? raw.slice(1) : raw };
 }
 
-/** Write via sibling temp file + rename so readers never observe partial content. */
-function atomicWrite(absPath, data) {
-  const tmp = absPath + '.tmp-' + process.pid + '-' + Date.now();
-  // 'wx' (O_CREAT|O_EXCL): if the tmp name already exists — e.g. an attacker
-  // planted a symlink there to redirect the write — fail instead of following.
-  writeFileSync(tmp, data, { flag: 'wx' });
-  renameSync(tmp, absPath);
+/**
+ * Write via sibling temp file + rename so readers never observe partial content.
+ * @param {string} absPath target file
+ * @param {string} data contents
+ */
+export function atomicWrite(absPath, data) {
+  let tmp = absPath + '.tmp-' + process.pid + '-' + Date.now();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      // 'wx' (O_CREAT|O_EXCL): if the tmp name already exists — e.g. an attacker
+      // planted a symlink there to redirect the write — fail instead of following.
+      writeFileSync(tmp, data, { flag: 'wx' });
+      break;
+    } catch (e) {
+      // A collision (two writes inside the same millisecond) is not a failure:
+      // retry with a fresh name instead of failing the whole write.
+      if (e && e.code === 'EEXIST' && attempt < 10) {
+        tmp = absPath + '.tmp-' + process.pid + '-' + Date.now() + '-' + (attempt + 1);
+        continue;
+      }
+      throw e;
+    }
+  }
+  try {
+    renameSync(tmp, absPath);
+  } catch (e) {
+    // Never leave the temp file behind: a failed rename must not litter the
+    // project with half-written siblings.
+    try { unlinkSync(tmp); } catch { /* original intact; leftover tmp is harmless */ }
+    throw e;
+  }
 }
 
 /**
@@ -248,6 +275,20 @@ export function importsAgents(absPath) {
   try { raw = readFileSync(absPath, 'utf8'); } catch { return false; }
   const { body } = splitBom(raw);
   return body.split(/\r?\n/).some((l) => l.trim() === '@AGENTS.md');
+}
+
+/**
+ * True when the file carries a COMPLETE managed block (both markers).
+ *
+ * A file with a hand-written `@AGENTS.md` import has none — that import is
+ * the user's, not ours, and must survive untouched. A file WITH a managed
+ * block is ours: its provenance stamp is refreshed on every init, exactly
+ * like the AGENTS.md block.
+ */
+export function hasManagedBlock(absPath) {
+  let raw = '';
+  try { raw = readFileSync(absPath, 'utf8'); } catch { return false; }
+  return raw.includes(START) && raw.includes(END);
 }
 
 /** Strip the managed block from a file on disk, preserving BOM. */

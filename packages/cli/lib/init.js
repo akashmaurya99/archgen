@@ -20,7 +20,7 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
-import { importsAgents, renderBlock, START, END, upsertManagedFile } from './block.js';
+import { importsAgents, hasManagedBlock, renderBlock, START, END, upsertManagedFile } from './block.js';
 import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackup, pruneDevOnly } from './store.js';
 import { writeStamp } from './version-stamp.js';
 import { bootstrapServers } from './bootstrap.js';
@@ -57,6 +57,12 @@ function relJoin(rel) {
 function installClaudeAdapter(root, source, warnings) {
   const claudeAbs = join(root, relJoin(CLAUDE_LINK_REL));
   const storeAbs = join(root, relJoin(STORE_REL));
+
+  // Escape check FIRST — before anything is removed or created: a symlinked
+  // .claude/.claude/skills parent must not redirect the adapter (nor the
+  // removal of a legacy copy) outside the project root.
+  assertWithinRoot(root, dirname(claudeAbs));
+
   const st = lstatSafe(claudeAbs);
   let migrating = false;
 
@@ -81,9 +87,6 @@ function installClaudeAdapter(root, source, warnings) {
     return 'kept-divergent';
   }
 
-  // Escape check: a symlinked .claude/.claude/skills parent must not redirect
-  // the adapter creation outside the project root.
-  assertWithinRoot(root, claudeAbs);
   try {
     mkdirSync(dirname(claudeAbs), { recursive: true });
     symlinkSync('../../.agents/skills/archgen', claudeAbs);
@@ -134,21 +137,44 @@ export function initProject(projectDir, packageRoot, opts = {}) {
 
   // 1. Canonical store — fingerprint before mutating (ownership check).
   const prev = lstatSafe(storeAbs);
-  if (prev) {
-    const identical = prev.isDirectory() && !prev.isSymbolicLink()
-      && hashDir(storeAbs, { ignore: [VERSION_FILE] }) === hashDir(source);
-    if (!identical) backups.push(moveToBackup(root, STORE_REL));
-  }
+  const identical = !!(prev && prev.isDirectory() && !prev.isSymbolicLink()
+    && hashDir(storeAbs, { ignore: [VERSION_FILE] }) === hashDir(source));
 
-  // Atomic install: build in a temp sibling dir, then rename into place.
+  // Atomic install: build in a temp sibling dir, then swap it into place.
+  // The current store is renamed aside (identical) or moved into the backup
+  // vault (divergent) so the swap can be undone: a failed swap puts the old
+  // store back, and a failed copy never leaves an orphan temp directory.
   const skillsParent = dirname(storeAbs);
   mkdirSync(skillsParent, { recursive: true });
   const tmp = join(skillsParent, '.archgen-tmp-' + randomBytes(6).toString('hex'));
-  cpSync(source, tmp, { recursive: true });
-  pruneDevOnly(tmp); // dev-only artifacts (scripts/test) never reach the installed store
-  writeStamp(tmp, version);
-  rmSync(storeAbs, { recursive: true, force: true });
-  renameSync(tmp, storeAbs);
+  const aside = join(skillsParent, '.archgen-old-' + randomBytes(6).toString('hex'));
+  let asideUsed = false;
+  try {
+    cpSync(source, tmp, { recursive: true });
+    pruneDevOnly(tmp); // dev-only artifacts (scripts/test) never reach the installed store
+    writeStamp(tmp, version);
+    if (lstatSafe(storeAbs)) {
+      if (identical) {
+        renameSync(storeAbs, aside);
+        asideUsed = true;
+      } else {
+        backups.push(moveToBackup(root, STORE_REL));
+      }
+    }
+    renameSync(tmp, storeAbs);
+  } catch (e) {
+    if (asideUsed) {
+      // Put the previous store back: a failed swap must never leave the
+      // project without a store.
+      try {
+        renameSync(aside, storeAbs);
+        asideUsed = false;
+      } catch { /* keep it aside rather than deleting the user's data */ }
+    }
+    rmSync(tmp, { recursive: true, force: true });
+    throw e;
+  }
+  if (asideUsed) rmSync(aside, { recursive: true, force: true });
   appendEntry(root, 'dir', STORE_REL);
 
   // 2. Claude adapter — relative symlink, never a second copy.
@@ -159,7 +185,10 @@ export function initProject(projectDir, packageRoot, opts = {}) {
   const createdContextFiles = [];
   for (const name of CONTEXT_FILES) {
     const abs = join(root, name);
-    if (name === 'CLAUDE.md' && importsAgents(abs)) {
+    // A hand-written `@AGENTS.md` import is the user's — leave it alone. A
+    // managed block is ours: refresh it so its provenance stamp tracks the
+    // running CLI instead of freezing at the first-ever install.
+    if (name === 'CLAUDE.md' && !hasManagedBlock(abs) && importsAgents(abs)) {
       warnings.push('CLAUDE.md already imports @AGENTS.md - skipped (already-imports)');
       continue;
     }

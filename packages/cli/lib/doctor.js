@@ -3,13 +3,13 @@
 // Verifies a project install: canonical store integrity, version stamp,
 // claude link resolution, managed blocks (exactly once each), and manifest
 // entry resolution. Safe issues are repaired in place unless --check is given
-// (report-only). Advisory FAIL rows (broken states only a human can fix) are
-// reported and counted in the summary but do NOT fail the run: the process
-// exits non-zero only when a repair operation itself throws.
+// (report-only). A FAIL row is a broken state a human must fix: it is
+// reported AND it fails the run (the process exits non-zero whenever any
+// FAIL row was produced).
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { globalTargets } from './install.js';
 import {
   END,
@@ -22,7 +22,7 @@ import {
   upsertManagedFile,
 } from './block.js';
 import { resolveSkillSource } from './init.js';
-import { CLAUDE_LINK_REL, DEV_ONLY_RELPATHS, MANIFEST_REL, STORE_REL, VERSION_FILE, cliVersion, findObsolete, hashDir, loadManifest, pruneDevOnly, pruneObsolete, saveManifest } from './store.js';
+import { CLAUDE_LINK_REL, DEV_ONLY_RELPATHS, MANIFEST_REL, STORE_REL, VERSION_FILE, assertNotSymlink, assertWithinRoot, cliVersion, findObsolete, hashDir, loadManifest, pruneDevOnly, pruneObsolete, saveManifest } from './store.js';
 import { compareSemver, parseSemver } from './version.js';
 import { readStamp, writeStamp } from './version-stamp.js';
 import { mcpDoctor } from './mcp-server.js';
@@ -48,8 +48,7 @@ function relJoin(rel) {
  *   mutations; home overrides the homedir scanned for global installs (tests)
  * @returns {{root: string, checks: {status: 'OK'|'FIXED'|'WOULD-FIX'|'WARN'|'FAIL', msg: string}[],
  *            tally: Record<string, number>, failures: number}} `failures` counts
- *   repair operations that THEMSELVES threw — advisory FAIL rows are reported
- *   but never fail the run.
+ *   the FAIL rows — a broken state a human must fix always fails the run.
  */
 export function doctorProject(projectDir, packageRoot, opts = {}) {
   const root = resolve(projectDir);
@@ -57,16 +56,20 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
   const homeDir = opts.home ?? homedir();
   const version = cliVersion(packageRoot);
   const checks = [];
-  const add = (status, msg) => checks.push({ status, msg });
-  let opFailures = 0;
+  let failures = 0;
+  // A FAIL row is a broken state a human must fix, so it MUST fail the run:
+  // the counter below is what the CLI turns into a non-zero exit code.
+  const add = (status, msg) => {
+    checks.push({ status, msg });
+    if (status === 'FAIL') failures++;
+  };
   // Run one repair step; a throw becomes a FAIL row instead of aborting the
-  // whole doctor pass (and is the only thing that flips the exit code).
+  // whole doctor pass.
   const attempt = (fn, okStatus, okMsg, failLabel) => {
     try {
       fn();
       add(okStatus, okMsg);
     } catch (e) {
-      opFailures++;
       add('FAIL', `${failLabel}: ${e.message} - fix manually`);
     }
   };
@@ -93,9 +96,27 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
     })();
     if (packaged) {
       // --check reports WITHOUT mutating; repair mode prunes.
-      const obsolete = checkOnly ? findObsolete(storeAbs, packaged) : pruneObsolete(storeAbs, packaged);
-      for (const rel of obsolete) {
-        add(checkOnly ? 'WOULD-FIX' : 'FIXED', `store carried the obsolete ${rel}/ tree (pre-MCP layout) -> ${checkOnly ? 'would prune' : 'pruned'}`);
+      const obsolete = findObsolete(storeAbs, packaged);
+      if (obsolete.length > 0) {
+        if (checkOnly) {
+          for (const rel of obsolete) {
+            add('WOULD-FIX', `store carried the obsolete ${rel}/ tree (pre-MCP layout) -> would prune`);
+          }
+        } else {
+          // Pruning DELETES inside the store: refuse when the store (or one of
+          // its parents) is a symlink — the prune would otherwise reach
+          // outside the project through the link.
+          try {
+            assertNotSymlink(storeAbs);
+            assertWithinRoot(root, storeAbs);
+            pruneObsolete(storeAbs, packaged);
+            for (const rel of obsolete) {
+              add('FIXED', `store carried the obsolete ${rel}/ tree (pre-MCP layout) -> pruned`);
+            }
+          } catch (e) {
+            add('FAIL', `cannot prune the obsolete store tree: ${e.message} - fix manually`);
+          }
+        }
       }
     }
     const missingCore = ['references'].filter((d) => !existsSync(join(storeAbs, d)));
@@ -124,7 +145,12 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
       if (checkOnly) {
         add('WOULD-FIX', `store carries dev-only ${devOnlyPresent.join(', ')} -> pruned`);
       } else {
-        attempt(() => pruneDevOnly(storeAbs), 'FIXED',
+        // Same rule as the obsolete prune: never delete through a symlink.
+        attempt(() => {
+          assertNotSymlink(storeAbs);
+          assertWithinRoot(root, storeAbs);
+          pruneDevOnly(storeAbs);
+        }, 'FIXED',
           `dev-only ${devOnlyPresent.join(', ')} pruned from store`, 'cannot prune dev-only artifacts');
       }
     }
@@ -152,6 +178,10 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
       return;
     }
     try {
+      // Escape check FIRST, exactly as init does: a symlinked .claude/
+      // .claude/skills parent must not redirect the recreated link outside
+      // the project root.
+      assertWithinRoot(root, dirname(claudeAbs));
       try { unlinkSync(claudeAbs); } catch { /* absent */ }
       mkdirSync(dirname(claudeAbs), { recursive: true });
       symlinkSync('../../.agents/skills/archgen', claudeAbs);
@@ -184,60 +214,66 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
         'AGENTS.md created with managed block', 'cannot create AGENTS.md managed block');
     }
   } else {
-    let raw = readFileSync(agentsAbs, 'utf8');
-    const starts = countOccurrences(raw, START);
-    const ends = countOccurrences(raw, END);
-    if (starts === 0 && ends === 0) {
-      if (checkOnly) add('WOULD-FIX', 'AGENTS.md has no archgen block -> added');
-      else {
-        attempt(() => upsertManagedFile(agentsAbs, renderBlock(STORE_REL).split('\n')), 'FIXED',
-          'AGENTS.md managed block added', 'cannot add AGENTS.md managed block');
-      }
-    } else if (starts > 1 || ends > 1) {
-      add('FAIL', `AGENTS.md has ${starts} start / ${ends} end markers - fix manually`);
-    } else if (starts === 0 || ends === 0 || raw.indexOf(START) > raw.indexOf(END)) {
-      // Orphan/inverted markers: repairing through upsertBlock would throw, so
-      // classify as FAIL instead of attempting the write.
-      add('FAIL', 'AGENTS.md has broken archgen markers - fix manually');
-    } else {
-      // Block-format currency: an unversioned or older-stamped managed block is
-      // upgraded in place through the normal upsert path (everything outside the
-      // markers survives byte-for-byte by design). Newer stamps are left alone.
-      const det = detectBlockVersion(raw);
-      const parsed = det.version ? parseSemver(det.version) : null;
-      const stale = !det.present || !parsed || compareSemver(det.version, version) < 0;
-      if (stale) {
-        const from = det.version ? 'v' + det.version : 'unversioned';
-        if (checkOnly) {
-          add('WOULD-FIX', `WOULD-UPGRADE: AGENTS.md block ${from} -> v${version}`);
-        } else {
-          let upgraded = false;
-          attempt(() => { upsertManagedFile(agentsAbs, renderBlock(STORE_REL).split('\n')); upgraded = true; },
-            'FIXED', `UPGRADED: AGENTS.md block ${from} -> v${version}`, 'cannot upgrade AGENTS.md block');
-          if (upgraded) raw = readFileSync(agentsAbs, 'utf8');
-        }
-      }
-      const fsCount = countOccurrences(raw, FEATURES_START);
-      const feCount = countOccurrences(raw, FEATURES_END);
-      const fsIdx = raw.indexOf(FEATURES_START);
-      const feIdx = raw.indexOf(FEATURES_END);
-      if (fsCount === 1 && feCount === 1 && fsIdx < feIdx) {
-        add('OK', 'AGENTS.md block + features registry present');
-      } else if (fsCount === 1 && feCount === 1) {
-        // Counts are right but ORDER is inverted (end before start): any
-        // registry write would throw (upsertFeaturesRegistry requires
-        // end > start), so flag the state instead of blessing it as OK.
-        if (checkOnly) add('WOULD-FIX', 'AGENTS.md archgen:features markers are reversed -> swap them');
-        else add('FAIL', 'AGENTS.md archgen:features markers are reversed - fix manually');
-      } else if (fsCount === 0 && feCount === 0) {
-        if (checkOnly) add('WOULD-FIX', 'AGENTS.md missing features registry -> inserted');
+    // An unreadable managed file is a FAIL row, not a reason to abort the
+    // whole doctor pass.
+    try {
+      let raw = readFileSync(agentsAbs, 'utf8');
+      const starts = countOccurrences(raw, START);
+      const ends = countOccurrences(raw, END);
+      if (starts === 0 && ends === 0) {
+        if (checkOnly) add('WOULD-FIX', 'AGENTS.md has no archgen block -> added');
         else {
-          attempt(() => upsertFeaturesRegistry(agentsAbs, []), 'FIXED',
-            'AGENTS.md features registry inserted', 'cannot insert AGENTS.md features registry');
+          attempt(() => upsertManagedFile(agentsAbs, renderBlock(STORE_REL).split('\n')), 'FIXED',
+            'AGENTS.md managed block added', 'cannot add AGENTS.md managed block');
         }
+      } else if (starts > 1 || ends > 1) {
+        add('FAIL', `AGENTS.md has ${starts} start / ${ends} end markers - fix manually`);
+      } else if (starts === 0 || ends === 0 || raw.indexOf(START) > raw.indexOf(END)) {
+        // Orphan/inverted markers: repairing through upsertBlock would throw, so
+        // classify as FAIL instead of attempting the write.
+        add('FAIL', 'AGENTS.md has broken archgen markers - fix manually');
       } else {
-        add('FAIL', 'AGENTS.md has broken archgen:features markers - fix manually');
+        // Block-format currency: an unversioned or older-stamped managed block is
+        // upgraded in place through the normal upsert path (everything outside the
+        // markers survives byte-for-byte by design). Newer stamps are left alone.
+        const det = detectBlockVersion(raw);
+        const parsed = det.version ? parseSemver(det.version) : null;
+        const stale = !det.present || !parsed || compareSemver(det.version, version) < 0;
+        if (stale) {
+          const from = det.version ? 'v' + det.version : 'unversioned';
+          if (checkOnly) {
+            add('WOULD-FIX', `WOULD-UPGRADE: AGENTS.md block ${from} -> v${version}`);
+          } else {
+            let upgraded = false;
+            attempt(() => { upsertManagedFile(agentsAbs, renderBlock(STORE_REL).split('\n')); upgraded = true; },
+              'FIXED', `UPGRADED: AGENTS.md block ${from} -> v${version}`, 'cannot upgrade AGENTS.md block');
+            if (upgraded) raw = readFileSync(agentsAbs, 'utf8');
+          }
+        }
+        const fsCount = countOccurrences(raw, FEATURES_START);
+        const feCount = countOccurrences(raw, FEATURES_END);
+        const fsIdx = raw.indexOf(FEATURES_START);
+        const feIdx = raw.indexOf(FEATURES_END);
+        if (fsCount === 1 && feCount === 1 && fsIdx < feIdx) {
+          add('OK', 'AGENTS.md block + features registry present');
+        } else if (fsCount === 1 && feCount === 1) {
+          // Counts are right but ORDER is inverted (end before start): any
+          // registry write would throw (upsertFeaturesRegistry requires
+          // end > start), so flag the state instead of blessing it as OK.
+          if (checkOnly) add('WOULD-FIX', 'AGENTS.md archgen:features markers are reversed -> swap them');
+          else add('FAIL', 'AGENTS.md archgen:features markers are reversed - fix manually');
+        } else if (fsCount === 0 && feCount === 0) {
+          if (checkOnly) add('WOULD-FIX', 'AGENTS.md missing features registry -> inserted');
+          else {
+            attempt(() => upsertFeaturesRegistry(agentsAbs, []), 'FIXED',
+              'AGENTS.md features registry inserted', 'cannot insert AGENTS.md features registry');
+          }
+        } else {
+          add('FAIL', 'AGENTS.md has broken archgen:features markers - fix manually');
+        }
       }
+    } catch (e) {
+      add('FAIL', 'cannot read AGENTS.md: ' + e.message + ' - fix manually');
     }
   }
 
@@ -249,18 +285,44 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
         'CLAUDE.md created with @AGENTS.md bridge', 'cannot create CLAUDE.md bridge');
     }
   } else {
-    const raw = readFileSync(claudeMdAbs, 'utf8');
-    const body = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
-    const imports = body.split(/\r?\n/).some((l) => l.trim() === '@AGENTS.md');
-    const starts = countOccurrences(raw, START);
-    const ends = countOccurrences(raw, END);
-    if (imports && starts <= 1 && ends <= 1) add('OK', 'CLAUDE.md bridges to AGENTS.md');
-    else if (starts > 1 || ends > 1) add('FAIL', 'CLAUDE.md has multiple archgen blocks - fix manually');
-    else if (starts !== ends) add('FAIL', 'CLAUDE.md has broken archgen markers - fix manually');
-    else if (checkOnly) add('WOULD-FIX', 'CLAUDE.md missing @AGENTS.md bridge -> written');
-    else {
-      attempt(() => upsertManagedFile(claudeMdAbs, [START, '@AGENTS.md', END]), 'FIXED',
-        'CLAUDE.md @AGENTS.md bridge written', 'cannot write CLAUDE.md bridge');
+    // An unreadable managed file is a FAIL row, not a reason to abort the
+    // whole doctor pass.
+    let raw = null;
+    try {
+      raw = readFileSync(claudeMdAbs, 'utf8');
+    } catch (e) {
+      add('FAIL', 'cannot read CLAUDE.md: ' + e.message + ' - fix manually');
+    }
+    if (raw !== null) {
+      const body = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+      const imports = body.split(/\r?\n/).some((l) => l.trim() === '@AGENTS.md');
+      const starts = countOccurrences(raw, START);
+      const ends = countOccurrences(raw, END);
+      if (starts > 1 || ends > 1) add('FAIL', 'CLAUDE.md has multiple archgen blocks - fix manually');
+      else if (starts !== ends) add('FAIL', 'CLAUDE.md has broken archgen markers - fix manually');
+      else if (starts === 1) {
+        // The managed block is ours: keep its provenance stamp current, the
+        // same way the AGENTS.md block is kept current.
+        const det = detectBlockVersion(raw);
+        const parsed = det.version ? parseSemver(det.version) : null;
+        const stale = !det.present || !parsed || compareSemver(det.version, version) < 0;
+        if (stale) {
+          const from = det.version ? 'v' + det.version : 'unversioned';
+          if (checkOnly) {
+            add('WOULD-FIX', `WOULD-UPGRADE: CLAUDE.md block ${from} -> v${version}`);
+          } else {
+            attempt(() => upsertManagedFile(claudeMdAbs, [START, '@AGENTS.md', END]), 'FIXED',
+              `UPGRADED: CLAUDE.md block ${from} -> v${version}`, 'cannot upgrade CLAUDE.md block');
+          }
+        } else {
+          add('OK', 'CLAUDE.md bridges to AGENTS.md');
+        }
+      } else if (imports) add('OK', 'CLAUDE.md bridges to AGENTS.md');
+      else if (checkOnly) add('WOULD-FIX', 'CLAUDE.md missing @AGENTS.md bridge -> written');
+      else {
+        attempt(() => upsertManagedFile(claudeMdAbs, [START, '@AGENTS.md', END]), 'FIXED',
+          'CLAUDE.md @AGENTS.md bridge written', 'cannot write CLAUDE.md bridge');
+      }
     }
   }
 
@@ -271,8 +333,23 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
   if (!manifest) {
     if (existsSync(storeAbs)) add('WARN', `no install manifest at ${MANIFEST_REL} (re-run init to regenerate)`);
     else add('OK', 'no manifest (nothing installed)');
+  } else if (!Array.isArray(manifest.entries)) {
+    // A manifest without an entries array is malformed: report it instead of
+    // crashing the whole doctor pass on it.
+    add('FAIL', `manifest ${MANIFEST_REL} has no entries array - fix manually`);
   } else {
-    const resolves = (e) => e && typeof e.path === 'string' && existsSync(join(root, ...e.path.split('/')));
+    // An entry only "resolves" when its path stays inside the project root:
+    // a manifest path like `../../etc/passwd` must never count as resolved.
+    const entryAbs = (rel) => {
+      if (typeof rel !== 'string' || rel === '') return null;
+      const abs = resolve(root, ...rel.split('/'));
+      if (abs !== root && !abs.startsWith(root + sep)) return null;
+      return abs;
+    };
+    const resolves = (e) => {
+      const abs = entryAbs(e && e.path);
+      return abs !== null && existsSync(abs);
+    };
     const stale = manifest.entries.filter((e) => !resolves(e));
     if (stale.length === 0) {
       add('OK', `manifest: all ${manifest.entries.length} entr${manifest.entries.length === 1 ? 'y' : 'ies'} resolve`);
@@ -341,5 +418,5 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
 
   const tally = { OK: 0, FIXED: 0, 'WOULD-FIX': 0, WARN: 0, FAIL: 0 };
   for (const c of checks) tally[c.status]++;
-  return { root, checks, tally, failures: opFailures };
+  return { root, checks, tally, failures };
 }

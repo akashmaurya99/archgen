@@ -31,7 +31,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { loadConfig } from './config.js';
 
 export const STORE_REL = '.agents/skills/archgen';
@@ -43,6 +43,18 @@ const CONFIG_FILES = loadConfig().files;
 export const MANIFEST_REL = '.archgen/' + CONFIG_FILES.projectManifest;
 export const BACKUP_ROOT_REL = '.archgen/' + CONFIG_FILES.backupDir;
 export const VERSION_FILE = CONFIG_FILES.stamp;
+
+/**
+ * Name of the sidecar that records WHICH paths a backup snapshot holds.
+ *
+ * A snapshot's directory layout alone does not say what was backed up: the
+ * tree `<ts>/.agents/skills/archgen` and the tree `<ts>/archgen` are the same
+ * shape at different depths, and restoring the snapshot's top-level directory
+ * would replace a whole `.agents/` tree — every sibling skill with it. The
+ * record names the exact paths, so a restore puts back exactly those and
+ * leaves siblings alone.
+ */
+export const BACKUP_PATHS_FILE = '.archgen-backup-paths.json';
 
 const GUARDED_RELPATHS = new Set(['.claude', '.agents', '.claude/skills', '.agents/skills']);
 
@@ -133,30 +145,58 @@ export function assertNotSymlink(absPath) {
 }
 
 /**
- * Realpath-escape guard: resolve `absPath` (climbing to the nearest existing
- * ancestor when it does not exist yet, so a symlinked PARENT dir is caught
- * before anything is created beneath it) and refuse when the real location
- * lands outside `rootAbs`. Catches `.agents -> /elsewhere` style redirects
- * that a final-component lstat cannot see.
+ * Resolve `p` to the real location of its nearest existing ancestor, keeping
+ * the not-yet-existing tail as lexical segments.
+ *
+ * `realpathSync` cannot answer for a path that does not exist yet, but the
+ * guard must still work before anything is created (init's very first run) —
+ * so the tail is appended to the resolved ancestor instead of being dropped.
+ *
+ * @param {string} p absolute path
+ * @returns {string|null} resolved path, or null when nothing could be resolved
+ */
+function realpathWithTail(p) {
+  const tail = [];
+  let probe = resolve(p);
+  for (;;) {
+    try {
+      const real = realpathSync(probe);
+      return tail.length ? join(real, ...tail) : real;
+    } catch (e) {
+      if (!e || e.code !== 'ENOENT') return null;
+      const parent = dirname(probe);
+      if (parent === probe) return null;
+      tail.unshift(basename(probe));
+      probe = parent;
+    }
+  }
+}
+
+/**
+ * Realpath-escape guard: refuse when the real location of `absPath` lands
+ * outside `rootAbs`. Catches `.agents -> /elsewhere` style redirects that a
+ * final-component lstat cannot see.
+ *
+ * The LEXICAL check always applies — it is the only guard that can work when
+ * the root does not exist yet (init calls this before it created anything),
+ * and a lexical escape (`../../etc/passwd`) is an escape under any root.
+ *
+ * @param {string} rootAbs project/base root
+ * @param {string} absPath path that must stay inside the root
  */
 export function assertWithinRoot(rootAbs, absPath) {
-  let rootReal;
-  try { rootReal = realpathSync(rootAbs); } catch { return; }
-  let probe = absPath;
-  for (;;) {
-    let exists = true;
-    try { lstatSync(probe); } catch { exists = false; }
-    if (exists) {
-      let real;
-      try { real = realpathSync(probe); } catch { return; } // broken chain: nothing writable through it
-      if (real !== rootReal && !real.startsWith(rootReal + sep)) {
-        throw new Error(refuseSymlinkMessage(absPath));
-      }
-      return;
-    }
-    const parent = dirname(probe);
-    if (parent === probe) return;
-    probe = parent;
+  const rootLex = resolve(rootAbs);
+  const pathLex = resolve(absPath);
+  if (pathLex !== rootLex && !pathLex.startsWith(rootLex + sep)) {
+    throw new Error(refuseSymlinkMessage(absPath));
+  }
+
+  const rootReal = realpathWithTail(rootLex);
+  const pathReal = realpathWithTail(pathLex);
+  // Unresolvable (no existing ancestor at all): the lexical check stands.
+  if (!rootReal || !pathReal) return;
+  if (pathReal !== rootReal && !pathReal.startsWith(rootReal + sep)) {
+    throw new Error(refuseSymlinkMessage(absPath));
   }
 }
 
@@ -248,8 +288,11 @@ export function loadManifest(root) {
 
 export function saveManifest(root, manifest) {
   const p = join(root, ...MANIFEST_REL.split('/'));
-  mkdirSync(dirname(p), { recursive: true });
+  // Guard BEFORE creating the parent: a symlinked `.archgen` would otherwise
+  // redirect the whole manifest write outside the project.
   assertNotSymlink(p);
+  assertWithinRoot(root, p);
+  mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(manifest, null, 2) + '\n');
 }
 
@@ -266,11 +309,44 @@ export function appendEntry(root, kind, relPath) {
 }
 
 /**
+ * Read the path record of a backup snapshot.
+ * @param {string} snapshotDir absolute path of the snapshot directory
+ * @returns {string[]|null} the recorded relative paths, or null when the
+ *   snapshot carries no record (written by an older CLI)
+ */
+export function readBackupPaths(snapshotDir) {
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(join(snapshotDir, BACKUP_PATHS_FILE), 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!raw || !Array.isArray(raw.paths)) return null;
+  return raw.paths.filter((p) => typeof p === 'string' && p !== '');
+}
+
+/** Add `relPaths` to a snapshot's path record (creating it when absent). */
+function recordBackupPaths(snapshotDir, relPaths) {
+  const existing = readBackupPaths(snapshotDir) ?? [];
+  const merged = [...existing];
+  for (const p of relPaths) if (!merged.includes(p)) merged.push(p);
+  writeFileSync(
+    join(snapshotDir, BACKUP_PATHS_FILE),
+    JSON.stringify({ version: 1, paths: merged }, null, 2) + '\n',
+  );
+}
+
+/**
  * Move an existing path into `<root>/<backupRootRel>/<ts>/<relPath>`, preserving
  * the relative layout so backups restore unambiguously. Generalized core shared
  * by the project vault (.archgen/.backup) and the global vault
  * (<skills-dir>/.archgen-backups); `ts` can be injected so one operation lands
  * every entry under a single timestamp.
+ *
+ * The exact relative path is RECORDED in the snapshot: a restore must put back
+ * that path, not the snapshot's top-level directory (which can hold sibling
+ * skills the snapshot never covered).
+ *
  * @returns {string} backup location relative to `root`
  */
 export function moveToBackupInto(root, relPath, backupRootRel, ts = new Date().toISOString().replace(/:/g, '-')) {
@@ -290,6 +366,7 @@ export function moveToBackupInto(root, relPath, backupRootRel, ts = new Date().t
     cpSync(srcAbs, destAbs, { recursive: true });
     rmSync(srcAbs, { recursive: true, force: true });
   }
+  recordBackupPaths(join(root, ...backupRootRel.split('/'), ts), [relPath]);
   return destRel;
 }
 

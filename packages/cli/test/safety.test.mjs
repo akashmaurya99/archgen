@@ -152,7 +152,10 @@ test('restore roundtrip recovers the original bytes of a backed-up store', () =>
 
   const res = restoreBackups(proj, { snapshot: ts, includeGlobal: false });
   assert.equal(res.action, 'restored');
-  assert.ok(res.restored.some((e) => e.to === join(proj, '.agents')), 'snapshot child mapped back to its original path');
+  assert.ok(
+    res.restored.some((e) => e.to === join(proj, '.agents', 'skills', 'archgen')),
+    'the exact backed-up path is mapped back to its original location',
+  );
   const restoredBytes = readFileSync(join(STORE(proj), 'SKILL.md'), 'utf8');
   assert.equal(restoredBytes, snapshotBytes, 'vault bytes come back out exactly (roundtrip)');
   assert.ok(restoredBytes.startsWith(original), 'pristine content preserved inside the restored file');

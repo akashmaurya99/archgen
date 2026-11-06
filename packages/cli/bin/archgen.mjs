@@ -22,7 +22,7 @@ import { uninstallProject } from '../lib/uninstall-project.js';
 import { restoreMain } from '../lib/restore.js';
 import { migrateMain } from '../lib/migrate.js';
 import { compareSemver, fetchLatestVersion } from '../lib/version.js';
-import { npmInvocation, whichOnPath } from '../lib/spawn-npm.js';
+import { npmInvocation, whichOnPath, globalBinPath } from '../lib/spawn-npm.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -35,7 +35,13 @@ function cliVersion() {
 function runInitAndDoctor(dir) {
   const r = initProject(dir, PACKAGE_ROOT);
   console.log('  = store refreshed at ' + r.storePath);
-  doctorProject(dir, PACKAGE_ROOT, {});
+  const d = doctorProject(dir, PACKAGE_ROOT, {});
+  // A failed doctor must fail the update too: the project was NOT brought to
+  // the new version.
+  if (d.failures > 0) {
+    console.error('  ! doctor reported ' + d.failures + ' failure(s)');
+    process.exitCode = 1;
+  }
 }
 
 const HELP = `archgen — architecture generation & autonomous task execution for coding agents
@@ -61,7 +67,10 @@ Usage:
     [--uninstall]                 remove manifest-recorded entries
     [--no-codegraph]              skip the CodeGraph bootstrap
     [--no-mcp]                   skip wiring the archgen MCP server
-  npx archgen-skill uninstall         Remove globally-installed copies (manifest-based)
+  npx archgen-skill uninstall [dir]     Remove archgen from a project (the same
+                                 as the positional form); without a directory
+                                 the globally-installed copies are removed
+                                 (manifest-based)
     --project [dir]               remove archgen from a project: claude link,
                                   managed blocks, canonical store (kept when
                                   customized) and manifest; .archgen feature
@@ -121,15 +130,22 @@ function takeValue(name) {
  * same flag name is used by `uninstall` and `restore`, and the MCP server's
  * own commands take `--project` too — so a user who typed one form must
  * never get a directory literally named "--project" created in their cwd.
+ *
+ * Extra positional arguments are REFUSED: silently ignoring the second one
+ * would install into a directory the user did not name.
  */
 function targetDir() {
   const explicit = takeValue('--project');
-  const positional = rest.find((a) => !a.startsWith('-'));
-  if (explicit && positional !== undefined && resolve(explicit) !== resolve(positional)) {
+  const positionals = rest.filter((a) => !a.startsWith('-'));
+  if (positionals.length > 1) {
+    throw new Error(`unexpected argument: ${positionals[1]} — give the project directory once`);
+  }
+  const positional = positionals[0];
+  const explicitDir = explicit === null ? null : (explicit === '' ? process.cwd() : resolve(explicit));
+  if (explicitDir !== null && positional !== undefined && explicitDir !== resolve(positional)) {
     throw new Error('give the project directory once: either positionally or with --project');
   }
-  const dir = explicit || positional;
-  return dir ? resolve(dir) : process.cwd();
+  return explicitDir ?? (positional !== undefined ? resolve(positional) : process.cwd());
 }
 
 /**
@@ -142,10 +158,6 @@ function targetDir() {
 function assertNoUnknownFlags() {
   const unknown = rest.find((a) => a.startsWith('-'));
   if (unknown) throw new Error(`unknown option: ${unknown}`);
-}
-
-function positionalDir() {
-  return targetDir();
 }
 
 try {
@@ -188,7 +200,11 @@ try {
       const copy = flag('--copy');
       const noCodegraph = flag('--no-codegraph');
       const noMcp = flag('--no-mcp');
-      if (flag('--uninstall')) { uninstall(); break; }
+      const uninstallMode = flag('--uninstall');
+      assertNoUnknownFlags();
+      const stray = rest.find((a) => !a.startsWith('-'));
+      if (stray) throw new Error(`unexpected argument: ${stray} — install takes no directory`);
+      if (uninstallMode) { uninstall(); break; }
       const r = installGlobal({ copy, codegraph: !noCodegraph, mcp: !noMcp });
       console.log('archgen: global harness install (mode: ' + (copy ? 'copy' : 'symlink') + ')');
       for (const [status, mode, path] of r.rows) console.log(`  ${status.padEnd(7)} ${mode.padEnd(5)} ${path}`);
@@ -198,10 +214,24 @@ try {
     }
     case 'uninstall': {
       // `--project` may carry a directory (`uninstall --project myproj`) or
-      // stand alone (`uninstall --project` → this directory).
-      const projectTarget = takeValue('--project');
+      // stand alone (`uninstall --project` → this directory). A POSITIONAL
+      // directory (`uninstall myproj`) is a project uninstall as well: the
+      // GLOBAL uninstall happens only when no project was named at all.
+      const explicit = takeValue('--project');
+      const positionals = rest.filter((a) => !a.startsWith('-'));
+      assertNoUnknownFlags();
+      if (positionals.length > 1) {
+        throw new Error(`unexpected argument: ${positionals[1]} — give the project directory once`);
+      }
+      const positional = positionals[0];
+      const projectTarget = explicit !== null
+        ? (explicit === '' ? process.cwd() : resolve(explicit))
+        : (positional !== undefined ? resolve(positional) : null);
+      if (explicit !== null && positional !== undefined && projectTarget !== resolve(positional)) {
+        throw new Error('give the project directory once: either positionally or with --project');
+      }
       if (projectTarget !== null) {
-        const r = uninstallProject(projectTarget ? resolve(projectTarget) : process.cwd(), PACKAGE_ROOT);
+        const r = uninstallProject(projectTarget, PACKAGE_ROOT);
         console.log('archgen: project uninstall — ' + r.root);
         if (r.linkRemoved) console.log('  - .claude/skills/archgen (link)');
         if (r.strippedBlocks.length) console.log('  - managed blocks stripped from ' + r.strippedBlocks.join(', '));
@@ -238,6 +268,14 @@ try {
         break;
       }
       const cmp = compareSemver(latest, current);
+      if (cmp === null) {
+        // The registry answered with something that is not a semver (e.g. a
+        // "beta" dist-tag). It is NOT "already the latest version" — refuse
+        // instead, and never interpolate it into a command line.
+        console.error('  ! registry returned a non-semver version string; refusing: ' + JSON.stringify(latest));
+        process.exitCode = 1;
+        break;
+      }
       if (cmp === 0) {
         console.log('  = already on the latest published version (' + latest + ').');
         console.log('  Refreshing this project against it anyway…');
@@ -267,7 +305,9 @@ try {
         break;
       }
       // The running process is the OLD code; re-exec the freshly installed binary.
-      const freshBin = whichOnPath('archgen-skill');
+      // The PATH search would find the FIRST match — often the OLD global
+      // install — so the binary npm actually wrote is preferred.
+      const freshBin = globalBinPath('archgen-skill') ?? whichOnPath('archgen-skill');
       if (!freshBin) {
         console.log('\nUpgraded to v' + latest + '. Now finish per project with:\n  npx archgen-skill@latest init');
         break;
@@ -281,7 +321,13 @@ try {
         process.exitCode = upInit.status ?? 1;
         break;
       }
-      spawnSync(freshBin, ['doctor', dir], { stdio: 'inherit' });
+      const upDoctor = spawnSync(freshBin, ['doctor', dir], { stdio: 'inherit' });
+      if (upDoctor.status !== 0) {
+        // A failed doctor must fail the update too — the project was NOT
+        // brought to the new version.
+        console.error('  ! doctor failed during update (see message above)');
+        process.exitCode = upDoctor.status ?? 1;
+      }
       break;
     }
     case '--version': case '-v': {
@@ -306,5 +352,6 @@ function uninstall() {
   const r = uninstallGlobal();
   if (r.noop) { console.log('archgen: nothing to uninstall (no manifest found).'); return; }
   console.log(`archgen: removed ${r.removed} entr${r.removed === 1 ? 'y' : 'ies'}` + (r.failed ? `, ${r.failed} FAILED` : ''));
+  for (const b of r.backups ?? []) console.log('  ~ backup ' + b + ' (edited copy saved before removal)');
   if (r.failed > 0) process.exitCode = 1;
 }

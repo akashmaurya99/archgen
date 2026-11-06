@@ -3,11 +3,12 @@
 // CVE-2024-27980 hardening, so npm's JS entry point is invoked with the
 // current node binary instead.
 import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 
 /** npm-cli.js path: `npm_execpath` first, then node-relative layouts. */
-export function npmCliPath() {
-  const fromEnv = process.env.npm_execpath;
+export function npmCliPath(env = process.env) {
+  const fromEnv = env.npm_execpath;
   if (typeof fromEnv === 'string' && fromEnv.endsWith('.js') && existsSync(fromEnv)) {
     return fromEnv;
   }
@@ -29,8 +30,8 @@ export function npmCliPath() {
  * Spawn npm with { command, args, shell }. Args MUST be registry-verified
  * constants (the shell fallback on Windows interpolates them).
  */
-export function npmInvocation(npmArgs) {
-  const cli = npmCliPath();
+export function npmInvocation(npmArgs, env = process.env) {
+  const cli = npmCliPath(env);
   if (cli) return { command: process.execPath, args: [cli, ...npmArgs], shell: false };
   const isWin = process.platform === 'win32';
   return { command: isWin ? 'npm.cmd' : 'npm', args: npmArgs, shell: isWin };
@@ -49,6 +50,50 @@ export function whichOnPath(bin) {
         if (existsSync(p)) return p;
       } catch { /* next */ }
     }
+  }
+  return null;
+}
+
+/**
+ * The global npm prefix — where `npm install -g` puts its binaries.
+ * @returns {string|null} null when npm cannot be queried
+ */
+export function npmGlobalPrefix(env = process.env) {
+  try {
+    const inv = npmInvocation(['prefix', '-g'], env);
+    const r = spawnSync(inv.command, inv.args, {
+      encoding: 'utf8',
+      timeout: 15000,
+      shell: inv.shell,
+      env,
+    });
+    if (r.status !== 0 || !r.stdout) return null;
+    return r.stdout.trim().split(/\r?\n/).pop() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The path of a globally-installed npm binary.
+ *
+ * A PATH search returns the FIRST match, which is often an OLD global
+ * install shadowing the one npm just wrote — so the global prefix (the
+ * directory npm actually installs into) is consulted first.
+ *
+ * @param {string} name binary name, e.g. 'archgen-skill'
+ * @returns {string|null}
+ */
+export function globalBinPath(name, env = process.env, platform = process.platform) {
+  const prefix = npmGlobalPrefix(env);
+  if (!prefix) return null;
+  const candidates = platform === 'win32'
+    ? [join(prefix, name + '.cmd'), join(prefix, name)]
+    : [join(prefix, 'bin', name)];
+  for (const c of candidates) {
+    try {
+      if (existsSync(c)) return c;
+    } catch { /* next */ }
   }
   return null;
 }

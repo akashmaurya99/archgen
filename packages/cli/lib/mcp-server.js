@@ -9,10 +9,10 @@
 // NEVER FATAL: no npm, no network, a read-only config, or a missing MCP
 // server must still leave a working skill install. Failures are REPORTED,
 // never thrown — the same posture bootstrapCodegraph has always had.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 export const MCP_PACKAGE = 'archgen-mcp';
 
@@ -73,6 +73,89 @@ export function whichOnPath(bin, env = process.env) {
 }
 
 /**
+ * Quote one argument for cmd.exe.
+ *
+ * cmd.exe parses `&`, `|`, `<`, `>`, `^` and whitespace as syntax even in an
+ * unquoted argument — an unquoted project path is split on spaces and its
+ * `&`/`|` are executed. Double quotes neutralize all of them. `%` is the one
+ * character cmd expands even inside quotes, so an argument carrying one is
+ * refused rather than silently rewritten.
+ *
+ * @param {string} arg
+ * @returns {string} the quoted argument
+ */
+export function quoteWindowsArg(arg) {
+  const s = String(arg);
+  if (s === '') return '""';
+  if (/["%]/.test(s)) {
+    throw new Error(`refusing to pass an unsafe character through the Windows shell: ${JSON.stringify(s)}`);
+  }
+  return '"' + s + '"';
+}
+
+/**
+ * Find the JS entry point a Windows npm shim launches.
+ *
+ * npm writes `<name>.cmd` beside the package it points at, and the package's
+ * package.json names the real script. Resolving it lets the script run with
+ * the current node binary — no shell, no quoting, nothing to inject.
+ *
+ * @param {string} cmdPath path of the .cmd/.bat shim
+ * @returns {string|null} absolute path of the JS entry point
+ */
+function resolveShimEntry(cmdPath) {
+  const name = basename(cmdPath).replace(/\.(cmd|bat)$/i, '');
+  const dir = dirname(cmdPath);
+  const candidates = [
+    join(dir, 'node_modules', MCP_PACKAGE), // global npm prefix
+    join(dir, '..', MCP_PACKAGE), // node_modules/.bin -> node_modules/<pkg>
+    join(dir, '..', 'node_modules', MCP_PACKAGE), // prefix/lib layout
+  ];
+  for (const pkgDir of candidates) {
+    let pkg;
+    try {
+      pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+    } catch {
+      continue; // not this layout
+    }
+    const bin = pkg && pkg.bin;
+    const rel = typeof bin === 'string' ? bin : bin && typeof bin === 'object' ? bin[name] : null;
+    if (!rel) continue;
+    const js = resolve(pkgDir, rel);
+    if (existsSync(js)) return js;
+  }
+  return null;
+}
+
+/**
+ * Build the spawn invocation for the MCP server.
+ *
+ * On Windows an npm-installed binary is a `.cmd` shim that only cmd.exe can
+ * run — and cmd.exe parses unquoted arguments as shell syntax. The shim's JS
+ * entry point is preferred (run with the current node binary, no shell at
+ * all); when it cannot be resolved, every argument is quoted for cmd.exe.
+ *
+ * @param {string} command executable to run
+ * @param {string[]} args arguments
+ * @param {string} [platform] process.platform (injectable for tests)
+ * @param {Record<string, string|undefined>} [env] environment used for lookups
+ * @returns {{command: string, args: string[], shell: boolean}}
+ */
+export function mcpInvocation(command, args, platform = process.platform, env = process.env) {
+  if (platform !== 'win32') return { command, args, shell: false };
+  let cmd = command;
+  if (!/\.(cmd|bat)$/i.test(cmd) && !/[\\/]/.test(cmd)) {
+    // A bare name (e.g. 'npx') resolves to a .cmd shim on Windows.
+    const shim = whichOnPath(cmd + '.cmd', env);
+    if (shim) cmd = shim;
+  }
+  if (!/\.(cmd|bat)$/i.test(cmd)) return { command, args, shell: false };
+  const js = resolveShimEntry(cmd);
+  if (js) return { command: process.execPath, args: [js, ...args], shell: false };
+  return { command: quoteWindowsArg(cmd), args: args.map(quoteWindowsArg), shell: true };
+}
+
+/**
  * Run one `archgen-mcp` subcommand and return its JSON output.
  *
  * @param {string[]} args the subcommand + flags
@@ -82,17 +165,16 @@ export function whichOnPath(bin, env = process.env) {
 export function runMcp(args, opts = {}) {
   const { projectRoot = process.cwd(), timeout = 600000, env = process.env } = opts;
   const resolved = resolveMcpBinary({ projectRoot, env });
+  const inv = mcpInvocation(resolved.command, [...resolved.args, ...args], process.platform, env);
 
   let r;
   try {
-    r = spawnSync(resolved.command, [...resolved.args, ...args], {
+    r = spawnSync(inv.command, inv.args, {
       encoding: 'utf8',
       timeout,
       env,
       cwd: projectRoot,
-      shell: false,
-      // On Windows the npx shim is a .cmd file, which needs a shell.
-      ...(process.platform === 'win32' && /\.(cmd|bat)$/i.test(resolved.command) ? { shell: true } : {}),
+      shell: inv.shell,
     });
   } catch (e) {
     return { ok: false, code: null, data: null, stdout: '', stderr: '', detail: String(e?.message ?? e) };

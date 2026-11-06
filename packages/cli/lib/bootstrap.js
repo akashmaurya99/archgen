@@ -11,8 +11,9 @@
 //   2. ensures CodeGraph: its CLI, its MCP entry, and the project index
 //
 // NEVER FATAL: no npm, no network, a read-only config, or a missing MCP
-// server must still leave a working skill install. Failures are REPORTED,
-// never thrown.
+// server must still leave a working skill install. Failures are REPORTED to
+// the caller (ok:false + detail) and rendered as a warning by it — never
+// thrown, and never swallowed.
 import { bootstrapMcp, resolveMcpBinary } from './mcp-server.js';
 
 /**
@@ -63,8 +64,11 @@ export function bootstrapServers(opts) {
   });
 
   if (!r.report) {
+    // The bootstrap did NOT run: report it as a failure so the caller tells
+    // the user. The skill install itself still succeeded — this is a warning,
+    // not a fatal error — but it must never be swallowed silently.
     return {
-      ok: true, // never fatal — the skill install itself succeeded
+      ok: false,
       detail: `server bootstrap incomplete: ${r.detail ?? 'unknown error'}`,
     };
   }
@@ -96,7 +100,7 @@ export function bootstrapServers(opts) {
     return {
       ok: false,
       report,
-      detail: 'one or more server bootstrap steps failed',
+      detail: r.detail ? `server bootstrap incomplete: ${r.detail}` : 'one or more server bootstrap steps failed',
     };
   }
   return { ok: true, report };

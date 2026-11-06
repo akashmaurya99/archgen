@@ -80,7 +80,7 @@ by git.
 | `npx archgen-skill init [dir]` | Prepare a project: canonical skill store at `.agents/skills/archgen`, Claude symlink adapter, AGENTS.md hub + CLAUDE.md bridge |
 | `npx archgen-skill install [--copy]` | Install into global harness skill dirs (symlinks by default, real copies with `--copy`) |
 | `npx archgen-skill uninstall` | Remove globally-installed copies (manifest-recorded, safe removal) |
-| `npx archgen-skill uninstall --project [dir]` | Remove a project install: strips managed blocks, symlink, and store **only if unmodified** — `.archgen/` feature folders and all user content are preserved |
+| `npx archgen-skill uninstall [dir]` | Remove a **project** install (same as `--project [dir]`): strips managed blocks, symlink, and store **only if unmodified** — `.archgen/` feature folders and all user content are preserved |
 | `npx archgen-skill doctor [dir] [--check]` | Verify and auto-repair an installation: store integrity, version stamp, Claude link, managed blocks, manifest (`--check` reports without fixing) |
 | `npx archgen-skill update [dir]` | Check npm for a newer `archgen-skill`, upgrade the global install if outdated, then re-init the project and run doctor against the new version |
 | `npx archgen-skill restore` | List backup snapshots; `--snapshot <ts>` restores one (current state is backed up first) |

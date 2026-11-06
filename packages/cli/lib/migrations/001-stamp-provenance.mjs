@@ -66,11 +66,18 @@ export function files(ctx) {
   return unstampedArtifacts(ctx).map((a) => a.rel);
 }
 
-export function apply(ctx) {
+export function apply(ctx, files) {
+  // The framework passes the EXACT list it backed up: re-deriving the file
+  // set here could mutate a file that appeared after the backup and was
+  // therefore never backed up.
+  const rels = Array.isArray(files)
+    ? files
+    : unstampedArtifacts(ctx).map((a) => a.rel);
   const generatedAt = new Date().toISOString(); // one timestamp per run
-  for (const a of unstampedArtifacts(ctx)) {
-    const abs = join(ctx.projectRoot, ...a.rel.split('/'));
-    const content = readFileSync(abs, 'utf8');
+  for (const rel of rels) {
+    const abs = join(ctx.projectRoot, ...rel.split('/'));
+    let content;
+    try { content = readFileSync(abs, 'utf8'); } catch { continue; } // vanished mid-run
     if (MARKER_RE.test(content)) continue; // re-check: never double-stamp
     writeFileSync(abs, stampLines(ctx.projectRoot, generatedAt).join('\n') + '\n' + content);
   }

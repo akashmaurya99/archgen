@@ -34,12 +34,13 @@ function initProject(proj = dir) {
 // BUG-DOC1: doctor.js §4 calls upsertManagedFile for repair, and block.js
 // upsertBlock() THROWS on a lone end marker — so instead of a FAIL row the
 // whole doctor run aborts through bin's top-level catch. Desired: doctor
-// completes and classifies broken markers as FAIL.
+// completes, classifies broken markers as FAIL, and FAILS the run (a FAIL
+// row is a broken state a human must fix).
 test('BUG-DOC1 // AUDIT-REGRESSION doctor reports a FAIL row (not a top-level abort) when AGENTS.md has an orphan end marker', () => {
   const proj = initProject();
   writeFileSync(join(proj, 'AGENTS.md'), '# my notes\n<!-- archgen:end -->\n');
   const r = runCli(['doctor', proj]);
-  assert.equal(r.status, 0, `doctor aborted instead of reporting: ${r.stderr}`);
+  assert.notEqual(r.status, 0, `doctor must fail the run on a FAIL row: ${r.stdout}`);
   assert.match(r.stdout, /\[fail/i);
   assert.match(r.stdout, /marker/i);
 });
@@ -52,7 +53,7 @@ test('BUG-DOC2 // AUDIT-REGRESSION doctor reports a FAIL row (not a top-level ab
     '# notes\n<!-- archgen:start (managed block - do not edit between markers) -->\nno end marker\n',
   );
   const r = runCli(['doctor', proj]);
-  assert.equal(r.status, 0, `doctor aborted instead of reporting: ${r.stderr}`);
+  assert.notEqual(r.status, 0, `doctor must fail the run on a FAIL row: ${r.stdout}`);
   assert.match(r.stdout, /\[fail/i);
 });
 

@@ -14,13 +14,9 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
-import { BACKUP_ROOT_REL, moveToBackupInto } from './store.js';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { BACKUP_PATHS_FILE, BACKUP_ROOT_REL, moveToBackupInto, readBackupPaths } from './store.js';
 import { GLOBAL_BACKUP_REL, globalTargets } from './install.js';
-
-function toPosix(p) {
-  return p.split('\\').join('/');
-}
 
 function byName(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -35,10 +31,11 @@ function summarize(dir) {
   let dirs = 0;
   (function walk(d) {
     for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.name === BACKUP_PATHS_FILE) continue; // metadata, not backed-up content
       if (e.isDirectory()) { dirs++; walk(join(d, e.name)); } else { files++; }
     }
   })(dir);
-  const topLevel = readdirSync(dir).sort(byName);
+  const topLevel = readdirSync(dir).filter((n) => n !== BACKUP_PATHS_FILE).sort(byName);
   return { files, dirs, topLevel };
 }
 
@@ -102,6 +99,47 @@ function layDown(srcAbs, destAbs) {
   renameSync(tmp, destAbs);
 }
 
+/** A recorded path is usable only when it stays inside the destination base. */
+function isSafeRel(rel) {
+  if (typeof rel !== 'string' || rel === '') return false;
+  if (isAbsolute(rel)) return false;
+  return !rel.split('/').some((seg) => seg === '..' || seg === '');
+}
+
+/** Every FILE a snapshot holds, relative to the snapshot dir (legacy snapshots). */
+function snapshotFiles(snapshotDir, prefix = '') {
+  const out = [];
+  for (const e of readdirSync(join(snapshotDir, prefix), { withFileTypes: true })) {
+    if (e.name === BACKUP_PATHS_FILE) continue;
+    const rel = prefix ? prefix + '/' + e.name : e.name;
+    if (e.isDirectory()) out.push(...snapshotFiles(snapshotDir, rel));
+    else out.push(rel);
+  }
+  return out;
+}
+
+/**
+ * The paths a snapshot restores, relative to the destination base.
+ *
+ * The snapshot's OWN path record is authoritative: it names the exact paths
+ * that were backed up. Restoring the snapshot's top-level directory instead
+ * would replace a whole `.agents/` tree and take every sibling skill with it.
+ * Snapshots written before the record existed fall back to per-file restore:
+ * still exact about WHAT is written, never about what is deleted.
+ */
+function restoreEntries(snap, destBase) {
+  const recorded = readBackupPaths(snap.snapshotDir);
+  const rels = (recorded && recorded.length > 0)
+    ? recorded.filter(isSafeRel)
+    : snapshotFiles(snap.snapshotDir).filter(isSafeRel);
+  return rels.map((rel) => ({
+    rel,
+    name: rel.split('/').pop(),
+    srcAbs: join(snap.snapshotDir, ...rel.split('/')),
+    destAbs: join(destBase, ...rel.split('/')),
+  }));
+}
+
 /**
  * Restore backups discovered across the project and global vaults.
  *
@@ -141,21 +179,17 @@ export function restoreBackups(projectRoot, options = {}) {
   const snap = matches[0];
 
   const destBase = options.target ? resolve(options.target) : snap.base;
-  const entries = readdirSync(snap.snapshotDir, { withFileTypes: true })
-    .map((e) => e.name)
-    .sort(byName)
-    .map((name) => ({ name, srcAbs: join(snap.snapshotDir, name), destAbs: join(destBase, name) }));
+  const entries = restoreEntries(snap, destBase);
 
   // Pass 1 — safety: move EVERY existing destination aside before laying down
   // anything, so a mid-restore failure still leaves current state fully backed up.
   const safetyBackups = [];
   const safetyRootRel = snap.origin === 'global' ? GLOBAL_BACKUP_REL : BACKUP_ROOT_REL;
-  const safetyBase = snap.origin === 'global' ? snap.base : destBase;
+  const safetyBase = destBase;
   const safetyTs = uniqueSafetyTs(safetyBase, safetyRootRel);
   for (const en of entries) {
     if (!lstatSafe(en.destAbs)) continue;
-    const rel = snap.origin === 'global' ? en.name : toPosix(relative(destBase, en.destAbs));
-    const loc = moveToBackupInto(safetyBase, rel, safetyRootRel, safetyTs);
+    const loc = moveToBackupInto(safetyBase, en.rel, safetyRootRel, safetyTs);
     const abs = join(safetyBase, ...loc.split('/'));
     safetyBackups.push({ rel: loc, abs });
   }
@@ -181,10 +215,12 @@ function parseFlags(argv) {
     if (a === '--list') opts.list = true;
     else if (a === '--snapshot') {
       const v = argv[++i];
-      if (!v || v.startsWith('--')) return { error: '--snapshot requires a timestamp argument' };
+      // A flag-shaped value is never a value: '-foo' is an option, not an id.
+      if (!v || v.startsWith('-')) return { error: '--snapshot requires a timestamp argument' };
       opts.snapshot = v;
     } else if (a === '--project') {
-      const v = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : process.cwd();
+      const next = argv[i + 1];
+      const v = next && !next.startsWith('-') ? argv[++i] : process.cwd();
       opts.project = v;
     } else if (a === '--global') opts.global = true;
     else if (a === '--yes') opts.yes = true; // accepted for CLI ergonomics; restore is interactive-free

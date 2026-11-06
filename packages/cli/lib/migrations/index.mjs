@@ -7,9 +7,10 @@
 //   - every migration is ONE numbered file (`NNN-name.mjs`) next to this file;
 //   - `detect(ctx)` decides whether a project still needs it (must be cheap,
 //     read-only, and false once applied — migrations are idempotent);
-//   - `apply(ctx)` mutates, but ONLY after the framework has snapshotted every
-//     file the migration declared via its optional `files(ctx)` export into
-//     `.archgen/.backup/<timestamp>/migrate/`;
+//   - `apply(ctx, files)` mutates, but ONLY after the framework has snapshotted
+//     every file the migration declared via its optional `files(ctx)` export
+//     into `.archgen/.backup/<timestamp>/migrate/`; the framework hands apply
+//     the exact list it backed up, so the mutated set IS the backed-up set;
 //   - dry-run is the DEFAULT everywhere: nothing is written unless a caller
 //     explicitly passes `{ dryRun: false }`.
 //
@@ -19,7 +20,8 @@
 //   export const fromSchema  — source schema number or null (pre-schema files)
 //   export const toSchema    — target schema number
 //   export function detect(ctx) -> boolean
-//   export function apply(ctx)  -> void   (mutates; framework backed up first)
+//   export function apply(ctx, files) -> void   (mutates exactly `files`;
+//                                  the framework backed them up first)
 //   export function files(ctx)  -> string[] of project-relative paths that
 //                                  apply() may touch (drives --check output
 //                                  AND the mandatory pre-apply backup set)
@@ -163,8 +165,17 @@ export async function applyMigration(id, projectRoot, opts = {}) {
   if (!mig.detect(ctx)) return { status: 'clean', id };
   const files = mig.files ? mig.files(ctx).slice() : [];
   if (dryRun) return { status: 'would-apply', id, description: mig.description, files };
-  // Backup EVERYTHING the migration declared before it touches anything.
-  const backups = files.map((file) => ({ file, backup: ctx.backup(file) }));
-  await mig.apply(ctx);
-  return { status: 'applied', id, description: mig.description, files, backups };
+  // Backup EVERYTHING the migration declared before it touches anything, then
+  // hand apply() the exact list that was backed up: the mutated set is then
+  // the backed-up set, never a freshly re-derived one.
+  const backedUp = [];
+  const backups = [];
+  for (const file of files) {
+    const abs = join(ctx.projectRoot, ...file.split('/'));
+    if (!existsSync(abs)) continue; // vanished between the scan and now
+    backups.push({ file, backup: ctx.backup(file) });
+    backedUp.push(file);
+  }
+  await mig.apply(ctx, backedUp);
+  return { status: 'applied', id, description: mig.description, files: backedUp, backups };
 }
