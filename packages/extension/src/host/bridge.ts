@@ -21,6 +21,7 @@
 // vscode wiring lives in extension.ts.
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { errorText } from './error-text';
 
 export const BRIDGE_PROTOCOL = 1;
 export const RUNTIME_DIR = join('.archgen', '.runtime');
@@ -66,7 +67,7 @@ export function parseBridgeCommand(
   try {
     data = JSON.parse(text);
   } catch (e) {
-    return { ok: false, reason: `not valid JSON: ${e instanceof Error ? e.message : String(e)}` };
+    return { ok: false, reason: `not valid JSON: ${errorText(e)}` };
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, reason: 'command is not an object' };
@@ -207,7 +208,7 @@ export function createBridgeCore(opts: BridgeCoreOptions): BridgeCore {
       try {
         text = readFileSync(path, 'utf8');
       } catch (e) {
-        log(`[bridge] cannot read ${path}: ${e instanceof Error ? e.message : String(e)}`);
+        log(`[bridge] cannot read ${path}: ${errorText(e)}`);
         return null;
       }
       const check = parseBridgeCommand(text, { workspaceRoot, now: now() });
@@ -238,7 +239,7 @@ export function createBridgeCore(opts: BridgeCoreOptions): BridgeCore {
         const ack: BridgeAck = {
           id: command.id,
           status: 'error',
-          message: e instanceof Error ? e.message : String(e),
+          message: errorText(e),
           at: new Date(now()).toISOString(),
         };
         writeAck(ack);

@@ -21,6 +21,12 @@ class FakeVscode {
   readonly notices: Array<{ message: string; actions: string[] }> = [];
   readonly logs: string[] = [];
   failExecuteCommand = false;
+  /** Every clipboard write rejects. */
+  failClipboard = false;
+  /** The first clipboard write succeeds, later ones reject. */
+  failClipboardAfterFirst = false;
+  /** The toast itself fails. */
+  failNotify = false;
   /** Action label the fake toast "user" picks; undefined = dismissed. */
   pick: string | undefined;
 
@@ -28,6 +34,9 @@ class FakeVscode {
     return {
       clipboard: {
         writeText: (value) => {
+          if (this.failClipboard || (this.failClipboardAfterFirst && this.writes.length > 0)) {
+            return Promise.reject(new Error('clipboard unavailable'));
+          }
           this.writes.push(value);
           return Promise.resolve();
         },
@@ -40,6 +49,7 @@ class FakeVscode {
         },
       },
       notify: (message, ...actions) => {
+        if (this.failNotify) return Promise.reject(new Error('toast unavailable'));
         this.notices.push({ message, actions });
         return Promise.resolve(this.pick);
       },
@@ -173,6 +183,31 @@ describe('createDelivery', () => {
     expect(fake.writes).toEqual(['']);
     expect(fake.logs).toContain('[delivery] intent=startWork chars=0');
     expect(fake.notices).toHaveLength(1);
+  });
+
+  it('logs a clipboard failure instead of throwing, and shows no toast', async () => {
+    const fake = new FakeVscode();
+    fake.failClipboard = true;
+    await expect(makeDelivery(fake).deliver('buildTask', 'Implement task T4')).resolves.toBeUndefined();
+    expect(fake.logs).toContain('[delivery] clipboard write failed: clipboard unavailable');
+    expect(fake.notices).toHaveLength(0);
+  });
+
+  it("survives a clipboard failure on 'Copy Again'", async () => {
+    const fake = new FakeVscode();
+    fake.pick = 'Copy Again';
+    fake.failClipboardAfterFirst = true;
+    await expect(makeDelivery(fake).deliver('buildTask', 'Implement task T4')).resolves.toBeUndefined();
+    expect(fake.writes).toEqual(['Implement task T4']);
+    expect(fake.logs).toContain('[delivery] clipboard write failed: clipboard unavailable');
+  });
+
+  it('survives a toast failure and executes nothing', async () => {
+    const fake = new FakeVscode();
+    fake.failNotify = true;
+    await expect(makeDelivery(fake).deliver('buildTask', 'Implement task T4')).resolves.toBeUndefined();
+    expect(fake.executed).toEqual([]);
+    expect(fake.writes).toEqual(['Implement task T4']);
   });
 
   it.each(['setupInstall', 'setupInitPlan', 'setupUpdate'] as const)(

@@ -352,7 +352,7 @@ export function activate(context: ExtensionContext): void {
         const scoped = buildScopedModel(wsRoot, storedSlug(wsRoot));
         const active = scoped.features.find((f) => f.slug === scoped.activeSlug);
         if (!active) throw new Error('No .archgen/*/tasks.yaml found in this workspace.');
-        const waves = await loadWaves(wsRoot, active.tasksPath, resolveMcpBinary(wsRoot, os.homedir()));
+        const waves = await loadWaves(wsRoot, active.tasksPath, resolveMcpBinary(wsRoot));
         const wave1 = waves[0] ?? [];
         if (wave1.length === 0) {
           void window.showInformationMessage('ArchGen: next-tasks reports an empty first wave — nothing to start.');

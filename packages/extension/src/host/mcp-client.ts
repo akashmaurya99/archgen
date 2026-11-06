@@ -14,8 +14,8 @@
 // extension host process.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { errorText } from './error-text';
 
 export const MCP_PACKAGE = 'archgen-mcp';
 
@@ -33,10 +33,18 @@ export interface McpBinary {
 
 /**
  * Locate an executable on PATH (cross-platform, no shell).
+ *
+ * `platform` is injectable so the Windows path rules can be exercised on any
+ * runner — CI runs Linux, and a Windows-only branch that is never executed is
+ * a branch that is never verified.
  */
-export function whichOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  const exts = process.platform === 'win32' ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';') : [''];
-  const dirs = (env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
+export function whichOnPath(
+  bin: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const exts = platform === 'win32' ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';') : [''];
+  const dirs = (env.PATH ?? '').split(platform === 'win32' ? ';' : ':').filter(Boolean);
   for (const d of dirs) {
     for (const ext of exts) {
       const p = join(d, bin + ext);
@@ -51,14 +59,28 @@ export function whichOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): 
 }
 
 /**
+ * True when the command must be run through a shell.
+ *
+ * On Windows the npx shim is a `.cmd`/`.bat` file, which the OS cannot
+ * execute directly — `spawn` needs `shell: true` for it. Everywhere else
+ * spawning a shell would be a needless (and injectable) risk, so it stays off.
+ */
+export function shouldUseShell(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === 'win32' && /\.(cmd|bat)$/i.test(command);
+}
+
+/**
  * Resolve the archgen-mcp binary.
  *
  * Order: $ARCHGEN_MCP_BIN -> <project>/node_modules/.bin -> PATH -> npx.
  */
 export function resolveMcpBinary(
   wsRoot: string | null,
-  home: string = homedir(),
   env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
 ): McpBinary {
   const override = env.ARCHGEN_MCP_BIN;
   if (override && existsSync(override)) {
@@ -69,11 +91,11 @@ export function resolveMcpBinary(
       resolve(wsRoot),
       'node_modules',
       '.bin',
-      process.platform === 'win32' ? 'archgen-mcp.cmd' : 'archgen-mcp',
+      platform === 'win32' ? 'archgen-mcp.cmd' : 'archgen-mcp',
     );
     if (existsSync(local)) return { bin: local, source: 'local', command: local, args: [] };
   }
-  const onPath = whichOnPath('archgen-mcp', env);
+  const onPath = whichOnPath('archgen-mcp', env, platform);
   if (onPath) return { bin: onPath, source: 'path', command: onPath, args: [] };
   return { bin: null, source: 'npx', command: 'npx', args: ['-y', MCP_PACKAGE] };
 }
@@ -112,7 +134,7 @@ export function callMcpTool(
         cwd: projectRoot,
         shell: false,
         // On Windows the npx shim is a .cmd file, which needs a shell.
-        ...(process.platform === 'win32' && /\.(cmd|bat)$/i.test(binary.command) ? { shell: true } : {}),
+        ...(shouldUseShell(binary.command) ? { shell: true } : {}),
       },
     );
     let stdout = '';
@@ -122,13 +144,16 @@ export function callMcpTool(
     child.on('error', reject);
     child.on('exit', (code) => {
       let envelope: Envelope | null = null;
+      let parseError = '';
       try {
         envelope = JSON.parse(stdout) as Envelope;
-      } catch {
+      } catch (e) {
+        parseError = errorText(e);
         envelope = null;
       }
       if (!envelope) {
-        reject(new Error(`archgen-mcp exec ${tool} produced no JSON (exit ${code})${stderr ? `: ${stderr.trim()}` : ''}`));
+        const why = [parseError, stderr.trim()].filter(Boolean).join(': ');
+        reject(new Error(`archgen-mcp exec ${tool} produced no JSON (exit ${code})${why ? `: ${why}` : ''}`));
         return;
       }
       if (!envelope.ok) {

@@ -10,6 +10,7 @@
 // Composed prompts are byte-identical to what the spawn path feeds its harness
 // templates (see composeTaskPrompt), so both modes hand agents the same
 // instruction — only the transport differs.
+import { errorText } from './error-text';
 
 /** Values of the archgen.delivery.mode setting. */
 export type DeliveryMode = 'clipboard' | 'spawn';
@@ -122,7 +123,7 @@ export function createDelivery(ports: DeliveryPorts, config: DeliveryConfig): De
     try {
       await ports.clipboard.writeText(text);
     } catch (e) {
-      ports.log(`[delivery] clipboard write failed: ${e instanceof Error ? e.message : String(e)}`);
+      ports.log(`[delivery] clipboard write failed: ${errorText(e)}`);
       return;
     }
     lastText = text;
@@ -137,7 +138,7 @@ export function createDelivery(ports: DeliveryPorts, config: DeliveryConfig): De
       try {
         await ports.clipboard.writeText(text);
       } catch (e) {
-        ports.log(`[delivery] clipboard write failed: ${e instanceof Error ? e.message : String(e)}`);
+        ports.log(`[delivery] clipboard write failed: ${errorText(e)}`);
       }
       return;
     }

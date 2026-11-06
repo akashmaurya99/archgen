@@ -4,7 +4,7 @@
 // supply-chain surface. These tests pin the validation rules: a command from
 // a stale queue, a foreign workspace, an unknown action, or a malformed file
 // must never execute.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,8 +14,10 @@ import {
   ackDirFor,
   cmdDirFor,
   createBridgeCore,
+  isCommandFile,
   parseBridgeCommand,
   runtimeDirFor,
+  writeAtomic,
   type BridgeCommand,
 } from '../src/host/bridge';
 
@@ -89,6 +91,63 @@ describe('parseBridgeCommand', () => {
     );
     expect(check.ok).toBe(false);
     if (!check.ok) expect(check.reason).toMatch(/expired/i);
+  });
+
+  it('rejects a payload that is not an object', () => {
+    const check = parseBridgeCommand(JSON.stringify(['not', 'an', 'object']), { workspaceRoot: root });
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toMatch(/not an object/i);
+  });
+
+  it('rejects a command with no id', () => {
+    const check = parseBridgeCommand(JSON.stringify(command({ id: '' })), { workspaceRoot: root });
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toMatch(/no id/i);
+  });
+
+  it('rejects a command with no workspaceRoot', () => {
+    const cmd = command();
+    delete (cmd as Partial<BridgeCommand>).workspaceRoot;
+    const check = parseBridgeCommand(JSON.stringify(cmd), { workspaceRoot: root });
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toMatch(/no workspaceRoot/i);
+  });
+
+  it('rejects a command with no createdAt', () => {
+    const cmd = command();
+    delete (cmd as Partial<BridgeCommand>).createdAt;
+    const check = parseBridgeCommand(JSON.stringify(cmd), { workspaceRoot: root });
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toMatch(/no createdAt/i);
+  });
+
+  it('defaults missing args and expiresAt instead of failing', () => {
+    const cmd = command();
+    delete (cmd as Partial<BridgeCommand>).args;
+    delete (cmd as Partial<BridgeCommand>).expiresAt;
+    const check = parseBridgeCommand(JSON.stringify(cmd), { workspaceRoot: root });
+    expect(check.ok).toBe(true);
+    if (check.ok) {
+      expect(check.command.args).toEqual({});
+      expect(check.command.expiresAt).toBe('');
+    }
+  });
+
+  it('replaces non-object args with an empty object', () => {
+    const check = parseBridgeCommand(
+      JSON.stringify(command({ args: 'not-an-object' as never })),
+      { workspaceRoot: root },
+    );
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.command.args).toEqual({});
+  });
+
+  it('accepts an unparseable expiresAt rather than treating it as expired', () => {
+    const check = parseBridgeCommand(
+      JSON.stringify(command({ expiresAt: 'whenever' })),
+      { workspaceRoot: root },
+    );
+    expect(check.ok).toBe(true);
   });
 });
 
@@ -177,5 +236,78 @@ describe('createBridgeCore', () => {
     expect(beat.version).toBe('9.9.9');
     expect(beat.workspaceRoot).toBe(root);
     expect(beat.capabilities).toContain('revealTask');
+  });
+
+  it('advertises the full action list when no capabilities are configured', () => {
+    const core = createBridgeCore({ workspaceRoot: root, execute: () => undefined });
+    core.writeHeartbeat('0.0.0');
+    const beat = JSON.parse(readFileSync(join(runtimeDirFor(root), 'bridge.json'), 'utf8'));
+    expect(beat.capabilities).toEqual([...UI_ACTIONS]);
+  });
+
+  it('drops a command file it cannot read, and logs why', () => {
+    const lines: string[] = [];
+    const core = createBridgeCore({
+      workspaceRoot: root,
+      execute: () => undefined,
+      log: (l) => lines.push(l),
+    });
+    const ack = core.handleCommandFile(join(cmdDirFor(root), 'ghost.json'));
+    expect(ack).toBeNull();
+    expect(lines.join('\n')).toMatch(/cannot read/);
+  });
+});
+
+describe('writeAtomic', () => {
+  it('writes the file and leaves no temporary behind', () => {
+    const p = join(work, 'out.json');
+    writeAtomic(p, '{"a":1}\n');
+    expect(readFileSync(p, 'utf8')).toBe('{"a":1}\n');
+  });
+
+  it('overwrites an existing file', () => {
+    const p = join(work, 'out.json');
+    writeAtomic(p, 'first');
+    writeAtomic(p, 'second');
+    expect(readFileSync(p, 'utf8')).toBe('second');
+  });
+
+  it('survives a leftover temporary file from a crashed run', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const p = join(work, 'out.json');
+      // The temporary name is `<path>.tmp-<pid>-<clock>`; freezing the clock
+      // makes the second write collide with the first temporary exactly as a
+      // crashed run would leave it.
+      writeAtomic(p, 'first');
+      expect(() => writeAtomic(p, 'second')).not.toThrow();
+      expect(readFileSync(p, 'utf8')).toBe('second');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the original file when the rename fails', () => {
+    const dir = join(work, 'target-is-a-dir');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inner.txt'), 'kept', 'utf8');
+    expect(() => writeAtomic(dir, 'nope')).toThrow();
+    // The directory (and its contents) survived; only the temporary is gone.
+    expect(readFileSync(join(dir, 'inner.txt'), 'utf8')).toBe('kept');
+  });
+});
+
+describe('isCommandFile', () => {
+  it('accepts a .json command file', () => {
+    expect(isCommandFile('/a/b/cmd-1.json')).toBe(true);
+  });
+
+  it('rejects a temporary file', () => {
+    expect(isCommandFile('/a/b/cmd-1.json.tmp')).toBe(false);
+  });
+
+  it('rejects anything that is not a .json file', () => {
+    expect(isCommandFile('/a/b/cmd-1.yaml')).toBe(false);
   });
 });
