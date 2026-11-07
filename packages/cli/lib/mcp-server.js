@@ -11,6 +11,7 @@
 // never thrown — the same posture bootstrapCodegraph has always had.
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { whichOnPath } from './spawn-npm.js';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
@@ -52,25 +53,16 @@ export function resolveMcpBinary(opts = {}) {
 
 /**
  * Locate an executable on PATH (cross-platform, no shell).
- * @param {string} bin
- * @param {Record<string, string|undefined>} env
- * @returns {string|null}
+ *
+ * ONE implementation, in spawn-npm.js — this module used to carry its own
+ * copy, and the two had drifted: the copy here skipped a path ending in '/',
+ * the one there did not, and neither checked that the path was a FILE. Two
+ * implementations of one rule is how the rules start disagreeing.
+ *
+ * Imported for this module's own use AND re-exported, so the callers that
+ * already import it from here keep working.
  */
-export function whichOnPath(bin, env = process.env) {
-  const exts = process.platform === 'win32' ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';') : [''];
-  const dirs = (env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
-  for (const d of dirs) {
-    for (const ext of exts) {
-      const p = join(d, bin + ext);
-      try {
-        if (existsSync(p) && !p.endsWith('/')) return p;
-      } catch {
-        /* not here */
-      }
-    }
-  }
-  return null;
-}
+export { whichOnPath };
 
 /**
  * Quote one argument for cmd.exe.
