@@ -15,6 +15,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureGlobalServer, installedServerVersion, serverVersion } from '../lib/global-server.js';
 
+// The versions come from the ONE shared helper — see test/helpers/versions.mjs.
+import { RELEASE, OLDER_STAMP as OLDER, NEWER_STAMP as NEWER, escapeRe } from './helpers/versions.mjs';
+
 let dir;
 let binDir;
 let log;
@@ -74,8 +77,8 @@ test('an unreadable version is null, not a guess', () => {
 });
 
 test('the same version installs nothing', () => {
-  installFake('0.0.8');
-  const r = ensureGlobalServer({ env: ENV(), version: '0.0.8' });
+  installFake(RELEASE);
+  const r = ensureGlobalServer({ env: ENV(), version: RELEASE });
   assert.equal(r.upgraded, false);
   assert.equal(r.installed, true);
   assert.match(r.note, /already installed/);
@@ -83,36 +86,36 @@ test('the same version installs nothing', () => {
 });
 
 test('an OLDER server is upgraded to the CLI version', () => {
-  installFake('0.0.7');
-  const r = ensureGlobalServer({ env: ENV(), version: '0.0.8' });
+  installFake(OLDER);
+  const r = ensureGlobalServer({ env: ENV(), version: RELEASE });
   assert.equal(r.upgraded, true);
-  assert.match(r.note, /upgraded.*v0\.0\.8/);
-  assert.match(npmCalls(), /install -g archgen-mcp@0\.0\.8/);
+  assert.match(r.note, new RegExp(`upgraded.*v${escapeRe(RELEASE)}`));
+  assert.match(npmCalls(), new RegExp(`install -g archgen-mcp@${escapeRe(RELEASE)}`));
 });
 
 test('a NEWER server is left alone', () => {
-  installFake('9.9.9');
-  const r = ensureGlobalServer({ env: ENV(), version: '0.0.8' });
+  installFake(NEWER);
+  const r = ensureGlobalServer({ env: ENV(), version: RELEASE });
   assert.equal(r.upgraded, false);
   assert.match(r.note, /newer/);
   assert.equal(npmCalls(), '', 'a newer server was downgraded');
 });
 
 test('a missing server is installed', () => {
-  const r = ensureGlobalServer({ env: ENV(), version: '0.0.8' });
+  const r = ensureGlobalServer({ env: ENV(), version: RELEASE });
   assert.equal(r.installed, false, 'the fake npm does not actually install');
   assert.match(r.note, /could not install/);
-  assert.match(npmCalls(), /install -g archgen-mcp@0\.0\.8/);
+  assert.match(npmCalls(), new RegExp(`install -g archgen-mcp@${escapeRe(RELEASE)}`));
 });
 
 test('a failed install keeps the old server and reports why', () => {
-  installFake('0.0.7');
+  installFake(OLDER);
   const failing = join(dir, 'failing-npm.js');
   writeFileSync(
     failing,
     `import('node:fs').then((fs) => { fs.appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(' ') + '\\n'); process.stderr.write('EACCES: permission denied\\n'); process.exit(1); });\n`,
   );
-  const r = ensureGlobalServer({ env: { ...ENV(), npm_execpath: failing }, version: '0.0.8' });
+  const r = ensureGlobalServer({ env: { ...ENV(), npm_execpath: failing }, version: RELEASE });
   assert.equal(r.installed, true, 'the old server must stay usable');
   assert.equal(r.upgraded, false);
   assert.match(r.note, /could not upgrade/);
@@ -120,6 +123,6 @@ test('a failed install keeps the old server and reports why', () => {
 });
 
 test('the CLI version comes from the CLI package', () => {
-  assert.equal(serverVersion(join(import.meta.dirname, '..')), '0.0.7');
+  assert.equal(serverVersion(join(import.meta.dirname, '..')), RELEASE);
   assert.equal(serverVersion('/nowhere'), 'latest');
 });

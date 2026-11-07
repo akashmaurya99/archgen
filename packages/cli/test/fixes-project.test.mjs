@@ -37,6 +37,8 @@ const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 const VENDOR = join(CLI, 'vendor', 'skills', 'archgen');
 const BIN = join(CLI, 'bin', 'archgen.mjs');
 const REFUSE_RE = /Refusing to write through symlink/;
+// The installed package's version comes from the ONE shared helper.
+import { RELEASE } from './helpers/versions.mjs';
 const STORE = (p) => join(p, '.agents', 'skills', 'archgen');
 const NO_BOOTSTRAP = { env: { ARCHGEN_CODEGRAPH: '0' } };
 
@@ -49,7 +51,7 @@ beforeEach(() => {
   pkgRoot = mkdtempSync(join(tmpdir(), 'ag-proj-pkg-'));
   mkdirSync(join(pkgRoot, 'vendor', 'skills'), { recursive: true });
   cpSync(VENDOR, join(pkgRoot, 'vendor', 'skills', 'archgen'), { recursive: true });
-  writeFileSync(join(pkgRoot, 'package.json'), JSON.stringify({ name: 'archgen-skill', version: '0.0.7' }));
+  writeFileSync(join(pkgRoot, 'package.json'), JSON.stringify({ name: 'archgen-skill', version: RELEASE }));
 });
 afterEach(() => {
   rmSync(proj, { recursive: true, force: true });

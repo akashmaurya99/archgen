@@ -25,7 +25,8 @@
     "test:immutable": "node internal/tools/repo-immutable.mjs -- npm test",
     "test:budget": "node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13400",
     "test:contract": "node internal/tools/check-capability-contract.mjs",
-    "test:versions": "node internal/tools/version-lint.mjs && node internal/tools/version-consistency.mjs"
+    "test:versions": "node internal/tools/version-lint.mjs && node internal/tools/version-consistency.mjs",
+    "release:prepare": "node internal/tools/release-prepare.mjs"
   },
   "engines": {
     "node": ">=20"

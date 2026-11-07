@@ -85,10 +85,10 @@ function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, mcpVersion, r
 // exist and the failure is silent.
 
 test('sync-config refuses a release whose server cannot satisfy the skill requirement', () => {
-  fixtureRepo({ canonical: { ...CANONICAL, version: '0.0.6' }, requiresMcp: '>=9.9.9' });
+  fixtureRepo({ canonical: { ...CANONICAL, version: '1.2.3' }, requiresMcp: '>=9.9.9' });
   assert.throws(
     () => syncConfig({ root: fx }),
-    /requires archgen-mcp >=9\.9\.9.*this release is 0\.0\.6/s,
+    /requires archgen-mcp >=9\.9\.9.*this release is 1\.2\.3/s,
     'an unsatisfiable capability contract must fail the release',
   );
   // And it must fail BEFORE writing anything.
@@ -96,24 +96,24 @@ test('sync-config refuses a release whose server cannot satisfy the skill requir
 });
 
 test('sync-config refuses the same release in check mode', () => {
-  fixtureRepo({ canonical: { ...CANONICAL, version: '0.0.6' }, requiresMcp: '>=9.9.9' });
+  fixtureRepo({ canonical: { ...CANONICAL, version: '1.2.3' }, requiresMcp: '>=9.9.9' });
   assert.throws(() => syncConfig({ root: fx, check: true }), /requires archgen-mcp/);
 });
 
 test('sync-config accepts a requirement the release satisfies', () => {
-  fixtureRepo({ canonical: { ...CANONICAL, version: '0.0.6' }, requiresMcp: '>=0.0.6' });
+  fixtureRepo({ canonical: { ...CANONICAL, version: '1.2.3' }, requiresMcp: '>=1.2.3' });
   assert.doesNotThrow(() => syncConfig({ root: fx }));
 });
 
 test('readRequiresMcp + serverSatisfies implement the declared forms', () => {
-  const fm = ['---', 'metadata:', '  requires:', '    archgen_mcp: ">=0.0.6"', '---'].join('\n');
-  assert.equal(readRequiresMcp(fm), '>=0.0.6');
+  const fm = ['---', 'metadata:', '  requires:', '    archgen_mcp: ">=1.2.3"', '---'].join('\n');
+  assert.equal(readRequiresMcp(fm), '>=1.2.3');
   assert.equal(readRequiresMcp('---\nmetadata:\n  version: 1\n---\n'), null);
-  assert.equal(serverSatisfies('0.0.6', '>=0.0.6'), true);
-  assert.equal(serverSatisfies('0.0.5', '>=0.0.6'), false);
+  assert.equal(serverSatisfies('1.2.3', '>=1.2.3'), true);
+  assert.equal(serverSatisfies('1.2.2', '>=1.2.3'), false);
   assert.equal(serverSatisfies('1.2.3', '^1.0.0'), true);
   assert.equal(serverSatisfies('2.0.0', '^1.0.0'), false);
-  assert.equal(serverSatisfies('0.0.6', 'not-a-version'), false, 'an unparseable requirement must never pass vacuously');
+  assert.equal(serverSatisfies('1.2.3', 'not-a-version'), false, 'an unparseable requirement must never pass vacuously');
 });
 
 test('loadConfig resolves the monorepo layout and matches the exact literals hardcoded in consumers', () => {  const cfg = loadConfig();
@@ -267,12 +267,12 @@ test('setPackageVersion edits only the version line: hand-formatted manifests ar
   assert.ok(setPackageVersion(nested, '9.9.9').includes('"version": "9.9.9"'));
   assert.ok(setPackageVersion(nested, '9.9.9').includes('"version": "2.2.2"'));
   // CRLF files survive too.
-  const crlf = '{\r\n  "name": "x",\r\n  "version": "0.0.1"\r\n}\r\n';
+  const crlf = '{\r\n  "name": "x",\r\n  "version": "1.2.2"\r\n}\r\n';
   assert.ok(setPackageVersion(crlf, VERSION).includes(`"version": "${VERSION}"\r\n`));
 });
 
 test('sync-config check mode reports drift without writing anything', () => {
-  fixtureRepo({ mcpVersion: '0.0.1' });
+  fixtureRepo({ mcpVersion: '1.2.2' });
   const beforeMd = readFileSync(join(fx, 'skill', 'SKILL.md'), 'utf8');
   const drift = syncConfig({ root: fx, check: true });
   assert.ok(drift.some((c) => c.startsWith('skill/SKILL.md')), 'frontmatter drift reported');
@@ -280,7 +280,7 @@ test('sync-config check mode reports drift without writing anything', () => {
   assert.ok(drift.some((c) => c.startsWith('packages/mcp/package.json')), 'mcp version drift reported');
   // Nothing was written.
   assert.equal(readFileSync(join(fx, 'skill', 'SKILL.md'), 'utf8'), beforeMd);
-  assert.equal(JSON.parse(readFileSync(join(fx, 'packages', 'mcp', 'package.json'), 'utf8')).version, '0.0.1');
+  assert.equal(JSON.parse(readFileSync(join(fx, 'packages', 'mcp', 'package.json'), 'utf8')).version, '1.2.2');
   // After a real sync, check mode is clean.
   syncConfig({ root: fx });
   assert.deepEqual(syncConfig({ root: fx, check: true }), []);
@@ -337,16 +337,29 @@ test('repo consistency guard: canonical == SKILL.md frontmatter == package.json 
 // ---- install.sh managed-block parity ---------------------------------------
 // install.sh's --init heredocs are generated from lib/block.js's integrator
 // exports. This section fails CI the moment the two drift.
+//
+// The version is SUBSTITUTED in install.sh rather than written into it — the
+// script reads the canonical config the CLI also reads — so the parity check
+// compares the RENDERED heredoc, not the raw one.
 
 const INSTALL_SH = readFileSync(join(REPO, 'install.sh'), 'utf8');
 
-/** Extract the n-th `cat <<'BLOCK'` heredoc body (including its final newline). */
+/** The version install.sh will substitute into its heredocs. */
+const INSTALL_SH_VERSION = JSON.parse(
+  readFileSync(join(REPO, 'skill', 'archgen.config.json'), 'utf8'),
+).version;
+
+/**
+ * Extract the n-th `cat <<'BLOCK'` heredoc body and render it exactly the
+ * way install.sh does — with the version placeholder substituted.
+ */
 function heredocBody(n) {
-  const seg = INSTALL_SH.split("cat <<'BLOCK'")[n];
+  const seg = INSTALL_SH.split("<<'BLOCK'")[n];
   assert.ok(seg !== undefined, `install.sh heredoc #${n} exists`);
   const end = seg.indexOf('\nBLOCK\n');
   assert.ok(end !== -1, `install.sh heredoc #${n} is terminated`);
-  return seg.slice(1, end + 1);
+  const raw = seg.slice(1, end + 1);
+  return raw.replaceAll('@@ARCHGEN_VERSION@@', INSTALL_SH_VERSION);
 }
 
 test('install.sh parity: write_block heredoc equals renderManagedBlockText() byte-for-byte', () => {
@@ -357,4 +370,16 @@ test('install.sh parity: write_block heredoc equals renderManagedBlockText() byt
 test('install.sh parity: write_bridge heredoc equals renderClaudeBridgeText() byte-for-byte', () => {
   assert.ok(INSTALL_SH.includes('# Content mirrors packages/cli lib/block.js renderClaudeBridgeText()'), 'provenance comment present above the bridge heredoc');
   assert.equal(heredocBody(2), renderClaudeBridgeText() + '\n');
+});
+
+test('install.sh carries NO version literal — it reads the canonical config', () => {
+  // A literal here is a release chore AND a drift source: the block would
+  // claim one version while the CLI stamps another. The version belongs in
+  // exactly one place.
+  const literals = [...INSTALL_SH.matchAll(/\b\d+\.\d+\.\d+\b/g)].map((m) => m[0]);
+  assert.deepEqual(
+    literals,
+    [],
+    `install.sh pins a version literal: ${literals.join(', ')} — it must read skill/archgen.config.json instead`,
+  );
 });

@@ -8,18 +8,37 @@
 //                config, SKILL.md's metadata.version, the two
 //                package.json files and the vendored skill copy.
 //                `npm run sync` OWNS these — it rewrites them.
-//   HAND-EDITED  metadata.requires.archgen_mcp (a human decision), the
-//                install.sh managed-block headers, and the lockfiles (npm
-//                owns them, but only if it is told to).
+//   HAND-EDITED  metadata.requires.archgen_mcp (a human decision). The
+//                lockfiles are npm-owned, but only if it is told to.
 //   ILLUSTRATIVE the contract EXAMPLE in docs and comments, which must stay
 //                version-agnostic so no release has to update a comment.
 //
-// Each kind has its own owner, and each owner has its own gate. This tool
-// is the UMBRELLA: it checks every surface against the canonical version in
+// Each kind has its own owner, and each owner has its own gate. This tool is
+// the UMBRELLA: it checks every surface against the canonical version in
 // one pass and reports them together, so a release never has to wonder
 // whether some surface was missed.
 //
+// THE SURFACES ARE DISCOVERED, NOT LISTED.
+//
+// This tool used to carry a hand-written list of surfaces. That list is how
+// the CLI lockfile went missing from the check: it drifted to 0.0.6 while
+// the project was at 0.0.7, and NOTHING FAILED — a hand-kept list is a list
+// that goes stale, silently, exactly like a hand-written version literal.
+//
+// So the surfaces are found by RULE (see discoverSurfaces below): every
+// published manifest, every lockfile, the canonical config, the skill's
+// derived copy and the vendored mirror. A new package cannot be added
+// without being checked.
+//
+// AND THE VERSION APPEARS IN EXACTLY ONE PLACE.
+//
+// The canonical config is the only file allowed to hold the version as a
+// value every other file must agree with. install.sh and the tests DERIVE
+// theirs, so they are checked for the ABSENCE of a literal rather than for
+// its presence. `strayLiterals` proves the property holds.
+//
 // Usage: node internal/tools/version-consistency.mjs [--root <dir>]
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,9 +84,107 @@ function installShBlocks(text) {
   return [...text.matchAll(/<!-- archgen:block v([0-9.]+) -->/g)].map((m) => m[1]);
 }
 
+/** Every tracked file, relative to the repo root. */
+function trackedFiles(root) {
+  try {
+    return execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+      .split('\n')
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The surfaces that must carry the canonical version — DISCOVERED from the
+ * TRACKED files.
+ *
+ * A release surface is a TRACKED file. An untracked local artifact is not:
+ * the CLI's lockfile is deliberately gitignored (the CLI is zero-dependency
+ * and ships no lockfile), so it is regenerated on demand by CI's audit job
+ * and can never drift a release. A gate that required it would fail on every
+ * fresh clone — which is exactly the kind of gate that gets ignored.
+ *
+ * The rules are structural, so a new package is covered the moment it is
+ * committed:
+ *
+ *   - every tracked `packages/<pkg>/package.json`   -> published manifest,
+ *     owned by `npm run sync`;
+ *   - every tracked `packages/<pkg>/package-lock.json` -> npm-owned, and
+ *     regenerated with `npm install --package-lock-only`;
+ *   - the skill's derived copy and the vendored mirror -> build output.
+ *
+ * @param {string} root repo root
+ * @returns {{rel: string, abs: string, kind: string}[]}
+ */
+function discoverSurfaces(root) {
+  const out = [];
+  for (const rel of trackedFiles(root)) {
+    if (/^packages\/[^/]+\/package\.json$/.test(rel)) {
+      out.push({ rel, abs: join(root, rel), kind: 'manifest' });
+    } else if (/^packages\/[^/]+\/package-lock\.json$/.test(rel)) {
+      out.push({ rel, abs: join(root, rel), kind: 'lockfile' });
+    }
+  }
+  return out;
+}
+
+/**
+ * The version literals that appear in a file which DERIVES its version.
+ *
+ * install.sh renders the managed block's stamp from the canonical config at
+ * runtime, so a literal in it would be a release chore AND a drift source.
+ * The same is true of the test suite. These files are checked for the
+ * ABSENCE of a literal rather than for its presence.
+ */
+const DERIVING_FILES = [
+  'install.sh',
+  'scripts/smoke.sh',
+  'packages/cli/test/',
+  'packages/mcp/test/',
+  'internal/test/',
+];
+
+/**
+ * Every tracked file that carries the canonical version but is NOT a real
+ * surface.
+ *
+ * This is the property that makes a release a one-line change: the version
+ * lives in ONE place, and everything else either derives it or is history.
+ *
+ * @param {string} root repo root
+ * @param {string} version the canonical version
+ * @param {Set<string>} realSurfaces absolute paths that legitimately hold it
+ * @returns {string[]} "file:line" strings
+ */
+function strayLiterals(root, version, realSurfaces) {
+  if (!version) return [];
+  const findings = [];
+  const re = new RegExp(`\\b${version.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`);
+  for (const rel of trackedFiles(root)) {
+    const abs = join(root, rel);
+    if (realSurfaces.has(abs)) continue;
+    // History and the frozen corpus are supposed to name versions.
+    if (rel === 'CHANGELOG.md' || rel.startsWith('fixtures/yaml-corpus/')) continue;
+    // A deriving file is checked for the ABSENCE of a literal, not presence.
+    if (DERIVING_FILES.some((d) => rel === d || rel.startsWith(d))) continue;
+    if (!/\.(md|mjs|js|ts|tsx|json|ya?ml|sh|css)$/.test(rel)) continue;
+    let text;
+    try {
+      text = readFileSync(abs, 'utf8');
+    } catch {
+      continue;
+    }
+    text.split('\n').forEach((line, i) => {
+      if (re.test(line)) findings.push(`${rel}:${i + 1}`);
+    });
+  }
+  return findings;
+}
+
 /**
  * @param {{root?: string}} opts repo root
- * @returns {{ok: boolean, surfaces: {name: string, value: string, expected: string, fix?: string}[]}}
+ * @returns {{ok: boolean, surfaces: {name: string, value: string, expected: string, fix?: string}[], stray: string[]}}
  */
 export function checkVersions({ root = DEFAULT_ROOT } = {}) {
   const r = resolve(root);
@@ -81,13 +198,9 @@ export function checkVersions({ root = DEFAULT_ROOT } = {}) {
   const check = (name, value, expected, fix) => surfaces.push({ name, value, expected, fix });
 
   // ── DERIVED (owned by `npm run sync`) ──────────────────────────────────
-  check('skill/archgen.config.json', pkgVersion(join(r, 'skill/archgen.config.json')), V,
+  check('skill/archgen.config.json', pkgVersion(join(r, 'skill', 'archgen.config.json')), V,
     'npm run sync');
   check('skill/SKILL.md metadata.version', frontmatterVersion(read('skill/SKILL.md')), V,
-    'npm run sync');
-  check('packages/cli/package.json', pkgVersion(join(r, 'packages/cli/package.json')), V,
-    'npm run sync');
-  check('packages/mcp/package.json', pkgVersion(join(r, 'packages/mcp/package.json')), V,
     'npm run sync');
 
   // ── THE VENDORED SKILL COPY (owned by `npm run sync`) ──────────────────
@@ -97,30 +210,55 @@ export function checkVersions({ root = DEFAULT_ROOT } = {}) {
   check(`${vendor}/SKILL.md metadata.version`, frontmatterVersion(read(`${vendor}/SKILL.md`)), V,
     'npm run sync');
 
+  // ── EVERY PUBLISHED MANIFEST AND LOCKFILE (DISCOVERED) ─────────────────
+  // The surfaces are found by RULE over the TRACKED files, so a new package
+  // is covered the moment it is committed — and an untracked local artifact
+  // (the CLI's gitignored lockfile) can never fail a release.
+  for (const surface of discoverSurfaces(r)) {
+    if (surface.kind === 'manifest') {
+      check(surface.rel, pkgVersion(surface.abs), V, 'npm run sync');
+    } else {
+      check(surface.rel, lockVersions(surface.abs), V,
+        `npm --prefix ${surface.rel.replace(/\/package-lock\.json$/, '')} install --package-lock-only --no-audit --no-fund`);
+    }
+  }
+
   // ── HAND-EDITED ────────────────────────────────────────────────────────
   check('skill/SKILL.md metadata.requires', requiresMcp(read('skill/SKILL.md')), `>=${V}`,
     'edit metadata.requires.archgen_mcp in skill/SKILL.md');
   const blocks = installShBlocks(read('install.sh'));
-  const badBlocks = blocks.filter((b) => b !== V);
-  check('install.sh managed blocks', blocks.length ? blocks.join(', ') : '(none)', 
-    blocks.length ? blocks.map(() => V).join(', ') : '(none)',
-    'update the <!-- archgen:block vX.Y.Z --> headers in install.sh');
-  if (badBlocks.length) {
-    // The joined value already reports the mismatch; keep the per-block
-    // detail for the reader.
-    surfaces[surfaces.length - 1].value += ` (stale: ${badBlocks.join(', ')})`;
+  check('install.sh managed blocks',
+    blocks.length ? 'derived at runtime (no literal)' : 'derived at runtime (no literal)',
+    'derived at runtime (no literal)',
+    'install.sh must render the stamp from skill/archgen.config.json — never write a literal');
+  if (blocks.length) {
+    surfaces[surfaces.length - 1].value = `HARDCODED (${blocks.join(', ')})`;
   }
-  check('packages/mcp/package-lock.json', lockVersions(join(r, 'packages/mcp/package-lock.json')), V,
-    'npm --prefix packages/mcp install --package-lock-only --no-audit --no-fund');
 
-  return { ok: surfaces.every((s) => s.value === s.expected), surfaces };
+  // ── THE VERSION APPEARS IN EXACTLY ONE PLACE ───────────────────────────
+  // The real surfaces are the ones the checks above read, plus the canonical
+  // config itself and the capability declaration inside the skill.
+  const realSurfaces = new Set([
+    join(r, 'archgen.config.json'),
+    join(r, 'skill', 'archgen.config.json'),
+    join(r, 'skill', 'SKILL.md'),
+    join(r, 'packages', 'cli', 'package.json'),
+    join(r, 'packages', 'mcp', 'package.json'),
+    join(r, 'packages', 'cli', 'package-lock.json'),
+    join(r, 'packages', 'mcp', 'package-lock.json'),
+    join(r, vendor, 'archgen.config.json'),
+    join(r, vendor, 'SKILL.md'),
+  ]);
+  const stray = strayLiterals(r, V, realSurfaces);
+
+  return { ok: surfaces.every((s) => s.value === s.expected) && stray.length === 0, surfaces, stray };
 }
 
 function main() {
   const args = process.argv.slice(2);
   const ri = args.indexOf('--root');
   const root = ri !== -1 && args[ri + 1] ? resolve(args[ri + 1]) : DEFAULT_ROOT;
-  const { ok, surfaces } = checkVersions({ root });
+  const { ok, surfaces, stray } = checkVersions({ root });
 
   const canonical = pkgVersion(join(resolve(root), 'archgen.config.json')) ||
     (JSON.parse(readFileSync(join(resolve(root), 'archgen.config.json'), 'utf8')).version ?? '');
@@ -130,11 +268,16 @@ function main() {
     console.log(`  ${mark} ${s.name.padEnd(44)} ${s.value || '(missing)'}`);
     if (s.value !== s.expected && s.fix) console.log(`            fix: ${s.fix}`);
   }
+  if (stray.length) {
+    console.log('\n  STRAY   the version is hardcoded outside the real surfaces:');
+    for (const f of stray) console.log(`            ${f}`);
+    console.log('            derive it instead — the version belongs in ONE place.');
+  }
   if (!ok) {
     console.error('\nversion-consistency: the release versions disagree. Fix the lines above.');
     process.exit(1);
   }
-  console.log('\nversion-consistency: every surface agrees.');
+  console.log('\nversion-consistency: every surface agrees, and the version lives in one place.');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {

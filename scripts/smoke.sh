@@ -37,9 +37,13 @@ TARBALLS="$(mktemp -d "${TMPDIR:-/tmp}/archgen-tarballs.XXXXXX")"
 (cd packages/mcp && npm pack --pack-destination "$TARBALLS" >/dev/null)
 (cd packages/cli && npm pack --pack-destination "$TARBALLS" >/dev/null)
 ls "$TARBALLS" | sed 's/^/     /'
-[ -f "$TARBALLS/archgen-mcp-0.0.7.tgz" ] || fail "the MCP tarball is missing"
-[ -f "$TARBALLS/archgen-skill-0.0.7.tgz" ] || fail "the CLI tarball is missing"
-pass "both tarballs built"
+# The version comes from the canonical config, so a release never has to
+# remember to update this file — and a forgotten bump cannot make the smoke
+# test assert the OLD tarball name and pass anyway.
+VERSION="$(node -p "require('$REPO/archgen.config.json').version")"
+[ -f "$TARBALLS/archgen-mcp-$VERSION.tgz" ] || fail "the MCP tarball is missing (expected archgen-mcp-$VERSION.tgz)"
+[ -f "$TARBALLS/archgen-skill-$VERSION.tgz" ] || fail "the CLI tarball is missing (expected archgen-skill-$VERSION.tgz)"
+pass "both tarballs built ($VERSION)"
 
 step "4. The tarballs install into a clean project"
 PROJECT="$WORK/project"

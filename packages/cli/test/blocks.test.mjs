@@ -9,6 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initProject } from '../lib/init.js';
 import { doctorProject } from '../lib/doctor.js';
+import { OLDER_STAMP, NEWER_STAMP, escapeRe } from './helpers/versions.mjs';
 import {
   END,
   FEATURES_END,
@@ -149,16 +150,16 @@ test('doctor upgrades an older-stamped block but leaves a newer stamp alone', ()
   seedStore();
   const older = legacyAgentsBlock().replace(
     START,
-    START + '\n<!-- archgen:block v0.0.3 -->',
+    START + `\n<!-- archgen:block v${OLDER_STAMP} -->`,
   );
   writeFileSync(join(proj, 'AGENTS.md'), older + '\n');
   const d1 = doctorProject(proj, CLI);
-  assert.ok(d1.checks.some((c) => /UPGRADED: AGENTS\.md block v0\.0\.3/.test(c.msg)));
+  assert.ok(d1.checks.some((c) => new RegExp(`UPGRADED: AGENTS\\.md block v${escapeRe(OLDER_STAMP)}`).test(c.msg)));
   assert.deepEqual(detectBlockVersion(readFileSync(join(proj, 'AGENTS.md'), 'utf8')), { present: true, version: VERSION });
 
   const newer = legacyAgentsBlock().replace(
     START,
-    START + '\n<!-- archgen:block v99.0.0 -->',
+    START + `\n<!-- archgen:block v${NEWER_STAMP} -->`,
   );
   writeFileSync(join(proj, 'AGENTS.md'), newer + '\n');
   const d2 = doctorProject(proj, CLI);

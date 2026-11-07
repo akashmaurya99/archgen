@@ -25,6 +25,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initProject } from '../lib/init.js';
 import { doctorProject } from '../lib/doctor.js';
+import { OLDER_STAMP } from './helpers/versions.mjs';
 import { END, START, detectBlockVersion } from '../lib/block.js';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -159,7 +160,7 @@ test('M8: doctor refuses to recreate the claude link through a symlinked .claude
 });
 
 test('L4: init refreshes the CLAUDE.md managed block version', () => {
-  const stale = [START, '<!-- archgen:block v0.0.1 -->', '@AGENTS.md', END].join('\n') + '\n';
+  const stale = [START, `<!-- archgen:block v${OLDER_STAMP} -->`, '@AGENTS.md', END].join('\n') + '\n';
   writeFileSync(join(proj, 'CLAUDE.md'), stale);
 
   initProject(proj, CLI, NO_BOOTSTRAP);
@@ -175,7 +176,7 @@ test('L4: init refreshes the CLAUDE.md managed block version', () => {
 
 test('L4: doctor upgrades a stale CLAUDE.md managed block', () => {
   initProject(proj, CLI, NO_BOOTSTRAP);
-  const stale = [START, '<!-- archgen:block v0.0.1 -->', '@AGENTS.md', END].join('\n') + '\n';
+  const stale = [START, `<!-- archgen:block v${OLDER_STAMP} -->`, '@AGENTS.md', END].join('\n') + '\n';
   writeFileSync(join(proj, 'CLAUDE.md'), stale);
 
   const d = doctorProject(proj, CLI);

@@ -180,6 +180,20 @@ npm run test:fixtures
 | [`verifier-negative`](fixtures/verifier-negative/) | The gate actually rejects cycles, overlaps and unknown refs |
 | [`tool-matrix`](fixtures/tool-matrix/) | **Every action of every tool**, through the real MCP binary |
 
+### Cutting a release
+
+```sh
+npm run release:prepare <version>
+```
+
+One command: it bumps the canonical version, propagates it to every derived
+surface, regenerates both lockfiles, and runs **every gate**. It never
+publishes and never tags — that stays a deliberate, one-tag-at-a-time human
+action. The version lives in exactly one file (`archgen.config.json`), and
+`npm run test:versions` proves it.
+
+See [docs/releasing.md](docs/releasing.md) for the full checklist.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
 ## Documentation

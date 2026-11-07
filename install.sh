@@ -10,6 +10,19 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE="$SCRIPT_DIR/skill"
 
+# THE VERSION IS READ, NEVER WRITTEN.
+#
+# `skill/archgen.config.json` is the canonical config, derived from the repo
+# root by `npm run sync`. install.sh renders the managed block's provenance
+# stamp from it, so this script carries NO version literal: a release cannot
+# forget to update it, and it can never disagree with the CLI — which reads
+# the same config.
+ARCHGEN_VERSION=""
+read_archgen_version() {
+  ARCHGEN_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SOURCE/archgen.config.json" 2>/dev/null | head -1)"
+  [ -n "$ARCHGEN_VERSION" ] || die "cannot read the version from $SOURCE/archgen.config.json — run 'npm run sync' in the repository first"
+}
+
 MODE="link"
 PROJECT_ARG=""
 UNINSTALL=0
@@ -195,9 +208,14 @@ if [ "$INIT" -eq 1 ]; then
       [ -f "$f" ] && cat "$f" && printf '\n'
       # Content mirrors packages/cli lib/block.js renderManagedBlockText() — regenerate when block format changes.
       # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
-      cat <<'BLOCK'
+      # The version is SUBSTITUTED, never written here: the heredoc stays
+      # quoted (so nothing else in it can expand), and the one placeholder is
+      # filled from the canonical config the CLI itself reads. A literal in
+      # this file would be a release chore AND a drift source — the block
+      # would claim one version while the CLI stamps another.
+      sed "s/@@ARCHGEN_VERSION@@/$ARCHGEN_VERSION/g" <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
-<!-- archgen:block v0.0.7 -->
+<!-- archgen:block v@@ARCHGEN_VERSION@@ -->
 # ArchGen - Architecture Generation & Autonomous Task Execution
 
 This project uses the **archgen** skill, installed at `.agents/skills/archgen/`.
@@ -226,6 +244,7 @@ Rules of the road:
 BLOCK
     } > "$f.tmp" && mv "$f.tmp" "$f"
   }
+  read_archgen_version
   write_block "$ROOT/AGENTS.md"
 
   write_bridge() { # $1 = CLAUDE.md; one-line @AGENTS.md pointer inside markers
@@ -241,9 +260,14 @@ BLOCK
       [ -f "$f" ] && cat "$f" && printf '\n'
       # Content mirrors packages/cli lib/block.js renderClaudeBridgeText() — regenerate when block format changes.
       # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
-      cat <<'BLOCK'
+      # The version is SUBSTITUTED, never written here: the heredoc stays
+      # quoted (so nothing else in it can expand), and the one placeholder is
+      # filled from the canonical config the CLI itself reads. A literal in
+      # this file would be a release chore AND a drift source — the block
+      # would claim one version while the CLI stamps another.
+      sed "s/@@ARCHGEN_VERSION@@/$ARCHGEN_VERSION/g" <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
-<!-- archgen:block v0.0.7 -->
+<!-- archgen:block v@@ARCHGEN_VERSION@@ -->
 @AGENTS.md
 <!-- archgen:end -->
 BLOCK

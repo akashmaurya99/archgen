@@ -27,6 +27,8 @@ import { restoreBackups, restoreMain } from '../lib/restore.js';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 const STORE = (p) => join(p, '.agents', 'skills', 'archgen');
+// The installed package's version comes from the ONE shared helper.
+import { RELEASE } from './helpers/versions.mjs';
 
 let proj;
 
@@ -112,7 +114,7 @@ test('H1: the global vault records its exact path and restores exactly that', ()
     try {
       mkdirSync(join(pkgRoot, 'vendor', 'skills'), { recursive: true });
       cpSync(join(CLI, 'vendor', 'skills', 'archgen'), join(pkgRoot, 'vendor', 'skills', 'archgen'), { recursive: true });
-      writeFileSync(join(pkgRoot, 'package.json'), JSON.stringify({ name: 'archgen-skill', version: '0.0.7' }));
+      writeFileSync(join(pkgRoot, 'package.json'), JSON.stringify({ name: 'archgen-skill', version: RELEASE }));
       const r = installGlobal({ home, packageRoot: pkgRoot, copy: true });
       assert.equal(r.failures, 0, JSON.stringify(r.rows));
       writeFileSync(join(dest, 'SKILL.md'), 'DIVERGED\n');

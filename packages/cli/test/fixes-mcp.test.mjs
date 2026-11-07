@@ -21,6 +21,9 @@ import { mcpInvocation, quoteWindowsArg } from '../lib/mcp-server.js';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+// The installed package's version comes from the ONE shared helper.
+import { RELEASE } from './helpers/versions.mjs';
+
 let dir;
 
 beforeEach(() => {
@@ -59,7 +62,7 @@ test('M17: a .cmd shim with a known package is run through node, without a shell
   mkdirSync(join(pkgDir, 'bin'), { recursive: true });
   writeFileSync(
     join(pkgDir, 'package.json'),
-    JSON.stringify({ name: 'archgen-mcp', version: '0.0.7', bin: { 'archgen-mcp': 'bin/archgen-mcp.mjs' } }),
+    JSON.stringify({ name: 'archgen-mcp', version: RELEASE, bin: { 'archgen-mcp': 'bin/archgen-mcp.mjs' } }),
   );
   const entry = join(pkgDir, 'bin', 'archgen-mcp.mjs');
   writeFileSync(entry, '// stub\n');

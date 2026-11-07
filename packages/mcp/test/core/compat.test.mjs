@@ -21,10 +21,10 @@ function skillWith(frontmatter) {
 // ── version comparison ──────────────────────────────────────────────────────
 
 test('compareVersions orders correctly', () => {
-  assert.equal(compareVersions('0.0.5', '0.0.5'), 0);
-  assert.equal(compareVersions('0.0.4', '0.0.5'), -1);
-  assert.equal(compareVersions('0.1.0', '0.0.9'), 1);
-  assert.equal(compareVersions('1.0.0', '0.9.9'), 1);
+  assert.equal(compareVersions('1.2.3', '1.2.3'), 0);
+  assert.equal(compareVersions('1.2.2', '1.2.3'), -1);
+  assert.equal(compareVersions('1.3.0', '1.2.9'), 1);
+  assert.equal(compareVersions('2.0.0', '1.9.9'), 1);
 });
 
 test('parseVersion accepts an optional v prefix and a prerelease suffix', () => {
@@ -36,53 +36,53 @@ test('parseVersion accepts an optional v prefix and a prerelease suffix', () => 
 // ── requirement satisfaction ────────────────────────────────────────────────
 
 test('>= is inclusive and rejects an older version', () => {
-  assert.equal(satisfies('0.0.5', '>=0.0.5'), true);
-  assert.equal(satisfies('0.0.6', '>=0.0.5'), true);
-  assert.equal(satisfies('0.0.4', '>=0.0.5'), false);
+  assert.equal(satisfies('1.2.3', '>=1.2.3'), true);
+  assert.equal(satisfies('1.2.4', '>=1.2.3'), true);
+  assert.equal(satisfies('1.2.2', '>=1.2.3'), false);
 });
 
 test('> is exclusive', () => {
-  assert.equal(satisfies('0.0.5', '>0.0.5'), false);
-  assert.equal(satisfies('0.0.6', '>0.0.5'), true);
+  assert.equal(satisfies('1.2.3', '>1.2.3'), false);
+  assert.equal(satisfies('1.2.4', '>1.2.3'), true);
 });
 
 test('an exact requirement matches only that version', () => {
-  assert.equal(satisfies('0.0.5', '0.0.5'), true);
-  assert.equal(satisfies('0.0.6', '0.0.5'), false);
+  assert.equal(satisfies('1.2.3', '1.2.3'), true);
+  assert.equal(satisfies('1.2.4', '1.2.3'), false);
 });
 
 test('^ stays inside the major, ~ inside the major+minor', () => {
-  assert.equal(satisfies('0.9.0', '^0.0.5'), true);
-  assert.equal(satisfies('1.0.0', '^0.0.5'), false);
-  assert.equal(satisfies('0.0.9', '~0.0.5'), true);
-  assert.equal(satisfies('0.1.0', '~0.0.5'), false);
+  assert.equal(satisfies('1.9.0', '^1.2.3'), true);
+  assert.equal(satisfies('2.0.0', '^1.2.3'), false);
+  assert.equal(satisfies('1.2.9', '~1.2.3'), true);
+  assert.equal(satisfies('1.3.0', '~1.2.3'), false);
 });
 
 test('an unparseable requirement is REJECTED, never vacuously satisfied', () => {
-  assert.throws(() => satisfies('0.0.5', 'latest-ish'), (e) => e.code === 'INVALID_INPUT');
+  assert.throws(() => satisfies('1.2.3', 'latest-ish'), (e) => e.code === 'INVALID_INPUT');
 });
 
 test('an empty requirement means no constraint', () => {
-  assert.equal(satisfies('0.0.5', ''), true);
+  assert.equal(satisfies('1.2.3', ''), true);
 });
 
 // ── reading the declaration ─────────────────────────────────────────────────
 
 test('the requires block is read out of the frontmatter', () => {
   const dir = skillWith(
-    ['name: archgen', 'metadata:', '  version: 0.0.5', '  requires:', '    archgen_mcp: ">=0.0.5"'].join('\n'),
+    ['name: archgen', 'metadata:', '  version: 1.2.3', '  requires:', '    archgen_mcp: ">=1.2.3"'].join('\n'),
   );
   try {
     const req = readSkillRequirements(dir);
-    assert.equal(req.version, '0.0.5');
-    assert.deepEqual(req.requires, { archgen_mcp: '>=0.0.5' });
+    assert.equal(req.version, '1.2.3');
+    assert.deepEqual(req.requires, { archgen_mcp: '>=1.2.3' });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test('a skill with no requires block yields no requirement', () => {
-  const dir = skillWith(['name: archgen', 'metadata:', '  version: 0.0.5'].join('\n'));
+  const dir = skillWith(['name: archgen', 'metadata:', '  version: 1.2.3'].join('\n'));
   try {
     assert.deepEqual(readSkillRequirements(dir).requires, {});
   } finally {
@@ -105,11 +105,11 @@ test('a missing or malformed SKILL.md yields no requirement (never throws)', () 
 // ── the check ───────────────────────────────────────────────────────────────
 
 test('a compatible skill passes', () => {
-  const dir = skillWith(['metadata:', '  requires:', '    archgen_mcp: ">=0.0.5"'].join('\n'));
+  const dir = skillWith(['metadata:', '  requires:', '    archgen_mcp: ">=1.2.3"'].join('\n'));
   try {
-    const r = checkCapability({ skillDir: dir, serverVersion: '0.0.5' });
+    const r = checkCapability({ skillDir: dir, serverVersion: '1.2.3' });
     assert.equal(r.compatible, true);
-    assert.equal(r.required, '>=0.0.5');
+    assert.equal(r.required, '>=1.2.3');
     assert.equal(r.reason, null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -117,19 +117,19 @@ test('a compatible skill passes', () => {
 });
 
 test('an incompatible skill is reported WITH the reason', () => {
-  const dir = skillWith(['metadata:', '  requires:', '    archgen_mcp: ">=0.0.9"'].join('\n'));
+  const dir = skillWith(['metadata:', '  requires:', '    archgen_mcp: ">=1.3.0"'].join('\n'));
   try {
-    const r = checkCapability({ skillDir: dir, serverVersion: '0.0.5' });
+    const r = checkCapability({ skillDir: dir, serverVersion: '1.2.3' });
     assert.equal(r.compatible, false);
-    assert.match(r.reason, /requires archgen-mcp >=0\.0\.9/);
-    assert.match(r.reason, /this server is 0\.0\.5/);
+    assert.match(r.reason, /requires archgen-mcp >=1\.3\.0/);
+    assert.match(r.reason, /this server is 1\.2\.3/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test('no skill means no contract to check', () => {
-  const r = checkCapability({ skillDir: null, serverVersion: '0.0.5' });
+  const r = checkCapability({ skillDir: null, serverVersion: '1.2.3' });
   assert.equal(r.compatible, true);
   assert.equal(r.required, null);
 });

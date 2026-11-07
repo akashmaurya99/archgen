@@ -22,6 +22,7 @@ import { installGlobal } from '../lib/install.js';
 import { doctorProject } from '../lib/doctor.js';
 import { uninstallProject } from '../lib/uninstall-project.js';
 import { readStamp, writeStamp } from '../lib/version-stamp.js';
+import { OLDER_STAMP } from './helpers/versions.mjs';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 const VENDOR = join(CLI, 'vendor', 'skills', 'archgen');
@@ -78,7 +79,7 @@ test('init leaves the exact stamp in the canonical store; re-init keeps it fresh
 
 test('update-style refresh rewrites a stale stamp; doctor repairs a corrupt one', () => {
   initProject(proj, CLI);
-  writeFileSync(join(STORE(proj), STAMP), '0.0.1\n'); // simulate older CLI
+  writeFileSync(join(STORE(proj), STAMP), `${OLDER_STAMP}\n`); // simulate an older CLI
   initProject(proj, CLI); // what `update` runs via runInitAndDoctor
   assert.equal(readFileSync(join(STORE(proj), STAMP), 'utf8'), VERSION + '\n');
 

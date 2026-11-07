@@ -15,68 +15,70 @@ Both share ONE version, single-sourced in
 
 ## The release checklist
 
-Work top to bottom. Every step is verified by a CI gate, so a skipped step
-fails the build rather than shipping.
-
-### 1. Bump the canonical version
-
-The version lives in exactly one place: the `version` field of
-`archgen.config.json`.
-
-```sh
-# edit archgen.config.json → "version": "x.y.z"
-```
-
-### 2. Bump the capability contract (if the skill needs a newer server)
-
-The skill declares the server version it requires:
-
-```yaml
-# skill/SKILL.md frontmatter
-metadata:
-  requires:
-    archgen_mcp: ">=x.y.z"
-```
-
-**Raise it whenever the skill starts calling a tool or an action that only
-exists in the new server** — a skill that silently calls a removed action fails
-without an error. `metadata.requires` is NOT derived by the sync script; it is
-edited by hand, on purpose: it is a human decision, not a derived fact.
-
-`npm run test:contract` proves the declaration is satisfiable by this release.
-
-### 3. Propagate to every derived target
+**One command does the whole preparation.** A release touches a version in
+several places and each one has a different owner, so remembering all of them
+is how releases go half-done. `install.sh` carried the version as a
+literal — the one real release surface a human still had to remember to
+bump, twice — and the version gate carried a hand-written list of surfaces,
+so a new one could be added without being checked.
 
 ```sh
-npm run sync          # sync-config + sync-vendor
+npm run release:prepare <version>
 ```
 
-This regenerates `skill/archgen.config.json`, the `skill/SKILL.md` frontmatter
-version, both `package.json` files, and the vendored skill copy. Never edit a
-derived file by hand.
+It bumps the canonical version, propagates it to every derived surface,
+regenerates both lockfiles, and then runs **every gate**. If any gate fails,
+the release is not ready and the tool says so. It never publishes and never
+tags — that stays a deliberate, human, one-tag-at-a-time action.
 
-Two derived locations live OUTSIDE the sync script:
+Add `--requires <version>` to raise the skill's capability declaration at the same
+time. That declaration is a **human decision** — it says "this skill needs a
+server that has these capabilities" — so the tool will not infer it; without
+the flag it tells you the requirement still says the old thing.
 
-- **`install.sh`** embeds the managed-block text as two heredocs, each carrying
-  an `<!-- archgen:block vX.Y.Z -->` provenance line. Update **both** — they must
-  stay byte-identical to `renderManagedBlockText()` / `renderClaudeBridgeText()`.
-  The CLI suite's install.sh parity tests enforce this and fail the bump otherwise.
-- **the committed lockfile** (`packages/mcp/package-lock.json`) carries the
-  package version in two places. Regenerate it:
+Use `--dry-run` to see the plan without touching anything.
 
-  ```sh
-  npm --prefix packages/mcp install --package-lock-only --no-audit --no-fund
-  ```
+### What the command does, step by step
 
-### 4. Verify — zero drift, everything green
+1. **The canonical version** — `archgen.config.json`. The version lives in
+   exactly one place; every other file either derives it or is history.
+2. **The capability contract** — `skill/SKILL.md`'s
+   `metadata.requires.archgen_mcp`. Hand-edited on purpose.
+3. **Every derived surface** — `npm run sync` rewrites the skill config, the
+   frontmatter version, both `package.json` files and the vendored skill copy.
+4. **Both lockfiles** — npm owns them; `npm install --package-lock-only`.
+5. **Every gate** — versions, sync drift, the capability contract, the context
+   budget, every suite, every fixture, and the immutable check.
+
+Then: commit, tag, publish.
+
+### The surfaces, and who owns each
+
+| Surface | Owner |
+|---|---|
+| `archgen.config.json` | **you** — the canonical value |
+| `skill/SKILL.md` → `metadata.requires.archgen_mcp` | **you** — a human decision |
+| `skill/archgen.config.json`, `skill/SKILL.md` → `metadata.version` | `npm run sync` |
+| `packages/*/package.json` | `npm run sync` |
+| `packages/*/package-lock.json` | npm |
+| `packages/cli/vendor/skills/archgen/` | `npm run sync` (build output) |
+| `install.sh`'s managed-block stamp | **derived at runtime** from the shipped skill config |
+| `scripts/smoke.sh`'s tarball names | **derived** from the canonical version |
+
+Nothing else carries a version. `npm run test:versions` proves it: it
+discovers the surfaces by rule (so a new package is covered the moment it
+exists), checks every one against the canonical version, and fails if the
+version is hardcoded anywhere else.
+
+### Verify — zero drift, everything green
 
 ```sh
 npm run sync:check     # derived files + lockfiles match archgen.config.json
-npm run test:versions  # every version surface agrees, and no example pins one
+npm run test:versions  # every version surface agrees, and the version lives in one place
 npm run test:contract  # the declared minimum is satisfiable by this release
 npm run test:budget    # the always-on context is within its ceiling
 npm test               # every suite CI runs
-npm run test:fixtures  # the three end-to-end drivers, against the real tools
+npm run test:fixtures  # the four end-to-end drivers, against the real tools
 npm run test:immutable # the suites did not mutate the repository
 bash scripts/smoke.sh  # the RELEASE itself: the packed tarballs, installed and driven
 ```
@@ -84,37 +86,37 @@ bash scripts/smoke.sh  # the RELEASE itself: the packed tarballs, installed and 
 `scripts/smoke.sh` is the one that answers "will this work for a user?". It
 packs both npm tarballs — the exact bytes the registry would serve — installs
 them into a clean project, and drives the real surfaces: the MCP server over
-stdio, the tool catalog, the CLI installer, the harness wiring, the doctor, the
-three end-to-end fixtures and the uninstall. It runs against an isolated
+stdio, the tool catalog, the CLI installer, the harness wiring, the doctor,
+the four end-to-end fixtures and the uninstall. It runs against an isolated
 `HOME`, so it never touches your real harness configs.
 
 `npm run test:versions` is the umbrella check. It runs two gates:
 
-- **`version-consistency.mjs`** — every version surface (the derived files, the
-  hand-edited declaration, the install.sh managed blocks, the lockfile) must
-  agree with `archgen.config.json`. Each mismatch is reported with the exact
-  command that fixes it.
+- **`version-consistency.mjs`** — every version surface must agree with
+  `archgen.config.json`. The surfaces are DISCOVERED, not listed: every
+  published manifest, every lockfile, the skill's derived copy and the
+  vendored mirror. It also proves the version appears in exactly one place,
+  and that `install.sh` carries no literal.
 - **`version-lint.mjs`** — no `MAJOR.MINOR.x` version may be pinned in an
   *illustrative* surface: a doc, a README, a reference asset, a source
-  comment. Examples show a shape, not a release —
-  so no release ever has to go and update a comment by hand. The real
-  surfaces keep concrete versions and are owned by the sync script and the
-  capability-contract gate.
+  comment. Examples show a shape, not a release — so no release ever has to
+  go and update a comment by hand. The real surfaces keep concrete versions
+  and are owned by the sync script and the capability-contract gate.
 
 CI runs the same set: `vendor-check` (drift + version consistency),
 `capability-contract`, `context-budget`, `mcp`, `cli`, `coverage`,
 `fixtures`, `immutable`, `audit` (high-severity advisories in both npm
 packages) and `secret-scan`.
 
-### 5. Write the changelog
+### Write the changelog
 
 Add a `## [x.y.z] - YYYY-MM-DD` section to the root `CHANGELOG.md` (Keep a
 Changelog format). State the **publish order** and the two tags.
 
-### 6. Commit, tag, publish
+### 1. Commit, tag, publish
 
 ```sh
-git commit -m "chore(release): x.y.z"
+git add -A && git commit -m "chore(release): x.y.z"
 
 # in THIS order — one tag at a time, and check each run before the next
 git tag -a vmcp-x.y.z      -m "archgen-mcp x.y.z — the MCP server that owns every archgen capability"
@@ -143,7 +145,7 @@ than publishing the wrong thing.
 > yet. After fixing the cause, you do NOT need to re-tag: open the failed
 > run in GitHub Actions and click **Re-run failed jobs**.
 
-### 7. npm credentials (one-time setup)
+### 2. npm credentials (one-time setup)
 
 The publish job supports **two** authentication paths. npm tries OIDC first and
 falls back to the token only if the OIDC exchange is refused — npm's OIDC

@@ -23,6 +23,7 @@ import { initProject } from '../lib/init.js';
 import { installGlobal, uninstallGlobal } from '../lib/install.js';
 import { doctorProject } from '../lib/doctor.js';
 import { uninstallProject } from '../lib/uninstall-project.js';
+import { OLDER_STAMP } from './helpers/versions.mjs';
 import {
   renderBlock,
   upsertBlock,
@@ -250,7 +251,7 @@ test('doctor recreates a missing/dangling claude link; --check reports only', ()
 
 test('doctor updates a stale version stamp and prunes stale manifest entries', () => {
   initProject(proj, CLI);
-  writeFileSync(join(STORE(proj), '.archgen-version'), '0.0.1\n');
+  writeFileSync(join(STORE(proj), '.archgen-version'), `${OLDER_STAMP}\n`);
   const mPath = join(proj, '.archgen', '.install-manifest.json');
   const m = JSON.parse(readFileSync(mPath, 'utf8'));
   m.entries.push({ kind: 'dir', path: '.agents/skills/archgen/gone', createdAt: new Date().toISOString() });
