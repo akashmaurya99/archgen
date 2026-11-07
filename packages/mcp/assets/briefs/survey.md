@@ -1,35 +1,19 @@
-TASK: Survey this repository to prepare a feature plan for: <feature request>
-SCOPE: read-only.
+TASK: Survey this repository to prepare a feature plan for: `<feature request>`
+SCOPE: Read-only exploration, writing ONLY `<slug dir>/codebase-map.md`.
 
-DELIVERABLE: write <slug dir>/codebase-map.md containing EXACTLY these
-sections:
-  ## Structure      — top-2-levels folder tree w/ one-line purpose each
-  ## Modules        — table: module | responsibility | key entry points
-  ## Conventions    — naming, error-handling, test layout actually observed
-  ## Affected       — files/modules the feature will touch, with evidence paths
+DELIVERABLE: Write `<slug dir>/codebase-map.md` containing EXACTLY these four non-empty sections:
+## Structure — Top 2 directory levels with 1-line purpose per folder
+## Modules — Table: `module | responsibility | key entry points`
+## Conventions — Observed file naming, error handling, and test placement patterns
+## Affected — Files/modules impacted by the feature, citing exact evidence paths
 
-NAVIGATE: use the CodeGraph MCP tools when available — the index is built once
-at bootstrap and kept live by the server's watcher, so never re-index.
-Otherwise Glob+Grep systematically.
-VERIFY: every claim cites a real path; no guessed APIs. A claim without an
-evidence path is a defect, not a detail.
+NAVIGATION & VERIFICATION
+- Prefer CodeGraph MCP tools when `.codegraph/` is present (index is kept live by the watcher—never re-index); otherwise use systematic Glob + Grep.
+- Every architectural claim MUST cite a real repository file path. Never guess APIs.
+- Every section must be present and non-empty; document unresolved items as explicit unknowns rather than omitting sections.
+- Downstream rule: The orchestrator will ask the user ONLY what this map could not answer.
 
-ACCEPTANCE
-The map is accepted only if every section is present and NON-EMPTY. Anything
-the survey could not determine is written down as an explicit unknown, not omitted —
-an omitted section is indistinguishable from an un-surveyed one.
-
-THEN: the orchestrator asks ONLY what the survey could not answer. Never
-interrogate the user with what a file already answers — quote the file and ask
-for confirmation instead.
-
-SIZING
-- SMALL: the main agent surveys directly — one agent, one pass.
-- MEDIUM/LARGE: 1–2 survey agents split by SUBSYSTEM (never by concern).
-  If a second agent is dispatched, give it a subsystem the first agent did
-  NOT cover, so the two never overlap.
-
-REUSE
-If a follow-up needs something this survey already established, CONTINUE THIS
-AGENT'S SESSION rather than dispatching a fresh one — a fresh agent re-reads
-what you already read, and may answer differently.
+SIZING & REUSE
+- SMALL: Main agent surveys in one pass.
+- MEDIUM / LARGE: 1–2 survey agents split strictly by disjoint SUBSYSTEM (zero file overlap).
+- Continue this agent's session for any follow-up questions covering the surveyed subsystem.

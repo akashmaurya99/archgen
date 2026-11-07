@@ -90,11 +90,86 @@ export function syncVendor({ root } = {}) {
   return { source, dest };
 }
 
+/**
+ * Compare the canonical skill tree with the vendored copy.
+ *
+ * The sync script's own header documents this gate as a MANUAL `diff -r`.
+ * A manual gate is a gate that gets skipped: the vendor tree is BUILD
+ * OUTPUT, and a stale copy means the published npm package ships an old
+ * SKILL.md while the repository shows the new one — with nothing failing.
+ *
+ * So the comparison is executable. It walks both trees the same way
+ * `syncVendor` writes them (OS junk and deploy-time stamps pruned, dev-only
+ * subtrees excluded) and compares the file SET and every file's CONTENT.
+ *
+ * @param {{root?: string}} opts repo root (defaults to this checkout's root)
+ * @returns {{ok: boolean, differences: string[], source: string, dest: string}}
+ */
+export function checkVendor({ root } = {}) {
+  const cliRoot = root ? resolve(root, 'packages', 'cli') : DEFAULT_CLI_ROOT;
+  const repoRoot = root ? resolve(root) : resolve(cliRoot, '..', '..');
+  const source = join(repoRoot, 'skill');
+  const dest = join(cliRoot, 'vendor', 'skills', 'archgen');
+
+  /** The files a tree contributes, keyed by slash-separated relative path. */
+  const collect = (base, rel = '') => {
+    const out = new Map();
+    const dir = join(base, rel);
+    if (!existsSync(dir)) return out;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const r = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        // Dev-only subtrees never ship, so they are not part of the payload.
+        if (DEV_ONLY_RELPATHS.some((d) => r === d || r.startsWith(`${d}/`))) continue;
+        for (const [k, v] of collect(base, r)) out.set(k, v);
+        continue;
+      }
+      if (OS_JUNK.has(entry.name) || entry.name === '.archgen-version') continue;
+      out.set(r, join(base, rel, entry.name));
+    }
+    return out;
+  };
+
+  const src = collect(source);
+  const dst = collect(dest);
+  const differences = [];
+
+  if (!existsSync(dest)) {
+    return { ok: false, differences: [`vendor tree missing: ${dest}`], source, dest };
+  }
+  for (const [rel, abs] of src) {
+    const other = dst.get(rel);
+    if (!other) {
+      differences.push(`missing from vendor: ${rel}`);
+      continue;
+    }
+    if (hashFile(abs) !== hashFile(other)) differences.push(`content differs: ${rel}`);
+  }
+  for (const rel of dst.keys()) {
+    if (!src.has(rel)) differences.push(`extra in vendor: ${rel}`);
+  }
+
+  return { ok: differences.length === 0, differences, source, dest };
+}
+
 function main() {
   const args = process.argv.slice(2);
   let root;
   const ri = args.indexOf('--root');
   if (ri !== -1 && args[ri + 1]) root = resolve(args[ri + 1]);
+
+  if (args.includes('--check')) {
+    const { ok, differences, dest } = checkVendor({ root });
+    if (!ok) {
+      console.error(`sync-vendor --check: the vendored skill is out of sync with skill/`);
+      for (const d of differences) console.error(`  ${d}`);
+      console.error('run `npm run sync` to regenerate it');
+      process.exit(1);
+    }
+    console.log(`sync-vendor --check: ${dest} matches skill/`);
+    return;
+  }
+
   const { dest } = syncVendor({ root });
   console.log(`synced skill -> ${dest} (mirror; pruned OS junk + stray version stamps + dev-only scripts/test; archgen.config.json hash verified)`);
 }

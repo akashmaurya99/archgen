@@ -1,17 +1,17 @@
-TASK: Review the plan in <slug dir> READ-ONLY.
-SCOPE: read-only. You NEVER edit files or code. You report findings only.
-DELIVERABLE: ONE message, in exactly this shape:
+TASK: Review the plan in `<slug dir>` READ-ONLY.
+SCOPE: Read-only. NEVER edit files or code; output findings only.
+DELIVERABLE: ONE message in this exact format:
 
 ```
 VERDICT: APPROVE
 COVERAGE:
 | area | status | reason |
 | --- | --- | --- |
-| edge cases per module | PASS | each module's matrix covers empty, error and overflow states |
-| task ordering & parallelization | N/A | the plan is a single sequential wave |
-| cross-module contracts | PASS | every shared type has one owning task |
-| enhancement opportunities | PASS | none material at this scope |
-| documentation completeness | PASS | every task has a plan section |
+| edge cases per module | PASS | matrices cover empty, boundary, authz, concurrency, retry, and i18n states |
+| task ordering & parallelization | N/A | single sequential wave |
+| cross-module contracts | PASS | every shared interface has a single owning task |
+| enhancement opportunities | PASS | none material for this scope |
+| documentation completeness | PASS | every task has a matching plan section |
 ```
 
 or
@@ -21,43 +21,27 @@ VERDICT: ISSUES
 COVERAGE:
 | area | status | reason |
 | --- | --- | --- |
-| ... every area below, every time ... |
+| ... all 5 areas above marked PASS, FAIL, or N/A ... |
 FINDINGS:
-1. plans/demo.md § API — the response type is named two ways — the client and the server will not agree — rename both to ApiResponse
-2. docs/prd.md § Grades — the requirement has no owning task — it will never be built — add a task owning the grade-read surface
+1. plans/demo.md § API — response type named inconsistently — client/server contract mismatch — standardize on ApiResponse
+2. docs/prd.md § Grades — FR-GRADE-02 has no owning task — requirement will not be built — add task owning grade-read endpoint
 ```
 
-EXAMINE — every area, every time:
-- edge cases per module
-- task ordering / parallelization sanity (waves vs real dependencies)
-- cross-module contract mismatches (interfaces, paths, naming)
-- enhancement recommendations
-- documentation completeness
+EXAMINE ALL 5 AREAS EVERY RUN:
+1. `edge cases per module`
+2. `task ordering & parallelization` (waves vs real `depends_on` edges)
+3. `cross-module contracts` (interfaces, paths, `naming_conventions`)
+4. `enhancement opportunities`
+5. `documentation completeness`
 
-THE COVERAGE TABLE IS MANDATORY, even when the verdict is APPROVE. It proves
-every area was examined rather than abandoned at the first finding. Mark each
-area PASS, FAIL or N/A with one line of reason — `N/A` is an answer, silence
-is not. A report with findings but no coverage table is INCOMPLETE.
+MANDATORY COVERAGE TABLE: Must appear in every report (even on `APPROVE`). Mark every area `PASS`, `FAIL`, or `N/A` with a 1-line reason. Omitting the table or any row makes the report INCOMPLETE.
 
-SIZING
-- SMALL: the main agent's self-review is acceptable when the harness has no
-  reviewer mechanism.
-- MEDIUM: 1 reviewer.
-- LARGE: 1 holistic reviewer on the strongest reasoning tier. A 2nd reviewer
-  ONLY if the plan is genuinely too large for one reviewer's context — split
-  by ARTIFACT/VOLUME then (e.g. plans vs docs), never by concern.
-
-ONE holistic reviewer analyzes ALL issues together: cross-issue reasoning
-catches contradictions a narrow per-concern slice misses, and one reviewer
-costs far fewer tokens than several. NEVER dispatch one sub-agent per
-individual issue, and NEVER split the areas above across agents.
-
-The dependency graph and the reference-integrity result are rendered in the
-CONTEXT block below — use them; do not re-fetch them.
+SIZING & CONTEXT
+- SMALL: Main-agent self-review permitted if no reviewer sub-agent exists.
+- MEDIUM: 1 holistic reviewer.
+- LARGE: 1 top-tier holistic reviewer (2nd allowed ONLY if context limits force splitting `plans/` vs `docs/`; never split by review area).
+- Use the pre-rendered dependency graph and doc-validation results in the `CONTEXT` block below—make zero `archgen_*` tool calls.
 
 BOUNDS
-- A "more review" approval authorizes EXACTLY ONE additional pass — never a
-  fresh loop, never more reviewers. The stage ends ONLY at zero findings or an
-  explicit user waiver on record.
-- The ORCHESTRATOR fixes the artifacts, re-runs validate + the verifier gate
-  after every change, and re-dispatches. Reviewers never fix.
+- A user "more review" approval grants EXACTLY ONE additional pass. The stage exits only on zero findings or an explicit user waiver.
+- The ORCHESTRATOR applies all fixes and re-runs `validate` + Verifier Gate; reviewers never edit files.

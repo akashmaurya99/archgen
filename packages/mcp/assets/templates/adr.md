@@ -1,8 +1,8 @@
 # NNNN. <decision title>
 Date: YYYY-MM-DD · Status: accepted
 ## Context
-<forces at play>
+<forces and constraints at play>
 ## Decision
-<what we chose>
+<chosen option and rationale>
 ## Consequences
-<positive / negative / neutral>
+<positive, negative, and neutral trade-offs>

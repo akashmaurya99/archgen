@@ -53,7 +53,10 @@ test('code-standards.md stays in the skill (workers may have no MCP tools)', () 
 test('the depth ladder and artifact-templates.md agree on the edge-case minimum', () => {
   const ref = read('artifact-templates.md');
   if (!ref) return;
-  assert.match(ref, /min 3 bullets each/, 'the reference must state the MEDIUM minimum');
+  // The pin must still carry the NUMBER, not just the phrase — that is the
+  // whole point of the gate: the reference and the ladder can never disagree
+  // about how many edge cases a MEDIUM task needs.
+  assert.match(ref, /Edge cases[^\n]*\b3\b/, 'the reference must state the MEDIUM minimum');
   assert.equal(ladder.classes.MEDIUM.minEdgeCasesPerTask, 3);
   assert.ok(ladder.classes.LARGE.minEdgeCasesPerTask >= 3);
   assert.equal(ladder.classes.SMALL.minEdgeCasesPerTask, 0);

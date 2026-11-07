@@ -1,31 +1,21 @@
-TASK: Investigate a recurring issue in this repository.
-TRIGGER: the user reports repetitive/recurring issues AFTER implementation waves
-completed. This is NOT a patch-fix task.
-SCOPE: read-only unless the brief says otherwise — you investigate and report.
+TASK: Investigate a recurring post-execution defect in this repository.
+TRIGGER: User reports repetitive/recurring issues AFTER implementation waves completed. This is NOT a patch-fix task.
+SCOPE: Read-only analysis and reporting (unless the brief explicitly authorizes edits).
 
-DELIVERABLE: all four, or the investigation is incomplete:
-1. ROOT CAUSE — one sentence naming the actual defect (not the symptom).
-2. EVIDENCE — files / lines / repro steps that prove it.
-3. BLAST RADIUS — which tasks and artifacts are affected.
-   Use `archgen_plan { action: 'impact', tasksYaml: <tasks.yaml>, target: <id-or-path> }`.
-4. REMEDIATION — routed through the NORMAL gates: new fix tasks get fresh ids
-   inheriting the affected task's ownership globs.
+DELIVERABLE — all four sections are MANDATORY:
+1. ROOT CAUSE: One sentence identifying the underlying defect (never merely the symptom).
+2. EVIDENCE: Exact file paths, line numbers, and reproduction steps proving the root cause.
+3. BLAST RADIUS: Affected tasks and artifacts computed via `archgen_plan { action: 'impact', tasksYaml: <tasks.yaml>, target: <id-or-path> }`.
+4. REMEDIATION: Proposed fix tasks (new task IDs inheriting affected `file_ownership` globs) routed through normal Verifier, Review, and User gates.
 
 SIZING
-- SMALL scope: the main agent investigates directly.
-- MEDIUM/LARGE: 1 investigator by default. A 2nd only when the suspected
-  cause genuinely spans disjoint subsystems — then split by SUBSYSTEM, never
-  by concern, and never let two investigators cover the same files.
+- SMALL: Main agent investigates directly.
+- MEDIUM / LARGE: 1 investigator by default. Dispatch a 2nd investigator ONLY when the suspected defect spans disjoint subsystems—split strictly by SUBSYSTEM with zero file overlap.
 
 DISCIPLINE
-- Read narrowly around the evidence — no whole-repo sweeps.
-- A patch-fix WITHOUT a root-cause statement is FORBIDDEN under this protocol.
-- Write your notes under <slug dir>/.agent/notes/<topic>.md and your
-  findings under <slug dir>/.agent/reports/investigate-<round>.md.
-  NEVER create ad-hoc folders at the repo root.
+- Read narrowly around evidence paths; avoid whole-repo sweeps.
+- Patch-fixing without a verified root-cause statement is FORBIDDEN.
+- Write working notes to `<slug dir>/.agent/notes/<topic>.md` and final report to `<slug dir>/.agent/reports/investigate-<round>.md`. Never create ad-hoc root directories.
 
 REUSE
-If a follow-up needs this investigation's context — a fix in the files you
-already read, a clarification, a re-check of your own conclusion — CONTINUE
-THIS AGENT'S SESSION. Never dispatch a fresh agent for the same question:
-it re-reads what you already read, and may reach a different conclusion.
+For any follow-up question, verification, or fix touching these files, CONTINUE THIS AGENT'S SESSION rather than spawning a new agent.

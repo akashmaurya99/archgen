@@ -101,7 +101,9 @@ test('read returns ONE section, not the whole document', () => {
   assert.ok(target, 'the interview reference must have a how-to-ask section');
   const read = readTopic('interview', { ...roots(), section: 'how-to-ask' });
   assert.equal(read.section, 'how-to-ask');
-  assert.match(read.text, /Tool-first, options-fallback/);
+  // Identify the section by its CONTENT, not by one fixed wording: the pin
+  // must survive a rewrite of the reference without going blind.
+  assert.match(read.text, /Recommendation-first/);
   // The section must be materially smaller than the whole topic.
   const whole = readTopic('interview', roots());
   assert.ok(read.text.length < whole.text.length / 2, 'a section must cost far less than the whole topic');

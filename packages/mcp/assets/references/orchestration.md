@@ -1,392 +1,149 @@
 # Orchestration playbook — survey, verify, dispatch
 
-Sub-agent briefs and the wave-execution mechanics. The orchestrator (SKILL.md)
-calls into these sections; workers never read this file.
+Sub-agent briefs and wave-execution rules for the orchestrator (`SKILL.md`). Workers never read this file.
 
 ## §survey — brownfield codebase analysis brief
 
-**The brief is a tool output:** `archgen_plan { action: 'brief', kind: 'survey' }`.
-Dispatch 1–2 sub-agents with it verbatim — do not hand-write the prompt.
-
-Accept the map only if every section is present and non-empty.
+Dispatch 1–2 survey sub-agents with `archgen_plan{action:'brief', kind:'survey'}` verbatim. Accept `.archgen/<slug>/codebase-map.md` only when all required sections (`Structure`, `Modules`, `Conventions`, `Affected`) are present and non-empty.
 
 ## §verifier — plan review brief
 
-Dispatch AFTER artifacts exist and `archgen_plan{action:'validate'}` passes.
+Dispatch AFTER artifacts exist and `archgen_plan{action:'validate'}` returns `data.valid:true`.
 
 ### Agent tier — EVERY verifier dispatch
-
-Verification is judgment-heavy: a weak verifier misses real defects AND raises
-false positives — costing MORE rounds, not fewer. Dispatch on the strongest
-reasoning agent the harness offers (best agent present), or a mid/high-tier
-sub-agent scaled to plan complexity:
-
-- SMALL/MEDIUM plan → one strong (mid/high-tier) agent.
-- LARGE plan → the stronger/highest tier available.
-- NEVER an explore / research / quick / small / cheap / fast sub-agent,
-  whatever the harness calls its low-end tiers.
+- **SMALL / MEDIUM plan:** 1 strong mid/high-tier reasoning agent.
+- **LARGE plan:** 1 top-tier reasoning agent.
+- **FORBIDDEN:** Never use explore, quick, fast, or cheap/low-tier models—weak verifiers miss defects and cause extra rounds.
 
 ### ONE agent, the WHOLE plan, ONE pass
-
-**Never split the verifier across several agents.** One holistic verifier sees
-cross-issue contradictions that per-dimension slices miss, and it costs a
-fraction of several partial ones. If the plan is genuinely too large for one
-context, split by ARTIFACT/VOLUME then (plans vs docs) — never by concern,
-and never one agent per dimension.
-
-**One pass must find everything.** A verifier that reports the first issue it
-is confident about forces another round — another dispatch, another full
-read, another fix cycle. The brief therefore REQUIRES a coverage table: every
-dimension marked PASS / FAIL / N/A. The table is what proves the pass was
-exhaustive, so the orchestrator never has to send a second agent to find out
-what was never looked at.
+- **Never split verification across concerns.** One holistic verifier detects cross-artifact contradictions that sliced agents miss. (If a plan exceeds context limits, split strictly by artifact volume—e.g., `plans/` vs `docs/`—never by verification dimension).
+- **Exhaustive single pass.** The verifier MUST return a complete `COVERAGE:` table (`PASS` / `FAIL` / `N/A` for every dimension) so all issues surface in Round 1.
 
 ### Verification pass — FULL-DEPTH, every run
 
-**The brief is a tool output:** `archgen_plan { action: 'brief', kind: 'verifier' }`.
-Dispatch it verbatim — do not hand-write the prompt.
-
-The brief carries, already rendered:
-
-- the **evidence map** — every artifact and its section anchors, so the
-  verifier reads SECTIONS, never whole files;
-- the **dependency graph** (mermaid) and the **reference-integrity result** —
-  rendered into the brief, so the orchestrator spends no tool call fetching
-  them and the verifier never runs without them.
-
-Each verifier run executes ALL four steps:
-
-1. Runs `archgen_plan{action:'verify', tasksYaml, planDir}` — deterministic
-   floor: cycles, dangling refs, same-wave ownership overlap, missing acceptance
-   criteria, plan↔task coverage. It returns a verdict of `APPROVE` or `ISSUES`.
-2. When markdown artifacts exist under `.archgen/<slug>/`, runs
-   `archgen_docs{action:'validate', slugDir}` — must be clean (`ok:true`, zero
-   broken references) alongside the verifier's APPROVE; broken references block
-   APPROVAL.
-3. Reads plans + tasks.yaml and judges what the tools cannot (the full
-   checklist is in the brief):
-   - Are wave boundaries sensible (no artificial serialization)?
-   - Do acceptance criteria objectively verify (command or observable)?
-   - Edge cases covered per SKILL.md right-sizing class?
-   - Code-standards compliance plausible for the planned structure?
-   - the CONTRACT-COMPLETENESS sweep (functional coverage, security, data
-     integrity, state/lifecycle/recovery, resource limits, operational
-     entrypoints, metric traceability, consistency) — the brief lists every
-     dimension and says when to apply it. These failure classes are the TOP
-     cause of multi-round loops: round 1 MUST sweep the applicable dimensions
-     exhaustively.
-4. Returns the verdict AND the coverage table, in the shape the brief
-   specifies:
-
+Pass the output of `archgen_plan{action:'brief', kind:'verifier'}` verbatim (includes pre-rendered evidence map, Mermaid dependency graph, and `archgen_docs` validation status). The verifier executes all four steps:
+1. Runs `archgen_plan{action:'verify', tasksYaml, planDir}` $\rightarrow$ requires `APPROVE` (checks cycles, dangling refs, wave ownership overlap, acceptance criteria, bidirectional plan$\leftrightarrow$task coverage).
+2. Runs `archgen_docs{action:'validate', slugDir}` (if markdown exists) $\rightarrow$ requires `valid:true` (zero broken links/anchors).
+3. Audits judgment dimensions across `plans/` and `tasks.yaml`:
+   - Wave boundary sanity (no artificial serialization).
+   - Objectively verifiable acceptance criteria (runnable command or observable output).
+   - Scope-appropriate edge-case coverage (`SKILL.md` Hard Rule 3).
+   - `references/code-standards.md` compliance.
+   - **Contract-completeness sweep** across all applicable dimensions: `functional coverage`, `security & data protection`, `data integrity`, `state, lifecycle & recovery`, `resource limits & abuse`, `operational entrypoints`, `metric traceability`, and `consistency`.
+4. Outputs the strict deliverable format:
    ```
    VERDICT: APPROVE | ISSUES
    COVERAGE:
-   | dimension | status | reason |     <- every dimension, PASS / FAIL / N/A
-   FINDINGS:                             <- only when the verdict is ISSUES
-   1. file § section — what is wrong — why it matters — suggested fix
+   | dimension | status | reason |  <- every dimension marked PASS / FAIL / N/A
+   FINDINGS:                        <- present when VERDICT: ISSUES
+   1. file § section — defect — impact — concrete fix
    ```
-
-   A report with findings but NO coverage table is INCOMPLETE — treat it as
-   ISSUES and name the dimensions it did not reach.
+   *Any report missing the `COVERAGE:` table is incomplete—treat as `ISSUES` and require examination of omitted dimensions.*
 
 ### Efficiency — fewer rounds + zero duplicate work, NEVER shallower checks
-
-Every run stays FULL-DEPTH: both checks run to completion and the full
-judgment checklist applies each time. Efficiency comes ONLY from:
-
-- the coverage table (one exhaustive pass instead of a discovery loop);
-- capping automatic rounds at 2 (gate protocol below);
-- batching fixes per file (fix discipline below);
-- never re-fixing an already-resolved finding.
-
-"Efficient" NEVER means skipping or lightening the verifier, the docs
-integrity check, or any judgment-checklist item. It NEVER means telling the
-verifier to be shorter or to report less: a thin verifier costs MORE rounds,
-not fewer — every finding it holds back is another dispatch for somebody.
+Never weaken or skip checks. Efficiency comes strictly from: (1) the exhaustive coverage table, (2) capping automatic rounds at 2, (3) batching fixes per file, and (4) never re-applying failed edits.
 
 ### Fix discipline — batch per file, dedupe repeats
-
-On `ISSUES:` the orchestrator fixes ALL findings before re-dispatching:
-
-- Group findings BY FILE; apply each file's fixes in ONE edit pass — open
-  each file once per round, not once per finding.
-- Round N reports the SAME finding as round N-1 (same file + same issue) →
-  the prior fix did not land: re-read the file and fix it properly — never
-  re-apply the identical edit.
-- A finding the orchestrator cannot act on (a disagreement with the verdict)
-  is NOT fixed silently: it goes to the user with the finding quoted.
+When `VERDICT: ISSUES` returns:
+- Group findings by file and apply all fixes to a file in a single edit pass.
+- If Round $N$ reports the identical finding as Round $N-1$, re-read the target file and apply a structural fix rather than repeating the prior edit.
+- If you disagree with a verifier finding, surface it verbatim to the user rather than ignoring or silently overriding it.
 
 ### Gate protocol — 2 automatic rounds, then ask the user
-
-The initial VERIFIER GATE flow (GENERATE step 5). Rounds 1–2 run
-automatically; fix ALL findings between rounds (fix discipline above):
-
-1. Round 1: dispatch verifier. `APPROVE` → gate passed → §plan-review.
-   `ISSUES:` → fix ALL findings → round 2.
-2. Round 2: dispatch verifier.
-   - Clean `APPROVE` → ask the user once more, recommending NO, proceed.
-   - `ISSUES:` → fix ALL findings → ask the user once more, recommending
-     YES, one more pass.
-   Ask recommendation-first per §interview/how-to-ask: "Run the verifier
-   once more to make sure everything passes?"
-3. On YES → run another round; if it returns `ISSUES:`, fix all and ask again
-   — every round beyond 2 is user-approved. On NO → proceed to §plan-review.
-4. On NO with findings still outstanding and no verifier `APPROVE` on record:
-   surface every outstanding finding verbatim and require an EXPLICIT user
-   waiver — never proceed silently. Hard rule 2 stands: the plan MUST NOT
-   reach the USER GATE without at least one verifier `APPROVE` (or that
-   explicit waiver on the record). An earlier `APPROVE` on record → proceed
-   to §plan-review, noting the latest unverified fixes.
-
-### What to tell the user when a round is exhausted
-
-Quote the outstanding findings verbatim, and say what each round found — not
-how many tokens it cost. A cost number becomes a target the next run
-optimises for, and the cheapest thing to cut is the depth of the check.
-Depth is what makes the gate worth running.
+1. **Round 1:** Dispatch verifier. `APPROVE` $\rightarrow$ proceed to `§plan-review`. `ISSUES` $\rightarrow$ batch-fix all findings $\rightarrow$ Round 2.
+2. **Round 2:** Dispatch verifier.
+   - `APPROVE` $\rightarrow$ ask user recommendation-first: *"Run the verifier once more? 1. No, proceed (recommended) 2. Yes, run one more pass."*
+   - `ISSUES` $\rightarrow$ batch-fix all findings $\rightarrow$ ask user recommendation-first: *"Run the verifier once more to confirm fixes? 1. Yes, one more pass (recommended) 2. Waive remaining findings and proceed."*
+3. **Round 3+ (user-approved):** Each approval runs 1 pass.
+4. **Proceeding without `APPROVE`:** If the user declines another pass without a prior `APPROVE` on record, quote all unverified/outstanding findings verbatim and obtain an **explicit user waiver** before entering `§plan-review` (Hard Rule 2). Never cite token/cost numbers when reporting rounds.
 
 ## §plan-review — post-plan review stage
 
-Run AFTER the verifier returns APPROVE and BEFORE the user gate. Dispatch
-REVIEWER sub-agents sized by the right-sizing class — always ONE holistic
-review of the WHOLE plan, never per-concern splits:
+Run AFTER Verifier `APPROVE` and BEFORE the User Gate. Dispatch read-only reviewer(s) using `archgen_plan{action:'brief', kind:'review'}` verbatim (pre-renders dependency graph, doc validation, and evidence map; reviewer makes zero `archgen_*` tool calls):
+- **SMALL:** Main-agent self-review permitted if sub-agents are unavailable.
+- **MEDIUM:** 1 holistic reviewer.
+- **LARGE:** 1 top-tier holistic reviewer (2nd allowed ONLY if context size requires splitting `plans/` vs `docs/`; never split by concern).
 
-- SMALL: main-agent self-review acceptable if no reviewer mechanism exists.
-- MEDIUM: 1 reviewer.
-- LARGE: 1 holistic reviewer on the strongest reasoning tier. A 2nd reviewer
-  ONLY if the plan is genuinely too large for one reviewer's context — split
-  by ARTIFACT/VOLUME then (e.g. plans vs docs), never by concern.
-
-One holistic reviewer analyzes ALL issues together: cross-issue reasoning
-catches contradictions a narrow per-concern slice misses, and one reviewer
-costs far fewer tokens than several. NEVER dispatch one sub-agent per
-individual issue/concern.
-
-**The brief is a tool output:** `archgen_plan { action: 'brief', kind: 'review' }`.
-Dispatch it verbatim — it already carries the mermaid graph, the
-docs-validate result and the evidence map, rendered into it. The reviewer
-therefore makes NO archgen call of its own: it reads the sections it is
-pointed at and reports.
-
-Reviewers are read-only and report-only — they never edit artifacts or code.
-The orchestrator fixes the artifacts itself, re-runs validate +
-re-dispatches the verifier gate after every change.
-
-### Review loop — bounded passes, then ask
-
-The fix→re-verify cycle stays, but reviewer passes are countable and bounded:
-
-1. Pass 1: holistic review. Zero findings → stage done.
-2. Findings → fix ALL (batched per file), re-run validate + the verifier
-   gate → pass 2.
-3. Pass 2 still yields findings → do NOT spawn more reviewers. Consolidate
-   the outstanding findings and ask the user once, recommendation-first per
-   §interview/how-to-ask: "Run one more targeted review pass on the N
-   open findings? 1. One more pass (recommended) 2. Waive these findings and
-   proceed."
-4. On YES → run EXACTLY ONE more pass, then consolidate and STOP. Zero
-   findings → stage done; findings remain → surface them and require an
-   explicit user waiver before the user gate. On NO → record the explicit
-   waiver, proceed.
-
-A "more review" approval authorizes EXACTLY ONE additional pass — never a
-fresh loop, never more reviewers. The stage ends ONLY at zero findings or an
-explicit user waiver on record.
+Reviewers are strictly read-only. The orchestrator applies fixes, re-runs `validate` + Verifier Gate, and manages the bounded review loop:
+1. **Pass 1:** Zero findings $\rightarrow$ stage complete. Findings $\rightarrow$ batch-fix per file, re-run `validate` + Verifier Gate $\rightarrow$ Pass 2.
+2. **Pass 2:** Zero findings $\rightarrow$ stage complete. Findings remain $\rightarrow$ consolidate and ask user once (`§interview/how-to-ask`): *"Run one more targeted review pass on the N open findings? 1. One more pass (recommended) 2. Waive findings and proceed."*
+3. **Pass 3 (final):** On `1`, run **EXACTLY ONE** final pass, then stop. If findings remain, require an explicit user waiver before the User Gate.
 
 ## §investigate — root-cause protocol
 
-Triggered when the USER reports repetitive/recurring issues AFTER implementation
-waves completed. Do NOT patch-fix under this protocol.
+Triggered when the user reports recurring defects after wave execution. Pass `archgen_plan{action:'brief', kind:'investigate'}` verbatim:
+- **SMALL:** Main agent investigates directly.
+- **MEDIUM / LARGE:** 1–3 read-only investigator sub-agents split by disjoint suspected subsystem.
 
-**The brief is a tool output:** `archgen_plan { action: 'brief', kind: 'investigate' }`.
-Complexity-sized dispatch:
-
-- SMALL scope: main agent investigates directly.
-- MEDIUM/LARGE: 1–3 investigator sub-agents split by suspected subsystem.
-
-Investigators produce ALL four:
-
-1. Root cause statement — one sentence naming the actual defect.
-2. Evidence — files/lines/repro steps.
-3. Blast radius — which tasks/artifacts are affected
-   (`archgen_plan{action:'impact', tasksYaml, target}`).
-4. Remediation plan — routed through the normal gates: new fix tasks get fresh
-   ids inheriting the affected task's ownership globs.
-
-Token discipline: investigators read narrowly around evidence, not whole-repo
-sweeps. Patch-fixes without a root-cause statement are forbidden under this
-protocol.
+Mandatory 4-part deliverable (no patch-fixing allowed):
+1. **Root cause statement:** One sentence identifying the underlying defect.
+2. **Evidence:** Exact file paths, line numbers, and reproduction steps.
+3. **Blast radius:** Affected tasks/artifacts via `archgen_plan{action:'impact', tasksYaml, target}`.
+4. **Remediation plan:** New fix tasks with fresh IDs inheriting affected `file_ownership` globs, routed through normal Verifier/Review/User gates.
 
 ## §dispatch — wave execution
 
-Dispatch policy: dispatch each task to the harness's NATIVE sub-agent mechanism
-when available AND functional. If sub-agents do not exist on this platform, or
-the sub-agent fails, or lacks required tool permissions (read/write/etc.), the
-MAIN AGENT executes the task ITSELF — sequentially, respecting waves and
-ownership globs. Cross-harness/platform delegation is allowed ONLY through an
-explicit user gate (below). There is NO automatic fallback to other harnesses,
-platforms, or CLIs — ever.
+Dispatch tasks via the platform's native sub-agent mechanism (`archgen_setup{action:'harness_info'}`). If sub-agents are missing, fail to spawn, or lack file permissions, the **main agent executes tasks sequentially itself**. Never switch harnesses or spawn external CLIs without explicit user approval.
 
 ### WHEN to dispatch a sub-agent — and when NOT to
 
-**A sub-agent is a WORK unit, not a lookup.** Dispatching one to read a field
-the orchestrator can read with one tool call costs a whole agent — its
-prompt, its context, its exploration, its output — and returns less than the
-tool call did.
+**Sub-agents are for bounded implementation/analysis work, NEVER for state lookups:**
 
-| Need | Do this |
+| Operation | Executor |
 |---|---|
-| wave frontier, task list, task status | **MAIN AGENT, one MCP call.** `archgen_tasks{action:'next'\|'list'}`. NEVER a sub-agent. |
-| plan health, graph, coverage, impact | **MAIN AGENT, one MCP call.** `archgen_plan{...}`, `archgen_docs{...}`. NEVER a sub-agent. |
-| registry refresh, snapshot, CodeGraph status | **MAIN AGENT, one MCP call.** NEVER a sub-agent. |
-| ONE task's implementation | worker sub-agent — the contract IS the prompt. |
-| a brownfield survey | survey sub-agent — bounded, CodeGraph-first, one pass. |
-| the VERIFIER gate | verifier sub-agent — mandatory, holistic, ONE agent, ONE pass. |
-| the PLAN-REVIEW stage | reviewer sub-agent — mandatory, holistic, ONE agent. |
-| a recurring-issue investigation | investigator sub-agent — ONE by default. |
-
-**Status is never a sub-agent's job.** If a read is one tool call, the
-orchestrator makes it. A sub-agent dispatched to "check where we are" re-reads
-the whole plan to answer a question the resolver answers exactly.
+| Wave frontier, task list, task status (`archgen_tasks{next\|list}`) | **MAIN AGENT** (1 tool call; NEVER a sub-agent) |
+| Plan health, graph, coverage, impact (`archgen_plan`, `archgen_docs`) | **MAIN AGENT** (1 tool call; NEVER a sub-agent) |
+| Registry update, resume snapshot, CodeGraph status | **MAIN AGENT** (1 tool call; NEVER a sub-agent) |
+| Single task implementation | **Worker sub-agent** (prompt = `archgen_tasks{action:'contract'}`) |
+| Brownfield codebase survey | **Survey sub-agent** (`brief: 'survey'`, CodeGraph-first) |
+| Verifier / Plan-Review / Investigation | **Gate / Investigator sub-agent** (`brief: 'verifier'\|'review'\|'investigate'`) |
 
 ### Reuse the agent's session — NEVER re-dispatch for the same context
 
-**If a follow-up needs what an agent already knows, CONTINUE THAT AGENT'S
-SESSION.** Concretely:
-
-- a fix in files that agent already touched;
-- a clarifying question about its own conclusion;
-- a re-check of its own output after the orchestrator applied a fix.
-
-A fresh agent re-reads everything the previous one read, and may reach a
-different conclusion from the same evidence. Reuse is both cheaper and more
-consistent. Only dispatch a NEW agent when the work is genuinely independent
-— a different task, a different subsystem, a fresh context.
-
-The orchestrator keeps a **dispatch ledger** while a stage runs:
-`dispatchKey → agent session`. `archgen_tasks{action:'contract'}` returns the
-`dispatchKey` for the task, so the ledger is keyed by the tool's own value —
-never by a hand-written label.
+Maintain a **dispatch ledger** (`dispatchKey -> agent session` using the `dispatchKey` from `archgen_tasks{action:'contract'}`). If a task requires a follow-up fix, clarification, or re-verification in files the agent already touched, **continue that agent's existing session** rather than spawning a fresh agent.
 
 ### Parallel dispatch — no overlap, and never more than three at once
 
-**MAXIMUM 3 PARALLEL SUB-AGENTS AT A TIME.** Never four. If a wave has more
-than three tasks, dispatch them in batches of three and let the first batch
-settle before the next. Three is the point where the orchestrator can still
-track which agent owns which files and still read the results as they land;
-past that, ownership drift and lost findings cost more than the extra
-parallelism saves.
-
-Before dispatching two or more agents at once, ALL of these hold:
-
-1. **Same wave only.** A task's prerequisites are DONE before it starts.
-   `archgen_tasks{action:'next'}` returns the wave; dispatch only that wave.
-2. **Disjoint write footprints.** The resolver already rejects same-wave
-   tasks with overlapping `file_ownership` (`OWNERSHIP_CONFLICT`) — that is
-   the write-side guarantee. Do not work around it.
-3. **Disjoint READ footprints too, for gate agents.** A verifier or reviewer
-   reading a plan while a worker edits the same tree reads a moving target.
-   **Gate agents never run while a wave is in flight.**
-4. **One writer per path.** If two agents could write the same file — a
-   config, a lockfile, a shared entry point — they run sequentially, not in
-   parallel.
-5. **Record it.** Write the dispatch ledger entry BEFORE the spawn, so a
-   second dispatch of the same task is visibly a duplicate.
-6. **Count only LIVE agents.** The cap counts agents that are still running.
-   A finished agent waiting on a fix does not occupy a slot — but it still
-   holds its session, so it is reused rather than replaced (§dispatch/reuse).
+**HARD CAP: MAX 3 LIVE PARALLEL SUB-AGENTS.** Execute larger waves in batches of $\le 3$. Before parallel dispatch, verify all six invariants:
+1. **Same wave only:** Dispatch only tasks returned in the current wave by `archgen_tasks{action:'next'}`.
+2. **Disjoint write globs:** Enforced by `next` (`OWNERSHIP_CONFLICT` blocks overlap).
+3. **No concurrent gate agents:** Never run Verifier or Reviewer agents while worker waves are executing.
+4. **Single writer per shared file:** Serialize tasks that touch shared configs, lockfiles, or entrypoints.
+5. **Ledger pre-registration:** Record `dispatchKey` in the dispatch ledger BEFORE spawning.
+6. **Live-agent counting:** Completed/paused sessions awaiting follow-up do not count against the 3-agent active cap.
 
 ### Native sub-agents (preferred)
-
-- Claude Code: background Agent tool per task; add worktree isolation for
-  tasks whose ownership might brush shared files.
-- Cursor: background subagents; request isolation when >2 parallel workers.
-- Antigravity: invoke_subagent async.
-- Codex: spawn_agent works but children can't nest — flatten the plan instead.
-- Gemini CLI: parallel @agents are hub-and-spoke only AND have no isolation →
-  use them ONLY for read-only/research waves unless wrapping in worktrees.
+- **Claude Code:** Background `Agent` tool per task; use `git worktree` isolation when globs border shared files.
+- **Cursor:** Background subagents; enable isolation when running $>2$ parallel workers.
+- **Antigravity:** Async `invoke_subagent`.
+- **Codex:** `spawn_agent` (children cannot nest—flatten orchestration).
+- **Gemini CLI:** Parallel `@agents` lack write isolation—use only for read-only/survey waves unless wrapped in `git worktree`.
 
 ### When sub-agents are unavailable or fail
 
-Detect first — one of:
+If the sub-agent mechanism is missing, crashes at launch, or lacks read/write permissions (a **mechanism failure**, not a task failure):
+1. **Default:** Main agent executes the task sequentially itself, honoring wave order and `file_ownership`. No user prompt required.
+2. **Cross-harness fallback (USER GATE):** Only if the issue is platform-blocking, report the exact error, propose a specific alternative harness/CLI command, and wait for explicit user approval. Log the decision in the final report.
 
-- mechanism missing on this platform;
-- spawn failure (sub-agent never started / crashed at launch);
-- tool-permission gaps (sub-agent runs but cannot read/write/edit files).
-
-Then, in order:
-
-1. DEFAULT — main agent executes the task itself, sequentially, respecting
-   waves and file_ownership globs. No user permission needed for this.
-2. USER GATE — cross-harness/platform delegation ONLY. When the sub-agent
-   problem looks platform-specific, STOP and tell the user the concrete issue,
-   propose using another platform/harness for that specific task (name the
-   harness + its command shape), and proceed ONLY after the user explicitly
-   allows it. Log the user's choice in the final report.
-
-Never silently switch harnesses. Never ask permission to fall back for routine
-failures the main agent can simply do itself.
-
-A sub-agent MECHANISM failure (missing/spawn/permissions) is not a TASK
-failure — run the diagnose-and-ask flow above first. Mark a task failed only
-after execution was actually attempted (by sub-agent or main agent) and did
-not complete.
-
-Isolation for native sub-agents when ownership borders are tight:
-
+Optional worktree isolation for tight ownership boundaries:
 ```bash
 git worktree add ".worktrees/$id" -b "task-$id"
-# point the sub-agent's cwd at .worktrees/$id, then merge task-$id on success
+# run sub-agent in .worktrees/$id, then merge task-$id on completion
 ```
+
 ### Worker prompt contract
 
-**The contract is a tool output — never hand-assemble it:**
-
+Always generate the worker prompt via:
 ```
 archgen_tasks { action: 'contract', tasksYaml: <tasks.yaml>, taskId: <id> }
 ```
+It bundles: task ID/title, verbatim acceptance criteria, `file_ownership` globs, dependency neighborhood, `references/code-standards.md` path, inline normative rules (`MUST`/`SHOULD`/`NEVER`) + paths/indexes for all matched required skills, pre-located plan sections, `.agent/` workspace paths, completion protocol (`set_status` + `Skill compliance:` line + commit scope), worker prohibitions, CodeGraph usage directive, and `dispatchKey`.
 
-It assembles, from the same sources everything else reads:
-
-- the task id + title;
-- the acceptance criteria **VERBATIM**;
-- the `file_ownership` globs ("edit NOTHING outside these");
-- the dependency neighbourhood (prerequisites + what depends on this task);
-- the code-standards reference path;
-- the **capability skills** — EVERY matched required skill, each with its
-  **normative rules inline** (the MUST / SHOULD / NEVER lines), its file path
-  and its section index. The rules travel WITH the contract on purpose: a
-  path pointer is a file the worker may never open, and a skill that is never
-  opened is a skill that is never applied. The section index is the lens for
-  pulling more when the worker decides it needs it;
-- the **pre-located doc sections** — the sections that mention the task id, never
-  the whole plan;
-- the working-state location;
-- the finish procedure (set_status + the `Skill compliance:` line + commit scope);
-- the **rules the worker must NOT break** — do not read the archgen skill or
-  its references, do not run the archgen tool suite beyond the one set_status
-  call, edit nothing outside the owned files, do not talk to other workers;
-- the **CodeGraph directive**, when the project is indexed — the server
-  detects it, so the worker never has to work out whether it exists;
-- the `dispatchKey` — the ledger key for session reuse.
-
-**CODEGRAPH:** if `.codegraph/` is present, the worker must navigate with the
-CodeGraph MCP tools for anything needing understanding — never guess architecture
-from prose. The contract says so; the orchestrator does not need to.
-
-**Workers do NOT talk to each other;** coordination happens only through
-tasks.yaml state.
-
-**Before dispatching**, check the contract's `warnings`: a task with no acceptance
-criteria, no file ownership, or a REQUIRED capability skill that is not
-installed is not dispatchable — fix the plan (or install the skill) first.
+**Pre-dispatch check:** Inspect `contract.warnings`. Never dispatch a task with missing acceptance criteria, empty `file_ownership`, or an uninstalled required skill.
 
 ## Failure policy
 
-- Sub-agent mechanism failure (missing/spawn/permissions) → §dispatch
-  diagnose-and-ask flow FIRST. It is not yet a task failure.
-- Task exit ≠ 0 OR status=failed → leave it failed. NEVER auto-retry.
-- Downstream tasks stay blocked by the resolver (blockedByFailure).
-- Report to user: failed id, log path, proposed fix-task description.
-  [wait for user] A fix task gets fresh id, depends_on=[], ownership of the
-  failed task's globs.
+- **Mechanism failure** (missing/spawn crash/permissions) $\rightarrow$ follow fallback flow above (do not mark task `failed`).
+- **Task execution failure** (non-zero exit or unmet acceptance) $\rightarrow$ mark `failed` via `set_status`. **NEVER auto-retry.**
+- Downstream dependents are automatically held in `blockedByFailure` by the resolver.
+- Report failed task ID, logs, and a proposed fix task (`new ID`, `depends_on: []`, inheriting failed `file_ownership` globs) to the user. `[wait for user]`

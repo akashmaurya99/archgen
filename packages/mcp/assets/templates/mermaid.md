@@ -18,15 +18,9 @@ graph LR
 
 ## Per-module diagram (LARGE)
 
-For EACH `modules:` entry in architecture.yaml, one small flowchart of its
-internal components plus its `depends_on_modules` edges (arrow points from
-consumer to provider). Plus ONE integration diagram wiring all modules —
-edges between modules only, no internals. HARD LIMIT: ≤15 nodes per diagram;
-split into two diagrams rather than cramming. Internals stay ≤6 nodes per
-module.
+Rules: One flowchart per `modules:` entry in `architecture.yaml` showing internal components ($\le 6$ nodes) + inbound `depends_on_modules` edges (consumer $\rightarrow$ provider), plus ONE integration diagram wiring modules as atomic nodes. **Hard limit:** $\le 15$ nodes per diagram.
 
-Catalog module (internal + inbound depends_on edge):
-
+Catalog module (internals + inbound `depends_on` edge):
 ```mermaid
 graph LR
   subgraph catalog
@@ -36,8 +30,7 @@ graph LR
   checkout -.->|depends_on CatalogApi| routes
 ```
 
-Integration (modules as atoms, mirrors depends_on_modules):
-
+Integration (module-level DAG mirroring `depends_on_modules`):
 ```mermaid
 graph LR
   accounts --> catalog
