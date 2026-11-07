@@ -127,25 +127,41 @@ map, and asks for approval.
 
 ## Token footprint
 
-The cost of *using* archgen is measured, not guessed. `npm run test:budget`
-reports it, and CI fails if the always-on footprint exceeds 13,400 tokens.
+Measured, not guessed. `npm run test:budget` reports it, and CI fails if the
+always-on footprint exceeds 13,400 tokens.
 
-| Surface | Tokens | When it is paid |
+**Every session pays this much, and no more:**
+
+| | Tokens |
+| --- | ---: |
+| `skill/SKILL.md` | 6,972 |
+| MCP tool catalog (9 tools) | 4,308 |
+| **Always-on total** | **11,280** — 34% of a 32k window |
+
+**Everything else is pulled per section, on demand.** The five protocol
+references are 12,431 tokens *in total*, but a typical section is **181
+tokens** — the agent loads the one it needs, never the file:
+
+| On demand | In total | What is actually read |
 | --- | ---: | --- |
-| `skill/SKILL.md` | 8,240 | Every session that triggers the skill |
-| MCP tool catalog (9 tools) | 4,308 | Every request to the server |
-| **Always-on total** | **12,548** | 38% of a 32k window |
-| Protocol references | 17,676 | On demand, per mode |
-| Capability registry + harness data | 10,652 | On demand, per tool call |
-| Dispatch briefs | 2,874 | Once per agent dispatch |
-| Artifact templates | 2,289 | Once per scaffold |
-| `references/code-standards.md` | 940 | Read by workers as a file |
+| A protocol reference | 12,431 | one section — **181 tokens** |
+| A capability skill's rules | — | **~160 tokens** |
+| A dispatch brief | 2,526 | the one being dispatched |
+| An artifact template | 2,412 | the one being scaffolded |
 
-The design rule is **a map, not a copy**: `archgen_docs{action:'digest'}`
-returns section anchors rather than document text, `archgen_refs` serves one
-section at a time, and the dispatch briefs carry the evidence map, the
-dependency graph and the reference-integrity result already rendered — so the
-agent pulls exactly what it needs and never re-reads a whole plan.
+Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
+and `archgen_skills` serve one section at a time, and a dispatch brief arrives
+with the evidence map, the dependency graph and the reference-integrity result
+already rendered — so the agent pulls what it needs and never re-reads a plan.
+
+What makes that hold is **behaviour**, not shorter prompts: one exhaustive
+verifier pass instead of a discovery loop, one agent per task instead of one
+per lookup, a worker contract that already carries the capability skill's
+rules, and a hard cap of three parallel sub-agents. Shrinking a prompt to
+save tokens costs a whole extra round — making the first answer complete
+does not.
+
+Since 0.0.7 the always-on footprint is **32% smaller** (13,103 → 11,280).
 
 ## Repository layout
 
