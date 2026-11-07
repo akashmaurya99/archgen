@@ -414,6 +414,17 @@
             "env"
           ],
           "urlField": "url"
+        },
+        "global": {
+          "path": "~/.copilot/mcp-config.json",
+          "key": "mcpServers",
+          "note": "$COPILOT_HOME replaces this location, and VS Code checks only one of them",
+          "stdioFields": [
+            "command",
+            "args",
+            "env"
+          ],
+          "urlField": "url"
         }
       },
       "mcpCli": "copilot mcp add; palette \"MCP: Add Server\"",

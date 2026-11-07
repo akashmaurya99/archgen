@@ -58,7 +58,7 @@ export function registerSetupTools(server) {
       }
 
       if (args.action === 'harnesses') {
-        const detected = detectHarnesses(registry, ctx.projectRoot, ctx.home);
+        const detected = detectHarnesses(registry, ctx.projectRoot, ctx.home, ctx.env);
         return {
           location,
           detected: detected.map((d) => ({
@@ -130,7 +130,7 @@ export function registerSetupTools(server) {
         // project's wiring in place, and vice versa.
         return {
           written: true,
-          ...uninstallArchgenMcp(ctx.projectRoot, ctx.home, location),
+          ...uninstallArchgenMcp(ctx.projectRoot, ctx.home, location, ctx.env),
         };
       }
 

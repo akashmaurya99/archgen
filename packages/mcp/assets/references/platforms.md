@@ -34,10 +34,18 @@ Never hand-edit the `AGENTS.md` registry table (`| Feature | Status | Updated |`
 Query `archgen_setup{action:'harness_info'}` for exact per-platform MCP schemas:
 - **Top-level keys vary:**
   - `mcpServers`: Claude Code, Cursor, Windsurf, Gemini CLI, Antigravity, Kiro, Trae
-  - `servers`: VS Code / GitHub Copilot
+  - `servers`: VS Code (the `.vscode/mcp.json` workspace format)
   - `mcp.servers.<id>`: OpenCode (nested under `mcp.servers`, never flat `mcp.<id>`)
   - `context_servers`: Zed
   - `[mcp_servers.<id>]`: Codex CLI (TOML)
+- **VS Code reads TWO formats.** The VS Code format is `servers` in
+  `.vscode/mcp.json`; the PORTABLE format is `mcpServers` in the Copilot
+  user's `mcp-config.json` — `$COPILOT_HOME/mcp-config.json`, or
+  `~/.copilot/mcp-config.json`. Copilot harness sessions read the portable
+  format directly, and `COPILOT_HOME` REPLACES the default (VS Code checks
+  only one of the two). The global wiring therefore goes to the Copilot home
+  in the portable format, so VS Code stable, VS Code Insiders, the Copilot
+  CLI and every workspace see the same server.
 - **Remote URL keys vary:** `url` vs `serverUrl` vs `httpUrl` (check `harness_info`).
 - **Automated wiring:** Use `archgen_setup{action:'install_mcp', approve:true}` rather than hand-editing config files.
 

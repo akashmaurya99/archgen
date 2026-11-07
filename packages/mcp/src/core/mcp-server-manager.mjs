@@ -112,9 +112,11 @@ export function wireArchgenMcp(opts) {
  * Remove the archgen MCP entries this server wrote.
  * @param {string} projectRoot
  * @param {string} [home]
+ * @param {'project'|'global'|'both'} [location]
+ * @param {Record<string, string|undefined>} [env]
  */
-export function uninstallArchgenMcp(projectRoot, home = homedir(), location = 'both') {
-  return removeWiring(projectRoot, 'archgen', home, location);
+export function uninstallArchgenMcp(projectRoot, home = homedir(), location = 'both', env = process.env) {
+  return removeWiring(projectRoot, 'archgen', home, location, env);
 }
 
 /**

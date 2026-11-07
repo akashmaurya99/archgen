@@ -320,12 +320,21 @@
     "vscode": {
       "label": "VS Code / Copilot",
       "codegraphTarget": null,
-      "detectHome": [],
+      "detectHome": [
+        ".copilot"
+      ],
       "detectProject": [
         ".vscode",
         ".github/copilot-instructions.md"
       ],
       "configs": {
+        "global": {
+          "path": "mcp-config.json",
+          "home": "copilot",
+          "format": "json",
+          "key": "mcpServers",
+          "entry": "stdio"
+        },
         "project": {
           "path": ".vscode/mcp.json",
           "format": "json",

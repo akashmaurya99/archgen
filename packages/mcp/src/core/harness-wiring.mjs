@@ -25,20 +25,100 @@ import { mergeEntry, parseJsonc, removeEntry } from './jsonc-config.mjs';
 import { invalidInput } from './errors.mjs';
 
 /**
+ * The Copilot home: `$COPILOT_HOME`, or `~/.copilot`.
+ *
+ * VS Code reads the Copilot CLI's MCP configuration from here, and the
+ * documentation is explicit that `COPILOT_HOME` REPLACES the default:
+ * "VS Code does not check both locations."
+ *
+ * So a user who sets it has their configuration in ONE place and the other
+ * is ignored. Writing to the ignored one is exactly the "the agent cannot
+ * see the MCP" failure — which is why the config location and the detection
+ * must both follow this same home.
+ *
+ * @param {Record<string, string|undefined>} [env]
+ * @param {string} [home]
+ * @returns {string}
+ */
+export function copilotHome(env = process.env, home = homedir()) {
+  const fromEnv = env.COPILOT_HOME;
+  if (typeof fromEnv === 'string' && fromEnv.trim() !== '') return resolve(fromEnv);
+  return join(home, '.copilot');
+}
+
+/**
  * Detect which harnesses are present in this environment.
  * @param {any} registry the harness-mcp.json content
  * @param {string} projectRoot
  * @param {string} [home]
+ * @param {Record<string, string|undefined>} [env]
  * @returns {Array<{id: string, label: string, atHome: boolean, atProject: boolean, spec: any}>}
  */
-export function detectHarnesses(registry, projectRoot, home = homedir()) {
+export function detectHarnesses(registry, projectRoot, home = homedir(), env = process.env) {
   const found = [];
   for (const [id, h] of Object.entries(registry.harnesses ?? {})) {
-    const atHome = (h.detectHome ?? []).some((m) => existsSync(join(home, m)));
+    const atHome =
+      (h.detectHome ?? []).some((m) => existsSync(join(home, m))) ||
+      // A harness whose configuration lives in a NAMED home (the Copilot
+      // home) is present when that home exists. `COPILOT_HOME` replaces the
+      // default, and the client checks only one of them — so detecting the
+      // default alone would miss a user who set the variable, and wiring the
+      // default alone would write a file the client never reads.
+      namedHomeExists(h, env, home);
     const atProject = (h.detectProject ?? []).some((m) => existsSync(join(projectRoot, m)));
     if (atHome || atProject) found.push({ id, label: h.label, atHome, atProject, spec: h });
   }
   return found;
+}
+
+/** True when the home a harness's configuration lives in exists. */
+function namedHomeExists(harness, env, home) {
+  for (const cfg of Object.values(harness.configs ?? {})) {
+    if (cfg.home === 'copilot' && existsSync(copilotHome(env, home))) return true;
+  }
+  return false;
+}
+
+/**
+ * Where a harness's configuration file lives — and the root it must stay
+ * inside.
+ *
+ * THREE BASES:
+ *   - `home: "copilot"` — the Copilot home (`$COPILOT_HOME`, or
+ *     `~/.copilot`), with the path relative to it.
+ *   - a path starting with `~/` — relative to the home directory.
+ *   - anything else — relative to the project root.
+ *
+ * The path and its containment root come from ONE function on purpose: when
+ * they were computed separately, the root said "the home directory" while
+ * the path said "$COPILOT_HOME" — and the write was then refused by the very
+ * guard meant to protect it.
+ *
+ * @param {any} cfg the registry's config entry
+ * @param {{projectRoot: string, home: string, env?: Record<string, string|undefined>}} ctx
+ * @returns {{path: string, root: string}} the absolute path and its root
+ */
+export function configTargetFor(cfg, ctx) {
+  const env = ctx.env ?? process.env;
+  if (cfg.home === 'copilot') {
+    const base = copilotHome(env, ctx.home);
+    return { path: join(base, cfg.path), root: base };
+  }
+  if (cfg.path.startsWith('~/')) {
+    return { path: expandHome(cfg.path, ctx.home), root: ctx.home };
+  }
+  return { path: join(ctx.projectRoot, cfg.path), root: ctx.projectRoot };
+}
+
+/**
+ * Where a harness's configuration file lives.
+ *
+ * @param {any} cfg the registry's config entry
+ * @param {{projectRoot: string, home: string, env?: Record<string, string|undefined>}} ctx
+ * @returns {string} the absolute path
+ */
+export function configPathFor(cfg, ctx) {
+  return configTargetFor(cfg, ctx).path;
 }
 
 /** Expand a leading `~/` to the home directory. */
@@ -361,9 +441,10 @@ export function wireServer(opts) {
     fallbackCommand = serverId,
     skipHarnesses = [],
     targets = null,
+    env = process.env,
   } = opts;
 
-  const detected = detectHarnesses(registry, projectRoot, home);
+  const detected = detectHarnesses(registry, projectRoot, home, env);
   // A caller that narrowed the set of harnesses must get exactly that set.
   // The native path honoured the filter and this one did not, so a request
   // for two harnesses wired ten.
@@ -383,9 +464,10 @@ export function wireServer(opts) {
       if (!cfg) continue;
       if (loc === 'global' && !d.atHome) continue;
       if (loc === 'project' && !d.atProject) continue;
-      const absPath = cfg.path.startsWith('~') ? expandHome(cfg.path, home) : join(projectRoot, cfg.path);
+      const target = configTargetFor(cfg, { projectRoot, home, env });
+      const absPath = target.path;
       const entry = buildEntry(entries, npxEntries, cfg.entry, binPath, fallbackCommand);
-      const root = loc === 'global' ? home : projectRoot;
+      const root = target.root;
       const res =
         cfg.format === 'toml'
           ? writeTomlConfig(absPath, serverId, entry, { approved, dryRun, root })
@@ -438,7 +520,7 @@ export function recordWiring(projectRoot, serverId, entries) {
  * @param {'project'|'global'|'both'} [location] which scope to remove
  * @returns {{removed: string[], skipped: string[]}}
  */
-export function removeWiring(projectRoot, serverId, home = homedir(), location = 'both') {
+export function removeWiring(projectRoot, serverId, home = homedir(), location = 'both', env = process.env) {
   const p = join(projectRoot, '.archgen', '.mcp-wiring.json');
   let manifest = null;
   try {
@@ -463,9 +545,11 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
       // The manifest is a file ON DISK in the project — repository content.
       // Its paths are therefore untrusted: a clone could ship a manifest
       // naming any file on the machine. A recorded path must resolve inside
-      // the project root or the user's home, or it is refused.
-      if (!pathIsWithin(abs, projectRoot) && !pathIsWithin(abs, home)) {
-        skipped.push(`${abs} (outside the project and home directories)`);
+      // the project root, the user's home, or the Copilot home — those are
+      // the three places a harness's own configuration may live.
+      const allowedRoots = [projectRoot, home, copilotHome(env, home)];
+      if (!allowedRoots.some((r) => pathIsWithin(abs, r))) {
+        skipped.push(`${abs} (outside the project, home and Copilot directories)`);
         continue;
       }
       if (!existsSync(abs)) {

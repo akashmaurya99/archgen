@@ -204,7 +204,7 @@ export async function runCli(argv, io = {}) {
       codegraph: codegraph ? { bin: codegraph.bin, version: codegraph.version } : null,
       mcpBinary: status.binary,
       mcpTargets: status.targets,
-      harnesses: detectHarnesses(registry, ctx.projectRoot, ctx.home).map((d) => d.id),
+      harnesses: detectHarnesses(registry, ctx.projectRoot, ctx.home, ctx.env).map((d) => d.id),
     };
     if (opts.json) {
       out(JSON.stringify(report, null, 2));
@@ -225,7 +225,7 @@ export async function runCli(argv, io = {}) {
       err('uninstall-mcp needs --yes (nothing was removed)');
       return 2;
     }
-    const res = uninstallArchgenMcp(ctx.projectRoot, ctx.home);
+    const res = uninstallArchgenMcp(ctx.projectRoot, ctx.home, 'both', ctx.env);
     if (opts.json) out(JSON.stringify(res, null, 2));
     else {
       out(`removed ${res.removed.length} config(s)`);
