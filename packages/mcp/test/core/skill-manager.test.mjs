@@ -16,6 +16,9 @@ import {
   loadSkill,
   listInstalled,
   followInstruction,
+  skillDirective,
+  skillRules,
+  skillSections,
   wholeWordSource,
   HARNESS_AGENT_IDS,
 } from '../../src/core/skill-manager.mjs';
@@ -156,7 +159,7 @@ test('every registry entry has the canonical shape and a unique id/slug', () => 
   const ids = new Set();
   const slugs = new Set();
   for (const entry of registry.skills) {
-    for (const key of ['id', 'slug', 'family', 'repo', 'purpose', 'matches', 'policy']) {
+    for (const key of ['id', 'slug', 'family', 'repo', 'purpose', 'matches', 'policy', 'domain']) {
       assert.ok(entry[key] !== undefined, `entry ${entry.id ?? '?'} is missing '${key}'`);
     }
     assert.ok(['required', 'on-demand'].includes(entry.policy), `bad policy on ${entry.id}`);
@@ -164,6 +167,130 @@ test('every registry entry has the canonical shape and a unique id/slug', () => 
     assert.ok(!slugs.has(entry.slug), `duplicate slug ${entry.slug}`);
     ids.add(entry.id);
     slugs.add(entry.slug);
+  }
+});
+
+// ── the rules that travel with the contract ─────────────────────────────────
+//
+// A design skill that is installed but never applied is the exact failure
+// the user reported: the work shipped, and nobody could prove the skill had
+// been followed. The contract now carries the RULES, so these three
+// functions are load-bearing.
+
+test('skillRules extracts the normative lines and drops the prose', () => {
+  const { rules, count } = skillRules(
+    [
+      '---',
+      'name: demo',
+      'description: A demo skill.',
+      '---',
+      '',
+      '# Demo',
+      '',
+      'This section explains how to use the skill.',
+      '',
+      '## Stack',
+      '',
+      '- MUST use Tailwind CSS defaults',
+      '- SHOULD use `cn` for class logic',
+      '- NEVER animate layout properties',
+      '- Use the installer',
+      '',
+      '## More prose',
+      '',
+      'Nothing normative here.',
+    ].join('\n'),
+  );
+  assert.equal(count, 3);
+  assert.match(rules, /\[Stack\] MUST use Tailwind CSS defaults/);
+  assert.match(rules, /\[Stack\] NEVER animate layout properties/);
+  // The non-normative bullet and the prose are gone.
+  assert.doesNotMatch(rules, /Use the installer/);
+  assert.doesNotMatch(rules, /Nothing normative/);
+  assert.doesNotMatch(rules, /A demo skill/);
+});
+
+test('skillRules does not treat code in a fence as a rule', () => {
+  const { count } = skillRules(['```ts', '// MUST NOT be read as a rule', '```', '', '- MUST be a rule'].join('\n'));
+  assert.equal(count, 1);
+});
+
+test('skillSections indexes the skill so the agent can pull one section', () => {
+  const sections = skillSections(
+    ['# Demo', '', 'intro', '', '## Stack', '', '- MUST use Tailwind', '', '## Install', '', 'run it'].join('\n'),
+  );
+  const bySlug = Object.fromEntries(sections.map((s) => [s.slug, s]));
+  assert.ok(bySlug.demo);
+  assert.ok(bySlug.stack);
+  assert.equal(bySlug.stack.normative, true, 'the Stack section holds a MUST');
+  assert.equal(bySlug.install.normative, false);
+});
+
+test('skillDirective is the ONE wording — and it never carries a placeholder', () => {
+  const line = skillDirective({ slug: 'baseline-ui', path: '/p/SKILL.md', domain: 'Design' });
+  assert.match(line, /^Design work: follow \/p\/SKILL\.md/);
+  assert.doesNotMatch(line, /<[^>]+>/);
+  // The historical name is the same function.
+  assert.equal(followInstruction({ slug: 'baseline-ui', path: '/p/SKILL.md', domain: 'Design' }), line);
+});
+
+test('a skill installed ABOVE the project root is found', () => {
+  // The old resolver looked at exactly ONE path, so a skill installed one
+  // level up was reported as "not installed" by the tool that installed it.
+  const s = sandbox();
+  try {
+    const nested = join(s.root, 'packages', 'app');
+    mkdirSync(join(s.root, '.agents', 'skills', 'baseline-ui'), { recursive: true });
+    writeFileSync(join(s.root, '.agents', 'skills', 'baseline-ui', 'SKILL.md'), '# base', 'utf8');
+    mkdirSync(nested, { recursive: true });
+
+    const found = findInstalledSkill(nested, 'baseline-ui', { home: s.home });
+    assert.equal(found.installed, true, 'the skill one level up must be found');
+    assert.equal(found.scope, 'project');
+    assert.match(found.path, /baseline-ui[/\\]SKILL\.md$/);
+  } finally {
+    rmSync(s.root, { recursive: true, force: true });
+  }
+});
+
+test('a skill installed under a harness directory is found', () => {
+  const s = sandbox();
+  try {
+    mkdirSync(join(s.root, '.claude', 'skills', 'baseline-ui'), { recursive: true });
+    writeFileSync(join(s.root, '.claude', 'skills', 'baseline-ui', 'SKILL.md'), '# base', 'utf8');
+    const found = findInstalledSkill(s.root, 'baseline-ui', { home: s.home });
+    assert.equal(found.installed, true);
+  } finally {
+    rmSync(s.root, { recursive: true, force: true });
+  }
+});
+
+test('a skill installed globally is found', () => {
+  const s = sandbox();
+  try {
+    mkdirSync(join(s.home, '.agents', 'skills', 'baseline-ui'), { recursive: true });
+    writeFileSync(join(s.home, '.agents', 'skills', 'baseline-ui', 'SKILL.md'), '# base', 'utf8');
+    const found = findInstalledSkill(s.root, 'baseline-ui', { home: s.home });
+    assert.equal(found.installed, true);
+    assert.equal(found.scope, 'global');
+  } finally {
+    rmSync(s.root, { recursive: true, force: true });
+  }
+});
+
+test('a MISS says where it looked, so one call is enough to diagnose it', () => {
+  const s = sandbox();
+  try {
+    const found = findInstalledSkill(s.root, 'baseline-ui', { home: s.home });
+    assert.equal(found.installed, false);
+    assert.ok(found.searchedPaths.length > 0, 'a miss must report where it looked');
+
+    const loaded = loadSkill({ projectRoot: s.root, slug: 'baseline-ui', home: s.home });
+    assert.equal(loaded.loaded, false);
+    assert.ok(loaded.searchedPaths.length > 0);
+    assert.equal(loaded.hint, undefined);
+  } finally {
+    rmSync(s.root, { recursive: true, force: true });
   }
 });
 

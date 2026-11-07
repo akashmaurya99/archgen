@@ -3,10 +3,10 @@ import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { resolveWaves, listTasks } from '../core/wave-resolver.mjs';
 import { buildWorkerContract } from '../core/worker-contract.mjs';
-import { matchSkills, findInstalledSkill } from '../core/skill-manager.mjs';
+import { matchSkills, findInstalledSkill, skillRules, skillSections } from '../core/skill-manager.mjs';
 import { docIndex } from '../core/doc-navigator.mjs';
 import { parseYaml } from '../core/yaml.mjs';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { loadAsset } from '../context.mjs';
 import { setTaskStatus, STATUSES } from '../core/status-mutator.mjs';
 import { writeResumeSnapshot } from '../core/resume-snapshot.mjs';
@@ -96,9 +96,19 @@ export function registerTaskTools(server) {
           const tasksFile = ctx.contain(args.tasksYaml);
           const slugDir = args.slugDir ? ctx.contain(args.slugDir) : dirname(tasksFile);
 
-          // The capability skill: match the task, then resolve the INSTALLED
-          // path — the contract points at the file, not at a registry entry.
-          let capability = null;
+          // The capability skills: match the task, resolve the INSTALLED
+          // path, and carry the skill's NORMATIVE RULES into the prompt.
+          //
+          // EVERY matched required skill is included. The old code injected
+          // `required[0]` only — so a task matching the baseline AND the
+          // accessibility skill silently lost the second, even though it had
+          // been installed on purpose. An installed skill that no contract
+          // ever names is a skill that is never applied.
+          //
+          // The rules travel WITH the contract rather than as a path alone:
+          // a pointer is a file the worker may never open, and a worker that
+          // never opens it produces work that ignores the skill.
+          let capabilities = [];
           try {
             const registry = loadAsset('skill-registry.json');
             const raw = readFileSync(tasksFile, 'utf8');
@@ -110,17 +120,35 @@ export function registerTaskTools(server) {
               fileOwnership: task?.file_ownership ?? [],
             });
             const required = matched.filter((m) => m.policy === 'required');
-            if (required.length) {
-              const found = findInstalledSkill(ctx.projectRoot, required[0].slug, { home: ctx.home });
-              capability = {
-                slug: required[0].slug,
+            capabilities = required.map((m) => {
+              const found = findInstalledSkill(ctx.projectRoot, m.slug, { home: ctx.home });
+              const cap = {
+                slug: m.slug,
                 path: found.path,
-                purpose: required[0].purpose,
+                purpose: m.purpose,
+                domain: m.domain,
                 installed: found.installed,
+                rules: '',
+                sections: [],
               };
-            }
+              if (found.installed && found.path) {
+                try {
+                  const content = readFileSync(found.path, 'utf8');
+                  cap.rules = skillRules(content).rules;
+                  cap.sections = skillSections(content).map((s) => ({
+                    slug: s.slug,
+                    title: s.title,
+                    normative: s.normative,
+                  }));
+                } catch {
+                  cap.rules = '';
+                  cap.sections = [];
+                }
+              }
+              return cap;
+            });
           } catch {
-            capability = null; // a missing registry or an unparsed task must not break the contract
+            capabilities = []; // a missing registry or an unparsed task must not break the contract
           }
 
           // The doc sections that actually contain this task's contract — never
@@ -158,14 +186,12 @@ export function registerTaskTools(server) {
             taskId: args.taskId,
             slugDir,
             codeStandardsPath,
-            capability,
+            capabilities,
             docSections,
+            // CodeGraph is DETECTED here, not left for the worker to work
+            // out: the instruction only helps if it is in the prompt.
+            codegraph: existsSync(join(ctx.projectRoot, '.codegraph')),
           });
-          if (capability && !capability.installed) {
-            contract.warnings.push(
-              `capability skill '${capability.slug}' is REQUIRED but NOT installed — install it with archgen_skills{action:'install'} before dispatch`,
-            );
-          }
           return contract;
         }
         case 'next': {

@@ -228,6 +228,18 @@ export async function manageCodegraph(opts) {
         report.cli.action = 'would-install';
         return { bin: null, version: null };
       }
+      // NOT APPROVED — do not install.
+      //
+      // A global `npm install -g` is a write to the user's machine, exactly
+      // like a config write, and the tool documents the opposite of what the
+      // code used to do: "Without `approve: true` the tool prints its plan
+      // and writes nothing." The code installed a global program anyway.
+      // The gate now covers the install, so an unapproved call is a plan.
+      if (!approved) {
+        report.cli.action = 'would-install';
+        report.cli.detail = `not installed — pass approve:true to install ${CODEGRAPH_PACKAGE} globally`;
+        return { bin: null, version: null };
+      }
       // Official install path; always the latest published release.
       const inv = npmInvocation(['install', '-g', CODEGRAPH_PACKAGE], env);
       const r = await runAsync(inv.command, inv.args, { timeout: 600000, shell: inv.shell, env });

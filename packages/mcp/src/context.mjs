@@ -12,6 +12,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { invalidInput } from './core/errors.mjs';
 import { assertWithinRoot, containPath } from './core/fs-safety.mjs';
+import { GLOBAL_SKILL_ROOTS, PROJECT_SKILL_ROOTS, skillSearchPaths } from './core/skill-roots.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -39,34 +40,14 @@ export function serverVersion() {
 /**
  * Skill install locations, project-local first.
  *
- * Mirrors references/platforms.md § "Skill install paths". A drift test
- * (packages/mcp/test/core/skill-resolution.test.mjs) asserts this list stays
- * in sync with the doc, so the two can never silently diverge.
+ * Mirrors references/platforms.md § "Skill install paths". The canonical list
+ * lives in core/skill-roots.mjs so the archgen skill and the CAPABILITY
+ * skills are resolved against the same roots — one list, one answer.
  */
-export const PROJECT_SKILL_DIRS = [
-  '.agents/skills/archgen',
-  '.claude/skills/archgen',
-  '.github/skills/archgen',
-  '.gemini/skills/archgen',
-  '.cursor/skills/archgen',
-  '.opencode/skills/archgen',
-  '.codex/skills/archgen',
-  '.kiro/skills/archgen',
-  '.trae/skills/archgen',
-  '.windsurf/skills/archgen',
-];
+export const PROJECT_SKILL_DIRS = PROJECT_SKILL_ROOTS.map((r) => join(r, 'archgen'));
 
 /** User-global skill locations (same shape, under $HOME). */
-export const GLOBAL_SKILL_DIRS = [
-  '.agents/skills/archgen',
-  '.claude/skills/archgen',
-  '.config/opencode/skills/archgen',
-  '.gemini/skills/archgen',
-  '.copilot/skills/archgen',
-  '.codex/skills/archgen',
-  '.kiro/skills/archgen',
-  '.trae/skills/archgen',
-];
+export const GLOBAL_SKILL_DIRS = GLOBAL_SKILL_ROOTS.map((r) => join(r, 'archgen'));
 
 /**
  * Locate the installed archgen skill.
@@ -89,23 +70,12 @@ export function resolveSkill(projectRoot, home = homedir(), env = process.env) {
     if (existsSync(join(abs, 'SKILL.md'))) return { path: abs, version: readSkillVersion(abs), scope: 'override' };
   }
 
-  // Walk UP from the project root: a monorepo may install the skill at its root
-  // while the agent works in a nested package.
-  let dir = resolve(projectRoot);
-  for (;;) {
-    for (const rel of PROJECT_SKILL_DIRS) {
-      const abs = join(dir, rel);
-      if (existsSync(join(abs, 'SKILL.md'))) return { path: abs, version: readSkillVersion(abs), scope: 'project' };
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-
-  if (home) {
-    for (const rel of GLOBAL_SKILL_DIRS) {
-      const abs = join(home, rel);
-      if (existsSync(join(abs, 'SKILL.md'))) return { path: abs, version: readSkillVersion(abs), scope: 'global' };
+  // The project chain (walking UP) and the user-global roots come from the
+  // ONE skill-root list, so the archgen skill and the capability skills are
+  // resolved against the same places.
+  for (const candidate of skillSearchPaths(projectRoot, 'archgen', { home })) {
+    if (existsSync(join(candidate.dir, 'SKILL.md'))) {
+      return { path: candidate.dir, version: readSkillVersion(candidate.dir), scope: candidate.scope };
     }
   }
 

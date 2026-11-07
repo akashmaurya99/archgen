@@ -8,7 +8,9 @@ import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
 import { buildScaffold } from '../core/scaffold.mjs';
-import { loadBrief, remainingPlaceholders, BRIEF_KINDS } from '../core/briefs.mjs';
+import { loadBrief, remainingPlaceholders, renderBriefContext, BRIEF_KINDS } from '../core/briefs.mjs';
+import { resolveBriefScope, briefVars } from '../core/brief-scope.mjs';
+import { buildBriefContext } from '../core/brief-context.mjs';
 import { validateTasksYaml } from '../core/validator.mjs';
 import { verifyPlan, planCoverage } from '../core/verifier.mjs';
 import { planGraph } from '../core/plan-grapher.mjs';
@@ -26,7 +28,7 @@ const schema = z.object({
     .string()
     .optional()
     .describe('Absolute path to tasks.yaml. Required for validate, verify, impact and coverage.'),
-  planDir: z.string().optional().describe('Absolute path to the plans directory (verify, coverage).'),
+  planDir: z.string().optional().describe('Absolute path to the plans directory (verify, coverage, brief).'),
   target: z.string().optional().describe('Task id or artifact path (impact).'),
   node: z.string().optional().describe('Restrict the graph to one task neighborhood (graph).'),
   format: z.enum(['json', 'mermaid']).optional().describe('Graph output format. Defaults to json.'),
@@ -93,35 +95,47 @@ export function registerPlanTools(server) {
         }
         case 'brief': {
           if (!args.kind) throw invalidInput('brief requires kind', { action });
-          // Every placeholder the chosen brief uses is filled in, derived
-          // from ONE source (the slug) so the paths in a brief agree with
-          // each other. Previously only two of the seven were substituted,
-          // and the 'slug dir' one was given the bare slug — so a worker
-          // was told to read `checkout` and to write into `.archgen/<slug>/`
-          // with the placeholder still in it.
-          const slug = args.slug ?? null;
-          const vars = {};
-          if (slug) {
-            vars['slug'] = slug;
-            vars['slug dir'] = `.archgen/${slug}`;
-            vars['plans dir'] = `.archgen/${slug}/plans`;
-            vars['tasks.yaml'] = args.tasksYaml ?? `.archgen/${slug}/tasks.yaml`;
-          }
-          if (args.featureRequest) vars['feature request'] = args.featureRequest;
-          else if (slug) vars['feature request'] = slug;
-          if (args.topic) vars['topic'] = args.topic;
-          if (args.round !== undefined) vars['round'] = String(args.round);
+          // The artifact space is resolved from whatever the caller named:
+          // the tasks.yaml it already holds, the plans dir, or the slug alone.
+          //
+          // The slug is DERIVED from the path when the path implies it — the
+          // caller must not have to state the same fact twice. And every path
+          // the brief carries is ABSOLUTE, because a brief is read by a
+          // sub-agent whose working directory is not necessarily the
+          // project's: a project-relative path in a brief resolves against
+          // the SERVER's root and silently points at the wrong tree.
+          const scope = resolveBriefScope({
+            tasksYaml: args.tasksYaml ? ctx.contain(args.tasksYaml) : null,
+            planDir: args.planDir ? ctx.contain(args.planDir) : null,
+            slug: args.slug ?? null,
+            projectRoot: ctx.projectRoot,
+          });
+          const vars = briefVars(scope, {
+            featureRequest: args.featureRequest ?? null,
+            topic: args.topic ?? null,
+            round: args.round ?? null,
+          });
+
+          // The context the brief carries: the evidence map, the pre-rendered
+          // graph and the reference-integrity result.
+          //
+          // RENDERING THEM HERE (instead of telling the orchestrator to
+          // "attach" them) saves two tool calls per gate round, and removes a
+          // dependency on a call that used to fail on every plan.
+          const briefContext = buildBriefContext(args.kind, scope, ctx);
+
           const { kind, brief } = loadBrief(BRIEFS_DIR, args.kind, vars);
           // A brief with a placeholder still in it is a brief that would
           // send a worker looking for a directory named "<slug dir>".
           const missing = remainingPlaceholders(brief);
           if (missing.length) {
+            const passable = missing.filter((m) => m === 'topic' || m === 'round');
             throw invalidInput(
-              `brief '${kind}' needs ${missing.join(', ')} — pass slug${missing.includes('topic') ? ', topic' : ''}${missing.includes('round') ? ', round' : ''}`,
+              `brief '${kind}' is missing ${missing.join(', ')} — pass ${passable.length ? passable.join(', ') : 'the missing values'}`,
               { action, kind, missing },
             );
           }
-          return { kind, brief };
+          return { kind, brief: `${renderBriefContext(briefContext)}\n${brief}`, scope };
         }
         case 'graph': {
           const input = args.tasksYaml ?? args.planDir;

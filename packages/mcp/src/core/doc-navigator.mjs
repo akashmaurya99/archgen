@@ -445,44 +445,128 @@ export function docIndex(input, opts = {}) {
 
   if (mode === 'section') {
     if (!sectionRef) throw invalidInput('section mode requires a path', {});
+
     const hash = sectionRef.indexOf('#');
     const filePart = hash === -1 ? sectionRef : sectionRef.slice(0, hash);
     const anchor = hash === -1 ? null : sectionRef.slice(hash + 1);
-    const candidates = [join(repoRoot, filePart), join(slugDir, filePart)];
-    const hit = candidates.find((p) => {
+
+    // The ref may name a FILE, a file#anchor, or a bare SECTION SLUG.
+    //
+    // The bare-slug form is not a convenience — it is REQUIRED for the
+    // digest -> section round trip to work. `digest` hands out
+    // `sections[].slug` (the GitHub-exact heading slug), so the obvious next
+    // call is `section: "<slug>"`. That call used to fail on EVERY plan,
+    // because the whole ref was treated as a FILE path and no file is named
+    // after a heading. The agent had to re-join `path` + '#' + `slug` by
+    // hand, and nothing — not the digest, not the schema, not archgen_help —
+    // said so.
+    const fileCandidates = [];
+    if (filePart) fileCandidates.push(join(repoRoot, filePart), join(slugDir, filePart));
+    if (fileScopeArg) fileCandidates.push(join(repoRoot, fileScopeArg), join(slugDir, fileScopeArg));
+
+    const hit = fileCandidates.find((p) => {
       try {
         return statSync(p).isFile();
       } catch {
         return false;
       }
     });
-    if (!hit) throw notFound(`cannot read section ${sectionRef} (missing or not a file)`, { section: sectionRef });
-    let hitReal;
-    try {
-      hitReal = realpathSync(hit);
-    } catch {
-      hitReal = resolve(hit);
+
+    if (hit) {
+      let hitReal;
+      try {
+        hitReal = realpathSync(hit);
+      } catch {
+        hitReal = resolve(hit);
+      }
+      if (!hitReal.startsWith(slugDir + sep)) {
+        throw invalidInput(`section ${sectionRef} is outside ${input}`, { section: sectionRef });
+      }
+      const doc = parsedDocAt(hit);
+      if (!doc) throw notFound(`cannot read section ${sectionRef} (unreadable)`, { section: sectionRef });
+      if (anchor) {
+        const section = findSection(doc, anchor);
+        if (!section) {
+          throw notFound(`section ${sectionRef}: no section '${anchor}' in ${filePart}`, {
+            section: sectionRef,
+            file: relFromRoot(hit),
+            available: buildSections(doc).map((s) => s.slug),
+          });
+        }
+        return {
+          mode,
+          data: {
+            path: relFromRoot(hit),
+            anchor: section.slug,
+            line: section.line,
+            endLine: section.endLine,
+            text: section.body,
+          },
+        };
+      }
+      return { mode, data: { path: relFromRoot(hit), text: doc.lines.join('\n') } };
     }
-    if (!hitReal.startsWith(slugDir + sep)) {
-      throw invalidInput(`section ${sectionRef} is outside ${input}`, { section: sectionRef });
+
+    // No file matched: the ref is a SECTION SLUG (possibly with a '#anchor'
+    // whose file part was empty). Resolve it against the documents.
+    const wanted = anchor && !filePart ? anchor : filePart;
+    if (!wanted) {
+      throw notFound(`cannot read section ${sectionRef} (missing or not a file)`, { section: sectionRef });
     }
-    const doc = parsedDocAt(hit);
-    if (!doc) throw notFound(`cannot read section ${sectionRef} (unreadable)`, { section: sectionRef });
-    if (anchor) {
-      const section = findSection(doc, anchor);
-      if (!section) throw notFound(`section ${sectionRef}: no section '${anchor}' in ${filePart}`, { section: sectionRef });
+
+    const { docs } = collectDocs();
+    const hits = [];
+    for (const doc of docs) {
+      const section = findSection(doc, wanted);
+      if (section) hits.push({ doc, section });
+    }
+
+    if (hits.length === 1) {
+      const { doc, section } = hits[0];
       return {
         mode,
         data: {
-          path: relFromRoot(hit),
+          path: relFromRoot(doc.abs),
           anchor: section.slug,
+          title: section.title,
           line: section.line,
           endLine: section.endLine,
           text: section.body,
         },
       };
     }
-    return { mode, data: { path: relFromRoot(hit), text: doc.lines.join('\n') } };
+
+    if (hits.length > 1) {
+      // Ambiguous: report the candidates, never guess. A wrong guess costs
+      // the agent a whole extra read cycle.
+      return {
+        mode,
+        data: {
+          ambiguous: true,
+          ref: wanted,
+          matches: hits.map(({ doc, section }) => ({
+            path: relFromRoot(doc.abs),
+            section: section.slug,
+            title: section.title,
+            line: section.line,
+            endLine: section.endLine,
+          })),
+          hint: 'the section slug matches more than one document — fetch it as path#anchor, e.g. demo/docs/prd.md#install',
+        },
+      };
+    }
+
+    // Nothing matched: name the available vocabulary, so one failed call is
+    // enough to recover — the same courtesy archgen_refs already gives.
+    const available = [];
+    for (const doc of docs) {
+      for (const s of buildSections(doc)) available.push(`${relFromRoot(doc.abs)}#${s.slug}`);
+    }
+    throw notFound(`no section '${wanted}' under ${slug}`, {
+      section: sectionRef,
+      available: available.slice(0, 50),
+      availableCount: available.length,
+    });
   }
 
   if (mode === 'map') {

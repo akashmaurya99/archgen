@@ -153,10 +153,91 @@ test('the capability skill is injected when one is resolved', () => {
       tasksYaml: tasks,
       taskId: 'C',
       slugDir: dir,
-      capability: { slug: 'baseline-ui', path: '/p/.agents/skills/baseline-ui/SKILL.md' },
+      capabilities: [
+        {
+          slug: 'baseline-ui',
+          path: '/p/.agents/skills/baseline-ui/SKILL.md',
+          domain: 'Design',
+          installed: true,
+          rules: '[Stack] MUST use Tailwind CSS defaults',
+          sections: [{ slug: 'stack', title: 'Stack', normative: true }],
+        },
+      ],
     });
-    assert.match(c.prompt, /Capability skill \(REQUIRED\)/);
+    assert.match(c.prompt, /Capability skills \(REQUIRED/);
     assert.ok(c.prompt.includes('/p/.agents/skills/baseline-ui/SKILL.md'));
+    // The RULES travel with the contract — a path pointer is a file the
+    // worker may never open, and a skill that is never opened is never used.
+    assert.ok(c.prompt.includes('MUST use Tailwind CSS defaults'));
+    // And the literal `<Domain>` placeholder must never ship again.
+    assert.doesNotMatch(c.prompt, /<Domain>/);
+    assert.doesNotMatch(c.prompt, /<skill>|<path>/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('EVERY matched capability skill is injected, not just the first', () => {
+  const { dir, tasks } = sandbox();
+  try {
+    const c = buildWorkerContract({
+      tasksYaml: tasks,
+      taskId: 'C',
+      slugDir: dir,
+      capabilities: [
+        { slug: 'baseline-ui', path: '/p/a/SKILL.md', domain: 'Design', installed: true, rules: 'rule A' },
+        { slug: 'fixing-accessibility', path: '/p/b/SKILL.md', domain: 'Accessibility', installed: true, rules: 'rule B' },
+      ],
+    });
+    assert.ok(c.prompt.includes('baseline-ui'), 'the first skill is missing');
+    assert.ok(c.prompt.includes('fixing-accessibility'), 'the second skill was silently dropped');
+    assert.ok(c.prompt.includes('rule A'));
+    assert.ok(c.prompt.includes('rule B'));
+    assert.equal(c.capabilities.length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a capability skill that is not installed makes the task undispatchable', () => {
+  const { dir, tasks } = sandbox();
+  try {
+    const c = buildWorkerContract({
+      tasksYaml: tasks,
+      taskId: 'C',
+      slugDir: dir,
+      capabilities: [{ slug: 'baseline-ui', path: null, domain: 'Design', installed: false }],
+    });
+    assert.equal(c.dispatchable, false);
+    assert.ok(c.warnings.some((w) => /baseline-ui/.test(w) && /not installed/i.test(w)));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the contract forbids reading the archgen skill and running the tool suite', () => {
+  const { dir, tasks } = sandbox();
+  try {
+    const c = buildWorkerContract({ tasksYaml: tasks, taskId: 'C', slugDir: dir });
+    // A worker that re-reads the orchestrator's protocol re-derives what the
+    // contract already says, and can drift from it.
+    assert.match(c.prompt, /Do NOT read the archgen skill/i);
+    assert.match(c.prompt, /Do NOT run the archgen tool suite/i);
+    // The one archgen call the worker DOES make.
+    assert.match(c.prompt, /set_status/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the CodeGraph directive is emitted when the project is indexed', () => {
+  const { dir, tasks } = sandbox();
+  try {
+    const without = buildWorkerContract({ tasksYaml: tasks, taskId: 'C', slugDir: dir });
+    assert.doesNotMatch(without.prompt, /CodeGraph/);
+    const withIt = buildWorkerContract({ tasksYaml: tasks, taskId: 'C', slugDir: dir, codegraph: true });
+    assert.match(withIt.prompt, /CodeGraph/);
+    assert.match(withIt.prompt, /Never re-index/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

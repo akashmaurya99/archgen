@@ -98,10 +98,18 @@ export function resolvePlanScope(input, projectRoot = null) {
 
 /**
  * Load + normalize the plan graph.
+ *
+ * The project root is an EXPLICIT parameter. It used to be read from `opts` —
+ * a name that exists only in the CALLER's scope — so every call to this
+ * function threw `ReferenceError: opts is not defined` and the whole
+ * `archgen_plan{action:'graph'}` action was dead on arrival. A module-level
+ * function must never read a variable from its caller's frame.
+ *
  * @param {string} input slug dir or tasks.yaml path
+ * @param {string|null} projectRoot the project root the artifact space must be inside
  */
-function loadPlan(input) {
-  const { root, slug, tasksFile } = resolvePlanScope(input, opts.projectRoot ?? null);
+function loadPlan(input, projectRoot = null) {
+  const { root, slug, tasksFile } = resolvePlanScope(input, projectRoot);
 
   let raw;
   try {
@@ -224,7 +232,7 @@ export function planGraph(input, opts = {}) {
   }
   if (status && !mermaid) throw invalidInput('status requires mermaid');
 
-  const plan = loadPlan(input);
+  const plan = loadPlan(input, opts.projectRoot ?? null);
   const { uniqueTasks, duplicatesCollapsed, quality, byId, prerequisites, dependents, waves, root, slug, tasksFile } = plan;
   const byIdAsc = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 

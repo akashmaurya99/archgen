@@ -254,22 +254,26 @@ Then follow the steps below; the § sections hold the detail.
    Fix until `data.valid:true` with zero errors; then
    `archgen_registry{action:'update', slug, status:'planned'}` (re-run after ANY
    later artifact update so AGENTS.md never goes stale).
-5. **VERIFIER GATE.** Dispatch a verifier sub-agent with
+5. **VERIFIER GATE.** Dispatch ONE verifier sub-agent with
    `archgen_plan{action:'brief', kind:'verifier'}` — the brief IS the prompt;
-   never hand-write it. APPROVE required from
+   never hand-write it. It carries the evidence map, the graph and the
+   docs-validate result already rendered. APPROVE required from
    `archgen_plan{action:'verify', tasksYaml, planDir}` plus — when markdown
    artifacts exist — zero broken references from `archgen_docs{action:'validate'}`.
-   Run it on the strongest reasoning agent present (never a quick/explore/cheap
-   tier). Fix ALL findings (batched per file) and re-verify: max 2 automatic
-   rounds, then ask the user once, recommendation-first, whether to run one more
-   pass. The gate protocol is §orchestration/gate-protocol.
-6. **PLAN-REVIEW.** Dispatch read-only reviewer(s) with
-   `archgen_plan{action:'brief', kind:'review'}` as the prompt, attaching
-   `archgen_plan{action:'graph', format:'mermaid', status:true}` +
-   `archgen_docs{action:'validate'}`. Size by scope class (§orchestration/plan-review).
-   YOU fix the artifacts, re-running validate + the verifier gate after every
-   change. Passes are bounded: a "more review" approval buys EXACTLY ONE more
-   pass, then consolidate and stop.
+   The verifier returns `VERDICT:` **plus a COVERAGE table** — every
+   dimension marked PASS/FAIL/N-A — so one exhaustive pass replaces a
+   discovery loop. Run it on the strongest reasoning agent present (never a
+   quick/explore/cheap tier). Fix ALL findings (batched per file) and
+   re-verify: max 2 automatic rounds, then ask the user once,
+   recommendation-first, whether to run one more pass. The gate protocol is
+   §orchestration/gate-protocol.
+6. **PLAN-REVIEW.** Dispatch ONE read-only reviewer with
+   `archgen_plan{action:'brief', kind:'review'}` as the prompt — it carries
+   the same rendered context, so the reviewer makes no tool call of its own.
+   Size by scope class (§orchestration/plan-review). YOU fix the artifacts,
+   re-running validate + the verifier gate after every change. Passes are
+   bounded: a "more review" approval buys EXACTLY ONE more pass, then
+   consolidate and stop.
 7. **USER GATE.** Present: artifact list, wave summary
    (`archgen_tasks{action:'next'}`), ownership map. Ask: "Approve to start work?"
    [wait for user]
@@ -309,6 +313,19 @@ Run from the target repo root where `.archgen/<slug>/` exists.
    `archgen_tasks{action:'set_status', taskId, status:'running'}`.
 3. **Dispatch** per §orchestration/dispatch. The mechanism, parallelism and
    isolation for THIS harness come from `archgen_setup{action:'harness_info'}`:
+   - **A sub-agent is a WORK unit, not a lookup.** Status, wave frontier,
+     task list, plan health, graph, registry — the MAIN AGENT makes those
+     calls itself. NEVER dispatch a sub-agent to read what one tool call
+     returns.
+   - **MAX 3 PARALLEL SUB-AGENTS AT A TIME.** A bigger wave runs in batches
+     of three.
+   - **NEVER dispatch two agents onto the same files.** Same wave, disjoint
+     `file_ownership`, one writer per path. Gate agents (verifier/reviewer)
+     never run while a wave is in flight.
+   - **REUSE the agent's session** for any follow-up that needs its context
+     (a fix in files it touched, a clarification, a re-check). Keep a
+     dispatch ledger keyed by the contract's `dispatchKey`; never dispatch a
+     fresh agent for the same task.
    - Mechanism missing, spawn failed, or lacks permissions → the MAIN AGENT
      EXECUTES THE TASK ITSELF, sequentially, respecting waves + ownership globs.
      No user permission needed to self-execute.
@@ -317,10 +334,10 @@ Run from the target repo root where `.archgen/<slug>/` exists.
    - One worker per task; the worker prompt =
      `archgen_tasks{action:'contract', tasksYaml, taskId}` — the assembled
      contract (acceptance VERBATIM, owned files, dependency neighbourhood, the
-     pre-located doc sections, the capability-skill follow-instruction). NEVER
-     hand-assemble it. Check its `warnings` before dispatching: a task with no
-     acceptance criteria or no file ownership is NOT dispatchable — fix the
-     plan first.
+     pre-located doc sections, the capability skills' RULES inline, the
+     CodeGraph directive). NEVER hand-assemble it. Check its `warnings` before
+     dispatching: a task with no acceptance criteria, no file ownership, or an
+     uninstalled REQUIRED skill is NOT dispatchable — fix the plan first.
 4. **Per-task closeout (Hard rule 6).** The moment EACH task finishes — same
    turn: verify `set_status done|failed` landed, mark tracker/todo completed,
    refresh AGENTS.md via `archgen_registry{action:'update'}`. Never let these lag

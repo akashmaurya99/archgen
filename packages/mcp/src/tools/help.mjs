@@ -27,7 +27,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 | \`verify\` | the deterministic verifier gate — returns APPROVE or ISSUES | tasksYaml, planDir |
 | \`coverage\` | which tasks the plans cover and which they miss | tasksYaml, planDir |
 | \`scaffold\` | the REQUIRED artifact set + skeletons for a scope class | scope, slug? |
-| \`brief\` | the dispatch brief for a sub-agent | kind |
+| \`brief\` | the dispatch brief for a sub-agent — carries the evidence map, the graph and the docs-validate result already rendered | kind, tasksYaml? |
 | \`graph\` | dependency graph; \`format:'mermaid'\` for a diagram | tasksYaml, node?, module?, format?, status? |
 | \`impact\` | direct + transitive dependents of a task id or artifact path | tasksYaml, target |
 
@@ -44,7 +44,8 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 - \`module\` cannot be combined with \`node\` or mermaid.
 - Whole-graph mermaid is refused above 250 nodes — scope it with \`node\` or \`module\`.
 - \`scaffold\` returns the artifact set a scope class MUST have — adding or dropping files is a right-sizing defect.
-- \`brief\` returns a ready-to-send sub-agent prompt (verifier | review | survey | investigate).`,
+- \`brief\` returns a ready-to-send sub-agent prompt (verifier | review | survey | investigate). It derives the slug from \`tasksYaml\` when you do not pass one, and every path in it is ABSOLUTE — so it works from any working directory. The verifier and review briefs carry the graph, the reference-integrity result and the evidence map rendered, so the sub-agent makes no tool call of its own.
+- The verifier and reviewer return \`VERDICT:\` plus a COVERAGE table (every dimension PASS / FAIL / N-A). A report with findings but no coverage table is INCOMPLETE.`,
 
   tasks: `# archgen_tasks
 
@@ -76,8 +77,10 @@ Dispatching the next wave while any of those lag is forbidden.
 - Moving a task OUT of \`done\` needs \`force: true\` — reopening completed work requires explicit intent.
 - \`next\` fails with CYCLE or OWNERSHIP_CONFLICT when the plan is broken; fix tasks.yaml, do not work around it.
 - \`blockedByFailure\` lists tasks excluded because an upstream task failed. They are not retried automatically.
-- \`contract\` is the worker prompt — use it instead of assembling one by hand. It carries the acceptance criteria VERBATIM, the owned files, the dependency neighbourhood, the pre-located doc sections and the capability-skill follow-instruction.
-- \`contract\` warns when a REQUIRED capability skill is not installed yet — install it before dispatching.`,
+- \`contract\` is the worker prompt — use it instead of assembling one by hand. It carries the acceptance criteria VERBATIM, the owned files, the dependency neighbourhood, the pre-located doc sections, EVERY matched capability skill with its RULES inline, the CodeGraph directive, and the rules the worker must not break.
+- \`contract\` warns when a REQUIRED capability skill is not installed yet — install it before dispatching.
+- \`contract\` returns a \`dispatchKey\`. Keep a ledger of \`dispatchKey → agent session\` so a follow-up CONTINUES that agent instead of starting a fresh one.
+- MAX 3 parallel workers at a time. A larger wave runs in batches of three.`,
 
   docs: `# archgen_docs
 
@@ -90,7 +93,7 @@ you need are usually a few hundred. \`digest\` gives you the section index, \`se
 | action | what it does | required args |
 |---|---|---|
 | \`digest\` | compact section index per document — start here | slugDir? |
-| \`section\` | one section (or one file) — \`path\` or \`path#anchor\` | section, slugDir? |
+| \`section\` | one section — a bare section slug, a \`path\`, or \`path#anchor\` | section, slugDir? |
 | \`map\` | the SECTIONS mentioning a token — "where is this talked about?" | token, slugDir? |
 | \`refs\` | every LINE mentioning a token | token, slugDir? |
 | \`index\` | full document overview with headings | slugDir? |
@@ -98,8 +101,10 @@ you need are usually a few hundred. \`digest\` gives you the section index, \`se
 
 **Gotchas**
 - \`map\` is section-level, \`refs\` is line-level. Use \`map\` to navigate, \`refs\` when you need exact lines.
+- \`section\` takes a BARE SECTION SLUG straight from \`digest\` — e.g. \`section:'non-functional-requirements'\`. It resolves the section across the documents. A slug that matches more than one document comes back as an \`ambiguous\` list, not a guess. \`path\` and \`path#anchor\` also work.
 - Anchors are validated against the target document's real heading slugs — a renamed section is a broken anchor, not a silent pass.
 - \`validate\` reports each broken reference once, at its first occurrence.
+- A section that is not found comes back with the list of available sections — one failed call is enough to recover.
 - \`slugDir\` defaults to the most recently modified \`.archgen/<slug>/\` under the project root.`,
 
   registry: `# archgen_registry
@@ -209,14 +214,17 @@ Matches a task against the capability-skill registry, installs EXACTLY the match
 | \`match\` | which capability skills a task needs (title + summary + file_ownership) | title?, summary?, fileOwnership? |
 | \`install\` | install ONE capability skill | skillId, harness?, global?, approve? |
 | \`installed\` | what is already installed for this project | — |
-| \`load\` | read a skill's SKILL.md for prompt injection | skillId |
+| \`load\` | read a skill's SKILL.md, its RULES, or ONE section of it | skillId, section? |
+| \`digest\` | the section index of an installed skill — the lens | skillId |
 | \`list\` | the registry | — |
 
 **Gotchas**
 - Installing needs \`approve: true\`. Without it you get the PLAN and nothing is written.
 - Exactly ONE skill is installed — never a bundle. A task that mentions "animation" gets the motion skill, not the whole UI family.
 - The installer writes \`<project>/.agents/skills/<slug>/SKILL.md\` — that is the file you point a worker at.
-- \`match\` reports \`required\` vs \`on-demand\`: a \`required\` match MUST be installed before dispatch.`,
+- \`match\` reports \`required\` vs \`on-demand\`: a \`required\` match MUST be installed before dispatch.
+- \`load\` returns the skill's NORMATIVE RULES (the MUST / SHOULD / NEVER lines) and its section index. The rules are what a worker must follow — pull them from here rather than re-reading the file.
+- A skill that is installed but never named in a worker contract is a skill that is never applied. \`archgen_tasks{action:'contract'}\` names EVERY matched required skill.`,
 
   refs: `# archgen_refs
 

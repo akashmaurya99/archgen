@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { skillSearchPaths } from './skill-roots.mjs';
 
 /**
  * Registry shape (see assets/skill-registry.json).
@@ -66,6 +67,7 @@ export function matchSkills(registry, task) {
         slug: entry.slug,
         repo: entry.repo,
         purpose: entry.purpose,
+        domain: entry.domain ?? entry.family ?? 'Capability',
         policy: entry.policy,
         matched,
       });
@@ -116,14 +118,30 @@ export function skillInstallPaths(projectRoot, slug, opts = {}) {
 
 /**
  * Is a capability skill already installed for this project?
- * @returns {{installed: boolean, path: string|null, scope: 'project'|'global'|null}}
+ *
+ * The SEARCH walks the same roots the archgen skill itself is resolved from
+ * (core/skill-roots.mjs): the project chain upward, across every harness
+ * directory, then the user-global roots.
+ *
+ * It used to look at exactly ONE path — `<projectRoot>/.agents/skills/<slug>/
+ * SKILL.md` — so a skill installed one level up, or under a harness-specific
+ * directory, was reported as "not installed" by the very tool that had just
+ * installed it. `archgen_skills{action:'load'}` then returned
+ * `loaded:false` for a skill that was sitting on disk.
+ *
+ * @returns {{installed: boolean, path: string|null, scope: 'project'|'global'|null, searchedPaths: string[]}}
  */
 export function findInstalledSkill(projectRoot, slug, opts = {}) {
-  const project = skillInstallPaths(projectRoot, slug, { global: false }).skillFile;
-  if (existsSync(project)) return { installed: true, path: project, scope: 'project' };
-  const global = skillInstallPaths(projectRoot, slug, { global: true, home: opts.home }).skillFile;
-  if (existsSync(global)) return { installed: true, path: global, scope: 'global' };
-  return { installed: false, path: null, scope: null };
+  const home = opts.home ?? homedir();
+  const searched = [];
+  for (const candidate of skillSearchPaths(projectRoot, slug, { home })) {
+    const file = join(candidate.dir, 'SKILL.md');
+    searched.push(file);
+    if (existsSync(file)) {
+      return { installed: true, path: file, scope: candidate.scope, searchedPaths: searched };
+    }
+  }
+  return { installed: false, path: null, scope: null, searchedPaths: searched.slice(0, 24) };
 }
 
 /**
@@ -271,20 +289,36 @@ export async function installSkill(opts) {
  * Load a skill's SKILL.md so it can be injected into a worker prompt.
  *
  * @param {{projectRoot: string, slug: string, home?: string}} opts
- * @returns {{loaded: boolean, path: string|null, scope: string|null, content: string|null, bytes: number}}
+ * @returns {{loaded: boolean, path: string|null, scope: string|null, content: string|null, bytes: number, searchedPaths: string[]}}
  */
 export function loadSkill(opts) {
   const found = findInstalledSkill(opts.projectRoot, opts.slug, { home: opts.home });
   if (!found.installed || !found.path) {
-    return { loaded: false, path: null, scope: null, content: null, bytes: 0 };
+    return {
+      loaded: false,
+      path: null,
+      scope: null,
+      content: null,
+      bytes: 0,
+      // Where the tool looked — so "not installed" is diagnosable in ONE call
+      // instead of two.
+      searchedPaths: found.searchedPaths ?? [],
+    };
   }
   let content;
   try {
     content = readFileSync(found.path, 'utf8');
   } catch {
-    return { loaded: false, path: found.path, scope: found.scope, content: null, bytes: 0 };
+    return { loaded: false, path: found.path, scope: found.scope, content: null, bytes: 0, searchedPaths: found.searchedPaths ?? [] };
   }
-  return { loaded: true, path: found.path, scope: found.scope, content, bytes: content.length };
+  return {
+    loaded: true,
+    path: found.path,
+    scope: found.scope,
+    content,
+    bytes: content.length,
+    searchedPaths: found.searchedPaths ?? [],
+  };
 }
 
 /**
@@ -303,9 +337,143 @@ export function listInstalled(opts) {
 }
 
 /**
- * The follow-instruction injected into a worker prompt (the registry's
- * canonical wording, so every worker gets the same contract).
+ * The ONE wording for "follow this capability skill".
+ *
+ * The wording used to exist in THREE places with three different texts —
+ * the worker contract, this module, and references/mcp-and-skills.md — and
+ * the contract's copy shipped the literal `<Domain>` placeholder into every
+ * worker prompt. One owner, one sentence, no placeholder.
+ *
+ * @param {{slug?: string, path?: string|null, domain?: string|null}} entry
+ * @returns {string}
+ */
+export function skillDirective(entry) {
+  const slug = entry?.slug ?? 'the skill';
+  const path = entry?.path ?? `.agents/skills/${slug}/SKILL.md`;
+  const domain = entry?.domain ?? 'Capability';
+  return `${domain} work: follow ${path} (installed via FETCH-SKILL) — apply its standards to every relevant decision.`;
+}
+
+/**
+ * The follow-instruction injected into a worker prompt.
+ *
+ * Kept as the historical name; it is now a thin alias of `skillDirective`,
+ * which is the single owner of the wording.
  */
 export function followInstruction(entry) {
-  return `Follow ${entry.path ?? `.agents/skills/${entry.slug}/SKILL.md`} for this work — apply its standards to every relevant decision.`;
+  return skillDirective(entry);
+}
+
+/**
+ * The NORMATIVE rules of a skill — the lines that carry a MUST, SHOULD,
+ * NEVER, ALWAYS, REQUIRED or DO NOT.
+ *
+ * WHY A SEMANTIC FILTER AND NOT A SIZE CAP: a cap is a guess about how much
+ * is enough, and a guess cuts a skill's rules in half — the worker then
+ * complies with the half it was shown. A rule filter is not a guess: it
+ * selects the lines that actually change a decision, and leaves the prose
+ * (the "How to use", the intro, the examples) behind, because prose does not
+ * change what a worker builds.
+ *
+ * The result is the skill's real operative content — complete, never
+ * truncated. How much of it reaches a given prompt is the AGENT's call: the
+ * worker contract carries the rules, and `archgen_skills{action:'load',
+ * section}` is the lens for pulling any single section of the skill when the
+ * agent decides it needs more.
+ *
+ * @param {string} text the skill's SKILL.md content
+ * @returns {{rules: string, count: number, headings: string[]}}
+ */
+export function skillRules(text) {
+  const lines = String(text ?? '').split('\n');
+  const rules = [];
+  const headings = [];
+  let heading = null;
+  let inFence = false;
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    // A fenced block is code, not a rule.
+    if (/^ {0,3}```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const h = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (h) {
+      heading = h[2];
+      headings.push(heading);
+      continue;
+    }
+    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (!bullet) continue;
+    const rule = bullet[1].trim();
+    if (!/\b(MUST|SHOULD|NEVER|ALWAYS|REQUIRED|DO NOT)\b/.test(rule)) continue;
+    rules.push(heading ? `[${heading}] ${rule}` : rule);
+  }
+  return { rules: rules.join('\n'), count: rules.length, headings };
+}
+
+/**
+ * The section index of a skill — the lens the agent drives.
+ *
+ * Same shape as `archgen_docs{action:'digest'}`: a map, not a copy. The
+ * agent sees every section of the skill and pulls exactly the one it needs.
+ *
+ * @param {string} text the skill's SKILL.md content
+ * @returns {Array<{slug: string, title: string, level: number, line: number, endLine: number, normative: boolean}>}
+ */
+export function skillSections(text) {
+  const lines = String(text ?? '').split('\n');
+  const headings = [];
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^ {0,3}```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const h = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (h) headings.push({ level: h[1].length, text: h[2], line: i + 1 });
+  }
+  const counts = new Map();
+  const out = [];
+  for (let i = 0; i < headings.length; i++) {
+    const h = headings[i];
+    const base = slugifyHeading(h.text);
+    if (!base) continue;
+    const n = counts.get(base) ?? 0;
+    counts.set(base, n + 1);
+    const slug = n === 0 ? base : `${base}-${n}`;
+    let endLine = lines.length;
+    for (let j = i + 1; j < headings.length; j++) {
+      if (headings[j].level <= h.level) {
+        endLine = headings[j].line - 1;
+        break;
+      }
+    }
+    const body = lines.slice(h.line - 1, endLine).join('\n');
+    out.push({
+      slug,
+      title: h.text,
+      level: h.level,
+      line: h.line,
+      endLine,
+      normative: /\b(MUST|SHOULD|NEVER|ALWAYS|REQUIRED|DO NOT)\b/.test(body),
+    });
+  }
+  return out;
+}
+
+/**
+ * GitHub-exact heading slug — the same rule the artifact lens uses, so a
+ * skill section slug and a plan section slug mean the same thing.
+ */
+function slugifyHeading(text) {
+  return String(text)
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+    .replace(/\s/g, '-');
 }

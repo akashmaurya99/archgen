@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { loadAsset, BRIEFS_DIR } from '../../src/context.mjs';
 import { platformCapabilities, detectHarness } from '../../src/core/platform-caps.mjs';
 import { loadBrief, loadAllBriefs, BRIEF_KINDS } from '../../src/core/briefs.mjs';
+import { ALLOWED_CALLS } from '../../src/core/brief-context.mjs';
 
 const caps = loadAsset('platform-capabilities.json');
 
@@ -101,9 +102,32 @@ test('the briefs reference the tools they depend on', () => {
   const all = loadAllBriefs(BRIEFS_DIR);
   assert.match(all.verifier, /archgen_plan/);
   assert.match(all.verifier, /archgen_docs/);
-  assert.match(all.review, /archgen_plan/);
   assert.match(all.survey, /CodeGraph/);
   assert.match(all.investigate, /archgen_plan/);
+  // The REVIEW brief depends on NO archgen call: the dependency graph and
+  // the reference-integrity result are rendered INTO the brief, so the
+  // reviewer never spends a call fetching them.
+  assert.doesNotMatch(all.review, /archgen_plan\s*\{/);
+  assert.doesNotMatch(all.review, /archgen_docs\s*\{/);
+});
+
+test('a brief only names the archgen calls it is allowed to make', () => {
+  // The allowed-call list is the single source of truth (core/brief-context
+  // .mjs). A brief that names a call outside its list is asking the
+  // sub-agent to re-derive a fact the brief already carries.
+  for (const kind of BRIEF_KINDS) {
+    const { brief } = loadBrief(BRIEFS_DIR, kind);
+    const allowed = ALLOWED_CALLS[kind] ?? [];
+    const calls = [...brief.matchAll(/archgen_(plan|docs|tasks|registry|codegraph|setup|ui|skills|refs)\s*\{/g)].map(
+      (m) => m[0].replace(/\s*\{$/, ''),
+    );
+    for (const tool of calls) {
+      assert.ok(
+        allowed.some((a) => a.startsWith(`${tool}{`)),
+        `the ${kind} brief names ${tool} but it is not in its allowed list`,
+      );
+    }
+  }
 });
 
 test('brief placeholders are substituted', () => {

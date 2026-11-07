@@ -26,10 +26,33 @@ sub-agent scaled to plan complexity:
 - NEVER an explore / research / quick / small / cheap / fast sub-agent,
   whatever the harness calls its low-end tiers.
 
+### ONE agent, the WHOLE plan, ONE pass
+
+**Never split the verifier across several agents.** One holistic verifier sees
+cross-issue contradictions that per-dimension slices miss, and it costs a
+fraction of several partial ones. If the plan is genuinely too large for one
+context, split by ARTIFACT/VOLUME then (plans vs docs) — never by concern,
+and never one agent per dimension.
+
+**One pass must find everything.** A verifier that reports the first issue it
+is confident about forces another round — another dispatch, another full
+read, another fix cycle. The brief therefore REQUIRES a coverage table: every
+dimension marked PASS / FAIL / N/A. The table is what proves the pass was
+exhaustive, so the orchestrator never has to send a second agent to find out
+what was never looked at.
+
 ### Verification pass — FULL-DEPTH, every run
 
 **The brief is a tool output:** `archgen_plan { action: 'brief', kind: 'verifier' }`.
 Dispatch it verbatim — do not hand-write the prompt.
+
+The brief carries, already rendered:
+
+- the **evidence map** — every artifact and its section anchors, so the
+  verifier reads SECTIONS, never whole files;
+- the **dependency graph** (mermaid) and the **reference-integrity result** —
+  rendered into the brief, so the orchestrator spends no tool call fetching
+  them and the verifier never runs without them.
 
 Each verifier run executes ALL four steps:
 
@@ -52,19 +75,34 @@ Each verifier run executes ALL four steps:
      dimension and says when to apply it. These failure classes are the TOP
      cause of multi-round loops: round 1 MUST sweep the applicable dimensions
      exhaustively.
-4. Returns EXACTLY one line verdict: `APPROVE` or `ISSUES:` + numbered list.
+4. Returns the verdict AND the coverage table, in the shape the brief
+   specifies:
+
+   ```
+   VERDICT: APPROVE | ISSUES
+   COVERAGE:
+   | dimension | status | reason |     <- every dimension, PASS / FAIL / N/A
+   FINDINGS:                             <- only when the verdict is ISSUES
+   1. file § section — what is wrong — why it matters — suggested fix
+   ```
+
+   A report with findings but NO coverage table is INCOMPLETE — treat it as
+   ISSUES and name the dimensions it did not reach.
 
 ### Efficiency — fewer rounds + zero duplicate work, NEVER shallower checks
 
 Every run stays FULL-DEPTH: both checks run to completion and the full
 judgment checklist applies each time. Efficiency comes ONLY from:
 
+- the coverage table (one exhaustive pass instead of a discovery loop);
 - capping automatic rounds at 2 (gate protocol below);
 - batching fixes per file (fix discipline below);
 - never re-fixing an already-resolved finding.
 
 "Efficient" NEVER means skipping or lightening the verifier, the docs
-integrity check, or any judgment-checklist item.
+integrity check, or any judgment-checklist item. It NEVER means telling the
+verifier to be shorter or to report less: a thin verifier costs MORE rounds,
+not fewer — every finding it holds back is another dispatch for somebody.
 
 ### Fix discipline — batch per file, dedupe repeats
 
@@ -75,6 +113,8 @@ On `ISSUES:` the orchestrator fixes ALL findings before re-dispatching:
 - Round N reports the SAME finding as round N-1 (same file + same issue) →
   the prior fix did not land: re-read the file and fix it properly — never
   re-apply the identical edit.
+- A finding the orchestrator cannot act on (a disagreement with the verdict)
+  is NOT fixed silently: it goes to the user with the finding quoted.
 
 ### Gate protocol — 2 automatic rounds, then ask the user
 
@@ -98,6 +138,13 @@ automatically; fix ALL findings between rounds (fix discipline above):
    explicit waiver on the record). An earlier `APPROVE` on record → proceed
    to §plan-review, noting the latest unverified fixes.
 
+### What to tell the user when a round is exhausted
+
+Quote the outstanding findings verbatim, and say what each round found — not
+how many tokens it cost. A cost number becomes a target the next run
+optimises for, and the cheapest thing to cut is the depth of the check.
+Depth is what makes the gate worth running.
+
 ## §plan-review — post-plan review stage
 
 Run AFTER the verifier returns APPROVE and BEFORE the user gate. Dispatch
@@ -116,8 +163,10 @@ costs far fewer tokens than several. NEVER dispatch one sub-agent per
 individual issue/concern.
 
 **The brief is a tool output:** `archgen_plan { action: 'brief', kind: 'review' }`.
-Dispatch it verbatim — it already carries the mermaid graph + docs-validate
-context to attach.
+Dispatch it verbatim — it already carries the mermaid graph, the
+docs-validate result and the evidence map, rendered into it. The reviewer
+therefore makes NO archgen call of its own: it reads the sections it is
+pointed at and reports.
 
 Reviewers are read-only and report-only — they never edit artifacts or code.
 The orchestrator fixes the artifacts itself, re-runs validate +
@@ -178,6 +227,75 @@ ownership globs. Cross-harness/platform delegation is allowed ONLY through an
 explicit user gate (below). There is NO automatic fallback to other harnesses,
 platforms, or CLIs — ever.
 
+### WHEN to dispatch a sub-agent — and when NOT to
+
+**A sub-agent is a WORK unit, not a lookup.** Dispatching one to read a field
+the orchestrator can read with one tool call costs a whole agent — its
+prompt, its context, its exploration, its output — and returns less than the
+tool call did.
+
+| Need | Do this |
+|---|---|
+| wave frontier, task list, task status | **MAIN AGENT, one MCP call.** `archgen_tasks{action:'next'\|'list'}`. NEVER a sub-agent. |
+| plan health, graph, coverage, impact | **MAIN AGENT, one MCP call.** `archgen_plan{...}`, `archgen_docs{...}`. NEVER a sub-agent. |
+| registry refresh, snapshot, CodeGraph status | **MAIN AGENT, one MCP call.** NEVER a sub-agent. |
+| ONE task's implementation | worker sub-agent — the contract IS the prompt. |
+| a brownfield survey | survey sub-agent — bounded, CodeGraph-first, one pass. |
+| the VERIFIER gate | verifier sub-agent — mandatory, holistic, ONE agent, ONE pass. |
+| the PLAN-REVIEW stage | reviewer sub-agent — mandatory, holistic, ONE agent. |
+| a recurring-issue investigation | investigator sub-agent — ONE by default. |
+
+**Status is never a sub-agent's job.** If a read is one tool call, the
+orchestrator makes it. A sub-agent dispatched to "check where we are" re-reads
+the whole plan to answer a question the resolver answers exactly.
+
+### Reuse the agent's session — NEVER re-dispatch for the same context
+
+**If a follow-up needs what an agent already knows, CONTINUE THAT AGENT'S
+SESSION.** Concretely:
+
+- a fix in files that agent already touched;
+- a clarifying question about its own conclusion;
+- a re-check of its own output after the orchestrator applied a fix.
+
+A fresh agent re-reads everything the previous one read, and may reach a
+different conclusion from the same evidence. Reuse is both cheaper and more
+consistent. Only dispatch a NEW agent when the work is genuinely independent
+— a different task, a different subsystem, a fresh context.
+
+The orchestrator keeps a **dispatch ledger** while a stage runs:
+`dispatchKey → agent session`. `archgen_tasks{action:'contract'}` returns the
+`dispatchKey` for the task, so the ledger is keyed by the tool's own value —
+never by a hand-written label.
+
+### Parallel dispatch — no overlap, and never more than three at once
+
+**MAXIMUM 3 PARALLEL SUB-AGENTS AT A TIME.** Never four. If a wave has more
+than three tasks, dispatch them in batches of three and let the first batch
+settle before the next. Three is the point where the orchestrator can still
+track which agent owns which files and still read the results as they land;
+past that, ownership drift and lost findings cost more than the extra
+parallelism saves.
+
+Before dispatching two or more agents at once, ALL of these hold:
+
+1. **Same wave only.** A task's prerequisites are DONE before it starts.
+   `archgen_tasks{action:'next'}` returns the wave; dispatch only that wave.
+2. **Disjoint write footprints.** The resolver already rejects same-wave
+   tasks with overlapping `file_ownership` (`OWNERSHIP_CONFLICT`) — that is
+   the write-side guarantee. Do not work around it.
+3. **Disjoint READ footprints too, for gate agents.** A verifier or reviewer
+   reading a plan while a worker edits the same tree reads a moving target.
+   **Gate agents never run while a wave is in flight.**
+4. **One writer per path.** If two agents could write the same file — a
+   config, a lockfile, a shared entry point — they run sequentially, not in
+   parallel.
+5. **Record it.** Write the dispatch ledger entry BEFORE the spawn, so a
+   second dispatch of the same task is visibly a duplicate.
+6. **Count only LIVE agents.** The cap counts agents that are still running.
+   A finished agent waiting on a fix does not occupy a slot — but it still
+   holds its session, so it is reused rather than replaced (§dispatch/reuse).
+
 ### Native sub-agents (preferred)
 
 - Claude Code: background Agent tool per task; add worktree isolation for
@@ -235,21 +353,33 @@ It assembles, from the same sources everything else reads:
 - the `file_ownership` globs ("edit NOTHING outside these");
 - the dependency neighbourhood (prerequisites + what depends on this task);
 - the code-standards reference path;
-- the capability-skill follow-instruction, when the task matched one;
+- the **capability skills** — EVERY matched required skill, each with its
+  **normative rules inline** (the MUST / SHOULD / NEVER lines), its file path
+  and its section index. The rules travel WITH the contract on purpose: a
+  path pointer is a file the worker may never open, and a skill that is never
+  opened is a skill that is never applied. The section index is the lens for
+  pulling more when the worker decides it needs it;
 - the **pre-located doc sections** — the sections that mention the task id, never
   the whole plan;
 - the working-state location;
-- the finish procedure (set_status + the `Skill compliance:` line + commit scope).
+- the finish procedure (set_status + the `Skill compliance:` line + commit scope);
+- the **rules the worker must NOT break** — do not read the archgen skill or
+  its references, do not run the archgen tool suite beyond the one set_status
+  call, edit nothing outside the owned files, do not talk to other workers;
+- the **CodeGraph directive**, when the project is indexed — the server
+  detects it, so the worker never has to work out whether it exists;
+- the `dispatchKey` — the ledger key for session reuse.
 
 **CODEGRAPH:** if `.codegraph/` is present, the worker must navigate with the
 CodeGraph MCP tools for anything needing understanding — never guess architecture
-from prose.
+from prose. The contract says so; the orchestrator does not need to.
 
 **Workers do NOT talk to each other;** coordination happens only through
 tasks.yaml state.
 
 **Before dispatching**, check the contract's `warnings`: a task with no acceptance
-criteria or no file ownership is not dispatchable — fix the plan first.
+criteria, no file ownership, or a REQUIRED capability skill that is not
+installed is not dispatchable — fix the plan (or install the skill) first.
 
 ## Failure policy
 

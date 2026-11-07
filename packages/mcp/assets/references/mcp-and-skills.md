@@ -87,20 +87,41 @@ landing-page work REQUIRES the design skills (`ui-skills`, `policy:
    automated install would hang). Then VERIFY: the tool re-checks the
    filesystem and reports the path. Fetch happens ONCE per project; later runs
    are cache hits.
-4. **INTEGRATE** — inject the follow-instruction into (a) the planning context
-   so tasks reference the skill's standards, and (b) EVERY affected worker
-   prompt, using this sentence template:
 
-   > `<Domain> work: follow <skill-dir>/SKILL.md (installed via FETCH-SKILL) — apply its standards to every relevant decision.`
+   The tool searches the SAME roots the archgen skill itself is resolved from
+   — the project chain upward, across every harness directory, then the
+   user-global roots. A skill installed one level up, or under a
+   harness-specific directory, is found. (It used to look at exactly one
+   path, so a skill that had just been installed could be reported as "not
+   installed".)
+4. **INTEGRATE** — the rules go INTO the worker prompt, not beside it.
 
-   Concrete design instantiation for ui-skills:
+   `archgen_tasks { action: 'contract', tasksYaml, taskId }` does this for
+   you: it matches the task, resolves the installed path, extracts the
+   skill's **normative rules** (the MUST / SHOULD / NEVER lines) and writes
+   them into the contract, together with the file path and the skill's
+   section index. EVERY matched required skill is included — not just the
+   first.
 
-   > `Design work: follow <skill-dir>/SKILL.md (installed via FETCH-SKILL) — apply its component/motion/baseline standards to every visual decision.`
+   **Why the rules travel with the contract:** a pointer to a file is a file
+   the worker may never open. The worker is focused on the acceptance
+   criteria, and nothing forces it to open the skill — which is exactly how a
+   design skill gets installed and then never applied. The rules are the
+   operative content; the path stays as provenance for deeper reading; the
+   section index is the lens for pulling more when the worker decides it
+   needs it.
 
+   To see what a skill would contribute before dispatching, call
+   `archgen_skills { action: 'load', skillId }` — it returns the same rules
+   and the section index — or `archgen_skills { action: 'digest', skillId }`
+   for the section index alone, or `{ action: 'load', skillId, section }` for
+   exactly one section.
 5. **AUDIT** — workers MUST state in their completion report whether they
    followed the injected skill, one auditable line, e.g.:
-   `Skill compliance: followed ui-skills (<skill-dir>/SKILL.md)` or
-   `Skill compliance: NOT followed — <reason>`.
+   `Skill compliance: followed baseline-ui (/path/to/SKILL.md)` or
+   `Skill compliance: NOT followed —` followed by the reason. The contract
+   carries the concrete skill name and path, so the line never carries a
+   placeholder.
 6. **MISSING CAPABILITY** — unmatched-but-obvious domain (user says "make it
    pretty" with no registry entry): web-search reputable skill repos, propose
    to user, on approval append an entry to the registry (PR or local edit).
@@ -117,6 +138,7 @@ Canonical entry keys, in order:
 {
   "id": "ui-motion",
   "slug": "fixing-motion-performance",
+  "domain": "Motion",
   "family": "ui-skills",
   "repo": "ibelick/ui-skills",
   "purpose": "Motion and animation performance — jank-free transitions.",
@@ -125,6 +147,9 @@ Canonical entry keys, in order:
 }
 ```
 
+- `domain`: the label the worker contract uses ("Motion work: follow …"). It
+  is what replaces the old `<Domain>` placeholder, which shipped literally in
+  every worker prompt.
 - `matches[]`: case-insensitive WHOLE-WORD patterns tested against task titles,
   summaries and file_ownership during the FETCH-SKILL domain scan (step 1).
   Never raw substrings — see step 1 for why.
