@@ -37,12 +37,22 @@ export function npmInvocation(npmArgs, env = process.env) {
   return { command: isWin ? 'npm.cmd' : 'npm', args: npmArgs, shell: isWin };
 }
 
-/** Cross-platform `which` (PATHEXT on Windows). */
-export function whichOnPath(bin) {
+/**
+ * Cross-platform `which` (PATHEXT on Windows).
+ *
+ * The env is a PARAMETER, not an assumption: a caller may be searching a
+ * modified PATH (a test, a sandboxed HOME), and reading process.env behind
+ * its back would answer a different question than the one asked.
+ *
+ * @param {string} bin
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {string|null}
+ */
+export function whichOnPath(bin, env = process.env) {
   const exts = process.platform === 'win32'
-    ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';')
+    ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';')
     : [''];
-  const dirs = (process.env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
+  const dirs = (env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
   for (const d of dirs) {
     for (const ext of exts) {
       const p = join(d, bin + ext);

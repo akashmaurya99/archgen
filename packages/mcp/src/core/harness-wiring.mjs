@@ -484,7 +484,11 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
         }
         let next = start + 1;
         while (next < lines.length && !/^\s*\[/.test(lines[next])) next++;
-        writeFileAtomic(abs, [...lines.slice(0, start), ...lines.slice(next)].join('\n'), { root: projectRoot });
+        // A global config lives under the home directory, not the project —
+        // the same rule the JSON branch uses. With the project root here, the
+        // containment check REFUSED to uninstall a global Codex config.
+        const root = pathIsWithin(abs, projectRoot) ? projectRoot : home;
+        writeFileAtomic(abs, [...lines.slice(0, start), ...lines.slice(next)].join('\n'), { root });
         removed.push(abs);
       } else {
         // The removal is textual for a JSONC config: re-serializing the

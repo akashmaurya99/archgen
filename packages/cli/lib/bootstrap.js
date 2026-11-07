@@ -55,11 +55,16 @@ export function bootstrapServers(opts) {
   // same binary at a stable path, so a harness config can name an absolute
   // executable that keeps working — instead of pointing into npm's npx
   // CACHE, which `npm cache clean` removes out from under it.
+  //
+  // The server is refreshed to the version THIS CLI ships with: the CLI and
+  // the server are released together, so an older server is an older
+  // implementation of the very tools the CLI wires.
   let serverNote = '';
   if (global && !noMcp) {
     const version = packageRoot ? serverVersion(packageRoot) : 'latest';
     const installed = ensureGlobalServer({ env, version });
     serverNote = installed.note;
+    if (installed.detail) serverNote += ` (${installed.detail})`;
   }
 
   const resolved = resolveMcpBinary({ projectRoot: projectDir, env });
