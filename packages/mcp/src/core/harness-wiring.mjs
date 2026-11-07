@@ -21,6 +21,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { assertNotSymlink, assertWithinRoot, withFileLock, writeFileAtomic } from './fs-safety.mjs';
+import { mergeEntry, parseJsonc, removeEntry } from './jsonc-config.mjs';
 import { invalidInput } from './errors.mjs';
 
 /**
@@ -129,14 +130,38 @@ export function buildEntry(entries, npxEntries, entryKey, binPath, fallbackComma
   return entry;
 }
 
-/** Read + parse a JSON config; null when absent, {error} when unparseable. */
+/**
+ * Read + parse a JSON config; null when absent, {error} when unparseable.
+ *
+ * JSONC is accepted: opencode and Zed keep their settings as JSON-with-
+ * comments, and a config the writer cannot even read is a config it can
+ * never wire.
+ */
 export function readJsonConfig(abs) {
   if (!existsSync(abs)) return { data: null, existed: false };
   try {
-    return { data: JSON.parse(readFileSync(abs, 'utf8')), existed: true };
+    const { data, error } = parseJsonc(readFileSync(abs, 'utf8'));
+    if (error) return { data: null, existed: true, error };
+    return { data, existed: true };
   } catch (e) {
     return { data: null, existed: true, error: e.message };
   }
+}
+
+/**
+ * The nested object for a new config file.
+ *
+ * The key may be a DOTTED PATH: opencode keeps its servers at
+ * `mcp.servers.<id>`, so a flat `{ "mcp.servers": … }` would put the entry
+ * where opencode never looks — the server would be installed and invisible.
+ */
+function nestedConfig(key, serverId, entry) {
+  const parts = key.split('.');
+  let value = { [serverId]: entry };
+  for (let i = parts.length - 1; i >= 0; i--) {
+    value = { [parts[i]]: value };
+  }
+  return value;
 }
 
 /**
@@ -167,27 +192,36 @@ export function writeJsonConfig(abs, key, serverId, entry, opts) {
 /** The merge itself. Runs with the config file's lock held. */
 function mergeJsonConfig(abs, key, serverId, entry, opts) {
   const { approved, dryRun = false, root } = opts;
-  const { data, existed, error } = readJsonConfig(abs);
-  if (error) {
-    // A file we cannot parse is never rewritten.
-    return { status: 'skipped', detail: `not valid JSON (${error}) — left untouched`, path: abs };
+  const existed = existsSync(abs);
+  let raw = '';
+  if (existed) {
+    try {
+      raw = readFileSync(abs, 'utf8');
+    } catch (e) {
+      // An unreadable config is reported, never rewritten.
+      return { status: 'skipped', detail: `cannot read the config (${e.message}) — left untouched`, path: abs };
+    }
   }
-  const obj = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
-  const bucket = obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key]) ? obj[key] : {};
-  const existing = bucket[serverId];
-  if (existing && JSON.stringify(existing) === JSON.stringify(entry)) {
+  // A config that does not exist yet starts life as plain strict JSON; an
+  // existing one is merged in place, so a JSONC file keeps its comments.
+  const result = existed
+    ? mergeEntry(raw, key, serverId, entry)
+    : { text: JSON.stringify(nestedConfig(key, serverId, entry), null, 2) + '\n', changed: true };
+  if (result.reason) {
+    // A file we cannot merge into is never rewritten.
+    return { status: 'skipped', detail: `${result.reason} — left untouched`, path: abs };
+  }
+  if (!result.changed) {
     return { status: 'unchanged', path: abs };
   }
   // Approval gate: without approval nothing is written.
   if (dryRun || !approved) {
     return { status: 'planned', detail: dryRun ? 'would write (dry-run)' : 'would write (needs approval)', path: abs };
   }
-  bucket[serverId] = entry;
-  obj[key] = bucket;
   try {
     if (root) assertWithinRoot(root, abs);
     assertNotSymlink(abs);
-    writeFileAtomic(abs, JSON.stringify(obj, null, 2) + '\n', { root });
+    writeFileAtomic(abs, result.text, { root });
   } catch (e) {
     return { status: 'error', detail: e.message, path: abs };
   }
@@ -453,18 +487,23 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
         writeFileAtomic(abs, [...lines.slice(0, start), ...lines.slice(next)].join('\n'), { root: projectRoot });
         removed.push(abs);
       } else {
-        const { data } = readJsonConfig(abs);
-        if (!data || typeof data !== 'object') {
-          skipped.push(`${abs} (unreadable)`);
+        // The removal is textual for a JSONC config: re-serializing the
+        // parsed document would delete the user's comments.
+        let raw;
+        try {
+          raw = readFileSync(abs, 'utf8');
+        } catch (e) {
+          skipped.push(`${abs} (${e.message})`);
           continue;
         }
-        const bucket = data[entry.key];
-        if (!bucket || typeof bucket !== 'object' || !(serverId in bucket)) {
-          skipped.push(`${abs} (entry not found)`);
+        const result = removeEntry(raw, entry.key, serverId);
+        if (!result.changed) {
+          skipped.push(`${abs} (${result.reason ?? 'entry not found'})`);
           continue;
         }
-        delete bucket[serverId];
-        writeFileAtomic(abs, JSON.stringify(data, null, 2) + '\n', { root: projectRoot });
+        // A global config lives under the home directory, not the project.
+        const root = pathIsWithin(abs, projectRoot) ? projectRoot : home;
+        writeFileAtomic(abs, result.text, { root });
         removed.push(abs);
       }
     } catch (e) {

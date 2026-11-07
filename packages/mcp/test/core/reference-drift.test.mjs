@@ -98,7 +98,11 @@ test('the four known MCP top-level keys are the same in the registry and the ref
   const KNOWN = ['mcpServers', 'servers', 'mcp', 'context_servers'];
   const registryKeys = new Set();
   for (const h of Object.values(caps.harnesses)) {
-    for (const cfg of Object.values(h.mcpConfig)) registryKeys.add(cfg.key);
+    for (const cfg of Object.values(h.mcpConfig)) {
+      // A key may be a PATH (`mcp.servers`): the top-level key is what the
+      // file's shape is about.
+      registryKeys.add(String(cfg.key).split('.')[0]);
+    }
   }
   for (const key of KNOWN) {
     assert.ok(registryKeys.has(key), `the registry must use the '${key}' key`);

@@ -78,32 +78,56 @@ node -e '
 pass "all 10 tools are registered, each with a schema"
 
 step "7. The CLI installs the skill and wires the MCP server"
-# An isolated HOME: `init` wires BOTH the project and the global harness
-# configs, and the global one lives in the user's home. A smoke test must
-# never write to the real one.
+# An isolated HOME: `init` wires the GLOBAL harness configs, and those live
+# in the user's home. A smoke test must never write to the real one.
 export HOME="$WORK/home"
-mkdir -p "$HOME/.claude" "$PROJECT/.claude"
+mkdir -p "$HOME/.claude" "$HOME/.config/opencode" "$HOME/.codex" "$PROJECT/.claude"
 node_modules/.bin/archgen-skill init "$PROJECT" --no-codegraph > "$WORK/init.log" 2>&1 \
   || fail "init failed: $(cat "$WORK/init.log")"
 [ -f "$PROJECT/.agents/skills/archgen/SKILL.md" ] || fail "the skill was not installed"
 [ -L "$PROJECT/.claude/skills/archgen" ] || fail "the Claude adapter is not a symlink"
 pass "the skill store and the Claude symlink"
 
+step "7b. The PROJECT root carries no MCP configuration"
+for stray in .mcp.json .codex .gemini .cursor .zed .trae opencode.json opencode.jsonc; do
+  [ -e "$PROJECT/$stray" ] && fail "the project root carries '$stray' — the wiring belongs in the harness's own config"
+done
+pass "the project root is clean"
+
 step "8. The MCP server is wired into the detected harnesses"
 WIRED=0
-for f in "$PROJECT/.mcp.json" "$HOME/.claude.json"; do
+for f in "$HOME/.claude.json" "$HOME/.config/opencode/opencode.json" "$HOME/.codex/config.toml"; do
   [ -f "$f" ] || continue
-  node -e '
-    const fs = require("fs");
-    const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const s = cfg.mcpServers && cfg.mcpServers.archgen;
-    if (!s) { console.error("no archgen entry in " + process.argv[1]); process.exit(1); }
-    console.log("     " + process.argv[1] + " ->", JSON.stringify(s.command), JSON.stringify(s.args || []));
-  ' "$f" || fail "the archgen MCP entry is missing or wrong in $f"
+  case "$f" in
+    *.toml)
+      grep -q '\[mcp_servers\.archgen\]' "$f" || fail "no [mcp_servers.archgen] in $f"
+      echo "     $f -> [mcp_servers.archgen]"
+      ;;
+    *opencode*)
+      # opencode nests its servers at mcp.servers.<id>; an entry under `mcp`
+      # alone is invisible to the client.
+      node -e '
+        const fs = require("fs");
+        const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        const s = cfg.mcp && cfg.mcp.servers && cfg.mcp.servers.archgen;
+        if (!s) { console.error("no archgen entry at mcp.servers.archgen in " + process.argv[1]); process.exit(1); }
+        console.log("     " + process.argv[1] + " -> mcp.servers.archgen");
+      ' "$f" || fail "the archgen entry is missing or wrong in $f"
+      ;;
+    *)
+      node -e '
+        const fs = require("fs");
+        const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        const s = cfg.mcpServers && cfg.mcpServers.archgen;
+        if (!s) { console.error("no archgen entry in " + process.argv[1]); process.exit(1); }
+        console.log("     " + process.argv[1] + " -> mcpServers.archgen");
+      ' "$f" || fail "the archgen MCP entry is missing or wrong in $f"
+      ;;
+  esac
   WIRED=1
 done
 [ "$WIRED" -eq 1 ] || fail "no harness config carries the archgen MCP entry"
-pass "the MCP entry is present and well-formed"
+pass "the MCP entry is present, well-formed, and where the client reads it"
 
 step "9. The doctor agrees the install is healthy"
 node_modules/.bin/archgen-skill doctor "$PROJECT" --check > "$WORK/doctor2.log" 2>&1 || fail "the doctor reported a problem: $(cat "$WORK/doctor2.log")"

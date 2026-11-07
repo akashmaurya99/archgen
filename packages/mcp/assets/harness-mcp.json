@@ -47,7 +47,7 @@
         "serve",
         "--mcp"
       ],
-      "enabled": true
+      "disabled": false
     }
   },
   "npxEntries": {
@@ -79,7 +79,7 @@
         "serve",
         "--mcp"
       ],
-      "enabled": true
+      "disabled": false
     }
   },
   "archgenPackage": "archgen-mcp",
@@ -98,7 +98,7 @@
       "command": [
         "archgen-mcp"
       ],
-      "enabled": true
+      "disabled": false
     }
   },
   "archgenNpxEntries": {
@@ -124,7 +124,7 @@
         "-y",
         "archgen-mcp"
       ],
-      "enabled": true
+      "disabled": false
     }
   },
   "harnesses": {
@@ -194,13 +194,13 @@
         "global": {
           "path": "~/.config/opencode/opencode.json",
           "format": "json",
-          "key": "mcp",
+          "key": "mcp.servers",
           "entry": "opencodeLocal"
         },
         "project": {
           "path": "opencode.json",
           "format": "json",
-          "key": "mcp",
+          "key": "mcp.servers",
           "entry": "opencodeLocal"
         }
       }

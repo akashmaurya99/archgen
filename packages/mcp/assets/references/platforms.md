@@ -58,6 +58,10 @@ Four different top-level keys exist — NEVER assume `mcpServers`:
 `servers` (vscode/copilot) · `mcp` (opencode) · `context_servers` (zed). Codex
 CLI uses TOML (`[mcp_servers.<id>]`).
 
+OpenCode nests one level deeper: its servers live at `mcp.servers.<id>`, not
+`mcp.<id>`. The tool writes the shape the client actually reads — an entry
+under `mcp` alone is invisible to opencode.
+
 Remote URL fields vary per platform (`url` vs `serverUrl` vs `httpUrl`); the tool
 reports the exact field. Uncertainty triggers a web-search of the current
 official docs, never invention.

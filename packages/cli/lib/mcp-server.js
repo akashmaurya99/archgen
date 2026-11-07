@@ -12,7 +12,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 export const MCP_PACKAGE = 'archgen-mcp';
 
@@ -156,6 +156,33 @@ export function mcpInvocation(command, args, platform = process.platform, env = 
 }
 
 /**
+ * The project root an MCP call is made against.
+ *
+ * It MUST be an ABSOLUTE path.
+ *
+ * The child process resolves a relative root against ITS OWN working
+ * directory, so a root that was missing — or a property-name mismatch
+ * between the caller and the callee — did not fail. It silently wrote the
+ * harness configs, the CodeGraph index and the managed blocks into a
+ * directory named "undefined", next to the real project.
+ *
+ * The guard turns that class of mistake into an immediate, named failure.
+ *
+ * @param {unknown} projectRoot
+ * @param {string} fn the caller's name, for the message
+ * @returns {string} the absolute project root
+ */
+export function requireProjectRoot(projectRoot, fn) {
+  if (typeof projectRoot !== 'string' || projectRoot.trim() === '') {
+    throw new Error(`${fn}: projectRoot is required and must be an absolute path`);
+  }
+  if (!isAbsolute(projectRoot)) {
+    throw new Error(`${fn}: projectRoot must be an absolute path (got '${projectRoot}')`);
+  }
+  return resolve(projectRoot);
+}
+
+/**
  * Run one `archgen-mcp` subcommand and return its JSON output.
  *
  * @param {string[]} args the subcommand + flags
@@ -163,7 +190,8 @@ export function mcpInvocation(command, args, platform = process.platform, env = 
  * @returns {{ok: boolean, code: number|null, data: any, stdout: string, stderr: string, detail?: string}}
  */
 export function runMcp(args, opts = {}) {
-  const { projectRoot = process.cwd(), timeout = 600000, env = process.env } = opts;
+  const { timeout = 600000, env = process.env } = opts;
+  const projectRoot = requireProjectRoot(opts.projectRoot ?? process.cwd(), 'runMcp');
   const resolved = resolveMcpBinary({ projectRoot, env });
   const inv = mcpInvocation(resolved.command, [...resolved.args, ...args], process.platform, env);
 
@@ -199,17 +227,35 @@ export function runMcp(args, opts = {}) {
 }
 
 /**
+ * The arguments for the server's bootstrap call.
+ *
+ * Exported so the project root in them can be asserted directly: the bug
+ * this guards against was a property-name mismatch that put the literal
+ * string "undefined" in this exact position.
+ *
+ * @param {string} projectRoot
+ * @param {{location?: 'project'|'global'|'both', approved?: boolean}} [opts]
+ * @returns {string[]}
+ */
+export function bootstrapArgs(projectRoot, opts = {}) {
+  const { location = 'both', approved = true } = opts;
+  const root = requireProjectRoot(projectRoot, 'bootstrapArgs');
+  const args = ['bootstrap', '--project', root, '--location', location, '--json'];
+  if (approved) args.push('--yes');
+  return args;
+}
+
+/**
  * Wire the archgen MCP server into the detected harnesses and ensure CodeGraph.
  *
  * @param {{projectRoot: string, location?: 'project'|'global'|'both', approved?: boolean, env?: Record<string, string|undefined>}} opts
  * @returns {{ok: boolean, skipped?: string, detail?: string, report?: any}}
  */
 export function bootstrapMcp(opts) {
-  const { projectRoot, location = 'both', approved = true, env = process.env } = opts;
-  const args = ['bootstrap', '--project', projectRoot, '--location', location, '--json'];
-  if (approved) args.push('--yes');
+  const { location = 'both', approved = true, env = process.env } = opts;
+  const args = bootstrapArgs(opts.projectRoot, { location, approved });
 
-  const r = runMcp(args, { projectRoot, env });
+  const r = runMcp(args, { projectRoot: opts.projectRoot, env });
   if (r.detail) {
     return { ok: false, detail: `cannot run ${MCP_PACKAGE}: ${r.detail}` };
   }
@@ -225,7 +271,8 @@ export function bootstrapMcp(opts) {
  * @param {{projectRoot: string, env?: Record<string, string|undefined>}} opts
  */
 export function mcpDoctor(opts) {
-  const { projectRoot, env = process.env } = opts;
+  const { env = process.env } = opts;
+  const projectRoot = requireProjectRoot(opts.projectRoot, 'mcpDoctor');
   const r = runMcp(['doctor', '--project', projectRoot, '--json'], { projectRoot, env, timeout: 60000 });
   return { ok: r.ok, report: r.data, detail: r.detail ?? (r.data ? undefined : r.stderr.trim().split('\n')[0]) };
 }
@@ -235,7 +282,8 @@ export function mcpDoctor(opts) {
  * @param {{projectRoot: string, env?: Record<string, string|undefined>}} opts
  */
 export function uninstallMcp(opts) {
-  const { projectRoot, env = process.env } = opts;
+  const { env = process.env } = opts;
+  const projectRoot = requireProjectRoot(opts.projectRoot, 'uninstallMcp');
   const r = runMcp(['uninstall-mcp', '--project', projectRoot, '--yes', '--json'], { projectRoot, env, timeout: 60000 });
   return { ok: r.ok, report: r.data, detail: r.detail };
 }

@@ -29,8 +29,11 @@ test('the MCP config shapes use only the four known top-level keys', () => {
   const KNOWN = new Set(['mcpServers', 'servers', 'mcp', 'context_servers']);
   for (const [id, h] of Object.entries(caps.harnesses)) {
     for (const [loc, cfg] of Object.entries(h.mcpConfig)) {
+      // A key may be a PATH: opencode keeps its servers at `mcp.servers.<id>`,
+      // so the top-level key is still `mcp`.
+      const top = String(cfg.key).split('.')[0];
       assert.ok(
-        KNOWN.has(cfg.key) || cfg.key.startsWith('mcp_servers.'),
+        KNOWN.has(top) || cfg.key.startsWith('mcp_servers.'),
         `${id}.${loc} uses an unknown top-level key '${cfg.key}'`,
       );
     }

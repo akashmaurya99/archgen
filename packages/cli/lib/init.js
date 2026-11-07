@@ -205,10 +205,17 @@ export function initProject(projectDir, packageRoot, opts = {}) {
   //    harness AND ensure CodeGraph (its CLI, its MCP entry, the project
   //    index). Non-fatal by design: an offline machine still gets the skill
   //    installed.
+  //
+  //    The wiring is GLOBAL by default: the server is one binary for every
+  //    harness, and the harness configs live in the user's home. A project
+  //    that carries its own `.mcp.json`, `.codex/` and `.gemini/` is a
+  //    project that has to be re-wired in every clone. `--location project`
+  //    opts into the per-project wiring.
   if (codegraphAllowed || mcpAllowed) {
     const r = bootstrapServers({
       projectDir: root,
-      location: 'both',
+      packageRoot: packageRoot,
+      location: opts.location ?? 'global',
       log,
       env: opts.env,
       noCodegraph: !codegraphAllowed,

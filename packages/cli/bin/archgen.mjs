@@ -57,6 +57,9 @@ Usage:
                                   backed up to .archgen/.backup/ (never destroyed)
     [--no-codegraph]              skip the CodeGraph bootstrap
     [--no-mcp]                   skip wiring the archgen MCP server
+    [--location-project]          wire the PROJECT-local harness configs too
+                                   (by default only the global ones are wired,
+                                   so a project carries no MCP configuration)
   npx archgen-skill doctor [dir]      Health-check a project install: store integrity,
                                 version stamp, claude link, managed blocks,
                                 manifest. Repairs safe issues in place.
@@ -166,9 +169,17 @@ try {
       flag('--force');
       const noCodegraph = flag('--no-codegraph');
       const noMcp = flag('--no-mcp');
+      // The harness configs live in the user's home by default, so a project
+      // carries no MCP configuration of its own. `--location project` opts
+      // into wiring the project-local configs instead.
+      const location = flag('--location-project') ? 'project' : 'global';
       const dir = targetDir();
       assertNoUnknownFlags();
-      const r = initProject(dir, PACKAGE_ROOT, { codegraph: !noCodegraph, mcp: !noMcp });
+      const r = initProject(dir, PACKAGE_ROOT, {
+        codegraph: !noCodegraph,
+        mcp: !noMcp,
+        location,
+      });
       console.log('archgen: project ready (single-store layout)');
       console.log('  + store ' + r.storePath);
       if (r.claudeLink === 'created') console.log('  + link  .claude/skills/archgen -> ../../.agents/skills/archgen');

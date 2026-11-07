@@ -15,26 +15,31 @@
 // the caller (ok:false + detail) and rendered as a warning by it — never
 // thrown, and never swallowed.
 import { bootstrapMcp, resolveMcpBinary } from './mcp-server.js';
+import { ensureGlobalServer, serverVersion } from './global-server.js';
 
 /**
  * @param {{
  *   projectDir: string,
+ *   packageRoot?: string,
  *   location?: 'project'|'global'|'both',
  *   log?: (line: string) => void,
  *   env?: Record<string, string|undefined>,
  *   noCodegraph?: boolean,
  *   noMcp?: boolean,
+ *   global?: boolean,
  * }} opts
  * @returns {{ok: boolean, skipped?: string, detail?: string, report?: any}}
  */
 export function bootstrapServers(opts) {
   const {
     projectDir,
+    packageRoot = null,
     location = 'both',
     log = () => {},
     env = process.env,
     noCodegraph = false,
     noMcp = false,
+    global = true,
   } = opts;
 
   // ARCHGEN_CODEGRAPH=0 skips the bootstrap (no spawn, no network, no writes)
@@ -46,8 +51,20 @@ export function bootstrapServers(opts) {
     return { ok: true, skipped: '--no-mcp and --no-codegraph passed' };
   }
 
+  // ONE server for every harness. A global install gives every harness the
+  // same binary at a stable path, so a harness config can name an absolute
+  // executable that keeps working — instead of pointing into npm's npx
+  // CACHE, which `npm cache clean` removes out from under it.
+  let serverNote = '';
+  if (global && !noMcp) {
+    const version = packageRoot ? serverVersion(packageRoot) : 'latest';
+    const installed = ensureGlobalServer({ env, version });
+    serverNote = installed.note;
+  }
+
   const resolved = resolveMcpBinary({ projectRoot: projectDir, env });
   log(`  + mcp server: ${resolved.bin ?? 'npx -y archgen-mcp'} (${resolved.source})`);
+  if (serverNote) log(`  + mcp server: ${serverNote}`);
 
   if (noMcp) {
     log('  ! archgen MCP wiring skipped (--no-mcp)');
@@ -57,7 +74,7 @@ export function bootstrapServers(opts) {
   }
 
   const r = bootstrapMcp({
-    projectDir,
+    projectRoot: projectDir,
     location,
     approved: true,
     env,
