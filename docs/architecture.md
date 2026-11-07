@@ -55,15 +55,28 @@ containment **before** it mutates anything.
 
 No task executes until two gates pass, in order — never skipped, even for SMALL scopes:
 
-1. **Verifier gate.** A verifier sub-agent runs `archgen_plan{action:'verify'}` (deterministic floor: cycles, dangling refs, same-wave ownership overlap, missing acceptance criteria, plan↔task coverage), then judges what the tools cannot: wave-boundary sanity, objectively verifiable acceptance criteria, edge-case coverage, code-standards plausibility. It returns exactly one line: `APPROVE` or an issues list. The orchestrator fixes and re-dispatches until APPROVE.
+1. **Verifier gate.** A verifier sub-agent runs `archgen_plan{action:'verify'}` (deterministic floor: cycles, dangling refs, same-wave ownership overlap, missing acceptance criteria, plan↔task coverage), then judges what the tools cannot: wave-boundary sanity, objectively verifiable acceptance criteria, edge-case coverage, code-standards plausibility. It returns a verdict **plus a coverage table** — every dimension marked `PASS` / `FAIL` / `N/A` — so one exhaustive pass replaces a discovery loop. The orchestrator fixes and re-dispatches until APPROVE.
 2. **User gate.** Only after verifier approval does the orchestrator present the artifact list, wave summary (`archgen_tasks{action:'next'}`), and ownership map, and ask "Approve to start work?"
+
+Both gates are ONE holistic agent over the WHOLE plan — never one agent per
+dimension or per concern. Cross-issue reasoning catches contradictions a
+narrow slice misses, and one agent costs a fraction of several.
+
+The gate briefs are tool output, and they carry their context **rendered**:
+the evidence map (every artifact and its section anchors), the dependency
+graph, and the reference-integrity result. The sub-agent therefore makes no
+tool call of its own, and the orchestrator spends no call assembling
+context — which is also why the brief is read from any working directory
+(every path in it is absolute).
 
 ## Wave execution & ownership discipline
 
 `archgen_tasks{action:'next'}` resolves the dependency frontier into topological waves. A cycle or an ownership clash comes back as the typed error codes `CYCLE` / `OWNERSHIP_CONFLICT` — the orchestrator fixes `tasks.yaml` before proceeding.
 
-- **One worker per task.** Workers receive: task id + title, acceptance criteria verbatim, their `file_ownership` globs ("edit NOTHING outside these"), the code-standards reference, and the done/failed status command. Workers never talk to each other; coordination happens only through `tasks.yaml` state.
+- **One worker per task.** Workers receive: task id + title, acceptance criteria verbatim, their `file_ownership` globs ("edit NOTHING outside these"), the code-standards reference, the **normative rules of every matched capability skill**, the pre-located doc sections, the CodeGraph directive when the project is indexed, and the done/failed status command. Workers never talk to each other; coordination happens only through `tasks.yaml` state.
 - **Disjoint globs per wave.** Two same-wave tasks may not overlap on file ownership — enforced by the resolver and rejected by the verifier.
+- **Dispatch discipline.** A sub-agent is a WORK unit, not a lookup: status, wave frontier, plan health, graph and registry are always one orchestrator tool call, never a sub-agent. **At most 3 parallel sub-agents at a time** — a larger wave runs in batches of three. Parallel sets must have disjoint read AND write footprints; gate agents never run while a wave is in flight.
+- **Session reuse.** A follow-up that needs an agent's context — a fix in files it touched, a clarification, a re-check of its own output — CONTINUES that agent's session. The contract returns a `dispatchKey` so the orchestrator's ledger is keyed by the tool's own value.
 - **Dispatch tiers** (`archgen_refs` → `orchestration.md`): Tier 1 uses native sub-agents where the harness is strong (Claude Code background agents with worktree isolation; Cursor background subagents; Antigravity `invoke_subagent`; Codex flattened plans; Gemini hub-and-spoke for read-only waves). Tier 2 is a universal bash fallback spawning parallel workers over headless CLIs (`claude -p`, `opencode run`, `codex exec`, `gemini`, `agy`), with git-worktree isolation when ownership borders are tight.
 - **Failure policy:** worker failure marks the task `failed` — never auto-retried. Downstream tasks stay blocked via `blockedByFailure`. The user sees the failed id, log path, and a proposed fix task; fix tasks get fresh ids and inherit the failed task's ownership.
 
@@ -111,6 +124,16 @@ Two support modes round out the loop:
   that file. Missing capabilities trigger a web search for a reputable skill
   repo, proposed to the user and added to the registry on approval.
 
+  The skill's **normative rules travel INTO the worker contract**, not beside
+  it: a path pointer is a file the worker may never open, and a skill that is
+  never opened is a skill that is never applied. Every matched required skill
+  is included — the old contract injected only the first one, so a second
+  installed skill was silently dropped. `archgen_skills{action:'digest'}` and
+  `{action:'load', section}` are the lens for pulling one section of a skill
+  when the agent decides it needs more. The install search walks the same
+  roots as the archgen skill itself, so a skill installed above the project
+  root, or under a harness directory, is found.
+
 ## The judgment / output split
 
 The skill holds the **judgment** — policy, rules, when-to-use, authoring craft.
@@ -151,6 +174,37 @@ to ship a skill whose declared minimum exceeds the server's version.
 | `archgen_plan { action: 'brief' }` | the verifier / review / survey / investigate briefs |
 | `archgen_tasks { action: 'contract' }` | the worker prompt contract (8 rules) |
 | `archgen_setup { action: 'harness_info' }` | the harness capability tables |
+
+## The no-dead-action gate
+
+Two capabilities shipped DEAD and the unit tests did not notice, because a
+code path nobody exercises cannot fail in a test that never calls it:
+
+- `archgen_plan{action:'graph'}` threw `ReferenceError: opts is not defined`
+  on every call, for every project, forever. A module-level function read a
+  variable from its CALLER's frame. The review brief has told the orchestrator
+  to attach the graph since the day it was written, so every plan review had
+  been running without it.
+- `archgen_docs{action:'section', section:'<slug>'}` failed on every plan,
+  because the whole argument was treated as a FILE path — while `digest` hands
+  out section SLUGS. The digest→section round trip, the primary way an agent
+  reads an artifact, was broken by construction.
+
+And one shipped a literal placeholder: every worker prompt began
+`<Domain> work: follow …`. The briefs had a `remainingPlaceholders` guard; the
+worker contract had none.
+
+So the gate is behavioural, not structural:
+
+- **`packages/mcp/test/contract/action-matrix.test.mjs`** drives EVERY action
+  of EVERY tool against a real project and asserts it succeeds, that it never
+  reports `INTERNAL`, and that the briefs and worker contracts carry no
+  unsubstituted placeholder.
+- **`fixtures/tool-matrix/run.sh`** does the same through the REAL MCP binary
+  and the REAL stdio transport — proving the whole path, not just the handler.
+- A brief may only name the archgen calls its allowed-call list permits
+  (`core/brief-context.mjs`), so a sub-agent cannot be sent to re-derive a
+  fact the brief already carries.
 
 ## Provenance & migration
 

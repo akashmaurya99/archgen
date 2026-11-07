@@ -9,9 +9,10 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-Describe what you want to build. archgen interviews you (or surveys your existing
-codebase), produces an architecture contract plus a dependency-ordered task graph,
-verifies the plan, then executes it wave-by-wave through sub-agents.
+Describe what you want to build. archgen interviews you — or surveys your
+existing codebase — produces an architecture contract and a dependency-ordered
+task graph, has the plan verified, then executes it wave by wave through
+sub-agents.
 
 Works as an agent skill for **Claude Code · OpenCode · Cursor · Codex · Gemini CLI ·
 Antigravity** — and any agentskills.io-compatible harness.
@@ -20,133 +21,173 @@ Antigravity** — and any agentskills.io-compatible harness.
 
 ---
 
-## Why archgen
+## What archgen does
 
-AI coding agents fail at scale for predictable reasons: plans with hidden cycles,
-workers editing the same files, tasks without objective acceptance criteria, and no
-human checkpoint before execution. archgen makes each of these a *structural*
-guarantee rather than a hope:
+AI coding agents fail at scale for predictable reasons: plans with hidden
+cycles, workers editing the same files, tasks without objective acceptance
+criteria, and no human checkpoint before execution. archgen turns each of
+these into a structural guarantee rather than a hope.
 
 | Guarantee | Mechanism |
 | --- | --- |
 | Plans are valid before work starts | Verifier gate — cycles, dangling refs, ownership overlaps, plan↔task coverage |
-| You approve before code is written | Explicit user gate after verifier approval |
-| Parallel workers never collide | Disjoint `file_ownership` globs enforced per wave |
+| You approve before code is written | Explicit user gate, after verifier approval |
+| Parallel workers never collide | Disjoint `file_ownership` globs enforced per wave, plus a 3-agent parallel cap |
 | Task order is always correct | Topological waves from `depends_on`; chains stay sequential |
 | Failures never cascade silently | Failed tasks exclude downstream into `blockedByFailure`, surfaced to you |
+| Capability skills are actually applied | A matched skill's normative rules travel inside the worker prompt |
 | Every artifact is reviewable | Everything lives in one `.archgen/<slug>/` folder, versioned by git |
 
-## How it works
+## Install
 
-```text
- agent  ──MCP tools (archgen-mcp)──►  .archgen/<slug>/
-   │                                      architecture.yaml · docs · ADRs
-   │                                      plans · tasks.yaml
-   │                                              │
-   │  interview (greenfield) · survey (brownfield)  │
-   ▼                                              ▼
-   ├──── VERIFIER GATE ──issues──► fix & re-verify
-   │          │ APPROVE
-   │          ▼
-   │     USER GATE ────reject───► revise
-   │          │ approve
-   │          ▼
-   └──── WAVES ── topological order · one sub-agent per task · disjoint ownership
-                     │
-                     ▼
-        final report: done / failed / blocked · commits · follow-ups
-```
-
-**One runtime, three ways in.** Every deterministic capability — validation,
-the wave resolver, status mutation, the artifact templates, the dispatch
-briefs, the worker prompt, CodeGraph, harness wiring — lives in the
-`archgen-mcp` server. The agent calls it over MCP; the installer calls
-`archgen-mcp bootstrap`; the extension calls `archgen-mcp exec`. One
-implementation, so the three can never disagree.
-
-## Installation
-
-**Prepare a project** (installs ONE canonical skill copy + harness bridges —
-never duplicates; existing files are preserved and upgraded in place):
+**In the project root:**
 
 ```bash
 npx archgen-skill init
 ```
 
-**Or install globally** into every detected harness:
+Installs one canonical skill copy, wires the `archgen-mcp` server into every
+detected harness, and ensures CodeGraph. Then **reload your harness** — the
+tools are not available until you do.
+
+To install into every detected harness as a global skill:
 
 ```bash
 npx archgen-skill install          # symlinks; --copy for real copies
 ```
 
-Prefer shell? Clone this repo and run `./install.sh` (same behavior, plus
-`--init [dir]`, `--project <dir]`, `--uninstall`). Requires Node.js ≥ 20.
-The CLI itself has zero npm dependencies; the MCP server it installs depends on
-the official Model Context Protocol SDK.
+**Or let the agent do it.** Copy the prompt in
+[`docs/agent-setup-prompt.md`](docs/agent-setup-prompt.md) and paste it into
+your agent — it installs the system, verifies the install, and reports the
+next wave.
 
-**VS Code extension** (optional, visual layer): download the latest
-`.vsix` from [GitHub Releases](https://github.com/akashmaurya99/archgen/releases)
-(built by CI on every tag — never committed to the repo) and install it via
-*Extensions: Install from VSIX…*
+**Without npm.** [`install.sh`](install.sh) is a POSIX-only installer with
+zero dependencies beyond coreutils — no sudo, no network, no registry. It
+exists for no-registry and air-gapped machines, for installs you want to audit
+before running (it is one readable file), and as the reference implementation
+the npm CLI is parity-tested against.
+
+```bash
+git clone https://github.com/akashmaurya99/archgen.git
+cd archgen && ./install.sh --init      # project setup + server bootstrap
+./install.sh                            # global skill, every detected harness
+./install.sh --uninstall                # removes exactly what it recorded
+```
+
+On Windows use `npx archgen-skill init` — it is the cross-platform equivalent.
+**Requirements:** Node.js ≥ 20. The CLI has zero npm dependencies; the MCP
+server it installs depends on the official Model Context Protocol SDK.
+
+**VS Code extension (optional).** A visual layer over `.archgen/`: the task
+DAG, your real code-dependency graph, rendered docs, and a ▶ button that
+launches your agent on any task. It never edits your plan, your tasks, or
+your code. Download the latest `.vsix` from
+[GitHub Releases](https://github.com/akashmaurya99/archgen/releases).
+
+## The `archgen-mcp` server
+
+Every deterministic capability lives in one MCP server, **`archgen-mcp`**,
+published to npm as [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp)
+and spoken over stdio by any MCP client.
+
+The agent calls it over MCP; the installer calls `archgen-mcp bootstrap`; the
+VS Code extension calls `archgen-mcp exec`. One implementation, three ways in,
+so the three can never disagree.
+
+| Tool | Does |
+| --- | --- |
+| `archgen_plan` | validate · verify · graph · impact · coverage · scaffold · brief |
+| `archgen_tasks` | next wave · set status · list · resume snapshot · worker contract |
+| `archgen_docs` | index · digest · section · refs · map · validate the user's artifacts |
+| `archgen_registry` | refresh or read the `AGENTS.md` features registry |
+| `archgen_codegraph` | install, wire and index CodeGraph |
+| `archgen_setup` | doctor · bootstrap · install/remove MCP · list harnesses · harness info |
+| `archgen_ui` | drive the VS Code extension — reveal a task, open a doc, focus a view |
+| `archgen_skills` | match · install · load · digest the capability-skill registry |
+| `archgen_refs` | load archgen's own protocol documents, section by section |
+| `archgen_help` | the full briefing for one tool domain |
+
+Every result is a typed envelope: `{ ok, data, error, meta }`. A failure is
+data, not a crash — `error.code` is one of `INVALID_INPUT`, `NOT_FOUND`,
+`CYCLE`, `OWNERSHIP_CONFLICT`, `CONFLICT`, `PERMISSION_DENIED`, `UNAVAILABLE`,
+`TIMEOUT`, `INTERNAL`.
 
 ## Usage
 
-Open your project in any supported agent and talk naturally:
+Open your project in any supported agent and talk naturally.
 
 | You say | What runs |
 | --- | --- |
 | *"generate architecture for a booking platform"* | Interview → artifacts → both gates |
 | *"add rate-limiting to my API server"* | Survey existing code first, then plan + gates |
 | *"start work"* | Autonomous wave execution until done or blocked |
+| *"investigate this recurring timeout"* | Root-cause protocol — no patch-fixes without a root cause |
 | *"roll back the auth changes"* | Impact analysis → reverse-order revert plan → approval |
+| *"fetch the design skill"* | Capability-skill registry: match, install, apply |
 
-The optional VS Code extension renders `.archgen/` as a live task DAG (running
-tasks pulse, edges animate), your real code-dependency graph, and rendered docs —
-with a ▶ button that launches your agent on any task. An activity-bar cockpit
-complements the editor board with glanceable progress, status-grouped tasks with
-quick build, and quick-open docs. It never edits your plan, your tasks, or your
-code — only its own runtime state under `.archgen/.runtime/`, so uninstalling it
-loses nothing.
+Nothing is written until two gates pass, in order, and never skipped — even
+for a SMALL scope. The **verifier gate** is one holistic sub-agent over the
+whole plan: it runs the deterministic floor, judges what the tools cannot,
+and returns a verdict plus a coverage table marking every dimension `PASS` /
+`FAIL` / `N/A` — so one pass is exhaustive instead of a discovery loop. The
+**user gate** then presents the artifacts, the wave summary and the ownership
+map, and asks for approval.
 
-## Monorepo map
+## Token footprint
+
+The cost of *using* archgen is measured, not guessed. `npm run test:budget`
+reports it, and CI fails if the always-on footprint exceeds 13,600 tokens.
+
+| Surface | Tokens | When it is paid |
+| --- | ---: | --- |
+| `skill/SKILL.md` | 8,319 | Every session that triggers the skill |
+| MCP tool catalog (10 tools) | 4,784 | Every request to the server |
+| **Always-on total** | **13,103** | 40% of a 32k window |
+| Protocol references | 17,682 | On demand, per mode |
+| Capability registry + harness data | 10,652 | On demand, per tool call |
+| Dispatch briefs | 2,874 | Once per agent dispatch |
+| Artifact templates | 2,289 | Once per scaffold |
+| `references/code-standards.md` | 940 | Read by workers as a file |
+
+The design rule is **a map, not a copy**: `archgen_docs{action:'digest'}`
+returns section anchors rather than document text, `archgen_refs` serves one
+section at a time, and the dispatch briefs carry the evidence map, the
+dependency graph and the reference-integrity result already rendered — so the
+agent pulls exactly what it needs and never re-reads a whole plan.
+
+## Repository layout
 
 | Path | What | Distributed as |
 | --- | --- | --- |
-| [`skill/`](skill/) | The agent skill — `SKILL.md` + `references/code-standards.md` (guidance only; the MCP server owns every capability) | vendored into npm; installed by `install.sh` |
-| [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
-| [`packages/mcp/`](packages/mcp/) | The MCP server — every deterministic capability, 10 tools (9 domain + `archgen_help`) | npm: [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp) |
-| [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button · activity-bar cockpit | `.vsix` attached to [GitHub Releases](https://github.com/akashmaurya99/archgen/releases) by CI |
+| [`skill/`](skill/) | The agent skill — `SKILL.md` + `references/code-standards.md` (guidance only; the server owns every capability) | vendored into npm |
+| [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `doctor` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
+| [`packages/mcp/`](packages/mcp/) | The `archgen-mcp` server — every deterministic capability | npm: [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp) |
+| [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button | `.vsix` on [GitHub Releases](https://github.com/akashmaurya99/archgen/releases) |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
-| [`fixtures/`](fixtures/) | Deterministic E2E demos + shared YAML corpus | repo-only |
-| [`internal/`](internal/) | QA tooling (context/token budget) — never shipped | repo-only |
-| [`docs/`](docs/) | Architecture walkthrough · release process · research | repo-only |
+| [`fixtures/`](fixtures/) | Deterministic E2E drivers + shared YAML corpus | repo-only |
+| [`internal/`](internal/) | QA tooling (token budget, version gates) — never shipped | repo-only |
+| [`docs/`](docs/) | Architecture walkthrough · agent setup prompt · release process | repo-only |
 
 ## Development
 
-One-command flow from the repo root:
-
 ```sh
 npm run setup   # once — installs extension dependencies
-npm test        # internal + MCP + CLI + extension suites (same set CI runs)
+npm test        # internal + MCP + CLI + extension suites (the set CI runs)
 ```
 
-Or per-package:
+The deterministic end-to-end drivers make **no LLM calls** and drive the real
+MCP tool surface, so a broken tool fails the fixtures:
 
 ```sh
-# MCP server — the runtime that owns every capability (contract + transport + core)
-cd packages/mcp && npm ci && npm test
-
-# CLI — single-store installer, doctor, uninstall --project
-cd packages/cli && npm test
-
-# Extension — feature picker, probe order, ≥90% coverage enforced (Node 22 toolchain)
-cd packages/extension && npm ci && npm run typecheck && npm run compile && npm test
-
-# Deterministic end-to-end drivers (no LLM calls) — they drive the REAL MCP
-# tool surface, so a broken tool fails the fixtures.
-bash fixtures/greenfield-demo/run.sh && bash fixtures/brownfield-demo/run.sh
-bash fixtures/verifier-negative/run.sh
+npm run test:fixtures
 ```
+
+| Fixture | What it proves |
+| --- | --- |
+| [`greenfield-demo`](fixtures/greenfield-demo/) | The full GENERATE → gates → wave-walk → clean-tree flow |
+| [`brownfield-demo`](fixtures/brownfield-demo/) | Survey-first planning against an existing codebase |
+| [`verifier-negative`](fixtures/verifier-negative/) | The gate actually rejects cycles, overlaps and unknown refs |
+| [`tool-matrix`](fixtures/tool-matrix/) | **Every action of every tool**, through the real MCP binary |
 
 Extension tests require Node 22 (native-addon pool stability); the shipped
 extension runs inside VS Code's Electron runtime regardless. See
@@ -157,8 +198,8 @@ extension runs inside VS Code's Electron runtime regardless. See
 | Doc | Contents |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Dual-mode design, gates, wave mechanics, platform detection |
+| [docs/agent-setup-prompt.md](docs/agent-setup-prompt.md) | Copy-paste prompt: install archgen and verify it |
 | [docs/releasing.md](docs/releasing.md) | Cutting CLI + extension releases |
-| [docs/research/](docs/research/agentic-ide-context-injection-catalog.md) | Sourced research catalog: programmatic context injection into agentic IDE chat boxes |
 | [skill/SKILL.md](skill/SKILL.md) | The full skill contract the agents execute |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
