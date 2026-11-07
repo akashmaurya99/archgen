@@ -81,7 +81,15 @@ npm run test:budget    # the always-on context is within its ceiling
 npm test               # every suite CI runs
 npm run test:fixtures  # the three end-to-end drivers, against the real tools
 npm run test:immutable # the suites did not mutate the repository
+bash scripts/smoke.sh  # the RELEASE itself: the packed tarballs, installed and driven
 ```
+
+`scripts/smoke.sh` is the one that answers "will this work for a user?". It
+packs both npm tarballs — the exact bytes the registry would serve — installs
+them into a clean project, and drives the real surfaces: the MCP server over
+stdio, the tool catalog, the CLI installer, the harness wiring, the doctor, the
+three end-to-end fixtures and the uninstall. It runs against an isolated
+`HOME`, so it never touches your real harness configs.
 
 `npm run test:versions` is the umbrella check. It runs two gates:
 
