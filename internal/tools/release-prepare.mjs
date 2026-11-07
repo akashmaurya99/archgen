@@ -68,10 +68,17 @@ function run(cmd, args, opts = {}) {
 
 function parseArgs(argv) {
   const out = { version: null, requires: null, dryRun: false };
-  for (const a of argv) {
+  // An INDEX loop, not `for...of`: `--requires <version>` needs to CONSUME
+  // the next argument, and `for...of` hands out a snapshot — the consumed
+  // value would be read as the version too.
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
     if (a === '--dry-run') out.dryRun = true;
-    else if (a === '--requires') out.requires = argv[++argv];
-    else if (a.startsWith('--')) die(`unknown option ${a}`);
+    else if (a === '--requires') {
+      const value = argv[++i];
+      if (!value) die('--requires needs a version');
+      out.requires = value;
+    } else if (a.startsWith('--')) die(`unknown option ${a}`);
     else if (!out.version) out.version = a;
     else die(`unexpected argument ${a}`);
   }
@@ -104,7 +111,12 @@ function main() {
   // tool can apply the decision, but it will not INFER it.
   const skillPath = join(root, 'skill', 'SKILL.md');
   const currentRequires = /archgen_mcp:\s*"([^"]+)"/.exec(readFileSync(skillPath, 'utf8'))?.[1] ?? '';
-  const wanted = args.requires ?? `>=${args.version}`;
+  // `--requires <version>` and `--requires '>=<version>'` mean the same
+  // thing: the declaration is a RANGE, so a bare version is normalised
+  // into one. (The version is never written down here — the version
+  // belongs in exactly one place, and this file is not it.)
+  const rawWanted = args.requires ?? `>=${args.version}`;
+  const wanted = /^[<>=^~]/.test(rawWanted) ? rawWanted : `>=${rawWanted}`;
   if (args.requires === undefined && currentRequires && currentRequires !== wanted) {
     console.log(
       c.yellow(

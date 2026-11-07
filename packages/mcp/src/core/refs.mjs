@@ -23,6 +23,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseMarkdown, buildSections, findSection } from './docs.mjs';
 import { notFound } from './errors.mjs';
+import { noSuchSection } from './guidance.mjs';
 
 /** The reference documents this server serves. */
 export const REF_TOPICS = [
@@ -104,11 +105,7 @@ export function readTopic(topic, opts) {
   const section = findSection(doc, opts.section);
   if (!section) {
     const available = buildSections(doc).map((s) => s.slug);
-    throw notFound(`no section '${opts.section}' in '${resolved.topic}'`, {
-      topic: resolved.topic,
-      section: opts.section,
-      available,
-    });
+    throw noSuchSection(resolved.topic, opts.section, available);
   }
   return {
     topic: resolved.topic,

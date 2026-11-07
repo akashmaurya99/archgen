@@ -19,6 +19,7 @@ import { parseYaml } from './yaml.mjs';
 import { buildGraph, findCycle, computeWaves, dedupeDependencies, computeQualityStats, GraphError } from './graph.mjs';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
 import { cycle, invalidInput, notFound } from './errors.mjs';
+import { noSuchTask } from './guidance.mjs';
 
 // Whole-graph Mermaid above this node count is refused.
 export const MERMAID_WHOLE_MAX_NODES = 250;
@@ -238,7 +239,7 @@ export function planGraph(input, opts = {}) {
 
   if (node !== null) {
     const t = byId.get(node);
-    if (!t) throw notFound(`no task '${node}' in ${tasksFile}`, { node, file: tasksFile });
+    if (!t) throw noSuchTask(node, uniqueTasks.map((x) => x.id));
     if (mermaid) {
       const up = [...bfsDistances(t.id, prerequisites)].filter(([id]) => id !== t.id).map(([id]) => id).sort();
       const down = [...bfsDistances(t.id, dependents)].filter(([id]) => id !== t.id).map(([id]) => id).sort();

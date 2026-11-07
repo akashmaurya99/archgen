@@ -189,6 +189,157 @@ Nothing was dropped without its replacement landing first.
   extension. `archgen-skill uninstall --project` now removes it; until then it
   is safe to delete by hand.
 
+## [0.1.1] - 2026-11-07
+
+A patch release. One defect shipped in 0.1.0 and it was severe enough to
+break the product for a large share of users.
+
+**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.**
+
+| Artifact | Published as | Tag |
+|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.1` |
+| `packages/cli` | `archgen-skill` | `vcli-0.1.1` |
+
+### Fixed — a valid path inside a symlinked project was refused as an escape
+
+The containment guard compared the **lexical** path against the **real**
+root. Those two are spelled differently in the NORMAL case:
+
+- `process.cwd()` returns the REAL path — on macOS, `/private/var/...`;
+- the caller passes the LOGICAL one — `/var/...`.
+
+So the guard refused a perfectly valid path inside the project with
+`refusing a path outside the project`. The two names the SAME place, and
+they were compared as strings.
+
+**Anyone whose project is reached through a symlink hit it**: macOS `/tmp`
+and `/var`, a symlinked repository, a symlinked home directory. On macOS
+that is the default for a project under `/var/folders/...` — which is where
+every temp directory lives, including the ones a test harness uses.
+
+Found by installing the **published** package into a temp project and driving
+it: the very first call with a project-relative path failed. The source tree
+was green the whole time, because a test's temp directory and the path it
+built were spelled the same way.
+
+The guard now makes **two** comparisons and allows the path if **either**
+says it is inside:
+
+- **LEXICAL** — the caller's spelling against the root's spelling;
+- **REAL** — where the path actually lands against where the root actually
+  is.
+
+The real comparison is the one that can answer the question, and it is the
+one that catches a symlinked parent redirecting a write out of the tree. It
+now runs first and it is allowed to answer. The guard still never fails
+open: when the real comparison cannot be made, the lexical one stands alone,
+and a path outside the root by every measure we could make is still
+refused — with the refusal wording unchanged.
+
+The same bug was in **both** implementations — the MCP server's `fs-safety`
+and the CLI's `store.js`, which `fs-safety` says it inherits from — so the
+fix landed in both, or the two would disagree about the same path. One test
+pins both at once, because they are two implementations of one rule.
+
+### Fixed — the publish workflow could never have published the CLI
+
+Every publish run in this repository has failed — `vmcp-0.0.7`,
+`vmcp-0.0.6` four times over, and the 0.1.0 pair. Every release was
+published by hand.
+
+The CLI leg failed at `Test`, every time. The CLI is zero-dependency and
+deliberately ships no lockfile, but its **tests** are not zero-dependency:
+the migration suite drives the **real** archgen MCP server, which needs the
+MCP SDK. The CI workflow already installed the server's dependencies for
+exactly this reason; the publish workflow did not, so two tests died with
+`ERR_MODULE_NOT_FOUND` and the run never reached the publish step. The leg
+now installs them. Reproduced in a pristine clone of the tag: from
+`Cannot find package '@modelcontextprotocol/server'` and 186/188, to
+188/188.
+
+The credential check also gave a **false green**: it tested npm's *version*
+and nothing else. npm 11.5.1+ supports OIDC, so the check passed on any
+modern runner — whether or not a trusted publisher is configured for the
+package on npmjs.com. The failure then surfaced at `Publish` as a bare
+`401`. The check now says plainly that the npm version is necessary but not
+sufficient, names the npmjs.com configuration it requires, and — when a
+token is used — proves the token works with `npm whoami` before the publish
+step, so a revoked or mis-scoped token fails with a message that names the
+cause.
+
+### Fixed — the failures that cost an agent a round-trip
+
+An agent reported three failures in a row. Two of them were loops, and both
+were ours:
+
+- **`archgen_refs` said "no section 'plan-depth'"** — and `plan-depth` is
+  exactly what the skill teaches. The `§` markers name a section by a SHORT
+  name (`§artifact-templates/plan-depth`) while the headings produce longer
+  slugs (`plan-depth-by-scope-class`), so the shorthand the skill taught did
+  not resolve. The agent did precisely what it was told and got an error.
+  Every `§` shorthand in the skill is a **prefix** of a real slug, so the
+  resolver now accepts an unambiguous prefix — the shorthand the skill
+  teaches is now the shorthand the skill can use. A test walks every `§` mark
+  in the skill and asserts it resolves.
+- **`archgen_docs` said "missing or not a directory"** — because
+  `archgen_plan{action:'scaffold'}` returns each file's CONTENT and **writes
+  nothing**, and nobody said so. The scaffold payload now carries
+  `writes: false` and the files to write, the skill says it in both places
+  the call appears, and the failure itself names the fix.
+- **A batch of calls lost every sibling result** when one argument was
+  wrong. That is the caller's `Promise.all`, not an MCP defect — but the
+  skill and `archgen_help` now say to settle batches (`allSettled`), because
+  one bad argument must not discard the rest.
+
+### Changed — every failure teaches the next call
+
+An error that only says WHAT FAILED leaves the agent to guess, and a guess
+that fails the same way is a loop. Every archgen failure is now **one line**
+carrying the cause, the fix, and the exact next call:
+
+```
+no section 'plan-depth' in 'artifact-templates' — a prefix of the slug works too, if unambiguous. Next: archgen_refs{action:'index',topic:'artifact-templates'}
+```
+
+The vocabulary is shared (`core/guidance.mjs`), so every tool teaches the
+same way, and the machine-readable next step rides along in the error's
+details for a client that would rather act than read. A missing artifact
+space, an unknown section, an uninstalled skill, an unknown task id and an
+outside-project path all teach now.
+
+### Added — the skill is audited against the live server
+
+Two gates hold the skill to the server it runs against:
+
+- every tool, action and argument the skill names — **anywhere in the file**,
+  including the code blocks and the prose — must exist in the live schema;
+- every action the server exposes must be reachable from the skill, so a new
+  capability cannot ship undocumented.
+
+The first one is how the `§` defect above is now impossible to reintroduce.
+
+### Changed — the README's token footprint, measured and re-framed
+
+The section listed every surface with its full size, which made archgen look
+expensive: a reader saw 12,431 tokens of references and reasonably concluded
+the thing was heavy. **None of it is ever paid** — the agent reads a
+*section*.
+
+It now leads with what is actually charged — the **always-on total, 11,280
+tokens**, 34% of a 32k window, and the promise that this is all a session
+pays — and then the on-demand cost per section, measured: the five protocol
+references are 12,431 tokens *in total*, but the **median section is 181
+tokens**, and a capability skill's rules are ~160.
+
+### Migration
+
+- **Upgrading is required if your project path contains a symlink.** On
+  macOS that includes anything under `/tmp` or `/var`. Reinstall the server:
+  `npx archgen-skill init` (or `archgen-skill update`).
+- The `archgen_ui` migration note from 0.1.0 still applies to an agent
+  driving an older skill.
+
 ## [Unreleased]
 
 Nothing yet.

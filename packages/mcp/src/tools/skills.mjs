@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { loadAsset } from '../context.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { hint, teach } from '../core/guidance.mjs';
 import {
   matchSkills,
   installSkill,
@@ -108,7 +109,14 @@ export function registerSkillTools(server) {
           ? registry.routing
           : null);
       if (!entry) {
-        throw invalidInput(`unknown skill '${wanted}' — call archgen_skills { action: 'list' }`, { skillId: wanted });
+        throw invalidInput(
+          teach(
+            `unknown skill '${wanted}'`,
+            'the registry lists every id and slug',
+            "archgen_skills{action:'list'}",
+          ),
+          hint({ action: "archgen_skills{action:'list'}", reason: 'the registry is the vocabulary.' }),
+        );
       }
 
       if (args.action === 'digest') {
@@ -122,7 +130,7 @@ export function registerSkillTools(server) {
             installed: false,
             sections: [],
             searchedPaths: found.searchedPaths ?? [],
-            hint: 'not installed — call archgen_skills { action: "install" } first',
+            hint: 'not installed — install it first: archgen_skills{action:\'install\',skillId:\'' + entry.slug + '\',approve:true}',
           };
         }
         const content = readFileSync(found.path, 'utf8');
@@ -157,7 +165,9 @@ export function registerSkillTools(server) {
             normative: s.normative,
           })),
           followInstruction: loaded.loaded ? followInstruction({ slug: entry.slug, path: loaded.path, domain: entry.domain }) : null,
-          hint: loaded.loaded ? null : 'not installed — call archgen_skills { action: "install" } first',
+          hint: loaded.loaded
+            ? null
+            : 'not installed — install it first: archgen_skills{action:\'install\',skillId:\'' + entry.slug + '\',approve:true}',
         };
 
         // ONE section — the agent's lens, the same way archgen_docs serves

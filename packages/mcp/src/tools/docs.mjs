@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { docIndex } from '../core/doc-navigator.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { hint, teach } from '../core/guidance.mjs';
 
 const ACTION_DESC = 'index | digest | section | refs | map | validate — see archgen_help.';
 
@@ -69,8 +70,15 @@ export function resolveSlugDir(ctx, explicit) {
   const active = activeSlugDir(ctx);
   if (!active) {
     throw invalidInput(
-      `no .archgen/<slug>/ directory found under ${ctx.projectRoot} — generate a plan first, or pass slugDir`,
-      { projectRoot: ctx.projectRoot },
+      teach(
+        `no .archgen/<slug>/ directory under ${ctx.projectRoot}`,
+        'scaffold returns file CONTENT and writes nothing, so write it first',
+        "archgen_plan{action:'scaffold',scope:'LARGE',slug:'<slug>'}",
+      ),
+      hint({
+        action: "archgen_plan{action:'scaffold',scope:'LARGE',slug:'<slug>'}",
+        reason: 'scaffold returns content; you write it.',
+      }),
     );
   }
   return active;

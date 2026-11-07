@@ -32,6 +32,7 @@ import { buildGraph, GraphError } from './graph.mjs';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
 import { parseMarkdown, buildSections, findSection, anchorExists } from './docs.mjs';
 import { cycle, invalidInput, notFound } from './errors.mjs';
+import { artifactSpaceMissing } from './guidance.mjs';
 
 // Overview emits at most this many files (sorted); above it, truncated:true.
 export const OVERVIEW_MAX_FILES = 100;
@@ -71,7 +72,10 @@ export function resolveDocScope(input, projectRoot = null) {
     scoped = resolveSlugInput(input, projectRoot);
   } catch (e) {
     if (e instanceof ScopeError) throw invalidInput(`doc-index: ${e.message}`, { input });
-    throw invalidInput(`cannot read ${input} (missing or not a directory)`, { input });
+    // The artifact space does not exist yet. Say WHY, and what to do: the
+    // scaffold tool returns CONTENT and writes nothing, so the caller has to
+    // write it before any artifact tool can read it.
+    throw artifactSpaceMissing(null, input);
   }
   return {
     slugDir: scoped.root,

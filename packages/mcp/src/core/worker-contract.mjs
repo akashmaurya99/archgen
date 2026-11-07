@@ -30,7 +30,8 @@ import { dirname, join } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { buildGraph, GraphError } from './graph.mjs';
 import { skillDirective } from './skill-manager.mjs';
-import { invalidInput, notFound } from './errors.mjs';
+import { invalidInput } from './errors.mjs';
+import { noSuchTask } from './guidance.mjs';
 
 /**
  * Assemble the worker prompt for one task.
@@ -64,7 +65,7 @@ export function buildWorkerContract(opts) {
   }
   const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
   const task = tasks.find((t) => t?.id === taskId);
-  if (!task) throw notFound(`task '${taskId}' not found in ${tasksYaml}`, { taskId, file: tasksYaml });
+  if (!task) throw noSuchTask(taskId, tasks.map((t) => t?.id).filter(Boolean));
 
   // The dependency neighbourhood — what must exist BEFORE this task, and what
   // waits on it. Derived from depends_on, never hand-labelled.

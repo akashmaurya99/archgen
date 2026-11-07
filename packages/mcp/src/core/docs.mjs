@@ -129,7 +129,22 @@ export function buildSections(doc) {
   return sections;
 }
 
-/** Resolve a section by slug, title, or tolerant slug variant. */
+/**
+ * Resolve a section by slug, title, tolerant slug variant, or PREFIX.
+ *
+ * The PREFIX form matters: the skill's `§` markers use SHORT names
+ * (`§artifact-templates/plan-depth`) while the headings produce longer
+ * slugs (`plan-depth-by-scope-class`). Every `§` shorthand in the skill is
+ * a prefix of a real slug, so accepting a prefix makes the shorthand the
+ * skill teaches actually RESOLVABLE — an agent can pass exactly what it was
+ * told without a discovery round-trip first.
+ *
+ * A prefix that matches MORE THAN ONE section is refused, never guessed:
+ * two sections sharing a prefix means the caller must use the full slug.
+ *
+ * @param {any} doc
+ * @param {string} ref
+ */
 export function findSection(doc, ref) {
   const sections = buildSections(doc);
   const wanted = String(ref).trim();
@@ -142,7 +157,14 @@ export function findSection(doc, ref) {
   // Case-insensitive + collapsed-hyphen comparison: agents type
   // "FR-Catalog-01" or "fr-catalog-01" for the same heading.
   const lower = wanted.toLowerCase();
-  return sections.find((s) => slugsMatch(s.slug.toLowerCase(), lower)) ?? null;
+  const byLoose = sections.find((s) => slugsMatch(s.slug.toLowerCase(), lower));
+  if (byLoose) return byLoose;
+  // The `§` shorthand: a PREFIX of the slug. Only an UNAMBIGUOUS prefix
+  // resolves — a guess would send the agent to the wrong section.
+  const needle = slugifyHeading(wanted).toLowerCase();
+  if (!needle) return null;
+  const byPrefix = sections.filter((s) => s.slug.toLowerCase().startsWith(needle));
+  return byPrefix.length === 1 ? byPrefix[0] : null;
 }
 
 /** Does `anchor` exist in the target document? */

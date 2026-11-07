@@ -4,10 +4,10 @@ description: Architecture generation and autonomous task execution for coding ag
 license: MIT
 compatibility: Requires Node.js >= 20. The archgen MCP server (archgen-mcp) provides every deterministic capability; the skill itself ships no code.
 metadata:
-  version: 0.1.0
+  version: 0.1.1
   repo: https://github.com/akashmaurya99/archgen
   requires:
-    archgen_mcp: ">=0.1.0"
+    archgen_mcp: ">=0.1.1"
 ---
 
 # archgen — architecture generation & wave execution
@@ -59,6 +59,8 @@ All tools return `{ ok, data, error, meta }`. `ok:false` returns a typed `error.
 
 **Token discipline:** Fetch sections, never full files—use `archgen_docs{action:'digest'}` $\rightarrow$ `{action:'section'}` and `archgen_refs{action:'index'}` $\rightarrow$ `{action:'read'}`.
 
+**Batching:** settle every call in a batch (`allSettled`)—one bad argument must not discard the siblings' results.
+
 ## Loading a reference (§) — MANDATORY
 
 Every `§` marker is a mandatory pre-action load from `archgen_refs`:
@@ -72,7 +74,7 @@ archgen_refs { action: 'search', topic: 'orchestration', token: 'APPROVE' }
 
 **Rules for `§`:**
 1. **Load BEFORE acting.** Entering a mode requires loading its `§` sections first.
-2. **Load SECTIONS, not topics.** Call `index` for exact slugs, then `read` (~1–2 KB vs ~11 KB).
+2. **Load SECTIONS, not topics.** The `§` name IS a slug prefix — `§artifact-templates/plan-depth` resolves to `plan-depth-by-scope-class`. Call `index` only when a prefix is ambiguous.
 3. **Reload after compaction.** Context compaction drops loaded protocols; reload active mode `§` sections immediately upon re-entry (Hard Rule 9).
 4. **Never guess a protocol.** If an unread `§` covers your next step, load it first.
 
@@ -82,7 +84,7 @@ archgen_refs { action: 'search', topic: 'orchestration', token: 'APPROVE' }
 
 1. **Workspace isolation:** Write all generated files inside `.archgen/<project-slug>/` at repo root, including all agent/sub-agent state under `.archgen/<slug>/.agent/` (`§artifact-templates/agent-workspace`). *Exceptions:* (a) approved task code/deliverable edits within declared `file_ownership` (`§orchestration/dispatch`); (b) `AGENTS.md` updates via `archgen_registry`.
 2. **Three pre-execution gates:** (a) VERIFIER sub-agent `APPROVE` on plan + tasks, (b) PLAN-REVIEW at zero findings (or explicit user waiver), (c) USER approval. Never skip a gate.
-3. **Right-size depth:** Classify scope (`SMALL`/`MEDIUM`/`LARGE` per `§interview/step-1`) before creating files. Generate the exact file set returned by `archgen_plan{action:'scaffold', scope, slug}`—adding or omitting files is a defect (`§artifact-templates/plan-depth`). Write dense bullets over prose; never regenerate untouched artifacts.
+3. **Right-size depth:** Classify scope (`SMALL`/`MEDIUM`/`LARGE` per `§interview/step-1`) before creating files. `archgen_plan{action:'scaffold', scope, slug}` returns the exact file set AND each file's CONTENT—**it writes nothing**, you write it; adding or omitting files is a defect (`§artifact-templates/plan-depth`). Write dense bullets over prose; never regenerate untouched artifacts.
 4. **Self-containment:** Artifacts must execute cleanly from `.archgen/<slug>/` alone with zero chat history. Every task must use verbatim repo-root-relative paths from `architecture.yaml`/`tasks.yaml`. Forbidden phrases: `"as discussed"`, `"see chat"`, `"same as before"` (`§artifact-templates/self-containment`).
 5. **Completeness:** No partial features ship as done. Acceptance criteria must be objectively verifiable and cover edge-matrix rows. Stubs, TODOs, and mock-only paths count as `failed` tasks even if tests pass. Include a per-feature completeness checklist in the final report.
 6. **Status discipline (PER-TURN, NON-NEGOTIABLE):** Immediately upon EVERY task completion, in the same turn before any other action, execute and verify all three:
@@ -132,7 +134,7 @@ Select ONE mode matching user intent and **load its required `§` sections BEFOR
 1. **Acknowledge & scope:** State planned action + inferred scope (`SMALL`/`MEDIUM`/`LARGE`) in one sentence. Ask to proceed. `[wait for user]`
 2. **Interview:** Follow the loaded `§interview` sections—calibrate (Round 0), record `intent_class` in `answers.yaml`, batch 3–5 recommendation-first decision-fork questions per round. `[wait per round]`
 3. **Generate artifacts** in `.archgen/<slug>/` (on collision, use `<slug>-2`, `<slug>-3`; never overwrite/merge):
-   - Call `archgen_plan{action:'scaffold', scope, slug}` FIRST and populate the exact returned artifact skeletons.
+   - Call `archgen_plan{action:'scaffold', scope, slug}` FIRST and populate the exact returned artifact skeletons. It returns each file's CONTENT and **writes nothing**—you write them under `.archgen/<slug>/`.
    - Ensure every task specifies `id`, `title`, `depends_on`, disjoint `file_ownership` globs, objective `acceptance` criteria, and leaves `status` unset.
    - Run the **FETCH-SKILL pre-planning scan** before finalizing.
 4. **Validate & register:** Run `archgen_plan{action:'validate', tasksYaml}` and fix errors until `data.valid:true`. Then run `archgen_registry{action:'update', slug, status:'planned'}` (repeat after any subsequent artifact edit).

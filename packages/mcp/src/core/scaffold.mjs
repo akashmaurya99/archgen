@@ -81,6 +81,12 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   return {
     scopeClass: key,
     label: spec.label,
+    // THIS TOOL WRITES NOTHING. It returns the CONTENT of every file the
+    // scope class needs, and the caller writes them. An agent that assumes
+    // otherwise gets "missing or not a directory" from every artifact tool
+    // and reads it as a broken tool rather than an unwritten plan.
+    writes: false,
+    writeThese: artifacts.map((a) => a.path),
     intentDefaults: spec.intentDefaults ?? [],
     roundCap: spec.roundCap ?? null,
     artifacts,

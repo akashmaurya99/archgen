@@ -43,9 +43,11 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 - \`status\` only applies to mermaid output.
 - \`module\` cannot be combined with \`node\` or mermaid.
 - Whole-graph mermaid is refused above 250 nodes — scope it with \`node\` or \`module\`.
-- \`scaffold\` returns the artifact set a scope class MUST have — adding or dropping files is a right-sizing defect.
+- \`scaffold\` returns the artifact set a scope class MUST have — adding or dropping files is a right-sizing defect. It returns each file's CONTENT and **writes nothing**: you write them under \`.archgen/<slug>/\`, then the artifact tools can read them.
 - \`brief\` returns a ready-to-send sub-agent prompt (verifier | review | survey | investigate). It derives the slug from \`tasksYaml\` when you do not pass one, and every path in it is ABSOLUTE — so it works from any working directory. The verifier and review briefs carry the graph, the reference-integrity result and the evidence map rendered, so the sub-agent makes no tool call of its own.
-- The verifier and reviewer return \`VERDICT:\` plus a COVERAGE table (every dimension PASS / FAIL / N-A). A report with findings but no coverage table is INCOMPLETE.`,
+- The verifier and reviewer return \`VERDICT:\` plus a COVERAGE table (every dimension PASS / FAIL / N-A). A report with findings but no coverage table is INCOMPLETE.
+- **Every error carries the next call.** If one fails, read the \`Next:\` line in the message — it is the exact call to make, and the \`Why:\` clause says why. Do not retry the same call.
+- **Batch calls with \`allSettled\`**, not \`all\`: one bad argument must not discard the results of its siblings.`,
 
   tasks: `# archgen_tasks
 
@@ -100,6 +102,11 @@ you need are usually a few hundred. \`digest\` gives you the section index, \`se
 | \`validate\` | reference-integrity gate | slugDir? |
 
 **Gotchas**
+- A section may be named by its exact slug, by its title, or by any unambiguous PREFIX of the slug (\`plan-depth\` finds \`plan-depth-by-scope-class\`).
+- A skill that is not installed reports the install call to make.
+- **Batch calls with \`allSettled\`**, not \`all\`: one bad argument must not discard the results of its siblings.
+
+## Gotchas
 - \`map\` is section-level, \`refs\` is line-level. Use \`map\` to navigate, \`refs\` when you need exact lines.
 - \`section\` takes a BARE SECTION SLUG straight from \`digest\` — e.g. \`section:'non-functional-requirements'\`. It resolves the section across the documents. A slug that matches more than one document comes back as an \`ambiguous\` list, not a guess. \`path\` and \`path#anchor\` also work.
 - Anchors are validated against the target document's real heading slugs — a renamed section is a broken anchor, not a silent pass.
@@ -221,7 +228,7 @@ Loads archgen's OWN protocol documents — the judgment layer: how to interview,
 
 **Gotchas**
 - Load the SECTION, not the topic: a topic is ~11 KB, a section is ~1-2 KB.
-- Section slugs are GitHub-exact (lowercase, punctuation dropped, whitespace to hyphens). Call \`index\` for the exact slug rather than guessing it.
+- A section may be named by its exact slug, by its title, or by any unambiguous PREFIX of the slug. The skill's own \`§\` names are prefixes — \`§artifact-templates/plan-depth\` resolves to \`plan-depth-by-scope-class\` — so pass the \`§\` name straight through. Call \`index\` only when a prefix is ambiguous.
 - \`code-standards.md\` is served too when the skill is installed — but WORKERS read it as a plain file, because they may have no MCP server at all.`,
 
   all: `# archgen — the complete tool surface
