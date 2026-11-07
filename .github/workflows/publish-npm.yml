@@ -127,9 +127,29 @@ jobs:
           fi
 
           if [ "$oidc_ok" -eq 1 ]; then
+            # npm's version is NECESSARY but not SUFFICIENT: the exchange
+            # only succeeds if the package has a TRUSTED PUBLISHER configured
+            # on npmjs.com. This step cannot prove that — the exchange
+            # happens inside `npm publish` — so it says so plainly instead of
+            # implying the credential is ready. The publish step reports the
+            # real answer.
             echo "npm CLI $version supports trusted publishing (OIDC)."
+            if [ -n "${NPM_TOKEN:-}" ]; then
+              echo "the NPM_TOKEN secret is present; npm will fall back to it if the OIDC exchange is refused."
+            else
+              echo "::notice::publishing via OIDC — it requires a TRUSTED PUBLISHER on npmjs.com for $PACKAGE_NAME (Settings -> Trusted Publishers -> GitHub Actions, repository akashmaurya99/archgen, workflow publish-npm.yml)."
+            fi
           elif [ -n "${NPM_TOKEN:-}" ]; then
             echo "::warning::npm CLI $version cannot do trusted publishing (needs >= 11.5.1); publishing with the NPM_TOKEN secret instead."
+            # A token that is present but wrong (revoked, wrong scope, wrong
+            # registry) would otherwise fail at the publish step with a bare
+            # 401. Prove it HERE, where the message can name the cause.
+            if ! npm whoami --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+              echo "::error::The NPM_TOKEN secret is present but npm cannot authenticate with it."
+              echo "::error::Fix: check the token is not revoked, is an automation token, and is scoped to $PACKAGE_NAME."
+              exit 1
+            fi
+            echo "the NPM_TOKEN secret authenticates against the registry."
           else
             echo "::error::No publish credential. npm CLI $version cannot do trusted publishing (needs >= 11.5.1) and the NPM_TOKEN secret is not set."
             echo "::error::Fix: add the NPM_TOKEN secret to this repository, OR configure npm trusted publishing for $PACKAGE_NAME on npmjs.com (Package -> Settings -> Trusted Publishers -> GitHub Actions, repository akashmaurya99/archgen, workflow publish-npm.yml)."
@@ -177,6 +197,21 @@ jobs:
             echo "packages/cli has no dependencies and no lockfile — nothing to install."
             npm install --package-lock-only --no-audit --no-fund
           fi
+
+      # The CLI is zero-dependency, but its TESTS are not: the migration
+      # suite drives the REAL archgen MCP server (packages/mcp/bin/
+      # archgen-mcp.mjs), which needs the MCP SDK. Without the server's
+      # dependencies installed, those tests fail with ERR_MODULE_NOT_FOUND
+      # and the release never reaches the publish step.
+      #
+      # The CI workflow already installs them for the same reason (see
+      # .github/workflows/ci.yml, the `cli` job). This leg did not — so every
+      # publish run of the CLI leg failed at Test, and every release since
+      # the CLI started delegating to the server had to be published by hand.
+      - name: Install the server's dependencies for the CLI's tests
+        if: startsWith(github.ref_name, matrix.tag) && matrix.has_lockfile == 'false'
+        working-directory: packages/mcp
+        run: npm ci --no-audit --no-fund
 
       - name: Test
         if: startsWith(github.ref_name, matrix.tag)
