@@ -18,7 +18,7 @@
 // skill/scripts/set-status.mjs — the MCP server must not be weaker than the
 // scripts it replaces.
 import { lstatSync, mkdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { conflict, permissionDenied } from './errors.mjs';
 
 /** Canonical refusal message — identical wording to the CLI's. */
@@ -42,19 +42,57 @@ export function assertNotSymlink(absPath) {
 }
 
 /**
+ * The REAL path of a path, climbing to the nearest existing ancestor when
+ * the leaf does not exist yet — so a symlinked PARENT is caught too.
+ *
+ * Returns null when the chain cannot be resolved at all (a broken symlink,
+ * or a component that is not a directory).
+ *
+ * @param {string} abs
+ * @returns {string|null}
+ */
+function realPathWithTail(abs) {
+  const tail = [];
+  let probe = resolve(abs);
+  for (;;) {
+    try {
+      const real = realpathSync(probe);
+      return tail.length ? join(real, ...tail) : real;
+    } catch (e) {
+      if (!e || e.code !== 'ENOENT') return null;
+      const parent = dirname(probe);
+      if (parent === probe) return null;
+      tail.unshift(basename(probe));
+      probe = parent;
+    }
+  }
+}
+
+/**
  * Realpath-escape guard: refuse anything that lands outside `rootAbs`.
  *
- * TWO CHECKS, IN ORDER.
+ * TWO COMPARISONS, AND THE PATH IS ALLOWED IF EITHER SAYS IT IS INSIDE.
  *
- *   1. LEXICAL. After normalization, the path must be inside the root. This
- *      always applies — it is the primary guard, and it cannot be skipped
- *      because a path does not exist yet.
- *   2. REAL. The nearest existing ancestor is resolved and must also be
- *      inside the root's real path. This is what catches a symlinked
- *      PARENT directory that would redirect the write elsewhere.
+ *   1. LEXICAL — the caller's spelling against the root's spelling.
+ *   2. REAL — where the path actually LANDS against where the root actually
+ *      IS. This is the one that catches a symlinked PARENT redirecting a
+ *      write elsewhere, and it is the only one that can answer the question
+ *      when the two paths are spelled differently.
  *
- * The guard does NOT fail open: if the root cannot be resolved, only the
- * lexical check stands, and the lexical check is always applied.
+ * They can disagree, and they DO whenever the root and the path are spelled
+ * differently — which is the NORMAL case on macOS (`/tmp`, `/var`) and for
+ * any symlinked project: `process.cwd()` is the REAL path while the caller
+ * passes the LOGICAL one.
+ *
+ * The old guard compared the LEXICAL path against the REAL root and refused
+ * on that mismatch, so a perfectly valid path inside the project was
+ * reported as "outside the project" — and the two names the SAME place. The
+ * real comparison is the one that can actually answer the question, and it
+ * must be allowed to.
+ *
+ * The guard does NOT fail open: if the real comparison cannot be made, the
+ * lexical one stands on its own, and a path outside the root by every
+ * measure we could make is always refused.
  *
  * @param {string} rootAbs
  * @param {string} absPath
@@ -62,43 +100,24 @@ export function assertNotSymlink(absPath) {
 export function assertWithinRoot(rootAbs, absPath) {
   const root = resolve(rootAbs);
   const abs = resolve(absPath);
-  if (abs !== root && !abs.startsWith(root + sep)) {
-    throw permissionDenied(
-      `refusing a path outside the project: ${absPath} is not inside ${rootAbs}`,
-      { path: absPath, root: rootAbs },
-    );
-  }
 
-  let rootReal;
-  try {
-    rootReal = realpathSync(root);
-  } catch {
-    return; // the root itself does not exist yet — the lexical check stands
+  const rootReal = realPathWithTail(root);
+  const pathReal = realPathWithTail(abs);
+
+  const lexicalInside = abs === root || abs.startsWith(root + sep);
+  const realInside =
+    rootReal && pathReal ? pathReal === rootReal || pathReal.startsWith(rootReal + sep) : null;
+
+  if (realInside === true || (realInside === null && lexicalInside)) return;
+
+  if (lexicalInside) {
+    // Lexically inside, but it lands somewhere else: a symlinked parent.
+    throw permissionDenied(refuseSymlinkMessage(absPath), { path: absPath, root: rootAbs });
   }
-  let probe = abs;
-  for (;;) {
-    let exists = true;
-    try {
-      lstatSync(probe);
-    } catch {
-      exists = false;
-    }
-    if (exists) {
-      let real;
-      try {
-        real = realpathSync(probe);
-      } catch {
-        return; // broken chain: nothing writable through it
-      }
-      if (real !== rootReal && !real.startsWith(rootReal + sep)) {
-        throw permissionDenied(refuseSymlinkMessage(absPath), { path: absPath, root: rootAbs });
-      }
-      return;
-    }
-    const parent = dirname(probe);
-    if (parent === probe) return;
-    probe = parent;
-  }
+  throw permissionDenied(
+    `refusing a path outside the project: ${absPath} is not inside ${rootAbs}`,
+    { path: absPath, root: rootAbs },
+  );
 }
 
 /**

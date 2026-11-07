@@ -177,9 +177,26 @@ function realpathWithTail(p) {
  * outside `rootAbs`. Catches `.agents -> /elsewhere` style redirects that a
  * final-component lstat cannot see.
  *
- * The LEXICAL check always applies — it is the only guard that can work when
- * the root does not exist yet (init calls this before it created anything),
- * and a lexical escape (`../../etc/passwd`) is an escape under any root.
+ * TWO COMPARISONS, AND THE PATH IS ALLOWED IF EITHER SAYS IT IS INSIDE.
+ *
+ *   1. LEXICAL — the caller's spelling against the root's spelling.
+ *   2. REAL — where the path actually LANDS against where the root actually
+ *      IS. This is the one that catches a symlinked PARENT.
+ *
+ * They can disagree, and they DO whenever the root and the path are spelled
+ * differently — the NORMAL case on macOS (`/tmp`, `/var`) and for any
+ * symlinked project: `process.cwd()` is the REAL path while the caller
+ * passes the LOGICAL one.
+ *
+ * The old guard compared the LEXICAL path against the REAL root and refused
+ * on that mismatch, so a perfectly valid path inside the project was
+ * reported as an escape — and the two names the SAME place. The real
+ * comparison is the one that can actually answer the question, and it must
+ * be allowed to.
+ *
+ * The guard does NOT fail open: when the real comparison cannot be made the
+ * lexical one stands alone, and a path outside the root by every measure we
+ * could make is always refused.
  *
  * @param {string} rootAbs project/base root
  * @param {string} absPath path that must stay inside the root
@@ -187,17 +204,20 @@ function realpathWithTail(p) {
 export function assertWithinRoot(rootAbs, absPath) {
   const rootLex = resolve(rootAbs);
   const pathLex = resolve(absPath);
-  if (pathLex !== rootLex && !pathLex.startsWith(rootLex + sep)) {
-    throw new Error(refuseSymlinkMessage(absPath));
-  }
 
   const rootReal = realpathWithTail(rootLex);
   const pathReal = realpathWithTail(pathLex);
-  // Unresolvable (no existing ancestor at all): the lexical check stands.
-  if (!rootReal || !pathReal) return;
-  if (pathReal !== rootReal && !pathReal.startsWith(rootReal + sep)) {
-    throw new Error(refuseSymlinkMessage(absPath));
-  }
+
+  const lexicalInside = pathLex === rootLex || pathLex.startsWith(rootLex + sep);
+  const realInside =
+    rootReal && pathReal ? pathReal === rootReal || pathReal.startsWith(rootReal + sep) : null;
+
+  if (realInside === true || (realInside === null && lexicalInside)) return;
+
+  // Outside by every measure we could make. The refusal WORDING is unchanged
+  // from the guard this replaces — it is the CLI's established contract, and
+  // a test pins it. Only the COMPARISON changed.
+  throw new Error(refuseSymlinkMessage(absPath));
 }
 
 /** Version string of this CLI package (used for the in-store stamp). */
