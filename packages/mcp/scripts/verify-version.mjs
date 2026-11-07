@@ -5,7 +5,7 @@
 // CLI's sync script derives every package.json from it. This script is the
 // LAST gate before publish: if the package's version has drifted from the
 // canonical one, the publish FAILS here rather than shipping a version
-// nobody can match up with the skill, the CLI and the extension.
+// nobody can match up with the skill and the CLI.
 //
 // It verifies; it does not write. The canonical writer is
 // packages/cli/scripts/sync-config.mjs — one writer, one source.

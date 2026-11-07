@@ -3,7 +3,7 @@
 ## Provenance header (SHOULD on every NEW tasks.yaml / architecture.yaml)
 
 Begin both files with three YAML comment lines. Comments are ignored by every
-consumer (the MCP server, the VS Code extension, any YAML toolchain), so this is
+consumer (the MCP server, any YAML toolchain), so this is
 purely additive metadata — it can never break a parser:
 
 **NEVER type the version yourself.** The `scaffold` action writes the generator

@@ -363,9 +363,9 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
 
   // 7. Version-stamp inventory — every archgen skill tree visible from this
   //    project/machine, one line each, for tools that probe
-  //    <skillRoot>/.archgen-version (the VS Code extension reads it to warn
-  //    "skill outdated"). Report-only: doctor repairs the project stamp in
-  //    section 2, never global installs.
+  //    <skillRoot>/.archgen-version (the MCP server reads it to report the
+  //    installed skill's version). Report-only: doctor repairs the project
+  //    stamp in section 2, never global installs.
   const seen = new Set();
   const installs = [];
   const noteInstall = (p) => {

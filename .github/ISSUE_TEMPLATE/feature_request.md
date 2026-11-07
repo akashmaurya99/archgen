@@ -23,7 +23,6 @@ Which part?
   archgen-mcp (packages/mcp)   — a tool, the core, or a registry/asset
   skill                         — the guidance the agent follows
   packages/cli                  — the installer
-  packages/extension            — the VS Code views / the UI bridge
   schemas / docs / install.sh
 -->
 

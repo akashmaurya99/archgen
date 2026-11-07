@@ -108,7 +108,6 @@ test('the binary speaks MCP over stdio', async (t) => {
     'archgen_setup',
     'archgen_skills',
     'archgen_tasks',
-    'archgen_ui',
   ]);
 
   const call = await server.call('tools/call', { name: 'archgen_help', arguments: { topic: 'tasks' } });

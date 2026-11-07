@@ -6,26 +6,21 @@ How archgen works internally. This document describes the system as implemented 
 
 archgen has ONE implementation of every deterministic capability, and it is the
 `archgen-mcp` server (`packages/mcp/`). The skill ships **no code** — it is
-orchestration guidance for the agent. Three consumers reach the same
+orchestration guidance for the agent. Two consumers reach the same
 implementation:
 
-1. **Agent.** The MCP server over stdio. Nine domain tools
+1. **Agent.** The MCP server over stdio. Eight domain tools
    (`archgen_plan`, `archgen_tasks`, `archgen_docs`, `archgen_registry`,
-   `archgen_codegraph`, `archgen_setup`, `archgen_ui`, `archgen_skills`,
-   `archgen_refs`) plus `archgen_help`; every result is a typed envelope
+   `archgen_codegraph`, `archgen_setup`, `archgen_skills`, `archgen_refs`)
+   plus `archgen_help`; every result is a typed envelope
    `{ ok, data, error, meta }`.
 2. **CLI installer.** `archgen-skill init` / `install` shells out to
    `archgen-mcp bootstrap` to wire the MCP server into every detected harness
    and ensure CodeGraph. The CLI itself stays zero-dependency.
-3. **VS Code extension.** `packages/extension/` calls
-   `archgen-mcp exec archgen_tasks '{"action":"next"}'` to resolve the frontier,
-   and drives the board through the filesystem UI bridge
-   (`.archgen/.runtime/cmd/` → `ack/`). It never edits artifacts itself.
 
-All three read the same artifacts and the same task-file schema
-(`schemas/tasks.schema.json`); a shared YAML corpus (`fixtures/yaml-corpus/`)
-plus a parity test keep the MCP core's parser and the extension's TS port from
-diverging.
+Both read the same artifacts and the same task-file schema
+(`schemas/tasks.schema.json`); the frozen YAML corpus (`fixtures/yaml-corpus/`)
+plus its corpus test keep the MCP core's parser pinned to a known contract.
 
 ## The containment model
 
@@ -46,10 +41,8 @@ private key. So the server owns a boundary:
   path lands outside the artifact space is refused, because a repository can
   ship `.archgen/leak.md → ~/.aws/credentials`.
 
-The same principle runs through the other two packages: the extension
-validates a bridge command's id as a **file name** before it runs (the id
-becomes the acknowledgement file's name), and the installer asserts
-containment **before** it mutates anything.
+The same principle runs through the installer: it asserts containment
+**before** it mutates anything.
 
 ## The two-gate flow
 
@@ -210,7 +203,7 @@ So the gate is behavioural, not structural:
 
 Every artifact archgen writes carries machine-readable provenance, and every mutation is backup-first:
 
-- **Skill trees** carry a `.archgen-version` stamp (`MAJOR.MINOR.PATCH\n`) at their root — rewritten by the CLI on init/install/update; `doctor` and the VS Code extension read it to flag outdated copies (absent = "unknown (legacy)", never an error).
+- **Skill trees** carry a `.archgen-version` stamp (`MAJOR.MINOR.PATCH\n`) at their root — rewritten by the CLI on init/install/update; `doctor` and the MCP server read it to flag outdated copies (absent = "unknown (legacy)", never an error).
 - **Managed blocks** in AGENTS.md/CLAUDE.md open with a `<!-- archgen:block vX.Y.Z -->` line; init/doctor normalize legacy unversioned blocks to the current format in place.
 - **Generated artifacts** under `.archgen/<slug>/` open with `# schema_version:` / generator / generated-at comments. `archgen-skill migrate --check` lists artifacts missing stamps; `--apply` adds them, backing up each original into `.archgen/.backup/<ts>/migrate/`.
 - **`archgen-skill restore`** lists snapshots from the project vault (`.archgen/.backup/`) and per-harness global vaults (`<skills-dir>/.archgen-backups/`); restoring a snapshot first moves the current state of every affected path into a fresh safety snapshot.

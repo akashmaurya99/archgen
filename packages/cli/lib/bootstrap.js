@@ -3,8 +3,8 @@
 //
 // The CLI used to shell out to the skill's scripts/codegraph.mjs. That script
 // no longer exists: ALL deterministic capability now lives in the archgen MCP
-// server, so the CLI drives THAT instead. One implementation, three ways in
-// (agent -> MCP stdio, CLI -> `archgen-mcp bootstrap`, extension -> exec).
+// server, so the CLI drives THAT instead. One implementation, two ways in
+// (agent -> MCP stdio, CLI -> `archgen-mcp bootstrap`).
 //
 // The bootstrap does two things in one pass:
 //   1. wires the archgen MCP entry into every detected harness

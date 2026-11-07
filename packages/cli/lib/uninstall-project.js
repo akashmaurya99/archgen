@@ -2,10 +2,11 @@
 //
 // Removes exactly what archgen owns in a project: the claude symlink, the
 // managed blocks, the canonical store (ONLY when unmodified vs the vendor
-// skill — a customized store is kept with a warning), and the install
-// manifest. `.archgen/<slug>` feature folders and `.archgen/.backup/` are
-// always preserved. Parents are pruned only when left completely empty, and
-// never past the guarded .claude/.agents levels.
+// skill — a customized store is kept with a warning), the install
+// manifest, and the legacy extension runtime directory. `.archgen/<slug>`
+// feature folders and `.archgen/.backup/` are always preserved. Parents are
+// pruned only when left completely empty, and never past the guarded
+// .claude/.agents levels.
 
 import { existsSync, lstatSync, readlinkSync, rmSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -36,6 +37,7 @@ function relJoin(rel) {
  * @param {string} packageRoot dir containing this CLI package (vendor source)
  * @returns {{root: string, linkRemoved: boolean, strippedBlocks: string[],
  *            storeRemoved: boolean, storeKept: boolean, manifestRemoved: boolean,
+ *            runtimeRemoved: boolean,
  *            mcpRemoved: string[], warnings: string[]}}
  */
 export function uninstallProject(projectDir, packageRoot) {
@@ -122,5 +124,23 @@ export function uninstallProject(projectDir, packageRoot) {
   const manifestRemoved = rmIfExists(join(root, relJoin(MANIFEST_REL)));
   if (manifestRemoved) pruneEmptyParents(root, dirname(MANIFEST_REL));
 
-  return { root, linkRemoved, strippedBlocks, storeRemoved, storeKept, manifestRemoved, mcpRemoved, warnings };
+  // 6. The legacy extension runtime directory. The VS Code extension wrote a
+  //    heartbeat and per-command acknowledgements under `.archgen/.runtime/`;
+  //    it is dead state now that the extension and its bridge are gone, and it
+  //    is archgen-owned, so the uninstall removes it. Feature folders and
+  //    backups beside it are untouched.
+  const runtimeRemoved = rmIfExists(join(root, '.archgen', '.runtime'));
+  if (runtimeRemoved) pruneEmptyParents(root, '.archgen/.runtime');
+
+  return {
+    root,
+    linkRemoved,
+    strippedBlocks,
+    storeRemoved,
+    storeKept,
+    manifestRemoved,
+    runtimeRemoved,
+    mcpRemoved,
+    warnings,
+  };
 }

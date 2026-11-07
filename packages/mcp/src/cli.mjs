@@ -1,10 +1,9 @@
 // cli.mjs — the command-line facade over the MCP server.
 //
-// WHY A CLI FACADE: three consumers need the same capability, and they must
+// WHY A CLI FACADE: two consumers need the same capability, and they must
 // never drift apart:
 //   - agents          -> MCP over stdio
 //   - the CLI installer -> `archgen-mcp bootstrap`
-//   - the VS Code extension -> `archgen-mcp exec archgen_tasks '{"action":"next",…}'`
 //
 // `exec` runs the SAME tool handlers the MCP server exposes — there is no
 // second implementation of any capability, only a second way to reach it.

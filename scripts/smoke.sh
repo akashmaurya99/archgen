@@ -68,14 +68,14 @@ node -e '
   const fs = require("fs");
   const tools = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
   const names = tools.map((t) => t.name).sort();
-  const expected = ["archgen_codegraph","archgen_docs","archgen_help","archgen_plan","archgen_refs","archgen_registry","archgen_setup","archgen_skills","archgen_tasks","archgen_ui"];
+  const expected = ["archgen_codegraph","archgen_docs","archgen_help","archgen_plan","archgen_refs","archgen_registry","archgen_setup","archgen_skills","archgen_tasks"];
   const missing = expected.filter((n) => !names.includes(n));
   if (missing.length) { console.error("missing tools:", missing.join(", ")); process.exit(1); }
   const withoutSchema = names.filter((n) => !tools.find((t) => t.name === n).inputSchema);
   if (withoutSchema.length) { console.error("tools without a schema:", withoutSchema.join(", ")); process.exit(1); }
   console.log("     " + names.length + " tools:", names.join(" "));
 ' "$WORK/catalog.json"
-pass "all 10 tools are registered, each with a schema"
+pass "all 9 tools are registered, each with a schema"
 
 step "7. The CLI installs the skill and wires the MCP server"
 # An isolated HOME: `init` wires the GLOBAL harness configs, and those live

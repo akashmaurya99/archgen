@@ -16,7 +16,6 @@ import { registerDocTools } from './tools/docs.mjs';
 import { registerRegistryTools } from './tools/registry.mjs';
 import { registerCodegraphTools } from './tools/codegraph.mjs';
 import { registerSetupTools } from './tools/setup.mjs';
-import { registerUiTools } from './tools/ui.mjs';
 import { registerHelpTools } from './tools/help.mjs';
 import { registerSkillTools } from './tools/skills.mjs';
 import { registerRefTools } from './tools/refs.mjs';
@@ -38,7 +37,6 @@ export function createServer() {
   registerRegistryTools(server);
   registerCodegraphTools(server);
   registerSetupTools(server);
-  registerUiTools(server);
   registerSkillTools(server);
   registerRefTools(server);
   registerHelpTools(server);
@@ -54,7 +52,6 @@ export const TOOL_NAMES = [
   'archgen_registry',
   'archgen_codegraph',
   'archgen_setup',
-  'archgen_ui',
   'archgen_skills',
   'archgen_refs',
   'archgen_help',

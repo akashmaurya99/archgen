@@ -1,3 +1,55 @@
+## [Unreleased]
+
+### Removed — the VS Code extension
+
+The extension is gone, and everything that existed only to serve it.
+
+- **The extension package** (`packages/extension/`) — the task DAG, the
+  code-dependency graph, the rendered-doc views, the activity-bar cockpit and
+  the ▶ build button. It is deleted, not deprecated.
+- **The filesystem UI bridge** (`packages/mcp/src/core/ui-channel.mjs`) — the
+  heartbeat/command/acknowledgement queue under `.archgen/.runtime/`. It was a
+  control plane for a UI that no longer exists.
+- **`archgen_ui`** — the tool that spoke to that bridge. Its only consumer was
+  the extension, so every action could only ever have answered
+  `available:false`. The MCP catalog is now **9 tools** (8 domain +
+  `archgen_help`), down from 10 — and the always-on context cost drops with
+  it.
+- **The extension's TypeScript YAML port** — a second implementation of
+  archgen's YAML subset, which the corpus parity test existed to keep in
+  step. One implementation is better than two kept in sync.
+- **The `vextension-*` release stream** — the GitHub Release workflow that
+  built and shipped the `.vsix`. Releases are now the two npm packages alone.
+
+### Changed — the regression nets got stronger
+
+Nothing was dropped without its replacement landing first.
+
+- **The YAML corpus now has one owner, and it is the canonical parser.**
+  `fixtures/yaml-corpus/*.expected.json` was asserted by the extension's
+  suite and by nothing else — deleting the package would have silently
+  deleted the only test holding archgen's artifact format. It is now pinned by
+  `packages/mcp/test/core/yaml-corpus.test.mjs`, which asserts the parsed
+  data, the comment ledger, the error messages and the round-trip (comments
+  included, at their anchors).
+- **The action matrix is now self-maintaining.** It carried a hard-coded
+  floor of "at least 40 actions", which stopped discriminating once the
+  catalog changed — and `archgen_skills{digest}` went untested for the whole
+  life of the matrix. The gate now asserts that EVERY action the catalog
+  exposes is driven by the matrix, so a new action cannot ship without a test
+  and a removed action cannot leave a stale row behind.
+- **Coverage is gated on the MCP server.** The extension owned the repo's
+  coverage gate; it now covers the runtime that owns every capability.
+
+### Migration
+
+- An agent driving an **older skill** against this server will call
+  `archgen_ui` and get an unknown-tool error. Refresh the skill:
+  `npx archgen-skill init` (or `archgen-skill update`).
+- The `.archgen/.runtime/` directory, if present, is dead state from the old
+  extension. `archgen-skill uninstall --project` now removes it; until then it
+  is safe to delete by hand.
+
 ## [0.0.7] - 2026-11-07
 
 This release is the hardening pass that followed the MCP-first cutover. A

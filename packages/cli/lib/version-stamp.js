@@ -1,7 +1,7 @@
 // version-stamp.js — the `.archgen-version` stamp contract.
 //
-// WHY: the VS Code extension reads `<skillRoot>/.archgen-version` to tell an
-// outdated skill copy from a current one and warns non-blockingly (missing or
+// WHY: the MCP server reads `<skillRoot>/.archgen-version` to tell an
+// outdated skill copy from a current one and reports it (missing or
 // unparseable content means "unknown (legacy)" — a pre-stamp install). The
 // CLI is the only writer: every operation that lays down skill files (init,
 // global install in symlink AND --copy mode, update via its init/doctor

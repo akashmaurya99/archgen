@@ -150,6 +150,38 @@ test('M6: the CLI uninstall of a project with a symlinked AGENTS.md succeeds', (
   assert.match(u.stdout, /AGENTS\.md is a symlink/);
 });
 
+test('the project uninstall removes the dead extension runtime directory', () => {
+  // The VS Code extension wrote a heartbeat + acknowledgements under
+  // `.archgen/.runtime/`. It is archgen-owned state and it is dead now that
+  // the extension is gone — so the uninstall takes it with it.
+  initProject(proj, CLI, NO_BOOTSTRAP);
+  const runtime = join(proj, '.archgen', '.runtime');
+  mkdirSync(join(runtime, 'cmd'), { recursive: true });
+  writeFileSync(join(runtime, 'bridge.json'), '{"protocol":1}\n');
+  writeFileSync(join(runtime, 'cmd', 'abc.json'), '{"id":"abc"}\n');
+
+  const u = uninstallProject(proj, CLI);
+  assert.equal(u.runtimeRemoved, true, 'the runtime dir must be reported as removed');
+  assert.equal(existsSync(runtime), false, 'the dead runtime dir survived the uninstall');
+});
+
+test('the project uninstall keeps the feature folders beside the runtime dir', () => {
+  // `.archgen/<slug>` holds the user's PLAN — it must survive, even when the
+  // dead runtime directory beside it is removed.
+  initProject(proj, CLI, NO_BOOTSTRAP);
+  const runtime = join(proj, '.archgen', '.runtime');
+  mkdirSync(runtime, { recursive: true });
+  writeFileSync(join(runtime, 'bridge.json'), '{"protocol":1}\n');
+  const feature = join(proj, '.archgen', 'demo');
+  mkdirSync(feature, { recursive: true });
+  writeFileSync(join(feature, 'tasks.yaml'), 'tasks: []\n');
+
+  const u = uninstallProject(proj, CLI);
+  assert.equal(u.runtimeRemoved, true);
+  assert.equal(existsSync(runtime), false, 'the dead runtime dir survived');
+  assert.equal(existsSync(join(feature, 'tasks.yaml')), true, 'the user plan was deleted');
+});
+
 test('M14: a failed copy leaves no orphaned temp directory and no missing store', () => {
   // A pre-existing store that must survive the failed install.
   mkdirSync(STORE(proj), { recursive: true });

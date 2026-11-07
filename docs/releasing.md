@@ -1,7 +1,7 @@
 # Releasing
 
-Three independently released artifacts: the **MCP server**, the **npm CLI**,
-and the **VS Code extension**. All share ONE version, single-sourced in
+Two independently released artifacts: the **MCP server** and the **npm CLI**.
+Both share ONE version, single-sourced in
 [`archgen.config.json`](../archgen.config.json) at the repo root; the root
 [`CHANGELOG.md`](../CHANGELOG.md) records every release.
 
@@ -9,7 +9,6 @@ and the **VS Code extension**. All share ONE version, single-sourced in
 |---|---|---|---|
 | `packages/mcp` | `archgen-mcp` | `vmcp-<version>` | npm |
 | `packages/cli` | `archgen-skill` | `vcli-<version>` | npm |
-| `packages/extension` | ArchGen | `vextension-<version>` | GitHub Release (`.vsix`) |
 | `skill/` | — | — | ships inside the CLI's vendor copy |
 
 ---
@@ -53,8 +52,8 @@ npm run sync          # sync-config + sync-vendor
 ```
 
 This regenerates `skill/archgen.config.json`, the `skill/SKILL.md` frontmatter
-version, all three `package.json` files, and the vendored skill copy. Never
-edit a derived file by hand.
+version, both `package.json` files, and the vendored skill copy. Never edit a
+derived file by hand.
 
 Two derived locations live OUTSIDE the sync script:
 
@@ -62,13 +61,11 @@ Two derived locations live OUTSIDE the sync script:
   an `<!-- archgen:block vX.Y.Z -->` provenance line. Update **both** — they must
   stay byte-identical to `renderManagedBlockText()` / `renderClaudeBridgeText()`.
   The CLI suite's install.sh parity tests enforce this and fail the bump otherwise.
-- **the two committed lockfiles** (`packages/mcp/package-lock.json`,
-  `packages/extension/package-lock.json`) carry the package version in two
-  places each. Regenerate them:
+- **the committed lockfile** (`packages/mcp/package-lock.json`) carries the
+  package version in two places. Regenerate it:
 
   ```sh
   npm --prefix packages/mcp install --package-lock-only --no-audit --no-fund
-  npm --prefix packages/extension install --package-lock-only --no-audit --no-fund
   ```
 
 ### 4. Verify — zero drift, everything green
@@ -94,26 +91,25 @@ three end-to-end fixtures and the uninstall. It runs against an isolated
 `npm run test:versions` is the umbrella check. It runs two gates:
 
 - **`version-consistency.mjs`** — every version surface (the derived files, the
-  hand-edited declaration, the install.sh managed blocks, both lockfiles) must
+  hand-edited declaration, the install.sh managed blocks, the lockfile) must
   agree with `archgen.config.json`. Each mismatch is reported with the exact
   command that fixes it.
 - **`version-lint.mjs`** — no `MAJOR.MINOR.x` version may be pinned in an
   *illustrative* surface: a doc, a README, a reference asset, a source
-  comment, the manual-test script. Examples show a shape, not a release —
+  comment. Examples show a shape, not a release —
   so no release ever has to go and update a comment by hand. The real
   surfaces keep concrete versions and are owned by the sync script and the
   capability-contract gate.
 
 CI runs the same set: `vendor-check` (drift + version consistency),
-`capability-contract`, `context-budget`, `mcp`, `cli`, `extension`,
+`capability-contract`, `context-budget`, `mcp`, `cli`, `coverage`,
 `fixtures`, `immutable`, `audit` (high-severity advisories in both npm
 packages) and `secret-scan`.
 
 ### 5. Write the changelog
 
 Add a `## [x.y.z] - YYYY-MM-DD` section to the root `CHANGELOG.md` (Keep a
-Changelog format) and the matching one to `packages/extension/CHANGELOG.md`.
-State the **publish order** and the three tags.
+Changelog format). State the **publish order** and the two tags.
 
 ### 6. Commit, tag, publish
 
@@ -125,14 +121,11 @@ git tag -a vmcp-x.y.z      -m "archgen-mcp x.y.z — the MCP server that owns ev
 git push origin vmcp-x.y.z          # → npm publish archgen-mcp
 git tag -a vcli-x.y.z      -m "archgen-skill x.y.z — the installer; wires the MCP server into every detected harness"
 git push origin vcli-x.y.z          # → npm publish archgen-skill
-git tag -a vextension-x.y.z -m "ArchGen extension x.y.z — the UI bridge and the MCP client"
-git push origin vextension-x.y.z    # → GitHub Release with the .vsix
 ```
 
 **PUBLISH ORDER — the MCP server FIRST.** The CLI's installer resolves
 `archgen-mcp` from the npm registry, so a release that advertises the MCP
-server before it exists hands every user a broken bootstrap. The extension is
-version-agnostic and can ship in any order.
+server before it exists hands every user a broken bootstrap.
 
 Pushing each tag triggers its automation:
 
@@ -140,7 +133,6 @@ Pushing each tag triggers its automation:
 |---|---|---|
 | `vmcp-x.y.z` | `publish-npm.yml` | tests, then `npm publish archgen-mcp` (with provenance) |
 | `vcli-x.y.z` | `publish-npm.yml` | tests, then `npm publish archgen-skill` (with provenance) |
-| `vextension-x.y.z` | `release.yml` | tests, builds the `.vsix`, publishes the GitHub Release |
 
 Each publish job first checks that the tag's version equals the package's
 current version, so a tag left over from an older commit is refused rather
@@ -251,29 +243,6 @@ CI publishes this package automatically on the `vcli-<version>` tag.
 
 The published tarball contains only `bin/`, `lib/`, `vendor/` and `README.md`
 (see the `files` field).
-
-## Extension (`packages/extension`)
-
-The `.vsix` is a build artifact — it is produced by CI (extension job:
-`npm run package`, uploaded as the `archgen-extension-vsix` artifact) and is
-NEVER committed to the repo (`*.vsix` is gitignored).
-
-Local build (for smoke-testing a package):
-
-```sh
-cd packages/extension
-npm ci
-npm run typecheck && npm run compile && npm test
-npm run package            # produces archgen-extension-<version>.vsix
-```
-
-Distribute via GitHub Releases: attach the CI-built `.vsix` for the
-`vextension-<version>` tag to the release at
-<https://github.com/akashmaurya99/archgen/releases> (download it from the
-`archgen-extension-vsix` artifact of the tagged run), or install a locally
-built one with `code --install-extension archgen-extension-<version>.vsix`.
-Note: do not use `vsce package --no-dependencies` — it would drop the
-externalized `better-sqlite3` native binding from the vsix.
 
 ## Skill
 

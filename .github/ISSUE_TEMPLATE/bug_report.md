@@ -24,8 +24,8 @@ labels: bug
 
 ## Harness & platform
 
-- Harness (Claude Code / OpenCode / Cursor / Codex / Gemini CLI / Antigravity / VS Code extension):
-- Component (MCP server `archgen-mcp` / skill / CLI / extension):
+- Harness (Claude Code / OpenCode / Cursor / Codex / Gemini CLI / Antigravity / VS Code + Copilot):
+- Component (MCP server `archgen-mcp` / skill / CLI):
 - archgen version (or commit):
 - archgen-mcp version (`archgen-mcp --version`):
 - OS:

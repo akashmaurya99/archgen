@@ -53,7 +53,7 @@ const ALLOWED = [
   'packages/cli/vendor/',
   // History.
   'CHANGELOG.md',
-  // The frozen parser-parity corpus.
+  // The frozen parser corpus.
   'fixtures/yaml-corpus/',
   // Manifests and lockfiles: their version IS the release.
   'package.json',
@@ -64,7 +64,6 @@ const ALLOWED = [
 const SKIP = [
   'packages/mcp/test/',
   'packages/cli/test/',
-  'packages/extension/test/',
   'internal/test/',
 ];
 

@@ -43,42 +43,12 @@ jobs:
         working-directory: packages/mcp
       - run: npm --prefix packages/cli test
 
-  # Extension toolchain (jsdom + better-sqlite3 + vitest pools) is only
-  # stable on Node >= 22; the shipped extension runs inside VS Code's
-  # Electron runtime, so CI node here is test tooling, not product compat.
-  # README mandates Node 22 for the native-addon pool — pinned, NOT matrixed.
-  extension:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
-        working-directory: packages/extension
-      - run: npm run typecheck
-        working-directory: packages/extension
-      - run: npm run compile
-        working-directory: packages/extension
-      - run: npm test
-        working-directory: packages/extension
-      # Packaging smoke: vsce must produce a vsix from the esbuild bundles
-      # + the .vscodeignore-whitelisted better-sqlite3 runtime chain. The
-      # vsix is a build artifact — uploaded here, NEVER committed (see
-      # .gitignore *.vsix).
-      - run: npm run package
-        working-directory: packages/extension
-      - run: ls archgen-extension-*.vsix
-        working-directory: packages/extension
-      - uses: actions/upload-artifact@v4
-        with:
-          name: archgen-extension-vsix
-          path: packages/extension/*.vsix
-          if-no-files-found: error
-
-  # Coverage HARD GATE: vitest.config.mts thresholds fail the run if any
-  # metric (lines/branches/functions/statements) drops below 90%.
-  # Node 22 only — same native-addon constraint as the extension job.
+  # Coverage gate for the MCP server — the runtime that owns every
+  # deterministic capability. The floors below are a REGRESSION GUARD: each
+  # one is set just under the measured coverage at the time of writing, so
+  # the job fails when a change costs coverage and passes when it does not.
+  # Node 22 only — the threshold flags (--test-coverage-*) need a modern
+  # runtime, and the job is a measurement, not a compatibility matrix.
   coverage:
     runs-on: ubuntu-latest
     steps:
@@ -87,23 +57,38 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-        working-directory: packages/extension
-      - run: npm run coverage
-        working-directory: packages/extension
+        working-directory: packages/mcp
+      - run: npm test
+        working-directory: packages/mcp
+      # The report is written to a FILE (not stdout) so it can be uploaded as
+      # a diagnosable artifact. The destination directory must exist first —
+      # node does not create it.
+      - name: Measure coverage against the floors
+        working-directory: packages/mcp
+        run: |
+          mkdir -p coverage
+          node --test \
+            --experimental-test-coverage \
+            --test-reporter=lcov \
+            --test-reporter-destination=coverage/lcov.info \
+            --test-coverage-lines=85 \
+            --test-coverage-functions=80 \
+            --test-coverage-branches=70
       # The coverage report is the DIAGNOSIS for a threshold failure: the
-      # step's own log is enough to see "89.57% < 90%", but not enough to see
+      # step's own log is enough to see "84.1% < 85%", but not enough to see
       # WHICH file fell below. Upload it so a failure is readable without
       # re-running the job locally.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: extension-coverage
-          path: packages/extension/coverage
+          name: mcp-coverage
+          path: packages/mcp/coverage
           if-no-files-found: ignore
           retention-days: 7
 
   # End-to-end fixture suites: the greenfield / brownfield / verifier-negative
-  # flows now drive the REAL archgen MCP tool surface, not the old scripts.
+  # flows drive the REAL archgen MCP tool surface, not the old scripts, and
+  # the tool-matrix drives EVERY action of EVERY tool through the real binary.
   fixtures:
     runs-on: ubuntu-latest
     steps:
@@ -116,12 +101,13 @@ jobs:
       - run: bash fixtures/greenfield-demo/run.sh
       - run: bash fixtures/brownfield-demo/run.sh
       - run: bash fixtures/verifier-negative/run.sh
+      - run: bash fixtures/tool-matrix/run.sh
 
   # Context-budget gate: the ALWAYS-ON cost (SKILL.md + the MCP tool catalog
-  # injected into every request) must not regress. Measured 12,672 tokens; the
+  # injected into every request) must not regress. Measured 12,548 tokens; the
   # ceiling leaves ~7% headroom. The ON-DEMAND cost is the other half of the
   # story: the reference documents moved into the package, so the shipped skill
-  # tree dropped from 25,793 to 9,190 tokens and a section load is ~1-2 KB
+  # tree dropped from 25,793 to 9,375 tokens and a section load is ~1-2 KB
   # instead of an 11 KB document.
   context-budget:
     runs-on: ubuntu-latest
@@ -132,7 +118,7 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
         working-directory: packages/mcp
-      - run: node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13600
+      - run: node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13400
 
   # Capability contract: the skill declares the MCP server version it needs,
   # and that requirement must be satisfiable by THIS release.
@@ -159,27 +145,11 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --no-audit --no-fund
-        working-directory: packages/extension
-      - run: npm ci --no-audit --no-fund
         working-directory: packages/mcp
       - run: node internal/tools/repo-immutable.mjs -- npm test
 
-  # Model↔view parity: the extension's own parser must read the
-  # greenfield-demo fixture into exactly the view model the DAG renders.
-  cross-mode:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
-        working-directory: packages/extension
-      - run: npm run cross-mode
-        working-directory: packages/extension
-
   # Version single-source + vendor-freshness gate: every derived version
-  # field (skill config, SKILL.md frontmatter, cli + extension package.json)
+  # field (skill config, SKILL.md frontmatter, cli + mcp package.json)
   # and vendored copy must already match archgen.config.json. sync:check
   # fails with an explicit drift report; sync + git diff catches any
   # derived file someone shipped without running `npm --prefix packages/cli run sync`.
@@ -192,7 +162,7 @@ jobs:
           node-version: 22
       - run: npm --prefix packages/cli run sync:check
       - run: npm --prefix packages/cli run sync
-      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/extension/package.json packages/mcp/package.json
+      - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/mcp/package.json
       # The umbrella check: every version surface — derived, hand-edited and
       # lockfile — must agree with archgen.config.json. It reports them all
       # together, each with the command that fixes it.
@@ -200,29 +170,27 @@ jobs:
       # A lockfile whose version disagrees with its package.json makes
       # `npm ci` REFUSE to install ("can only install packages when your
       # package.json and package-lock.json are in sync"). That is a release
-      # that fails on the runner, not on the maintainer's machine. The two
-      # committed lockfiles are therefore version-checked here.
-      - name: The committed lockfiles match their package.json
+      # that fails on the runner, not on the maintainer's machine. The
+      # committed lockfile is therefore version-checked here.
+      - name: The committed lockfile matches its package.json
         run: |
           set -euo pipefail
-          for dir in packages/mcp packages/extension; do
-            pkg_version="$(node -p "require('./$dir/package.json').version")"
-            lock_version="$(node -p "require('./$dir/package-lock.json').version")"
-            lock_root="$(node -p "require('./$dir/package-lock.json').packages[''].version")"
-            echo "$dir: package.json=$pkg_version lock=$lock_version lock_root=$lock_root"
-            if [ "$pkg_version" != "$lock_version" ] || [ "$pkg_version" != "$lock_root" ]; then
-              echo "::error::$dir lockfile version does not match package.json ($pkg_version vs $lock_version/$lock_root)"
-              echo "::error::Fix: npm --prefix $dir install --package-lock-only --no-audit --no-fund"
-              exit 1
-            fi
-          done
-      # Never commit a CodeGraph index (local machine state). The extension's
-      # test fixtures are the ONE exception: they are synthetic SQLite inputs
-      # the suite reads, regenerated by `npm run build:fixture-db`.
+          dir=packages/mcp
+          pkg_version="$(node -p "require('./$dir/package.json').version")"
+          lock_version="$(node -p "require('./$dir/package-lock.json').version")"
+          lock_root="$(node -p "require('./$dir/package-lock.json').packages[''].version")"
+          echo "$dir: package.json=$pkg_version lock=$lock_version lock_root=$lock_root"
+          if [ "$pkg_version" != "$lock_version" ] || [ "$pkg_version" != "$lock_root" ]; then
+            echo "::error::$dir lockfile version does not match package.json ($pkg_version vs $lock_version/$lock_root)"
+            echo "::error::Fix: npm --prefix $dir install --package-lock-only --no-audit --no-fund"
+            exit 1
+          fi
+      # Never commit a CodeGraph index — it is local machine state, and the
+      # one consumer of it (the MCP server) builds its own.
       - run: |
-          tracked="$(git ls-files | grep -E '(^|/)\.codegraph/' | grep -v '/test/fixtures/' || true)"
+          tracked="$(git ls-files | grep -E '(^|/)\.codegraph/' || true)"
           if [ -n "$tracked" ]; then
-            echo '::error:: .codegraph/ must never be tracked (outside test/fixtures/):'
+            echo '::error:: .codegraph/ must never be tracked:'
             echo "$tracked"
             exit 1
           fi
@@ -235,9 +203,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Extension has a committed lockfile — audit it directly.
-      - run: npm audit --audit-level=high
-        working-directory: packages/extension
       # CLI is zero-dep with no lockfile; generate one in the CI workspace
       # (never committed) so npm audit can resolve the tree.
       - run: npm install --package-lock-only --no-audit --no-fund

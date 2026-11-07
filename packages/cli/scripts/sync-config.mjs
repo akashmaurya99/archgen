@@ -5,8 +5,8 @@
 //   (a) skill/archgen.config.json     verbatim pretty-printed copy of canonical
 //   (b) skill/SKILL.md                ONLY the frontmatter `metadata.version` line
 //   (c) packages/cli/package.json     the "version" field
-//   (d) packages/extension/package.json  the "version" field (when present —
-//       published CLI layouts and test fixtures ship without the extension)
+//   (d) packages/mcp/package.json     the "version" field (when present — the
+//       published CLI payload ships without the MCP package)
 //
 // All writes are atomic (temp sibling file + rename). Run automatically via
 // `prepublishOnly` and `npm run sync`; run standalone via `npm run sync:config`.
@@ -51,8 +51,8 @@ export function setFrontmatterVersion(raw, version) {
 
 /**
  * Rewrite ONLY the top-level "version" field of a package.json, preserving
- * every other byte — hand-formatted files (compact one-line objects in the
- * extension manifest) must not be reflowed by a version bump.
+ * every other byte — hand-formatted files (compact one-line objects) must not
+ * be reflowed by a version bump.
  * Top-level keys carry the file's base indent (the indent of the first key
  * after the opening brace); nested keys indent deeper, so they never match.
  * @param {string} raw package.json contents
@@ -166,20 +166,8 @@ export function syncConfig({ root = DEFAULT_ROOT, check = false } = {}) {
     touched.push('packages/cli/package.json (version)');
   }
 
-  // (d) extension package.json version field — exist-conditional: published
-  // CLI layouts and test fixtures ship without the extension package.
-  const extPkgPath = join(rootDir, 'packages', 'extension', 'package.json');
-  if (existsSync(extPkgPath)) {
-    const rawExt = readFileSync(extPkgPath, 'utf8');
-    const nextExt = setPackageVersion(rawExt, cfg.version);
-    if (nextExt !== rawExt) {
-      if (!check) writeFileAtomic(extPkgPath, nextExt);
-      touched.push('packages/extension/package.json (version)');
-    }
-  }
-
-  // (e) MCP server package.json version field — exist-conditional for the
-  // same reason: the published CLI payload ships without the MCP package.
+  // (d) MCP server package.json version field — exist-conditional: the
+  // published CLI payload ships without the MCP package.
   const mcpPkgPath = join(rootDir, 'packages', 'mcp', 'package.json');
   if (existsSync(mcpPkgPath)) {
     const rawMcp = readFileSync(mcpPkgPath, 'utf8');
@@ -190,7 +178,7 @@ export function syncConfig({ root = DEFAULT_ROOT, check = false } = {}) {
     }
   }
 
-  // (f) the committed lockfiles' version fields.
+  // (e) the committed lockfiles' version fields.
   //
   // A lockfile whose version disagrees with its package.json makes `npm ci`
   // REFUSE to install ("can only install packages when your package.json and
@@ -203,7 +191,6 @@ export function syncConfig({ root = DEFAULT_ROOT, check = false } = {}) {
   // packages/cli has no lockfile by design (zero-dependency) — skipped.
   for (const [dir, lockRel] of [
     ['packages/mcp', 'packages/mcp/package-lock.json'],
-    ['packages/extension', 'packages/extension/package-lock.json'],
   ]) {
     const lockPath = join(rootDir, lockRel);
     if (!existsSync(lockPath)) continue;

@@ -118,7 +118,7 @@ test('a brief only names the archgen calls it is allowed to make', () => {
   for (const kind of BRIEF_KINDS) {
     const { brief } = loadBrief(BRIEFS_DIR, kind);
     const allowed = ALLOWED_CALLS[kind] ?? [];
-    const calls = [...brief.matchAll(/archgen_(plan|docs|tasks|registry|codegraph|setup|ui|skills|refs)\s*\{/g)].map(
+    const calls = [...brief.matchAll(/archgen_(plan|docs|tasks|registry|codegraph|setup|skills|refs)\s*\{/g)].map(
       (m) => m[0].replace(/\s*\{$/, ''),
     );
     for (const tool of calls) {

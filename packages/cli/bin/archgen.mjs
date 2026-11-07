@@ -249,6 +249,7 @@ try {
         if (r.storeRemoved) console.log('  - .agents/skills/archgen (unmodified store)');
         if (r.storeKept) console.log('  = .agents/skills/archgen KEPT (customized)');
         if (r.manifestRemoved) console.log('  - .archgen/.install-manifest.json');
+        if (r.runtimeRemoved) console.log('  - .archgen/.runtime (legacy extension state)');
         for (const m of r.mcpRemoved ?? []) console.log(`  - ${m} (archgen MCP entry)`);
         for (const w of r.warnings) console.log('  note: ' + w);
         console.log('  .archgen feature folders and backups are preserved.');

@@ -193,22 +193,14 @@ mcp archgen_codegraph "{\"action\":\"wire\",\"noInstall\":true}" "codegraph/wire
 mcp archgen_codegraph "{\"action\":\"ensure\",\"noInstall\":true}" "codegraph/ensure (unapproved -> plan)"
 pass "archgen_setup + archgen_codegraph — 8 actions"
 
-echo "── archgen_ui (best-effort) ───────────────────────────────"
-mcp archgen_ui "{\"action\":\"status\"}" "ui/status"
-mcp archgen_ui "{\"action\":\"select_feature\",\"slug\":\"demo\",\"timeoutMs\":1}" "ui/select_feature"
-mcp archgen_ui "{\"action\":\"reveal_task\",\"taskId\":\"API\",\"timeoutMs\":1}" "ui/reveal_task"
-mcp archgen_ui "{\"action\":\"open_doc\",\"path\":\"demo/docs/prd.md\",\"timeoutMs\":1}" "ui/open_doc"
-mcp archgen_ui "{\"action\":\"focus\",\"view\":\"board\",\"timeoutMs\":1}" "ui/focus"
-mcp archgen_ui "{\"action\":\"refresh\",\"timeoutMs\":1}" "ui/refresh"
-pass "archgen_ui — 6 actions"
-
 echo "── archgen_skills ─────────────────────────────────────────"
 mcp archgen_skills "{\"action\":\"list\"}" "skills/list"
 mcp archgen_skills "{\"action\":\"installed\"}" "skills/installed"
 mcp archgen_skills "{\"action\":\"match\",\"title\":\"Build the dashboard UI\",\"fileOwnership\":[\"src/features/web/**\"]}" "skills/match"
 mcp archgen_skills "{\"action\":\"load\",\"skillId\":\"ui-baseline\"}" "skills/load (not installed -> hint)"
+mcp archgen_skills "{\"action\":\"digest\",\"skillId\":\"ui-baseline\"}" "skills/digest (not installed -> hint)"
 mcp archgen_skills "{\"action\":\"install\",\"skillId\":\"ui-baseline\"}" "skills/install (unapproved -> plan)"
-pass "archgen_skills — 5 actions"
+pass "archgen_skills — 6 actions"
 
 echo "── archgen_refs ───────────────────────────────────────────"
 mcp archgen_refs "{\"action\":\"list\"}" "refs/list"
@@ -219,10 +211,10 @@ mcp archgen_refs "{\"action\":\"search\",\"topic\":\"orchestration\",\"token\":\
 pass "archgen_refs — 5 actions"
 
 echo "── archgen_help ───────────────────────────────────────────"
-for topic in plan tasks docs registry codegraph setup ui skills refs all; do
+for topic in plan tasks docs registry codegraph setup skills refs all; do
   mcp archgen_help "{\"topic\":\"$topic\"}" "help/$topic"
 done
-pass "archgen_help — 10 topics"
+pass "archgen_help — 9 topics"
 
 echo ""
 echo "── the three original failures, re-checked ────────────────"

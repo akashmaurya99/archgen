@@ -175,30 +175,6 @@ Installation, MCP wiring and health.
 - The four known top-level config keys are \`mcpServers\` / \`servers\` / \`mcp\` / \`context_servers\` — never assume one.
 - \`harness_info\` with no argument DETECTS the harness and returns its row; with an unknown platform it returns the fallback procedure instead of failing.`,
 
-  ui: `# archgen_ui
-
-Controls the ArchGen VS Code extension in real time.
-
-**When to call**
-- After changing a task's status, to point the user at what changed.
-- When the user asks to show a task, a document, or a different feature.
-- \`status\` first, if you are unsure whether the extension is running.
-
-**Actions**
-| action | what it does | required args |
-|---|---|---|
-| \`status\` | is the extension running, what can it do | projectRoot? |
-| \`select_feature\` | switch the board to a feature | slug |
-| \`reveal_task\` | focus the board on a task node | taskId |
-| \`open_doc\` | open a document in the DOCS tab | path |
-| \`focus\` | bring a view forward | view |
-| \`refresh\` | force a model re-push | — |
-
-**Gotchas**
-- These are BEST-EFFORT. With the extension closed you get \`available:false\` — that is not an error, and it
-  never blocks your work. The file writes themselves already update the board in real time.
-- \`path\` for \`open_doc\` is repo-root-relative.`,
-
   skills: `# archgen_skills
 
 Matches a task against the capability-skill registry, installs EXACTLY the matched skill, and loads its SKILL.md.
@@ -250,7 +226,7 @@ Loads archgen's OWN protocol documents — the judgment layer: how to interview,
 
   all: `# archgen — the complete tool surface
 
-Eight tools, one domain each. Call them by name; the server resolves paths, validates input and returns a
+Nine tools, one domain each. Call them by name; the server resolves paths, validates input and returns a
 structured result. Every result is \`{ ok, data, error, meta }\` — \`ok:false\` carries a typed \`error.code\`.
 
 | tool | domain | use it for |
@@ -261,7 +237,6 @@ structured result. Every result is \`{ ok, data, error, meta }\` — \`ok:false\
 | \`archgen_registry\` | registry | refresh / read the AGENTS.md features table |
 | \`archgen_codegraph\` | code index | install + wire + index CodeGraph and its MCP |
 | \`archgen_setup\` | install | doctor / bootstrap / install_mcp / uninstall_mcp / harnesses |
-| \`archgen_ui\` | VS Code UI | status / select_feature / reveal_task / open_doc / focus / refresh |
 | \`archgen_skills\` | capability skills | match / install / installed / load / list |
 | \`archgen_refs\` | archgen's protocols | list / index / read / search |
 | \`archgen_help\` | this | a detailed briefing for one domain |
@@ -275,7 +250,7 @@ structured result. Every result is \`{ ok, data, error, meta }\` — \`ok:false\
 
 const schema = z.object({
   topic: z
-    .enum(['plan', 'tasks', 'docs', 'registry', 'codegraph', 'setup', 'ui', 'skills', 'refs', 'all'])
+    .enum(['plan', 'tasks', 'docs', 'registry', 'codegraph', 'setup', 'skills', 'refs', 'all'])
     .describe('Which domain to explain.'),
   projectRoot: projectRootArg,
 });

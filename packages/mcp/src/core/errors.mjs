@@ -46,7 +46,7 @@ export const ownershipConflict = (message, details) => new ArchgenError('OWNERSH
 export const conflict = (message, details) => new ArchgenError('CONFLICT', message, details);
 /** A write was refused by a safety guard (symlink, outside-root, no approval). */
 export const permissionDenied = (message, details) => new ArchgenError('PERMISSION_DENIED', message, details);
-/** A required external actor is absent (extension not running, binary missing). */
+/** A required external actor is absent (a binary is missing, a service is down). */
 export const unavailable = (message, details) => new ArchgenError('UNAVAILABLE', message, details);
 /** An operation exceeded its deadline. */
 export const timeout = (message, details) => new ArchgenError('TIMEOUT', message, details);

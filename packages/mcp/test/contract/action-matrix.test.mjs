@@ -131,19 +131,12 @@ function matrix() {
   rows.push(['archgen_setup', 'install_mcp', { approve: false }]);
   rows.push(['archgen_setup', 'uninstall_mcp', { approve: false }]);
 
-  // ── archgen_ui (best-effort: unavailable is not an error) ───────────────
-  rows.push(['archgen_ui', 'status', {}]);
-  rows.push(['archgen_ui', 'select_feature', { slug: 'demo', timeoutMs: 1 }]);
-  rows.push(['archgen_ui', 'reveal_task', { taskId: 'API', timeoutMs: 1 }]);
-  rows.push(['archgen_ui', 'open_doc', { path: 'demo/docs/prd.md', timeoutMs: 1 }]);
-  rows.push(['archgen_ui', 'focus', { view: 'board', timeoutMs: 1 }]);
-  rows.push(['archgen_ui', 'refresh', { timeoutMs: 1 }]);
-
   // ── archgen_skills (unapproved: a PLAN, never a write) ──────────────────
   rows.push(['archgen_skills', 'list', {}]);
   rows.push(['archgen_skills', 'installed', {}]);
   rows.push(['archgen_skills', 'match', { title: 'Build the dashboard UI', fileOwnership: ['src/features/web/**'] }]);
   rows.push(['archgen_skills', 'load', { skillId: 'ui-baseline' }]);
+  rows.push(['archgen_skills', 'digest', { skillId: 'ui-baseline' }]);
   rows.push(['archgen_skills', 'install', { skillId: 'ui-baseline', approve: false }]);
 
   // ── archgen_refs ────────────────────────────────────────────────────────
@@ -234,5 +227,34 @@ test('every action in the matrix belongs to a real action enum', async () => {
     assert.ok(values.includes(action), `${tool} has no action '${action}'`);
     seen.add(`${tool}.${action}`);
   }
-  assert.ok(seen.size >= 40, `the matrix only covered ${seen.size} actions`);
+  assert.ok(seen.size > 0, 'the matrix must not be empty');
+});
+
+test('the matrix covers EVERY action the catalog exposes', () => {
+  // THE SELF-MAINTAINING GATE. A floor ("at least N actions") only proves the
+  // matrix is big; it does not prove it is COMPLETE — and a missing action is
+  // exactly the defect this file exists to catch. The catalog is the source
+  // of truth: every action a tool declares must appear in the matrix, so a
+  // NEW action cannot ship without a test that drives it, and a REMOVED
+  // action cannot leave a stale row behind.
+  //
+  // (This replaces a hard-coded floor of 40, which silently stopped
+  // discriminating once the catalog changed — it let `archgen_skills{digest}`
+  // go untested for the whole life of the matrix.)
+  const covered = new Set(matrix().map(([tool, action]) => `${tool}.${action}`));
+  const missing = [];
+  for (const name of TOOL_NAMES) {
+    const spec = getToolSpec(name);
+    if (!spec) continue;
+    const shape = spec.inputSchema.shape ?? spec.inputSchema?._def?.shape?.();
+    const actionSchema = shape?.action;
+    const enumValues = actionSchema?.options ?? actionSchema?._def?.entries;
+    // archgen_help is keyed by `topic`, not `action` — it is checked separately.
+    if (!enumValues) continue;
+    const values = Array.isArray(enumValues) ? enumValues : Object.keys(enumValues);
+    for (const action of values) {
+      if (!covered.has(`${name}.${action}`)) missing.push(`${name}.${action}`);
+    }
+  }
+  assert.deepEqual(missing, [], `these actions are not driven by the matrix: ${missing.join(', ')}`);
 });

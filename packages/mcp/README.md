@@ -4,13 +4,12 @@ The MCP server for [archgen](https://github.com/akashmaurya99/archgen) — it
 owns **every** deterministic capability in the archgen workflow.
 
 The archgen skill is orchestration guidance for an agent; this server is the
-runtime it drives. One implementation, three ways in:
+runtime it drives. One implementation, two ways in:
 
 | Consumer | How it reaches the server |
 |---|---|
-| Coding agents | MCP over stdio — 10 domain tools |
+| Coding agents | MCP over stdio — 8 domain tools + `archgen_help` |
 | `archgen-skill init` / `install` | `archgen-mcp bootstrap` |
-| The VS Code extension | `archgen-mcp exec <tool> '<json>'` |
 
 ## Install
 
@@ -44,7 +43,6 @@ Requires **Node.js >= 20** (the official MCP SDK v2 floor).
 | `archgen_registry` | refresh / read the AGENTS.md features registry |
 | `archgen_codegraph` | install CodeGraph if it is missing · wire its MCP · index the project |
 | `archgen_setup` | doctor · bootstrap servers · install/remove the MCP · list harnesses · **harness_info** (a platform's capabilities) |
-| `archgen_ui` | drive the VS Code extension in real time |
 | `archgen_skills` | match / install / load external capability skills |
 | `archgen_refs` | load archgen's own protocol documents — section by section |
 | `archgen_help` | the full briefing for one domain |
@@ -127,8 +125,6 @@ implementation of any capability, only a second way to reach it.
 - Writes are atomic (temp file + rename): readers see old-or-new, never a
   partial file. A read-modify-write — a status update, a config merge — runs
   under an exclusive lock, so two workers cannot lose each other's change.
-- UI commands are allowlisted, workspace-scoped, expiring, and idempotent;
-  the command queue is pruned, so it cannot grow without bound.
 
 ## License
 

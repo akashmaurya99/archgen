@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 /** Minimal fake checkout: <fx>/archgen.config.json + skill/ + packages/cli/. */
-function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, extVersion, requiresMcp } = {}) {
+function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, mcpVersion, requiresMcp } = {}) {
   const cfgText = JSON.stringify(canonical, null, 2) + '\n';
   writeFileSync(join(fx, 'archgen.config.json'), cfgText);
   mkdirSync(join(fx, 'skill'), { recursive: true });
@@ -67,11 +67,11 @@ function fixtureRepo({ canonical = CANONICAL, skillMd, pkgVersion, extVersion, r
     join(fx, 'packages', 'cli', 'package.json'),
     JSON.stringify({ name: 'archgen-skill', version: pkgVersion ?? '0.0.0' }, null, 2) + '\n',
   );
-  if (extVersion !== undefined) {
-    mkdirSync(join(fx, 'packages', 'extension'), { recursive: true });
+  if (mcpVersion !== undefined) {
+    mkdirSync(join(fx, 'packages', 'mcp'), { recursive: true });
     writeFileSync(
-      join(fx, 'packages', 'extension', 'package.json'),
-      JSON.stringify({ name: 'archgen-extension', version: extVersion }, null, 2) + '\n',
+      join(fx, 'packages', 'mcp', 'package.json'),
+      JSON.stringify({ name: 'archgen-mcp', version: mcpVersion }, null, 2) + '\n',
     );
   }
   return libDir;
@@ -234,29 +234,25 @@ test('sync-config is idempotent: a second run rewrites nothing', () => {
   assert.equal(readFileSync(join(fx, 'packages', 'cli', 'package.json'), 'utf8'), before.pkg);
 });
 
-test('sync-config propagates the canonical version into the extension package.json when present', () => {
-  fixtureRepo({ extVersion: '0.0.0' });
+test('sync-config propagates the canonical version into the MCP package.json when present', () => {
+  fixtureRepo({ mcpVersion: '0.0.0' });
   const changed = syncConfig({ root: fx });
-  assert.ok(changed.some((c) => c.startsWith('packages/extension/package.json')));
-  const ext = JSON.parse(readFileSync(join(fx, 'packages', 'extension', 'package.json'), 'utf8'));
-  assert.equal(ext.version, VERSION);
-  // Second run is a no-op for the extension target too.
+  assert.ok(changed.some((c) => c.startsWith('packages/mcp/package.json')));
+  const mcp = JSON.parse(readFileSync(join(fx, 'packages', 'mcp', 'package.json'), 'utf8'));
+  assert.equal(mcp.version, VERSION);
+  // Second run is a no-op for the MCP target too.
   assert.deepEqual(syncConfig({ root: fx }), []);
 });
 
 test('setPackageVersion edits only the version line: hand-formatted manifests are never reflowed', () => {
-  // Mirrors the real packages/extension/package.json style: compact one-line
-  // objects that a JSON.stringify round-trip would explode into many lines.
+  // A manifest written by hand: compact one-line objects that a
+  // JSON.stringify round-trip would explode into many lines.
   const raw = [
     '{',
-    '  "name": "archgen-extension",',
+    '  "name": "archgen-mcp",',
     '  "version": "0.0.0",',
-    '  "contributes": {',
-    '    "views": {',
-    '      "archgen": [',
-    '        { "id": "archgen.tasks", "name": "Tasks", "icon": "media/icons/tasks.svg" }',
-    '      ]',
-    '    }',
+    '  "bin": {',
+    '    "archgen-mcp": "bin/archgen-mcp.mjs"',
     '  }',
     '}',
     '',
@@ -276,15 +272,15 @@ test('setPackageVersion edits only the version line: hand-formatted manifests ar
 });
 
 test('sync-config check mode reports drift without writing anything', () => {
-  fixtureRepo({ extVersion: '0.0.1' });
+  fixtureRepo({ mcpVersion: '0.0.1' });
   const beforeMd = readFileSync(join(fx, 'skill', 'SKILL.md'), 'utf8');
   const drift = syncConfig({ root: fx, check: true });
   assert.ok(drift.some((c) => c.startsWith('skill/SKILL.md')), 'frontmatter drift reported');
   assert.ok(drift.some((c) => c.startsWith('packages/cli/package.json')), 'cli version drift reported');
-  assert.ok(drift.some((c) => c.startsWith('packages/extension/package.json')), 'extension version drift reported');
+  assert.ok(drift.some((c) => c.startsWith('packages/mcp/package.json')), 'mcp version drift reported');
   // Nothing was written.
   assert.equal(readFileSync(join(fx, 'skill', 'SKILL.md'), 'utf8'), beforeMd);
-  assert.equal(JSON.parse(readFileSync(join(fx, 'packages', 'extension', 'package.json'), 'utf8')).version, '0.0.1');
+  assert.equal(JSON.parse(readFileSync(join(fx, 'packages', 'mcp', 'package.json'), 'utf8')).version, '0.0.1');
   // After a real sync, check mode is clean.
   syncConfig({ root: fx });
   assert.deepEqual(syncConfig({ root: fx, check: true }), []);
@@ -329,13 +325,11 @@ test('repo consistency guard: canonical == SKILL.md frontmatter == package.json 
   assert.ok(mdVersion, 'frontmatter carries metadata.version');
 
   const pkg = JSON.parse(readFileSync(join(REPO, 'packages', 'cli', 'package.json'), 'utf8'));
-  const extPkg = JSON.parse(readFileSync(join(REPO, 'packages', 'extension', 'package.json'), 'utf8'));
   const mcpPkg = JSON.parse(readFileSync(join(REPO, 'packages', 'mcp', 'package.json'), 'utf8'));
   const vendorCfg = JSON.parse(readFileSync(join(REPO, 'packages', 'cli', 'vendor', 'skills', 'archgen', 'archgen.config.json'), 'utf8'));
 
   assert.equal(mdVersion[1], VERSION, 'SKILL.md frontmatter must equal archgen.config.json version');
   assert.equal(pkg.version, VERSION, 'packages/cli/package.json must equal archgen.config.json version');
-  assert.equal(extPkg.version, VERSION, 'packages/extension/package.json must equal archgen.config.json version');
   assert.equal(mcpPkg.version, VERSION, 'packages/mcp/package.json must equal archgen.config.json version');
   assert.equal(vendorCfg.version, VERSION, 'vendored config must equal archgen.config.json version');
 });

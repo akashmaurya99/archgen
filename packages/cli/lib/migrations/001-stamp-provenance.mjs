@@ -5,9 +5,9 @@
 // What it writes: three YAML COMMENT lines at the very top of tasks.yaml and
 // architecture.yaml. Comments are inert to every consumer by contract — the
 // MCP core's parser records them positionally (`archgen_tasks{set_status}`
-// preserves them verbatim), the verifier never sees them as data, and the VS
-// Code extension port behaves identically. Additive-only: no existing key is
-// touched, nothing becomes required.
+// preserves them verbatim), the verifier never sees them as data, and every
+// other YAML consumer ignores them by the same contract. Additive-only: no
+// existing key is touched, nothing becomes required.
 //
 //   # schema_version: 1
 //   # generator: archgen v1.2.3      (version token omitted when unknowable)

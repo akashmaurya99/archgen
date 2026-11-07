@@ -57,7 +57,6 @@ Never shell out to a script to work around a missing tool. There are no scripts.
 | `archgen_registry` | refresh / read the AGENTS.md features registry |
 | `archgen_codegraph` | install + wire + index CodeGraph and its MCP |
 | `archgen_setup` | doctor · bootstrap servers · install/remove the MCP · list harnesses · **harness_info** (this platform's capabilities) |
-| `archgen_ui` | drive the VS Code extension: reveal a task, open a doc, switch feature, focus a view |
 | `archgen_skills` | match a task against the capability-skill registry, install exactly the matched skill, load its SKILL.md |
 | `archgen_refs` | load archgen's OWN protocol documents (interview, artifact rules, orchestration, platform notes, MCP/skill policies) — section by section |
 | `archgen_help` | the full briefing for one domain — call it instead of guessing an argument shape |
@@ -73,8 +72,7 @@ engine.
 | `archgen_plan` · `archgen_docs` · `archgen_refs` · `archgen_help` | `archgen_tasks{set_status,snapshot}` |
 | `archgen_codegraph{status}` | `archgen_registry{update}` |
 | `archgen_setup{doctor,harnesses,harness_info}` | `archgen_setup{install_mcp,uninstall_mcp,bootstrap}` |
-| `archgen_ui{status}` | `archgen_skills{install}` |
-| `archgen_skills{match,installed,load,list}` | `archgen_codegraph{ensure,wire}` — **installs software** |
+| `archgen_skills{match,installed,load,digest,list}` | `archgen_skills{install}` · `archgen_codegraph{ensure,wire}` — **installs software** |
 
 Every tool returns `{ ok, data, error, meta }`. `ok:false` carries a typed
 `error.code` (`INVALID_INPUT`, `NOT_FOUND`, `CYCLE`, `OWNERSHIP_CONFLICT`,
@@ -459,7 +457,6 @@ TWICE per matched task:
 | User interrupts mid-wave | Let running workers finish; stop before next wave |
 | The MCP tools are missing | Run `npx archgen-skill init`, ask the user to reload — never shell out to a script |
 | Node < 20 | The MCP server cannot run; state the requirement and offer the upgrade |
-| The VS Code extension is closed | `archgen_ui` returns `available:false` — not an error; the file writes already keep the board current |
 | A required capability skill is not installed | Install it (`archgen_skills{action:'install', approve:true}`) BEFORE dispatching — the worker contract warns about it |
 | The WORKER contract reports `warnings` | The task is not dispatchable (no acceptance criteria / no file ownership) — fix the plan first |
 

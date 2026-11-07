@@ -11,7 +11,6 @@ node_modules/
 .omo/
 
 # Build artifacts
-*.vsix
 dist/
 coverage/
 
@@ -26,9 +25,11 @@ packages/cli/vendor/skills/archgen/.archgen-version
 # CodeGraph indexes are local machine state — never commit them
 .codegraph/
 
-# The VS Code extension's runtime state inside .archgen/.runtime/ — a heartbeat
-# and the command acknowledgements. Machine state, like the index above: it
-# changes on every run and belongs to the machine, not to the repository.
+# Legacy VS Code extension runtime state inside .archgen/.runtime/ — a
+# heartbeat and the command acknowledgements the extension used to write.
+# Nothing writes it any more (the extension and its bridge are gone), but a
+# machine that still has an old extension installed would otherwise dirty
+# `git status` here. Safe to delete the directory.
 .archgen/.runtime/
 
 # The CLI is zero-dependency and deliberately ships NO lockfile. CI's audit job

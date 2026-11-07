@@ -87,7 +87,7 @@ by git.
 | `npx archgen-skill init [dir]` | Prepare a project: canonical skill store at `.agents/skills/archgen`, Claude symlink adapter, AGENTS.md hub + CLAUDE.md bridge |
 | `npx archgen-skill install [--copy]` | Install into global harness skill dirs (symlinks by default, real copies with `--copy`) |
 | `npx archgen-skill uninstall` | Remove globally-installed copies (manifest-recorded, safe removal) |
-| `npx archgen-skill uninstall [dir]` | Remove a **project** install (same as `--project [dir]`): strips managed blocks, symlink, and store **only if unmodified** — `.archgen/` feature folders and all user content are preserved |
+| `npx archgen-skill uninstall [dir]` | Remove a **project** install (same as `--project [dir]`): strips managed blocks, symlink, the store **only if unmodified**, and the dead `.archgen/.runtime/` extension state — `.archgen/` feature folders and all user content are preserved |
 | `npx archgen-skill doctor [dir] [--check]` | Verify and auto-repair an installation: store integrity, version stamp, Claude link, managed blocks, manifest (`--check` reports without fixing) |
 | `npx archgen-skill update [dir]` | Check npm for a newer `archgen-skill`, upgrade the global install if outdated, then re-init the project and run doctor against the new version |
 | `npx archgen-skill restore` | List backup snapshots; `--snapshot <ts>` restores one (current state is backed up first) |
@@ -134,15 +134,6 @@ guarantee:
 Claude Code, OpenCode, Cursor, Codex, Gemini CLI, Antigravity — and any
 agentskills.io-compatible harness. Both global install and project-local `init`
 are supported for all of them.
-
-## VS Code extension (optional)
-
-A visual layer that renders `.archgen/` as a live task DAG, your
-code-dependency graph, and rendered docs — with a ▶ button that hands any task to
-your agent. Install it from the VS Code Marketplace or from a `.vsix` on
-[GitHub Releases](https://github.com/akashmaurya99/archgen/releases). It never
-edits your plan, your tasks, or your code — only its own runtime state under
-`.archgen/.runtime/`, so uninstalling it loses nothing.
 
 ## Documentation
 

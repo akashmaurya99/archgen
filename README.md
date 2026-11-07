@@ -78,21 +78,14 @@ On Windows use `npx archgen-skill init` — it is the cross-platform equivalent.
 **Requirements:** Node.js ≥ 20. The CLI has zero npm dependencies; the MCP
 server it installs depends on the official Model Context Protocol SDK.
 
-**VS Code extension (optional).** A visual layer over `.archgen/`: the task
-DAG, your real code-dependency graph, rendered docs, and a ▶ button that
-launches your agent on any task. It never edits your plan, your tasks, or
-your code. Download the latest `.vsix` from
-[GitHub Releases](https://github.com/akashmaurya99/archgen/releases).
-
 ## The `archgen-mcp` server
 
 Every deterministic capability lives in one MCP server, **`archgen-mcp`**,
 published to npm as [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp)
 and spoken over stdio by any MCP client.
 
-The agent calls it over MCP; the installer calls `archgen-mcp bootstrap`; the
-VS Code extension calls `archgen-mcp exec`. One implementation, three ways in,
-so the three can never disagree.
+The agent calls it over MCP; the installer calls `archgen-mcp bootstrap`. One
+implementation, two ways in, so the two can never disagree.
 
 | Tool | Does |
 | --- | --- |
@@ -102,7 +95,6 @@ so the three can never disagree.
 | `archgen_registry` | refresh or read the `AGENTS.md` features registry |
 | `archgen_codegraph` | install, wire and index CodeGraph |
 | `archgen_setup` | doctor · bootstrap · install/remove MCP · list harnesses · harness info |
-| `archgen_ui` | drive the VS Code extension — reveal a task, open a doc, focus a view |
 | `archgen_skills` | match · install · load · digest the capability-skill registry |
 | `archgen_refs` | load archgen's own protocol documents, section by section |
 | `archgen_help` | the full briefing for one tool domain |
@@ -136,14 +128,14 @@ map, and asks for approval.
 ## Token footprint
 
 The cost of *using* archgen is measured, not guessed. `npm run test:budget`
-reports it, and CI fails if the always-on footprint exceeds 13,600 tokens.
+reports it, and CI fails if the always-on footprint exceeds 13,400 tokens.
 
 | Surface | Tokens | When it is paid |
 | --- | ---: | --- |
-| `skill/SKILL.md` | 8,319 | Every session that triggers the skill |
-| MCP tool catalog (10 tools) | 4,784 | Every request to the server |
-| **Always-on total** | **13,103** | 40% of a 32k window |
-| Protocol references | 17,682 | On demand, per mode |
+| `skill/SKILL.md` | 8,240 | Every session that triggers the skill |
+| MCP tool catalog (9 tools) | 4,308 | Every request to the server |
+| **Always-on total** | **12,548** | 38% of a 32k window |
+| Protocol references | 17,676 | On demand, per mode |
 | Capability registry + harness data | 10,652 | On demand, per tool call |
 | Dispatch briefs | 2,874 | Once per agent dispatch |
 | Artifact templates | 2,289 | Once per scaffold |
@@ -162,7 +154,6 @@ agent pulls exactly what it needs and never re-reads a whole plan.
 | [`skill/`](skill/) | The agent skill — `SKILL.md` + `references/code-standards.md` (guidance only; the server owns every capability) | vendored into npm |
 | [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `doctor` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
 | [`packages/mcp/`](packages/mcp/) | The `archgen-mcp` server — every deterministic capability | npm: [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp) |
-| [`packages/extension/`](packages/extension/) | Task DAG · code graph · docs views · build button | `.vsix` on [GitHub Releases](https://github.com/akashmaurya99/archgen/releases) |
 | [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
 | [`fixtures/`](fixtures/) | Deterministic E2E drivers + shared YAML corpus | repo-only |
 | [`internal/`](internal/) | QA tooling (token budget, version gates) — never shipped | repo-only |
@@ -171,8 +162,8 @@ agent pulls exactly what it needs and never re-reads a whole plan.
 ## Development
 
 ```sh
-npm run setup   # once — installs extension dependencies
-npm test        # internal + MCP + CLI + extension suites (the set CI runs)
+npm run setup   # once — installs the MCP server's dependencies
+npm test        # internal + MCP + CLI suites (the set CI runs)
 ```
 
 The deterministic end-to-end drivers make **no LLM calls** and drive the real
@@ -189,9 +180,7 @@ npm run test:fixtures
 | [`verifier-negative`](fixtures/verifier-negative/) | The gate actually rejects cycles, overlaps and unknown refs |
 | [`tool-matrix`](fixtures/tool-matrix/) | **Every action of every tool**, through the real MCP binary |
 
-Extension tests require Node 22 (native-addon pool stability); the shipped
-extension runs inside VS Code's Electron runtime regardless. See
-[CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
 ## Documentation
 
@@ -199,7 +188,7 @@ extension runs inside VS Code's Electron runtime regardless. See
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Dual-mode design, gates, wave mechanics, platform detection |
 | [docs/agent-setup-prompt.md](docs/agent-setup-prompt.md) | Copy-paste prompt: install archgen and verify it |
-| [docs/releasing.md](docs/releasing.md) | Cutting CLI + extension releases |
+| [docs/releasing.md](docs/releasing.md) | Cutting CLI + MCP server releases |
 | [skill/SKILL.md](skill/SKILL.md) | The full skill contract the agents execute |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 

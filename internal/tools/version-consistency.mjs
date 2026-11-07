@@ -5,7 +5,7 @@
 // drift apart in different ways:
 //
 //   DERIVED      the canonical archgen.config.json propagates to the skill
-//                config, SKILL.md's metadata.version, the three
+//                config, SKILL.md's metadata.version, the two
 //                package.json files and the vendored skill copy.
 //                `npm run sync` OWNS these — it rewrites them.
 //   HAND-EDITED  metadata.requires.archgen_mcp (a human decision), the
@@ -89,8 +89,6 @@ export function checkVersions({ root = DEFAULT_ROOT } = {}) {
     'npm run sync');
   check('packages/mcp/package.json', pkgVersion(join(r, 'packages/mcp/package.json')), V,
     'npm run sync');
-  check('packages/extension/package.json', pkgVersion(join(r, 'packages/extension/package.json')), V,
-    'npm run sync');
 
   // ── THE VENDORED SKILL COPY (owned by `npm run sync`) ──────────────────
   const vendor = 'packages/cli/vendor/skills/archgen';
@@ -114,8 +112,6 @@ export function checkVersions({ root = DEFAULT_ROOT } = {}) {
   }
   check('packages/mcp/package-lock.json', lockVersions(join(r, 'packages/mcp/package-lock.json')), V,
     'npm --prefix packages/mcp install --package-lock-only --no-audit --no-fund');
-  check('packages/extension/package-lock.json', lockVersions(join(r, 'packages/extension/package-lock.json')), V,
-    'npm --prefix packages/extension install --package-lock-only --no-audit --no-fund');
 
   return { ok: surfaces.every((s) => s.value === s.expected), surfaces };
 }
