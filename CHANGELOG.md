@@ -5,6 +5,50 @@ line-by-line audit of all three packages found 50 defects; every one is fixed
 here, each at its root cause rather than at its symptom. The ones that
 changed what the tool DOES are listed first.
 
+### Fixed — the agent could not see archgen's tools
+
+- **OpenCode never saw archgen's tools.** OpenCode keeps its servers at
+  `mcp.servers.<id>`, not `mcp.<id>`. The registry wrote `mcp.archgen`, so
+  the entry landed exactly where OpenCode never looks: the harness reported
+  the server as wired, and the agent saw **no archgen tools at all**. (The
+  confusion was real: CodeGraph's own installer had put *its* entry in the
+  right place, so the agent could see `codegraph_explore` and nothing else.)
+  The writer now understands a dotted key path, and both registries — the
+  writer's and the one the agent is briefed from — say `mcp.servers`.
+- **`init` created a directory named `undefined`.** The CLI passed the project
+  root as `projectDir` and the MCP facade read `projectRoot` — a
+  property-name mismatch. The value never arrived, the child process was
+  handed the literal string `undefined`, and it resolved that against its own
+  working directory: the harness configs, the CodeGraph index and the managed
+  blocks all landed in `undefined/` next to the real project. The project
+  root is now **required and must be absolute**, and the guard turns the
+  mistake into a named failure instead of a stray directory.
+- **The project root carried the harness configuration.** `.mcp.json`,
+  `.codex/`, `.gemini/` and the rest were written into every project. The
+  server is one binary for every harness, so the wiring belongs in the
+  harness's own **global** config — the project root now carries only the
+  skill store, the artifacts, the index and the `AGENTS.md` / `CLAUDE.md`
+  blocks. `--location-project` opts into the old per-project wiring.
+- **OpenCode and Zed could not be wired at all.** Their configs are JSONC —
+  they carry `//` comments — and a strict `JSON.parse` refused them, so they
+  were left untouched: safe, but those two harnesses were silently never
+  configured. The writer now understands JSONC and edits it **textually**, so
+  the entry is spliced into the raw text and every comment, key order and
+  unrelated setting survives byte-for-byte. Rewriting a JSONC file as plain
+  JSON would have deleted the user's comments, which is as bad as not
+  wiring it.
+
+### Changed — one server for every harness
+
+- **The MCP server is installed GLOBALLY**, so every harness names the same
+  stable executable. The npx fallback pointed into npm's npx **cache**
+  (`~/.npm/_npx/<hash>/…`), which `npm cache clean --force` removes — and
+  the harness then fails to start a server that was wired minutes earlier.
+  The global install is best effort: an offline machine or an unwritable npm
+  prefix still gets a working install through the npx fallback.
+- **The harness wiring is global by default**, so a project carries no MCP
+  configuration of its own and a fresh clone needs no re-wiring.
+
 ### Fixed — security
 
 - **The MCP server's boundary was model-controlled.** Every containment check
