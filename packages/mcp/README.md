@@ -62,6 +62,20 @@ Every tool returns the same envelope:
 Call `archgen_help { topic: "<domain>" }` for the full briefing on any tool —
 including when to call it, every action, and its gotchas.
 
+### Fetching, not dumping
+
+Every tool takes `limit` and `offset` (default 50 items) — the bound is the
+caller's, and a bounded answer always reports what it left behind. Every
+collection narrows to **one item**: `taskId`, `skillId`, `file` + `section`,
+`harness`. Each answer's `meta` carries `available` (what else exists),
+`more` (the call that fetches one item) and `next` (the exact call for the
+next slice).
+
+So the agent fetches what it needs instead of taking the whole set: a
+reference topic is fetched **one section** at a time (`section: '*'` asks for
+the whole topic deliberately), and a capability skill is fetched as its
+**normative rules plus an index** — never as the file three times over.
+
 ### The judgment / output split
 
 The archgen **skill** carries the judgment (policy, rules, when-to-use). This

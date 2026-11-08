@@ -312,16 +312,74 @@ What 0.1.1 ships, measured by `npm run test:budget`:
 
 | | Tokens |
 |---|---:|
-| `skill/SKILL.md` (always-on) | 7,339 |
-| MCP tool catalog (9 tools, always-on) | 4,308 |
-| **Always-on total** | **11,647** — 36% of a 32k window |
+| `skill/SKILL.md` (always-on) | 7,420 |
+| MCP tool catalog (9 tools, always-on) | 5,242 |
+| **Always-on total** | **12,662** — 39% of a 32k window |
 | Protocol references (on demand) | 13,265 across 5 files |
 | A typical reference section (on demand) | 238 — the median of 39 |
-| Dispatch briefs / artifact templates (on demand) | 2,626 / 2,485 |
+| Dispatch briefs / artifact templates (on demand) | 2,626 / 2,358 |
 
 The on-demand figures are now measured **by the tool** and reported in its
 output, so the README can quote a number instead of a hand-typed one that
 goes stale on the next edit.
+
+### Changed — the tools fetch; they no longer dump
+
+The root cause was not a big payload. It was that **no collection-shaped
+action had an item-level selector** — so "I need one section" cost "the whole
+topic", and the only way to get one row was to take the whole set and pick
+from it. The tool surface made dumping the cheaper option for the server and
+the more expensive one for the agent.
+
+Four changes, applied uniformly:
+
+- **A selector on every collection.** `taskId` (tasks, plan coverage),
+  `skillId` (skills), `file` + `section` (docs), `harness` (setup),
+  `section` (references, skills). One item instead of the set.
+- **A bound the caller owns.** Every tool takes `limit` and `offset`
+  (default 50). A bound never hides data: the count is in `meta.total`, and
+  `meta.next` is the exact call that returns the next slice. A large project
+  — a 500-task plan, a 250-node graph, a 200-file artifact tree — can no
+  longer dump itself.
+- **A map to the rest.** Every answer's `meta` carries `available` (what
+  else exists), `more` (the call that fetches one item) and `next`. The
+  agent always knows there is more without the server having sent any of it.
+- **The expensive default is gone.** `archgen_refs{action:'read'}` with no
+  section returned the WHOLE topic (4,013 tokens); it now returns the
+  section index, and the whole topic is `section: '*'` — deliberate.
+
+Measured on a real plan, before → after:
+
+| Call | Before | After |
+|---|---:|---:|
+| `archgen_refs{read}` (no section) | 4,013 tok | 1,353 tok |
+| `archgen_refs{search}` | 1,641 tok | 853 tok |
+| `archgen_skills{load}` (installed) | the file **three times** | rules + index |
+
+### Fixed — the same text delivered twice
+
+Measured, not guessed: every payload was scanned for text delivered more than
+once.
+
+- **`archgen_skills{action:'load'}` returned the skill file THREE times** — as
+  `content`, as the extracted `rules`, and as the section index. The rules
+  are what the agent must obey and the index is what it may pull; the file
+  itself is one call away. The raw content is gone.
+- **`archgen_skills{action:'match'}` returned every matched row three
+  times** — under `matched`, `required` and `installed`. The install state
+  now rides ON the row, and the two subsets are ids.
+- **A search reported the same line once per nested section.** Sections
+  overlap (a parent's body contains its children's), so a three-level nesting
+  delivered the same sentence three times. Every hit is now reported ONCE,
+  under the deepest section that contains it — in `archgen_refs{search}` and
+  `archgen_docs{map}` alike.
+- **The reference index listed the topic's own H1 as a section**, so index 0
+  was "the whole document". The H1 is the topic, not a section.
+- **The setup harness list was delivered under two keys.** One key now.
+
+The two payloads that were NOT changed are deliberate: the gate `brief` and
+the worker `contract` carry the same facts as prose (for the sub-agent) and
+as fields (for the orchestrator) — two audiences, two formats.
 
 ### Fixed — the skill named two actions that do not exist
 

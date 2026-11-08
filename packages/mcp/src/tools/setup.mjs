@@ -7,6 +7,8 @@ import { manageCodegraph, assertLocation, findCodegraph } from '../core/codegrap
 import { detectHarnesses } from '../core/harness-wiring.mjs';
 import { platformCapabilities, detectHarness } from '../core/platform-caps.mjs';
 import { checkCapability } from '../core/compat.mjs';
+import { invalidInput } from '../core/errors.mjs';
+import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const ACTION_DESC =
   'doctor | bootstrap | install_mcp | uninstall_mcp | harnesses | harness_info — see archgen_help.';
@@ -16,7 +18,9 @@ const schema = z.object({
   location: z.enum(['project', 'global', 'both']).optional().describe('Which scope to wire. Defaults to both.'),
   approve: z.boolean().optional().describe('Required to write any MCP config. Without it you get the plan and nothing is written.'),
   telemetry: z.enum(['keep', 'off', 'on']).optional().describe('CodeGraph telemetry preference (bootstrap).'),
-  harness: z.string().optional().describe('Harness id (harness_info). Defaults to the detected one.'),
+  harness: z.string().optional().describe('Harness id (harness_info, harnesses). One harness (harnesses).'),
+  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
+  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
   projectRoot: projectRootArg,
 });
 
@@ -59,22 +63,55 @@ export function registerSetupTools(server) {
 
       if (args.action === 'harnesses') {
         const detected = detectHarnesses(registry, ctx.projectRoot, ctx.home, ctx.env);
-        return {
-          location,
-          detected: detected.map((d) => ({
-            id: d.id,
-            label: d.label,
-            atHome: d.atHome,
-            atProject: d.atProject,
-            configs: Object.entries(d.spec.configs ?? {}).map(([loc, cfg]) => ({
-              location: loc,
-              path: cfg.path,
-              key: cfg.key ?? `mcp_servers.archgen`,
-              format: cfg.format ?? 'json',
-            })),
+        const rows = detected.map((d) => ({
+          id: d.id,
+          label: d.label,
+          atHome: d.atHome,
+          atProject: d.atProject,
+          configs: Object.entries(d.spec.configs ?? {}).map(([loc, cfg]) => ({
+            location: loc,
+            path: cfg.path,
+            key: cfg.key ?? `mcp_servers.archgen`,
+            format: cfg.format ?? 'json',
           })),
-          binary: resolveMcpBinary({ projectRoot: ctx.projectRoot, home: ctx.home, env: ctx.env }),
-        };
+        }));
+        // ONE harness, when the caller named one.
+        if (args.harness) {
+          const one = rows.find((r) => r.id === args.harness);
+          if (!one) {
+            throw invalidInput(`unknown harness '${args.harness}'`, {
+              action: args.action,
+              harness: args.harness,
+              available: rows.map((r) => r.id),
+            });
+          }
+          return {
+            location,
+            detected: [one],
+            binary: resolveMcpBinary({ projectRoot: ctx.projectRoot, home: ctx.home, env: ctx.env }),
+          };
+        }
+        const p = project(rows, {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_setup{action:'harnesses',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+        });
+        return withMeta(
+          {
+            location,
+            // ONE copy of the rows: the same array under two keys was the
+            // payload saying the same thing twice.
+            detected: p.items,
+            binary: resolveMcpBinary({ projectRoot: ctx.projectRoot, home: ctx.home, env: ctx.env }),
+          },
+          moreMeta({
+            total: p.total,
+            returned: p.returned,
+            next: p.next,
+            available: { harnesses: p.total },
+            more: `archgen_setup{action:'harnesses',harness:'<one harness>'}`,
+          }),
+        );
       }
 
       if (args.action === 'doctor') {

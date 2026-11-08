@@ -13,18 +13,24 @@ import { join } from 'node:path';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { ASSETS_DIR } from '../context.mjs';
 import { indexTopic, readTopic, searchTopic, listTopics, REF_TOPICS } from '../core/refs.mjs';
+import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const ACTION_DESC =
   'list = every reference topic with its section count; ' +
   'index = the section list of one topic; ' +
-  'read = ONE section (or the whole topic); ' +
+  'read = ONE section (no section = the index; section:"*" = the whole topic); ' +
   'search = the sections mentioning a token.';
 
 const schema = z.object({
   action: z.enum(['list', 'index', 'read', 'search']).describe(ACTION_DESC),
   topic: z.enum(REF_TOPICS).optional().describe('Which reference (index, read, search).'),
-  section: z.string().optional().describe('Section slug or heading (read). Omit for the whole topic.'),
+  section: z
+    .string()
+    .optional()
+    .describe('One section (read, index). "*" = the whole topic. Omit for the section index.'),
   token: z.string().optional().describe('The token to look for (search).'),
+  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
+  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
   projectRoot: projectRootArg,
 });
 
@@ -43,20 +49,85 @@ export function registerRefTools(server) {
     idempotent: true,
     handler: (ctx, args) => {
       const roots = { assetsDir: join(ASSETS_DIR, 'references'), skillDir: ctx.skill?.path ?? null };
+      // The caller's bound, echoed into the exact next call so the agent
+      // never has to build the pagination itself.
+      const bound = args.limit ?? 50;
+      const from = args.offset ?? 0;
 
-      if (args.action === 'list') return { topics: listTopics(roots) };
+      if (args.action === 'list') {
+        const p = project(listTopics(roots).topics, {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_refs{action:'list',limit:${bound},offset:${from + bound}}`,
+        });
+        return withMeta(
+          { topics: p.items },
+          moreMeta({ total: p.total, returned: p.returned, next: p.next, available: { topics: p.total } }),
+        );
+      }
 
       if (!args.topic) {
         throw invalidInput(`topic is required for '${args.action}'`, { action: args.action, known: REF_TOPICS });
       }
 
-      if (args.action === 'index') return indexTopic(args.topic, roots);
+      if (args.action === 'index') {
+        const indexed = indexTopic(args.topic, { ...roots, section: args.section ?? null });
+        const p = project(indexed.sections, {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_refs{action:'index',topic:'${args.topic}',limit:${bound},offset:${from + bound}}`,
+        });
+        return withMeta(
+          { ...indexed, sections: p.items },
+          moreMeta({
+            total: p.total,
+            returned: p.returned,
+            next: p.next,
+            available: { sections: p.total },
+            more: `archgen_refs{action:'read',topic:'${args.topic}',section:'<the section you need>'}`,
+          }),
+        );
+      }
+
       if (args.action === 'search') {
         if (!args.token) throw invalidInput('search requires token', { action: args.action });
-        return searchTopic(args.topic, args.token, roots);
+        const found = searchTopic(args.topic, args.token, roots);
+        const p = project(found.sections, {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_refs{action:'search',topic:'${args.topic}',token:'${args.token}',limit:${bound},offset:${from + bound}}`,
+        });
+        return withMeta(
+          { ...found, sections: p.items },
+          moreMeta({
+            total: p.total,
+            returned: p.returned,
+            next: p.next,
+            available: { sections: p.total, matches: found.matchCount },
+            more: `archgen_refs{action:'read',topic:'${args.topic}',section:'<the section you need>'}`,
+          }),
+        );
       }
-      // read
-      return readTopic(args.topic, { ...roots, section: args.section ?? null });
+
+      // read — ONE section by default; the index when no section is named;
+      // the whole topic only when the caller says '*'.
+      const read = readTopic(args.topic, { ...roots, section: args.section ?? null });
+      if (read.whole || read.text !== undefined) return read;
+      const p = project(read.sections, {
+        limit: args.limit,
+        offset: args.offset,
+        next: `archgen_refs{action:'read',topic:'${args.topic}',section:'<the section you need>',limit:${bound},offset:${from + bound}}`,
+      });
+      return withMeta(
+        { ...read, sections: p.items },
+        moreMeta({
+          total: p.total,
+          returned: p.returned,
+          next: p.next,
+          available: { sections: p.total },
+          more: `archgen_refs{action:'read',topic:'${args.topic}',section:'<the section you need>'}`,
+        }),
+      );
     },
   });
 }

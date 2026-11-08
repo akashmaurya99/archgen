@@ -22,29 +22,21 @@ naming_conventions: # referenced by every task step and file_ownership entry
   dir_layout: "<module>/{api,internal}; shared utilities in src/shared/ only; tests mirror the source path under tests/unit/"
   symbol_casing: PascalCase types, camelCase functions, SCREAMING_SNAKE env vars
   test_placement: tests/unit/<path under the source root>/<the language's test file> — the test tree is a SIBLING of the source tree, never inside it
-modules:
+modules: # one entry per module; repeat per module
   - name: catalog
     responsibility: product browsing + search
     owns: ["src/features/catalog/**"]
     depends_on_modules: [] # DAG; drives task depends_on edges
     key_interfaces: # ONLY exports other modules may import
       - CatalogApi (src/features/catalog/api/index.ts)
-  - name: checkout
-    responsibility: cart -> payment orchestration
-    owns: ["src/features/checkout/**"]
-    depends_on_modules: [catalog]
-    key_interfaces:
-      - CheckoutApi (src/features/checkout/api/index.ts)
-data_contracts:
-  orders:
+data_contracts: # one block per entity; repeat per entity
+  order:
     storage: postgres table orders (migrations/NNNN_orders.sql)
     fields:
       - { field: id, type: uuid, required: true, notes: pk }
-      - { field: session_id, type: uuid, required: true, notes: fk sessions }
       - { field: total_cents, type: integer, required: true, notes: ">= 0" }
       - { field: status, type: "enum(pending,paid,failed)", required: true }
-      - { field: created_at, type: timestamptz, required: true, notes: db default now() }
-api_contracts:
+api_contracts: # one block per operation; repeat per operation
   payments:
     - endpoint: /api/checkout/pay
       method: POST
@@ -54,7 +46,6 @@ api_contracts:
       error_shape: { code: string, message: string, retryable: boolean }
 environment_matrix: # unparsed vars fail fast at startup in src/config/
   - { var: DATABASE_URL, dev: local docker postgres, ci: ephemeral service, prod: secret ref, required: true }
-  - { var: PAYMENT_API_KEY, dev: stub key, ci: stub key, prod: secret ref, required: true }
 decisions: # summary index; full records live in decisions/NNNN-title.md
   - id: D1
     title: Postgres over MongoDB

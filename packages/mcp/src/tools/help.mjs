@@ -47,7 +47,8 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 - \`brief\` returns a ready-to-send sub-agent prompt (verifier | review | survey | investigate). It derives the slug from \`tasksYaml\` when you do not pass one, and every path in it is ABSOLUTE — so it works from any working directory. The verifier and review briefs carry the graph, the reference-integrity result and the evidence map rendered, so the sub-agent makes no tool call of its own.
 - The verifier and reviewer return \`VERDICT:\` plus a COVERAGE table (every dimension PASS / FAIL / N-A). A report with findings but no coverage table is INCOMPLETE.
 - **Every error carries the next call.** If one fails, read the \`Next:\` line in the message — it is the exact call to make, and the \`Why:\` clause says why. Do not retry the same call.
-- **Batch calls with \`allSettled\`**, not \`all\`: one bad argument must not discard the results of its siblings.`,
+- **Batch calls with \`allSettled\`**, not \`all\`: one bad argument must not discard the results of its siblings.
+- **Narrow before you fetch.** \`coverage\` takes \`taskId\` for one task; \`scaffold\` takes \`file\` for one skeleton; \`limit\`/\`offset\` bound the rest. The whole set is never the default answer.`,
 
   tasks: `# archgen_tasks
 
@@ -82,7 +83,8 @@ Dispatching the next wave while any of those lag is forbidden.
 - \`contract\` is the worker prompt — use it instead of assembling one by hand. It carries the acceptance criteria VERBATIM, the owned files, the dependency neighbourhood, the pre-located doc sections, EVERY matched capability skill with its RULES inline, the CodeGraph directive, and the rules the worker must not break.
 - \`contract\` warns when a REQUIRED capability skill is not installed yet — install it before dispatching.
 - \`contract\` returns a \`dispatchKey\`. Keep a ledger of \`dispatchKey → agent session\` so a follow-up CONTINUES that agent instead of starting a fresh one.
-- MAX 3 parallel workers at a time. A larger wave runs in batches of three.`,
+- MAX 3 parallel workers at a time. A larger wave runs in batches of three.
+- \`list\` and \`next\` narrow to ONE task with \`taskId\`; \`limit\`/\`offset\` bound the rest. \`meta\` says how many tasks exist.`,
 
   docs: `# archgen_docs
 
@@ -206,7 +208,8 @@ Matches a task against the capability-skill registry, installs EXACTLY the match
 - Exactly ONE skill is installed — never a bundle. A task that mentions "animation" gets the motion skill, not the whole UI family.
 - The installer writes \`<project>/.agents/skills/<slug>/SKILL.md\` — that is the file you point a worker at.
 - \`match\` reports \`required\` vs \`on-demand\`: a \`required\` match MUST be installed before dispatch.
-- \`load\` returns the skill's NORMATIVE RULES (the MUST / SHOULD / NEVER lines) and its section index. The rules are what a worker must follow — pull them from here rather than re-reading the file.
+- \`load\` returns the NORMATIVE RULES (the MUST / SHOULD / NEVER lines) and the section index — NOT the whole file. The rules are what a worker must follow; pull them from here rather than re-reading the file. One section at a time: \`section:'<slug>'\`.
+- \`list\` narrows to ONE registry row with \`skillId\`; \`digest\` narrows to ONE section with \`section\`.
 - A skill that is installed but never named in a worker contract is a skill that is never applied. \`archgen_tasks{action:'contract'}\` names EVERY matched required skill.`,
 
   refs: `# archgen_refs
@@ -228,6 +231,7 @@ Loads archgen's OWN protocol documents — the judgment layer: how to interview,
 
 **Gotchas**
 - Load the SECTION, not the topic: a topic is ~11 KB, a section is ~1-2 KB.
+- \`read\` with NO section returns the section INDEX — the map. \`section:'*'\` returns the whole topic, deliberately.
 - A section may be named by its exact slug, by its title, or by any unambiguous PREFIX of the slug. The skill's own \`§\` names are prefixes — \`§artifact-templates/plan-depth\` resolves to \`plan-depth-by-scope-class\` — so pass the \`§\` name straight through. Call \`index\` only when a prefix is ambiguous.
 - \`code-standards.md\` is served too when the skill is installed — but WORKERS read it as a plain file, because they may have no MCP server at all.`,
 
@@ -251,6 +255,12 @@ structured result. Every result is \`{ ok, data, error, meta }\` — \`ok:false\
 **Error codes**
 \`INVALID_INPUT\` · \`NOT_FOUND\` · \`CYCLE\` · \`OWNERSHIP_CONFLICT\` · \`CONFLICT\` · \`PERMISSION_DENIED\` ·
 \`UNAVAILABLE\` · \`TIMEOUT\` · \`INTERNAL\`
+
+**Fetching, not dumping**
+- Every tool takes \`limit\` and \`offset\` (default 50 items). Raise \`limit\` when you need more — the bound is yours, not the server's.
+- Every collection narrows to ONE item: \`taskId\` (tasks, plan coverage), \`skillId\` (skills), \`file\` + \`section\` (docs), \`harness\` (setup).
+- Every answer's \`meta\` carries \`available\` (what else exists), \`more\` (the call that fetches one item) and \`next\` (the exact call for the next slice).
+- A bounded answer never hides data: the count is always in \`meta.total\`.
 
 **Call \`archgen_help { topic: "<domain>" }\`** for the full briefing on any one of them.`,
 };

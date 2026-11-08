@@ -105,13 +105,27 @@ test('read returns ONE section, not the whole document', () => {
   // must survive a rewrite of the reference without going blind.
   assert.match(read.text, /Recommendation-first/);
   // The section must be materially smaller than the whole topic.
-  const whole = readTopic('interview', roots());
+  const whole = readTopic('interview', { ...roots(), section: '*' });
   assert.ok(read.text.length < whole.text.length / 2, 'a section must cost far less than the whole topic');
 });
 
-test('read without a section returns the whole topic', () => {
+test('read without a section returns the MAP, not the whole topic', () => {
+  // The whole topic is ~11 KB of English. It used to be the DEFAULT, so an
+  // agent that forgot the section paid for the entire protocol instead of
+  // getting the map that would have told it which section it needed.
   const read = readTopic('platforms', roots());
-  assert.equal(read.section, null);
+  assert.equal(read.section, undefined);
+  assert.equal(read.text, undefined, 'no section named must NOT return the topic text');
+  assert.ok(Array.isArray(read.sections) && read.sections.length > 0, 'it must return the section index');
+  assert.match(read.next, /archgen_refs/, 'it must name the next call');
+  // The topic's own H1 is not a section — listing it would put "the whole
+  // document" at index 0.
+  assert.ok(read.sections.every((s) => s.level > 1), 'the topic title must not be listed as a section');
+});
+
+test('the whole topic is still available — deliberately', () => {
+  const read = readTopic('platforms', { ...roots(), section: '*' });
+  assert.equal(read.whole, true);
   assert.ok(read.text.includes('## Platform detection'));
 });
 

@@ -57,7 +57,7 @@ Never shell out to scripts to bypass missing tools.
 
 All tools return `{ ok, data, error, meta }`. `ok:false` returns a typed `error.code` (`INVALID_INPUT`, `NOT_FOUND`, `CYCLE`, `OWNERSHIP_CONFLICT`, `CONFLICT`, `PERMISSION_DENIED`, `UNAVAILABLE`, `TIMEOUT`, `INTERNAL`)—handle it as structured data. `ok:true` means the tool call succeeded; inspect `data.valid` for plan health and `data.verdict` for gate verdicts.
 
-**Token discipline:** Fetch sections, never full files—use `archgen_docs{action:'digest'}` $\rightarrow$ `{action:'section'}` and `archgen_refs{action:'index'}` $\rightarrow$ `{action:'read'}`.
+**Token discipline:** Fetch sections, never full files—use `archgen_docs{action:'digest'}` $\rightarrow$ `{action:'section'}` and `archgen_refs{action:'index'}` $\rightarrow$ `{action:'read'}`. Every tool takes `limit`/`offset` (default 50), and every collection narrows to one item (`taskId`, `skillId`, `file`+`section`, `harness`). Each answer's `meta` says what else exists and the exact next call—**fetch it; never take the whole set.**
 
 **Batching:** settle every call in a batch (`allSettled`)—one bad argument must not discard the siblings' results.
 

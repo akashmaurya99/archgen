@@ -214,6 +214,126 @@ test('every tool in the catalog is reachable from the matrix', () => {
   }
 });
 
+// ── fetching, not dumping ──────────────────────────────────────────────────
+//
+// The defect this pins: NO collection-shaped action had an item-level
+// selector, so "I need one section" cost "the whole topic" — and the agent
+// paid for it in context. The tool surface made dumping the cheaper option
+// for the server and the more expensive one for the agent.
+//
+// The contract, in four parts:
+//   1. every tool accepts `limit`/`offset` — the bound is the CALLER's;
+//   2. a bounded answer says how many items exist and how to get the rest;
+//   3. the expensive default is gone (a whole topic, a whole skill file);
+//   4. every collection narrows to ONE item.
+
+test('every tool accepts limit and offset', () => {
+  const missing = [];
+  for (const tool of TOOL_NAMES) {
+    // archgen_help returns ONE fixed briefing per topic. Its payload does not
+    // grow with the project, so there is nothing to bound — and truncating a
+    // briefing would corrupt it.
+    if (tool === 'archgen_help') continue;
+    const shape = getToolSpec(tool).inputSchema.shape ?? {};
+    for (const arg of ['limit', 'offset']) {
+      if (!shape[arg]) missing.push(`${tool} has no ${arg}`);
+    }
+  }
+  assert.deepEqual(missing, [], `a tool that cannot be bounded:\n  ${missing.join('\n  ')}`);
+});
+
+test('a bounded answer reports the count and the way to get the rest', async () => {
+  const cases = [
+    ['archgen_tasks', { action: 'list', tasksYaml: sandbox.tasksYaml }],
+    ['archgen_refs', { action: 'index', topic: 'orchestration' }],
+    ['archgen_skills', { action: 'list' }],
+    ['archgen_setup', { action: 'harnesses' }],
+    ['archgen_registry', { action: 'show' }],
+  ];
+  const failures = [];
+  for (const [tool, args] of cases) {
+    const envelope = await guard(getToolSpec(tool).handler, ctx, args);
+    if (!envelope.ok) {
+      failures.push(`${tool}{action:'${args.action}'} -> ${envelope.error.message}`);
+      continue;
+    }
+    const meta = envelope.meta ?? {};
+    if (typeof meta.total !== 'number') failures.push(`${tool}{action:'${args.action}'} -> meta.total missing`);
+    if (typeof meta.returned !== 'number') failures.push(`${tool}{action:'${args.action}'} -> meta.returned missing`);
+    if (!meta.available || typeof meta.available !== 'object') {
+      failures.push(`${tool}{action:'${args.action}'} -> meta.available missing`);
+    }
+  }
+  assert.deepEqual(failures, [], `a bounded answer that does not say what else exists:\n  ${failures.join('\n  ')}`);
+});
+
+test('the limit is the CALLER\'s: a smaller limit returns fewer items and names the next call', async () => {
+  const envelope = await guard(getToolSpec('archgen_refs').handler, ctx, {
+    action: 'index',
+    topic: 'orchestration',
+    limit: 2,
+  });
+  assert.ok(envelope.ok, envelope.error?.message);
+  assert.equal(envelope.data.sections.length, 2, 'the limit must bound the answer');
+  assert.equal(envelope.meta.total > 2, true, 'the total must report what exists');
+  assert.match(envelope.meta.next, /archgen_refs/, 'meta.next must be the exact next call');
+  assert.match(envelope.meta.next, /offset:2/, 'meta.next must carry the offset');
+});
+
+test('a whole reference topic is no longer the DEFAULT answer', async () => {
+  const envelope = await guard(getToolSpec('archgen_refs').handler, ctx, { action: 'read', topic: 'orchestration' });
+  assert.ok(envelope.ok, envelope.error?.message);
+  assert.equal(envelope.data.text, undefined, 'no section named must not return the topic text');
+  assert.ok(Array.isArray(envelope.data.sections), 'it must return the section index');
+  // …and the whole topic is still reachable, deliberately.
+  const whole = await guard(getToolSpec('archgen_refs').handler, ctx, {
+    action: 'read',
+    topic: 'orchestration',
+    section: '*',
+  });
+  assert.ok(whole.ok, whole.error?.message);
+  assert.ok(typeof whole.data.text === 'string' && whole.data.text.length > 0, "section:'*' must return the topic");
+});
+
+test('loading a skill never returns the whole file', async () => {
+  const envelope = await guard(getToolSpec('archgen_skills').handler, ctx, {
+    action: 'load',
+    skillId: 'ui-baseline',
+  });
+  assert.ok(envelope.ok, envelope.error?.message);
+  assert.equal(envelope.data.content, undefined, 'the raw file must not ride along with its own rules and index');
+});
+
+test('every collection narrows to ONE item', async () => {
+  const cases = [
+    ['archgen_tasks', { action: 'list', tasksYaml: sandbox.tasksYaml, taskId: 'API' }, (d) => d.tasks.length === 1],
+    ['archgen_tasks', { action: 'next', tasksYaml: sandbox.tasksYaml, taskId: 'API' }, (d) => d.waves.length === 1],
+    ['archgen_plan', { action: 'coverage', tasksYaml: sandbox.tasksYaml, planDir: sandbox.plansDir, taskId: 'API' }, (d) => d.taskId === 'API'],
+    ['archgen_skills', { action: 'list', skillId: 'ui-baseline' }, (d) => d.skills.length === 1],
+  ];
+  const failures = [];
+  for (const [tool, args, check] of cases) {
+    const envelope = await guard(getToolSpec(tool).handler, ctx, args);
+    if (!envelope.ok) {
+      failures.push(`${tool}{action:'${args.action}'} -> ${envelope.error.message}`);
+      continue;
+    }
+    if (!check(envelope.data)) {
+      failures.push(`${tool}{action:'${args.action}'} -> the selector did not narrow the answer`);
+    }
+  }
+  // The harness selector narrows to one DETECTED harness — which one exists
+  // depends on the project, so the test takes the first it finds.
+  const harnesses = await guard(getToolSpec('archgen_setup').handler, ctx, { action: 'harnesses' });
+  if (harnesses.ok && (harnesses.data.detected ?? []).length) {
+    const id = harnesses.data.detected[0].id;
+    const one = await guard(getToolSpec('archgen_setup').handler, ctx, { action: 'harnesses', harness: id });
+    if (!one.ok) failures.push(`archgen_setup{action:'harnesses',harness:'${id}'} -> ${one.error.message}`);
+    else if (one.data.detected.length !== 1) failures.push(`archgen_setup{action:'harnesses'} -> the harness selector did not narrow`);
+  }
+  assert.deepEqual(failures, [], `a collection that cannot be narrowed to one item:\n  ${failures.join('\n  ')}`);
+});
+
 test('every action in the matrix belongs to a real action enum', async () => {
   // A typo in the matrix would silently stop testing an action.
   const seen = new Set();

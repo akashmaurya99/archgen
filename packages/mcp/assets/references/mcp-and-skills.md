@@ -35,7 +35,7 @@ Capability-skill loading is **MANDATORY** whenever planned work matches a regist
    ```
    This invokes `npx -y skills add <repo> --skill <slug> --agent <agent> --yes --json` to install the single matched skill non-interactively (never a full repo bundle) and verifies the resulting file path.
 4. **INTEGRATE (inline into worker contract):** Call `archgen_tasks{action:'contract', tasksYaml, taskId}`. It automatically extracts the normative rules (`MUST` / `SHOULD` / `NEVER`), file path, and section index from every matched required skill and embeds them directly into the worker prompt so workers cannot overlook them.
-   - To inspect a skill manually, call `archgen_skills{action:'load', skillId}` (full rules + index), `{action:'digest', skillId}` (index only), or `{action:'load', skillId, section}` (single section).
+   - To inspect a skill manually, call `archgen_skills{action:'load', skillId}` (the normative rules + the section index — never the whole file), `{action:'digest', skillId}` (index only), or `{action:'load', skillId, section}` (single section).
 5. **AUDIT:** Every worker completion report MUST include an explicit compliance line:
    - `Skill compliance: followed <skill-slug> (<path/to/SKILL.md>)`
    - `Skill compliance: NOT followed — <reason>`

@@ -11,6 +11,7 @@ import { loadAsset } from '../context.mjs';
 import { setTaskStatus, STATUSES } from '../core/status-mutator.mjs';
 import { writeResumeSnapshot } from '../core/resume-snapshot.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { resolveSlugInput, ScopeError } from '../core/scope.mjs';
 import { dirname, join } from 'node:path';
 
@@ -40,13 +41,15 @@ const ACTION_DESC = 'next | set_status | list | snapshot | contract — see arch
 const schema = z.object({
   action: z.enum(['next', 'set_status', 'list', 'snapshot', 'contract']).describe(ACTION_DESC),
   tasksYaml: z.string().optional().describe('Absolute path to tasks.yaml. Required for next, set_status and list.'),
-  taskId: z.string().optional().describe('Task id (set_status).'),
+  taskId: z.string().optional().describe('Task id (set_status, contract). ONE task (list, next).'),
   status: z.enum(STATUSES).optional().describe('New status (set_status).'),
   force: z.boolean().optional().describe('Allow reopening a done task (set_status).'),
   filterStatus: z.string().optional().describe('Filter by status (list).'),
   slugDir: z.string().optional().describe('The .archgen/<slug>/ directory (contract) — locates the plan docs.'),
   codeStandardsPath: z.string().optional().describe('Path to the code-standards reference (contract).'),
   module: z.string().optional().describe('Filter by module path fragment (list).'),
+  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
+  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
   projectRoot: projectRootArg,
 });
 
@@ -74,10 +77,37 @@ export function registerTaskTools(server) {
         }
         case 'list': {
           if (!args.tasksYaml) throw invalidInput('tasksYaml is required for list', { action });
-          return listTasks(ctx.contain(args.tasksYaml), {
+          const listed = listTasks(ctx.contain(args.tasksYaml), {
             status: args.filterStatus ?? null,
             module: args.module ?? null,
           });
+          // ONE task, when the caller named one.
+          if (args.taskId) {
+            const one = (listed.tasks ?? []).find((t) => t.id === args.taskId);
+            if (!one) {
+              throw invalidInput(`no task '${args.taskId}' in ${args.tasksYaml}`, {
+                action,
+                taskId: args.taskId,
+                available: (listed.tasks ?? []).map((t) => t.id),
+              });
+            }
+            return { task: one, tasks: [one] };
+          }
+          const p = project(listed.tasks ?? [], {
+            limit: args.limit,
+            offset: args.offset,
+            next: `archgen_tasks{action:'list',tasksYaml:'${args.tasksYaml}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+          });
+          return withMeta(
+            { ...listed, tasks: p.items },
+            moreMeta({
+              total: p.total,
+              returned: p.returned,
+              next: p.next,
+              available: { tasks: p.total },
+              more: `archgen_tasks{action:'list',tasksYaml:'${args.tasksYaml}',taskId:'<one task>'}`,
+            }),
+          );
         }
         case 'snapshot': {
           if (!args.tasksYaml) throw invalidInput('tasksYaml is required for snapshot', { action });
@@ -196,7 +226,42 @@ export function registerTaskTools(server) {
         }
         case 'next': {
           if (!args.tasksYaml) throw invalidInput('tasksYaml is required for next', { action });
-          return resolveWaves(ctx.contain(args.tasksYaml));
+          const resolved = resolveWaves(ctx.contain(args.tasksYaml));
+          // ONE wave, when the caller named a task: "which wave is this in?"
+          if (args.taskId) {
+            const index = resolved.waves.findIndex((w) => w.some((t) => t.id === args.taskId));
+            if (index < 0) {
+              throw invalidInput(`no task '${args.taskId}' in ${args.tasksYaml}`, {
+                action,
+                taskId: args.taskId,
+                available: resolved.waves.flat().map((t) => t.id),
+              });
+            }
+            return {
+              waveIndex: index,
+              wave: resolved.waves[index],
+              waves: [resolved.waves[index]],
+              blockedByFailure: resolved.blockedByFailure,
+            };
+          }
+          // The waves are the plan's shape; a long plan would dump every task
+          // in every wave, so the wave COUNT is reported and the waves
+          // themselves are bounded.
+          const p = project(resolved.waves, {
+            limit: args.limit,
+            offset: args.offset,
+            next: `archgen_tasks{action:'next',tasksYaml:'${args.tasksYaml}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+          });
+          return withMeta(
+            { ...resolved, waves: p.items },
+            moreMeta({
+              total: p.total,
+              returned: p.returned,
+              next: p.next,
+              available: { waves: p.total, tasks: resolved.waves.flat().length },
+              more: `archgen_tasks{action:'next',tasksYaml:'${args.tasksYaml}',taskId:'<one task>'}`,
+            }),
+          );
         }
         default:
           throw invalidInput(`unknown action '${action}'`, { action });

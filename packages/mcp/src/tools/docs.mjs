@@ -7,6 +7,7 @@ import { registerTool, projectRootArg } from './_register.mjs';
 import { docIndex } from '../core/doc-navigator.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
+import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const ACTION_DESC = 'index | digest | section | refs | map | validate — see archgen_help.';
 
@@ -19,6 +20,8 @@ const schema = z.object({
   token: z.string().optional().describe('The token to look for (refs, map).'),
   section: z.string().optional().describe('Section path, optionally path#anchor (section).'),
   file: z.string().optional().describe('Scope to one document (repo-root-relative or slug-relative).'),
+  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
+  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
   projectRoot: projectRootArg,
 });
 
@@ -36,27 +39,69 @@ export function registerDocTools(server) {
     idempotent: true,
     handler: (ctx, args) => {
       const slugDir = resolveSlugDir(ctx, args.slugDir);
+      const bound = args.limit ?? 50;
+      const from = args.offset ?? 0;
       switch (args.action) {
-        case 'index':
-          return docIndex(slugDir, { mode: 'overview', file: args.file ?? null, projectRoot: ctx.projectRoot });
-        case 'digest':
-          return docIndex(slugDir, { mode: 'digest', file: args.file ?? null, projectRoot: ctx.projectRoot });
-        case 'validate':
+        case 'index': {
+          const overview = docIndex(slugDir, { mode: 'overview', file: args.file ?? null, projectRoot: ctx.projectRoot });
+          return bounded('files', overview.data, args, `archgen_docs{action:'index',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`, {
+            files: (overview.data.files ?? []).length,
+            more: `archgen_docs{action:'section',slugDir:'${slugDir}',section:'<the section you need>'}`,
+          });
+        }
+        case 'digest': {
+          const digest = docIndex(slugDir, { mode: 'digest', file: args.file ?? null, projectRoot: ctx.projectRoot });
+          return bounded('files', digest.data, args, `archgen_docs{action:'digest',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`, {
+            files: (digest.data.files ?? []).length,
+            more: `archgen_docs{action:'section',slugDir:'${slugDir}',section:'<the section you need>'}`,
+          });
+        }
+        case 'validate': {
           return docIndex(slugDir, { mode: 'validate', file: args.file ?? null, projectRoot: ctx.projectRoot });
-        case 'refs':
+        }
+        case 'refs': {
           if (!args.token) throw invalidInput('refs requires a token', { action: args.action });
-          return docIndex(slugDir, { mode: 'refs', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
-        case 'map':
+          const refs = docIndex(slugDir, { mode: 'refs', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
+          return bounded('matches', refs.data, args, `archgen_docs{action:'refs',slugDir:'${slugDir}',token:'${args.token}',limit:${bound},offset:${from + bound}}`, {
+            matches: (refs.data.matches ?? []).length,
+          });
+        }
+        case 'map': {
           if (!args.token) throw invalidInput('map requires a token', { action: args.action });
-          return docIndex(slugDir, { mode: 'map', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
-        case 'section':
+          const map = docIndex(slugDir, { mode: 'map', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
+          return bounded('sections', map.data, args, `archgen_docs{action:'map',slugDir:'${slugDir}',token:'${args.token}',limit:${bound},offset:${from + bound}}`, {
+            sections: (map.data.sections ?? []).length,
+            matches: map.data.matchCount ?? undefined,
+            more: `archgen_docs{action:'section',slugDir:'${slugDir}',section:'<the section you need>'}`,
+          });
+        }
+        case 'section': {
           if (!args.section) throw invalidInput('section requires a section path', { action: args.action });
           return docIndex(slugDir, { mode: 'section', section: args.section, file: args.file ?? null, projectRoot: ctx.projectRoot });
+        }
         default:
           throw invalidInput(`unknown action '${args.action}'`, { action: args.action });
       }
     },
   });
+}
+
+/**
+ * Bound a collection-shaped answer, and report what was left.
+ *
+ * The agent is told how many items exist, how many it got, and the exact
+ * call that returns the next slice — so a bound never hides data.
+ *
+ * @param {string} key the payload key the collection sits in
+ * @param {object} data the payload
+ * @param {any} args
+ * @param {string} next the exact next call
+ * @param {object} available what else exists
+ */
+function bounded(key, data, args, next, available) {
+  const items = data?.[key] ?? [];
+  const p = project(items, { limit: args.limit, offset: args.offset, next });
+  return withMeta({ ...data, [key]: p.items }, moreMeta({ total: p.total, returned: p.returned, next: p.next, available }));
 }
 
 /**

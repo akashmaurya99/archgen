@@ -16,6 +16,7 @@ import { verifyPlan, planCoverage } from '../core/verifier.mjs';
 import { planGraph } from '../core/plan-grapher.mjs';
 import { analyzeImpact } from '../core/impact-analyzer.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information.
@@ -30,12 +31,14 @@ const schema = z.object({
     .describe('Absolute path to tasks.yaml. Required for validate, verify, impact and coverage.'),
   planDir: z.string().optional().describe('Absolute path to the plans directory (verify, coverage, brief).'),
   target: z.string().optional().describe('Task id or artifact path (impact).'),
+  taskId: z.string().optional().describe('ONE task id (coverage).'),
   node: z.string().optional().describe('Restrict the graph to one task neighborhood (graph).'),
   format: z.enum(['json', 'mermaid']).optional().describe('Graph output format. Defaults to json.'),
   status: z.boolean().optional().describe('Include status styling (graph, mermaid only).'),
   module: z.string().optional().describe('Restrict the graph to one module (graph).'),
   scope: z.enum(['SMALL', 'MEDIUM', 'LARGE']).optional().describe('Scope class (scaffold).'),
   slug: z.string().optional().describe('Project slug (scaffold, brief).'),
+  file: z.string().optional().describe('ONE artifact file (scaffold) — returns just that skeleton.'),
   kind: z.enum(BRIEF_KINDS).optional().describe('Which dispatch brief (brief).'),
   featureRequest: z
     .string()
@@ -43,6 +46,8 @@ const schema = z.object({
     .describe('The feature being requested, in one line (brief). Defaults to the slug.'),
   topic: z.string().optional().describe('Investigation topic (brief).'),
   round: z.number().int().positive().optional().describe('Investigation round number (brief).'),
+  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
+  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
   projectRoot: projectRootArg,
 });
 
@@ -74,16 +79,53 @@ export function registerPlanTools(server) {
         case 'coverage': {
           const file = requireTasksYaml(args, ctx);
           if (!args.planDir) throw invalidInput('coverage requires planDir', { action });
-          return planCoverage(file, ctx.contain(args.planDir));
+          const covered = planCoverage(file, ctx.contain(args.planDir));
+          // ONE task, when the caller named one.
+          if (args.taskId) {
+            const isCovered = (covered.covered ?? []).includes(args.taskId);
+            const isUncovered = (covered.uncovered ?? []).includes(args.taskId);
+            if (!isCovered && !isUncovered) {
+              throw invalidInput(`no task '${args.taskId}' in ${file}`, {
+                action,
+                taskId: args.taskId,
+                available: [...(covered.covered ?? []), ...(covered.uncovered ?? [])],
+              });
+            }
+            return { taskId: args.taskId, covered: isCovered, findings: covered.findings ?? [] };
+          }
+          const p = project([...(covered.covered ?? []), ...(covered.uncovered ?? [])], {
+            limit: args.limit,
+            offset: args.offset,
+            next: `archgen_plan{action:'coverage',tasksYaml:'${file}',planDir:'${args.planDir}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+          });
+          return withMeta(
+            { ...covered, covered: p.items.slice(0, (covered.covered ?? []).length) },
+            moreMeta({
+              total: p.total,
+              returned: p.returned,
+              next: p.next,
+              available: { tasks: p.total, uncovered: (covered.uncovered ?? []).length },
+              more: `archgen_plan{action:'coverage',tasksYaml:'${file}',planDir:'${args.planDir}',taskId:'<one task>'}`,
+            }),
+          );
         }
         case 'impact': {
           const file = requireTasksYaml(args, ctx);
           if (!args.target) throw invalidInput('impact requires target (a task id or an artifact path)', { action });
-          return analyzeImpact(file, args.target);
+          const blast = analyzeImpact(file, args.target);
+          const p = project([...(blast.direct ?? []), ...(blast.transitive ?? [])], {
+            limit: args.limit,
+            offset: args.offset,
+            next: `archgen_plan{action:'impact',tasksYaml:'${file}',target:'${args.target}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+          });
+          return withMeta(
+            blast,
+            moreMeta({ total: p.total, returned: p.returned, next: p.next, available: { impacted: p.total } }),
+          );
         }
         case 'scaffold': {
           if (!args.scope) throw invalidInput('scaffold requires scope (SMALL | MEDIUM | LARGE)', { action });
-          return buildScaffold(loadAsset('depth-ladder.json'), args.scope, {
+          const built = buildScaffold(loadAsset('depth-ladder.json'), args.scope, {
             slug: args.slug ?? null,
             templatesDir: TEMPLATES_DIR,
             // The generator token carries the RUNNING server's version. The
@@ -92,6 +134,29 @@ export function registerPlanTools(server) {
             // and no release ever has to update a version written by hand.
             generator: `archgen v${serverVersion()}`,
           });
+          // ONE file's skeleton, when the caller named one. The whole set is
+          // the CONTRACT — truncating it would produce a broken plan — so the
+          // default stays whole and the map to the rest lives in `meta`.
+          if (args.file) {
+            const key = Object.keys(built.skeletons ?? {}).find((k) => k === args.file || k.endsWith(`/${args.file}`));
+            if (!key) {
+              throw invalidInput(`no skeleton '${args.file}' for scope ${args.scope}`, {
+                action,
+                file: args.file,
+                available: Object.keys(built.skeletons ?? {}),
+              });
+            }
+            return { ...built, skeletons: { [key]: built.skeletons[key] }, one: key };
+          }
+          return withMeta(
+            built,
+            moreMeta({
+              total: (built.writeThese ?? []).length,
+              returned: (built.writeThese ?? []).length,
+              available: { files: (built.writeThese ?? []).length },
+              more: `archgen_plan{action:'scaffold',scope:'${args.scope}',slug:'${args.slug ?? '<slug>'}',file:'<one file>'}`,
+            }),
+          );
         }
         case 'brief': {
           if (!args.kind) throw invalidInput('brief requires kind', { action });

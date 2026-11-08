@@ -75,11 +75,11 @@ context — which is also why the brief is read from any working directory
 
 ## Git as the VCS decision
 
-archgen does not build its own history layer. Workers commit their own work; rollback is `git revert` of the task's commits in reverse dependency order (with status rewinds via `archgen_tasks{action:'set_status', force:true}`, gated on explicit user approval since it's destructive). Done tasks are never deleted from `tasks.yaml` — history lives in git.
+archgen does not build its own history layer — **git is the history layer, and the plan of record lives in it.** Workers commit their own work; the orchestrator commits the artifact state each wave changed (the updated `tasks.yaml`, and the `.agent/` notes, decisions and reports) with that wave's commits, and the plan itself is committed before the first wave. Every archgen artifact is **tracked**: the plan, the installed skill store, the harness bridge, `AGENTS.md`/`CLAUDE.md` and the project MCP config — never gitignored, because an artifact nobody can see in `git log` is not a record of anything. Rollback is `git revert` of the task's commits in reverse dependency order (with status rewinds via `archgen_tasks{action:'set_status', force:true}`, gated on explicit user approval since it's destructive). Done tasks are never deleted from `tasks.yaml` — history lives in git.
 
 ## Dot-folder convention
 
-Everything generated goes inside `.archgen/<project-slug>/` at the target repo root — architecture.yaml, Mermaid docs, ADRs in `decisions/`, plans, `tasks.yaml`, worker logs under `results/`. Nothing else is written outside it except source edits performed by approved-task workers. Generation is right-sized: SMALL scopes get tasks entries only; MEDIUM gets plan + tasks.yaml; LARGE/greenfield gets the full artifact set. Existing artifacts are never regenerated unless reality changed.
+Everything generated goes inside `.archgen/<project-slug>/` at the target repo root — architecture.yaml, Mermaid docs, ADRs in `decisions/`, plans, `tasks.yaml`, worker logs under `results/`. Nothing else is written outside it except source edits performed by approved-task workers. Generation is right-sized: SMALL scopes get tasks entries only; MEDIUM gets plan + tasks.yaml; LARGE/greenfield gets the full artifact set. Existing artifacts are never regenerated unless reality changed. The whole `.archgen/<slug>/` tree is **version-controlled** — it is the plan of record, not scratch space.
 
 ## Platform detection & web-search fallback
 

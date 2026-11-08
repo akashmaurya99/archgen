@@ -59,29 +59,61 @@ export function resolveTopic(topic, opts) {
 /**
  * Index one reference topic: its title, purpose and section list.
  *
+ * With `section`, it returns THAT section's entry — the same map, narrowed.
+ * A topic has a dozen sections; an agent that wants one of them should not
+ * have to take the dozen to find it.
+ *
  * @param {string} topic
- * @param {{assetsDir: string, skillDir: string|null}} opts
+ * @param {{assetsDir: string, skillDir: string|null, section?: string|null}} opts
  */
 export function indexTopic(topic, opts) {
   const resolved = resolveTopic(topic, opts);
   if (!resolved) throw notFound(`unknown reference '${topic}'`, { topic, known: REF_TOPICS });
   const doc = parseMarkdown(readFileSync(resolved.path, 'utf8'));
-  return {
-    topic: resolved.topic,
-    root: resolved.root,
-    title: doc.headings.find((h) => h.level === 1)?.text ?? resolved.topic,
-    sections: buildSections(doc).map((s) => ({
+  const sections = buildSections(doc)
+    // The topic's own H1 is not a SECTION — it is the topic. Listing it
+    // would put "the whole document" at index 0 and make every section map
+    // carry an entry that says nothing.
+    .filter((s) => s.level > 1)
+    .map((s) => ({
       slug: s.slug,
       title: s.title,
       level: s.level,
       line: s.line,
       endLine: s.endLine,
-    })),
+    }));
+  if (opts.section) {
+    const hit = findSection(doc, opts.section);
+    if (!hit) throw noSuchSection(resolved.topic, opts.section, sections.map((s) => s.slug));
+    const one = sections.find((s) => s.slug === hit.slug);
+    return {
+      topic: resolved.topic,
+      root: resolved.root,
+      title: doc.headings.find((h) => h.level === 1)?.text ?? resolved.topic,
+      section: one,
+      sections: [one],
+    };
+  }
+  return {
+    topic: resolved.topic,
+    root: resolved.root,
+    title: doc.headings.find((h) => h.level === 1)?.text ?? resolved.topic,
+    sections,
   };
 }
 
 /**
- * Read one section (or the whole topic).
+ * Read one section (or the topic's section INDEX).
+ *
+ * WHY THE DEFAULT IS THE INDEX: a whole topic is ~11 KB of English, and the
+ * whole design of this module is that the agent reads a SECTION. Returning
+ * the entire topic when the caller named no section made the expensive
+ * answer the default — so an agent that forgot the section paid for the
+ * whole protocol instead of getting the map that would have told it which
+ * section it needed.
+ *
+ * So: no section → the INDEX (the map) plus the exact next call. The whole
+ * topic is `section: '*'` — deliberate, never the default.
  *
  * @param {string} topic
  * @param {{assetsDir: string, skillDir: string|null, section?: string|null}} opts
@@ -89,19 +121,32 @@ export function indexTopic(topic, opts) {
 export function readTopic(topic, opts) {
   const resolved = resolveTopic(topic, opts);
   if (!resolved) throw notFound(`unknown reference '${topic}'`, { topic, known: REF_TOPICS });
-  const text = readFileSync(resolved.path, 'utf8');
-  const doc = parseMarkdown(text);
 
-  if (!opts.section) {
+  // The whole topic — asked for explicitly.
+  if (opts.section === '*') {
+    const doc = parseMarkdown(readFileSync(resolved.path, 'utf8'));
     return {
       topic: resolved.topic,
       root: resolved.root,
       section: null,
+      whole: true,
       text: doc.lines.join('\n'),
       lines: doc.lines.length,
     };
   }
 
+  // No section named: the MAP, not the text.
+  if (!opts.section) {
+    const indexed = indexTopic(topic, opts);
+    return {
+      ...indexed,
+      whole: false,
+      next: `archgen_refs{action:'read',topic:'${resolved.topic}',section:'<the section you need>'}`,
+      hint: 'read ONE section — a whole topic is a map plus the text you did not ask for.',
+    };
+  }
+
+  const doc = parseMarkdown(readFileSync(resolved.path, 'utf8'));
   const section = findSection(doc, opts.section);
   if (!section) {
     const available = buildSections(doc).map((s) => s.slug);
@@ -136,14 +181,34 @@ export function searchTopic(topic, token, opts) {
   // Whole-word: a hit must not be glued to word characters on either side.
   const re = new RegExp(`(?<![A-Za-z0-9_])${esc}(?![A-Za-z0-9_])`, 'i');
 
+  // The sections OVERLAP: a parent section's body runs to the next heading at
+  // the same or shallower level, so it CONTAINS its children. Reporting a hit
+  // once per containing section therefore delivered the same line three times
+  // for a three-level nesting — the agent paid for the same sentence three
+  // times to learn one fact.
+  //
+  // So every hit is reported ONCE, under the DEEPEST section that contains
+  // it: the most specific place the line actually lives.
+  const sections = buildSections(doc).filter((s) => s.level > 1);
+  const ownerOf = (line) => {
+    let owner = null;
+    for (const s of sections) {
+      if (line < s.line || line > s.endLine) continue;
+      if (owner === null || s.level > owner.level) owner = s;
+    }
+    return owner;
+  };
+
   const hits = [];
-  for (const section of buildSections(doc)) {
+  for (const section of sections) {
     const bodyLines = doc.lines.slice(section.line - 1, section.endLine);
     const matches = [];
     for (let i = 0; i < bodyLines.length; i++) {
-      if (re.test(bodyLines[i])) {
-        matches.push({ line: section.line + i, text: bodyLines[i].trim().slice(0, 200) });
-      }
+      if (!re.test(bodyLines[i])) continue;
+      const line = section.line + i;
+      const owner = ownerOf(line);
+      if (!owner || owner.slug !== section.slug) continue; // its deepest owner reports it
+      matches.push({ line, text: bodyLines[i].trim().slice(0, 200) });
     }
     if (matches.length) {
       hits.push({
@@ -157,7 +222,15 @@ export function searchTopic(topic, token, opts) {
       });
     }
   }
-  return { topic: resolved.topic, root: resolved.root, token, sections: hits, sectionCount: hits.length };
+  return {
+    topic: resolved.topic,
+    root: resolved.root,
+    token,
+    sections: hits,
+    sectionCount: hits.length,
+    // The distinct lines behind those hits — reported once, counted once.
+    matchCount: hits.reduce((n, h) => n + h.occurrences, 0),
+  };
 }
 
 /**

@@ -11,6 +11,7 @@ import { registerTool, projectRootArg } from './_register.mjs';
 import { loadAsset } from '../context.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
+import { moreMeta, project, withMeta } from '../envelope.mjs';
 import {
   matchSkills,
   installSkill,
@@ -36,11 +37,16 @@ const schema = z.object({
   title: z.string().optional().describe('Task title (match).'),
   summary: z.string().optional().describe('Task summary (match).'),
   fileOwnership: z.array(z.string()).optional().describe('Task file_ownership globs (match).'),
-  skillId: z.string().optional().describe('Registry skill id or slug (install, load, digest).'),
-  section: z.string().optional().describe('One section of the skill (load). Omit for the whole skill.'),
+  skillId: z.string().optional().describe('Registry skill id or slug (install, load, digest, list).'),
+  section: z
+    .string()
+    .optional()
+    .describe('One section of the skill (load, digest). Omit for the section index.'),
   harness: z.string().optional().describe('Harness id to install for (install). Defaults to universal.'),
   global: z.boolean().optional().describe('Install for the user instead of the project (install).'),
   approve: z.boolean().optional().describe('Required to install. Without it you get the plan and nothing is written.'),
+  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
+  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
   projectRoot: projectRootArg,
 });
 
@@ -60,21 +66,39 @@ export function registerSkillTools(server) {
     idempotent: true,
     handler: (ctx, args) => {
       const registry = loadAsset('skill-registry.json');
+      const bound = args.limit ?? 50;
+      const from = args.offset ?? 0;
 
       if (args.action === 'list') {
-        return {
-          version: registry.version,
-          installer: registry.installer,
-          skills: registry.skills.map((s) => ({
-            id: s.id,
-            slug: s.slug,
-            family: s.family,
-            repo: s.repo,
-            purpose: s.purpose,
-            policy: s.policy,
-            matches: s.matches,
-          })),
-        };
+        // ONE row, or the whole registry — but never three copies of a row.
+        const rows = registry.skills.map((s) => ({
+          id: s.id,
+          slug: s.slug,
+          family: s.family,
+          repo: s.repo,
+          purpose: s.purpose,
+          policy: s.policy,
+          matches: s.matches,
+        }));
+        if (args.skillId) {
+          const one = rows.find((s) => s.id === args.skillId || s.slug === args.skillId);
+          if (!one) {
+            throw invalidInput(
+              teach(`unknown skill '${args.skillId}'`, 'the registry lists every id and slug', "archgen_skills{action:'list'}"),
+              hint({ action: "archgen_skills{action:'list'}", reason: 'the registry is the vocabulary.' }),
+            );
+          }
+          return { version: registry.version, installer: registry.installer, skill: one, skills: [one] };
+        }
+        const p = project(rows, {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_skills{action:'list',limit:${bound},offset:${from + bound}}`,
+        });
+        return withMeta(
+          { version: registry.version, installer: registry.installer, skills: p.items },
+          moreMeta({ total: p.total, returned: p.returned, next: p.next, available: { skills: p.total } }),
+        );
       }
 
       if (args.action === 'match') {
@@ -83,21 +107,47 @@ export function registerSkillTools(server) {
           summary: args.summary,
           fileOwnership: args.fileOwnership,
         });
-        return {
-          matched,
-          required: matched.filter((m) => m.policy === 'required'),
-          installed: matched.map((m) => {
-            const found = findInstalledSkill(ctx.projectRoot, m.slug, { home: ctx.home });
-            return { ...m, installed: found.installed, path: found.path, scope: found.scope };
+        // ONE copy of each row: the install state rides ON the row, instead of
+        // the same row being delivered three times under three keys.
+        const rows = matched.map((m) => {
+          const found = findInstalledSkill(ctx.projectRoot, m.slug, { home: ctx.home });
+          return { ...m, installed: found.installed, path: found.path, scope: found.scope };
+        });
+        const p = project(rows, {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_skills{action:'match',title:'${args.title ?? ''}',limit:${bound},offset:${from + bound}}`,
+        });
+        return withMeta(
+          {
+            matched: p.items,
+            // The required ones, by id — the rows are already above.
+            required: p.items.filter((m) => m.policy === 'required').map((m) => m.slug),
+            installed: p.items.filter((m) => m.installed).map((m) => m.slug),
+            note: matched.length
+              ? 'Install every required skill before dispatching the worker.'
+              : 'No capability domain matched — no external skill is needed.',
+          },
+          moreMeta({
+            total: p.total,
+            returned: p.returned,
+            next: p.next,
+            available: { skills: p.total, required: p.items.filter((m) => m.policy === 'required').length },
           }),
-          note: matched.length
-            ? 'Install every required skill before dispatching the worker.'
-            : 'No capability domain matched — no external skill is needed.',
-        };
+        );
       }
 
       if (args.action === 'installed') {
-        return { installed: listInstalled({ projectRoot: ctx.projectRoot, registry, home: ctx.home }) };
+        const all = listInstalled({ projectRoot: ctx.projectRoot, registry, home: ctx.home });
+        const p = project(all.installed ?? [], {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_skills{action:'installed',limit:${bound},offset:${from + bound}}`,
+        });
+        return withMeta(
+          { installed: p.items },
+          moreMeta({ total: p.total, returned: p.returned, next: p.next, available: { skills: p.total } }),
+        );
       }
 
       // install | load
@@ -134,13 +184,40 @@ export function registerSkillTools(server) {
           };
         }
         const content = readFileSync(found.path, 'utf8');
-        return {
-          skill: entry.slug,
-          installed: true,
-          path: found.path,
-          scope: found.scope,
-          sections: skillSections(content),
-        };
+        let sections = skillSections(content);
+        // ONE section, when the caller named one.
+        if (args.section) {
+          const wanted = String(args.section).trim().toLowerCase();
+          const hit = sections.find(
+            (s) =>
+              s.slug === args.section ||
+              s.title.toLowerCase() === wanted ||
+              s.slug.replace(/-{2,}/g, '-') === wanted.replace(/-{2,}/g, '-'),
+          );
+          if (!hit) {
+            throw invalidInput(`no section '${args.section}' in skill '${entry.slug}'`, {
+              skillId: entry.slug,
+              section: args.section,
+              available: sections.map((s) => s.slug),
+            });
+          }
+          sections = [hit];
+        }
+        const p = project(sections, {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_skills{action:'digest',skillId:'${entry.slug}',limit:${bound},offset:${from + bound}}`,
+        });
+        return withMeta(
+          { skill: entry.slug, installed: true, path: found.path, scope: found.scope, sections: p.items },
+          moreMeta({
+            total: p.total,
+            returned: p.returned,
+            next: p.next,
+            available: { sections: p.total },
+            more: `archgen_skills{action:'load',skillId:'${entry.slug}',section:'<the section you need>'}`,
+          }),
+        );
       }
 
       if (args.action === 'load') {
@@ -152,9 +229,14 @@ export function registerSkillTools(server) {
           skill: entry.slug,
           purpose: entry.purpose,
           domain: entry.domain ?? entry.family ?? 'Capability',
-          ...loaded,
-          // The normative rules, and the section index — the agent decides
-          // what to pull from here.
+          loaded: loaded.loaded,
+          path: loaded.path,
+          scope: loaded.scope,
+          // The RAW CONTENT IS NOT RETURNED. It used to be: the file arrived
+          // three times in one call — as `content`, as the extracted `rules`
+          // and as the section index. The rules are what the agent must obey
+          // and the index is what it may pull; the file itself is one call
+          // away (`section:'<slug>'`), and the agent is told where it is.
           rules: rules.rules,
           ruleCount: rules.count,
           sections: sections.map((s) => ({
@@ -169,6 +251,8 @@ export function registerSkillTools(server) {
             ? null
             : 'not installed — install it first: archgen_skills{action:\'install\',skillId:\'' + entry.slug + '\',approve:true}',
         };
+        // Where the tool looked matters only when it found nothing.
+        if (!loaded.loaded) result.searchedPaths = loaded.searchedPaths ?? [];
 
         // ONE section — the agent's lens, the same way archgen_docs serves
         // one section of an artifact.
@@ -187,7 +271,21 @@ export function registerSkillTools(server) {
           const body = loaded.content.split('\n').slice(hit.line - 1, hit.endLine).join('\n');
           return { ...result, section: hit.slug, sectionTitle: hit.title, sectionText: body };
         }
-        return result;
+        const p = project(result.sections, {
+          limit: args.limit,
+          offset: args.offset,
+          next: `archgen_skills{action:'load',skillId:'${entry.slug}',limit:${bound},offset:${from + bound}}`,
+        });
+        return withMeta(
+          { ...result, sections: p.items },
+          moreMeta({
+            total: p.total,
+            returned: p.returned,
+            next: p.next,
+            available: { sections: p.total },
+            more: `archgen_skills{action:'load',skillId:'${entry.slug}',section:'<the section you need>'}`,
+          }),
+        );
       }
 
       return installSkill({

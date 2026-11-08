@@ -576,16 +576,32 @@ export function docIndex(input, opts = {}) {
   if (mode === 'map') {
     if (!token) throw invalidInput('map mode requires a token', {});
     // Section-level retrieval: WHERE is this token mentioned?
+    //
+    // The sections OVERLAP — a parent section's body contains its children's —
+    // so a naive walk reports the same line once per containing section. The
+    // agent then paid for the same sentence three times to learn one fact.
+    // Every hit is reported ONCE, under the DEEPEST section that contains it.
     const re = new RegExp(wholeWordSource(token));
     const hits = [];
     for (const doc of collectDocs().docs) {
-      for (const section of buildSections(doc)) {
+      const sections = buildSections(doc);
+      const ownerOf = (line) => {
+        let owner = null;
+        for (const s of sections) {
+          if (line < s.line || line > s.endLine) continue;
+          if (owner === null || s.level > owner.level) owner = s;
+        }
+        return owner;
+      };
+      for (const section of sections) {
         const bodyLines = doc.lines.slice(section.line - 1, section.endLine);
         const matching = [];
         for (let i = 0; i < bodyLines.length; i++) {
-          if (re.test(bodyLines[i])) {
-            matching.push({ line: section.line + i, text: bodyLines[i].trim().slice(0, 200) });
-          }
+          if (!re.test(bodyLines[i])) continue;
+          const line = section.line + i;
+          const owner = ownerOf(line);
+          if (!owner || owner.slug !== section.slug) continue; // its deepest owner reports it
+          matching.push({ line, text: bodyLines[i].trim().slice(0, 200) });
         }
         if (!matching.length) continue;
         hits.push({
@@ -601,7 +617,10 @@ export function docIndex(input, opts = {}) {
       }
     }
     hits.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line));
-    return { mode, data: { ref: token, sections: hits, sectionCount: hits.length } };
+    return {
+      mode,
+      data: { ref: token, sections: hits, sectionCount: hits.length, matchCount: hits.reduce((n, h) => n + h.occurrences, 0) },
+    };
   }
 
   // Overview (scale guard): the deduped inventory is always computed in full

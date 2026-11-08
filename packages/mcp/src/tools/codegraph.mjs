@@ -8,6 +8,7 @@ import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { loadAsset } from '../context.mjs';
 import { manageCodegraph, assertLocation } from '../core/codegraph-manager.mjs';
+import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const ACTION_DESC = 'ensure | status | wire — see archgen_help.';
 
@@ -17,6 +18,8 @@ const schema = z.object({
   approve: z.boolean().optional().describe('Required to write any MCP config. Without it you get the plan and nothing is written.'),
   telemetry: z.enum(['keep', 'off', 'on']).optional().describe('Telemetry preference. Defaults to keep (leave as-is).'),
   noInstall: z.boolean().optional().describe('Do not install the CLI; use the npx fallback in configs.'),
+  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
+  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
   projectRoot: projectRootArg,
 });
 
@@ -37,7 +40,7 @@ export function registerCodegraphTools(server) {
       const registry = loadAsset('harness-mcp.json');
       const location = assertLocation(args.location ?? 'both');
       const mode = args.action === 'status' ? 'status' : args.action === 'wire' ? 'wire' : 'ensure';
-      return manageCodegraph({
+      const report = await manageCodegraph({
         mode,
         projectRoot: ctx.projectRoot,
         registry,
@@ -48,6 +51,22 @@ export function registerCodegraphTools(server) {
         home: ctx.home,
         env: ctx.env,
       });
+      // The wiring lists grow with the number of detected harnesses, so they
+      // are bounded — and the agent is told what else it could fetch.
+      const p = project(report.detected ?? [], {
+        limit: args.limit,
+        offset: args.offset,
+        next: `archgen_codegraph{action:'status',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+      });
+      return withMeta(
+        { ...report, detected: p.items },
+        moreMeta({
+          total: p.total,
+          returned: p.returned,
+          next: p.next,
+          available: { harnesses: p.total },
+        }),
+      );
     },
   });
 }
