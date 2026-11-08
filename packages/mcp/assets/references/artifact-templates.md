@@ -62,6 +62,7 @@ Adding or omitting files outside the scaffold output is a right-sizing defect. A
 - **Runnable verification commands:** Repo-root-relative (no `../` or `--plan .`), specifying exact commands, flags, sample sizes, and thresholds.
 - **Restricted YAML subset:** Block mappings, block sequences, and single-line flow collections (`["a/**", "b.ts"]`, `{id: A}`) ONLY. **BANNED:** block scalars (`|` / `>`), duplicate keys, and multi-line flow collections.
 - **Targeted `tasks.yaml` edits:** Apply small, surgical edits or a clean full regeneration—never large multi-region patches.
+- **Both trees declared:** `architecture.yaml` `structure:` lists the source tree AND its sibling test tree, and a task that owns source owns the mirrored test path (`references/code-standards.md` owns the rule).
 
 ## Agent workspace & artifact location — the two-tier rule
 
@@ -78,6 +79,27 @@ Adding or omitting files outside the scaffold output is a right-sizing defect. A
 - **OUTSIDE `.archgen/`** (product deliverables written to task `file_ownership` paths):
   - Source code (`src/...`) and shipped user/operator documentation (`README.md`, API docs, runbooks).
   - *Durable ADRs:* Promote repo-wide architectural decisions from `.archgen/<slug>/decisions/` to the project's canonical ADR directory (`docs/adr/`). Supersede rather than deleting/renumbering accepted ADRs.
+
+Every path under `.archgen/<slug>/` is committed — the `.agent/` run state included, because it is the audit trail of how the work went (`§artifact-tracking`).
+
+## Artifact tracking — every archgen artifact is committed
+
+The plan of record belongs in the repository and in the history, next to the code it plans: `git log` must show what was decided, when it changed, and what shipped.
+
+**Committed — the whole archgen footprint:**
+- `.archgen/<slug>/` — the plan of record: `tasks.yaml`, `plans/`, `docs/`, `architecture.yaml`, `decisions/`, and the `.agent/` run state.
+- `.agents/skills/archgen/` — the canonical installed skill, one copy for the team.
+- `.claude/skills/archgen` — the harness bridge into that store.
+- `AGENTS.md` and `CLAUDE.md` — the registry hub and its pointer.
+- The project MCP config (`.mcp.json`, `.cursor/mcp.json`, `opencode.json`, `.vscode/mcp.json`, …) — the wiring that gives the team the tools.
+
+**Never committed — machine-local state:** `.codegraph/` (the local symbol index), `.archgen/.runtime/` (the legacy heartbeat), the `.archgen-version` deploy stamp.
+
+**Rules:**
+1. **NEVER gitignore an archgen artifact.** A rule covering `.archgen/`, `.agents/`, `.claude/` or `AGENTS.md` is a defect — remove it.
+2. **Commit the plan before the first wave**, then each wave's artifact state (statuses, notes, decisions, reports, snapshot) with that wave's commits.
+3. **Fix the ignore rule before force-adding** — a forced add hides the rule from the next person; if you must force-add, say so in the completion report.
+4. **Never rewrite published history** to hide an artifact — the plan of record is append-only, like the code it plans.
 
 ## architecture.yaml (LARGE scope)
 

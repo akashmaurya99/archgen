@@ -1,193 +1,6 @@
-## [0.1.0] - 2026-11-07
+## [Unreleased]
 
-The first release with a version of its own. It removes the VS Code
-extension, repairs three tool paths that had been dead or broken since they
-were written, makes the capability skills actually apply, and rewrites every
-agent-facing artifact to be a third smaller.
-
-**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.** The CLI's
-installer resolves `archgen-mcp` from the registry, so a release that
-advertises the server before it exists hands every user a broken bootstrap.
-
-| Artifact | Published as | Tag |
-|---|---|---|
-| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.0` |
-| `packages/cli` | `archgen-skill` | `vcli-0.1.0` |
-
-### Fixed — three tool paths that had been dead or broken
-
-- **`archgen_plan{action:'graph'}` had never worked.** `loadPlan(input)` read
-  `opts` from its **caller's** frame — a module-level function reaching into a
-  local it does not own — so every call threw `ReferenceError: opts is not
-  defined` and surfaced as `INTERNAL: opts is not defined`. For every project,
-  in every format, with or without status, since the action was written. The
-  review brief has told the orchestrator to attach the graph since the day it
-  was written, so **every plan review had been running without it**.
-- **`archgen_docs{action:'section', section:'<slug>'}` failed on every plan.**
-  The action treated its whole argument as a FILE path, while `digest` hands
-  out section **slugs** — so the digest→section round trip, the primary way
-  an agent reads an artifact, was broken by construction. The resolver now
-  accepts a bare slug, a path, or `path#anchor`; an ambiguous slug returns
-  candidates instead of a guess, and a miss lists what IS available.
-- **`archgen_plan{action:'brief'}` demanded the slug even when the caller had
-  already passed the absolute `tasks.yaml`** — a path that IS
-  `.archgen/<slug>/tasks.yaml`, so the slug was derivable. Worse, it emitted
-  `tasks.yaml` **absolute** while `slug dir` and `plans dir` were
-  **project-relative**, and a relative path in a brief resolves against the
-  *server's* root: a brief read from a worktree pointed at the wrong tree.
-  The slug is derived now, and every path in a brief is absolute, from one
-  source.
-
-### Fixed — the worker contract shipped a literal placeholder
-
-Every worker prompt began `<Domain> work: follow …`. The briefs had a
-`remainingPlaceholders` guard — which required a **lowercase** first letter,
-so `<Domain>` was invisible to it — and the worker contract had **no guard at
-all**. The follow-instruction wording also existed in three places with three
-different texts. There is now one owner, and the guard catches mixed case.
-
-### Fixed — the capability skills were downloaded and never applied
-
-- The contract pointed at a **file** and never opened it, so a design skill
-  could be installed and ignored. It now carries the skill's **normative
-  rules** — the MUST / SHOULD / NEVER lines, selected semantically and never
-  truncated — for **every** matched required skill.
-- Only `required[0]` was injected, so a task matching two required skills
-  silently lost the second. In the reported project, `fixing-accessibility`
-  was installed and named by **no contract at all**.
-- `load` searched exactly **one** path, so a skill installed above the project
-  root was reported "not installed" by the tool that installed it. The search
-  now walks the same roots the archgen skill itself is resolved from.
-- `archgen_codegraph{ensure}` ran a **global `npm install -g` without
-  approval**, while the tool documents "without `approve: true` the tool prints
-  its plan and writes nothing".
-
-### Changed — the dispatch discipline, which was missing entirely
-
-- The verifier brief demanded "exactly one line", which is a ceiling on
-  completeness: it found the first issue it was sure about, the orchestrator
-  fixed it, and the next round found the next one. The brief now requires a
-  **COVERAGE table** — every dimension PASS / FAIL / N/A — so one pass is
-  provably exhaustive. **One holistic agent** over the whole plan, never one
-  per dimension.
-- A sub-agent is a **WORK unit, not a lookup**: status, wave frontier, plan
-  health and the graph are one orchestrator tool call each.
-- **MAX 3 PARALLEL SUB-AGENTS** at a time, with disjoint read *and* write
-  footprints; gate agents never run while a wave is in flight.
-- A follow-up that needs an agent's context **continues that agent's
-  session**; the contract returns a `dispatchKey` to key the ledger on.
-- The briefs carry the evidence map, the dependency graph and the
-  reference-integrity result **already rendered**, so the sub-agent makes no
-  tool call and the orchestrator spends no call assembling context.
-- The CodeGraph directive is now **in the prompt** (server-detected) instead of
-  only in prose, and every contract forbids reading the archgen skill and
-  running the archgen tool suite — the contract IS the complete input.
-
-### Changed — the agent-facing content is a third smaller
-
-Every artifact the agent reads was rewritten: `SKILL.md`, the five protocol
-references, the four dispatch briefs and the templates. The rules are denser,
-each rule has exactly **one owner**, and the briefs carry a concrete worked
-example instead of an abstract template.
-
-| | Before | After | |
-|---|---:|---:|---|
-| `skill/SKILL.md` (always-on) | 8,240 | 6,916 | −16.1% |
-| Protocol references | 17,676 | 12,431 | −29.7% |
-| Dispatch briefs | 2,874 | 2,526 | −12.1% |
-| **All agent-readable content** | 32,019 | 25,265 | **−21.1%** |
-| **Always-on (SKILL.md + tool catalog)** | 13,103 | **11,280** | **−14.3%** |
-
-### Fixed — the skill named two actions that do not exist
-
-`SKILL.md` is **always-on**, so these were in the context of every session:
-`archgen_docs` was documented with a `search` action (the real ones are
-`refs` and `map`), and `archgen_registry` with a `read` action (it is
-`show`). An agent following the table burned a round-trip on a typed
-`INVALID_INPUT` and recovered by guessing.
-
-There was **no gate** that said "the action names in SKILL.md must exist" —
-the repo had drift gates for the references and a schema-parity gate for the
-YAML, and nothing for the skill's own vocabulary. `skill-tool-vocabulary`
-now reads the **live schemas** and holds the skill's tool table to them.
-
-### Changed — the version lives in ONE place, and a release is ONE command
-
-- `install.sh` rendered the managed block's stamp from a **literal**. It now
-  reads the canonical config the CLI itself reads, so a release cannot forget
-  to update it and it can never disagree with the CLI.
-- `scripts/smoke.sh` hardcoded the tarball names; it now derives them from
-  the canonical version.
-- Every test that named a release version now derives it from the package.
-  The semver **algorithm** fixtures moved onto a neutral series, so they are
-  visibly arbitrary inputs rather than old archgen releases.
-- **The version gate now DISCOVERS its surfaces** instead of carrying a
-  hand-written list — from the **tracked** files, so a new package is covered
-  the moment it is committed, and an untracked local artifact (the CLI's
-  deliberately gitignored lockfile) can never fail a release. The gate also
-  proves the version appears in **exactly one place**, and that `install.sh`
-  carries no literal.
-- **`npm run release:prepare <version>`** does the whole bump: the canonical
-  version, the capability declaration, every derived surface, both lockfiles,
-  and then **every gate**. A release can no longer be half-done.
-
-### Removed — the VS Code extension
-
-The extension is gone, and everything that existed only to serve it.
-
-- **The extension package** (`packages/extension/`) — the task DAG, the
-  code-dependency graph, the rendered-doc views, the activity-bar cockpit and
-  the ▶ build button. It is deleted, not deprecated.
-- **The filesystem UI bridge** (`packages/mcp/src/core/ui-channel.mjs`) — the
-  heartbeat/command/acknowledgement queue under `.archgen/.runtime/`. It was a
-  control plane for a UI that no longer exists.
-- **`archgen_ui`** — the tool that spoke to that bridge. Its only consumer was
-  the extension, so every action could only ever have answered
-  `available:false`. The MCP catalog is now **9 tools** (8 domain +
-  `archgen_help`), down from 10 — and the always-on context cost drops with
-  it.
-- **The extension's TypeScript YAML port** — a second implementation of
-  archgen's YAML subset, which the corpus parity test existed to keep in
-  step. One implementation is better than two kept in sync.
-- **The `vextension-*` release stream** — the GitHub Release workflow that
-  built and shipped the `.vsix`. Releases are now the two npm packages alone.
-
-### Changed — the regression nets got stronger
-
-Nothing was dropped without its replacement landing first.
-
-- **The YAML corpus now has one owner, and it is the canonical parser.**
-  `fixtures/yaml-corpus/*.expected.json` was asserted by the extension's
-  suite and by nothing else — deleting the package would have silently
-  deleted the only test holding archgen's artifact format. It is now pinned by
-  `packages/mcp/test/core/yaml-corpus.test.mjs`, which asserts the parsed
-  data, the comment ledger, the error messages and the round-trip (comments
-  included, at their anchors).
-- **The action matrix is now self-maintaining.** It carried a hard-coded
-  floor of "at least 40 actions", which stopped discriminating once the
-  catalog changed — and `archgen_skills{digest}` went untested for the whole
-  life of the matrix. The gate now asserts that EVERY action the catalog
-  exposes is driven by the matrix, so a new action cannot ship without a test
-  and a removed action cannot leave a stale row behind.
-- **`fixtures/tool-matrix/`** drives every action of every tool through the
-  **real MCP binary** — 58 calls — so a broken tool fails the fixtures, not a
-  user.
-- Coverage is gated on the MCP server. The extension owned the repo's
-  coverage gate; it now covers the runtime that owns every capability.
-
-### Migration
-
-- An agent driving an **older skill** against this server will call
-  `archgen_ui` and get an unknown-tool error. Refresh the skill:
-  `npx archgen-skill init` (or `archgen-skill update`).
-- This release **requires the new server**: the skill calls
-  `archgen_skills{action:'digest'}`, bare-slug sections, and briefs that carry
-  rendered context. `metadata.requires.archgen_mcp` is now `>=0.1.0`, and
-  `archgen_setup{action:'doctor'}` reports a mismatch instead of failing
-  silently later.
-- The `.archgen/.runtime/` directory, if present, is dead state from the old
-  extension. `archgen-skill uninstall --project` now removes it; until then it
-  is safe to delete by hand.
+Nothing yet.
 
 ## [0.1.1] - 2026-11-07
 
@@ -326,11 +139,71 @@ expensive: a reader saw 12,431 tokens of references and reasonably concluded
 the thing was heavy. **None of it is ever paid** — the agent reads a
 *section*.
 
-It now leads with what is actually charged — the **always-on total, 11,280
-tokens**, 34% of a 32k window, and the promise that this is all a session
+It now leads with what is actually charged — the **always-on total, 11,647
+tokens**, 36% of a 32k window, and the promise that this is all a session
 pays — and then the on-demand cost per section, measured: the five protocol
-references are 12,431 tokens *in total*, but the **median section is 181
+references are 13,265 tokens *in total*, but the **median section is 238
 tokens**, and a capability skill's rules are ~160.
+
+### Added — every archgen artifact is committed
+
+Nothing told the agent to commit the plan. Worse, the worker contract says
+*"commit your work scoped to the owned files"* — and `file_ownership` only
+ever names product code — so `.archgen/<slug>/` was **structurally
+un-committable**, and the natural fallback was to gitignore it. The plan of
+record, the run state and the decisions were invisible in the history, and a
+reviewer could not see what was planned or why it changed.
+
+The whole archgen footprint is now version-controlled:
+
+- `.archgen/<slug>/` — the plan of record, including the `.agent/` run state;
+- `.agents/skills/archgen/` — the canonical installed skill, one copy for the
+  team;
+- `.claude/skills/archgen` — the harness bridge into that store;
+- `AGENTS.md` and `CLAUDE.md` — the registry hub and its pointer;
+- the project MCP config — the wiring that gives the team the tools.
+
+Machine-local state stays out: `.codegraph/` (the local symbol index),
+`.archgen/.runtime/` (the legacy heartbeat) and the `.archgen-version` deploy
+stamp.
+
+The rule is stated **once per audience** — the invariant in the always-on
+`SKILL.md` (Hard Rule 10), the path list in the on-demand
+`§artifact-templates/artifact-tracking`, the commit points in the GENERATE
+and START-WORK steps, and the audit in the verifier brief, because the gate
+agent never reads the skill and the brief is the only thing that reaches it.
+
+### Changed — the source tree and the test tree are separate
+
+`references/code-standards.md` said *"colocate tests beside the code they
+test—never in a disconnected root `/tests` directory"*, and
+`architecture.yaml` said `test_placement: colocated`. Agents were not
+ignoring the rule — **the rule was the opposite of the standard**, and the
+template the agent copies taught it.
+
+The test tree is now a **sibling** of the source tree, never a child:
+
+```
+src/features/catalog/api/routes.ts
+  -> tests/unit/features/catalog/api/<the language's test file>
+```
+
+- **The PLACE is fixed; the NAME is not.** The standard says where a test
+  lives, never what it is called — the naming convention belongs to the
+  language's ecosystem and to the host repository, so no per-language pattern
+  is hardcoded anywhere.
+- **Ownership follows the tree.** A task that owns `src/features/x/**` also
+  owns `tests/unit/features/x/**` — a worker may not write outside
+  `file_ownership`, so the mirrored path has to be in it. A plan may give the
+  tests to a dedicated task instead, as long as some task owns them.
+- **One narrow exception:** a language whose runner discovers tests only
+  inside the package directory keeps those files beside the code; everything
+  the runner can discover elsewhere still lives in the test tree.
+- **In a brownfield repo** the survey reports where the tests live today, and
+  the plan moves only the modules it touches — it never migrates the rest.
+
+The standards file, the templates, the always-on skill and the verifier brief
+now say the same thing, and six gates hold them there.
 
 ### Migration
 
@@ -340,9 +213,206 @@ tokens**, and a capability skill's rules are ~160.
 - The `archgen_ui` migration note from 0.1.0 still applies to an agent
   driving an older skill.
 
-## [Unreleased]
+## [0.1.0] - 2026-11-07
 
-Nothing yet.
+The first release with a version of its own. It removes the VS Code
+extension, repairs three tool paths that had been dead or broken since they
+were written, makes the capability skills actually apply, and rewrites every
+agent-facing artifact to be a third smaller.
+
+**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.** The CLI's
+installer resolves `archgen-mcp` from the registry, so a release that
+advertises the server before it exists hands every user a broken bootstrap.
+
+| Artifact | Published as | Tag |
+|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.0` |
+| `packages/cli` | `archgen-skill` | `vcli-0.1.0` |
+
+### Fixed — three tool paths that had been dead or broken
+
+- **`archgen_plan{action:'graph'}` had never worked.** `loadPlan(input)` read
+  `opts` from its **caller's** frame — a module-level function reaching into a
+  local it does not own — so every call threw `ReferenceError: opts is not
+  defined` and surfaced as `INTERNAL: opts is not defined`. For every project,
+  in every format, with or without status, since the action was written. The
+  review brief has told the orchestrator to attach the graph since the day it
+  was written, so **every plan review had been running without it**.
+- **`archgen_docs{action:'section', section:'<slug>'}` failed on every plan.**
+  The action treated its whole argument as a FILE path, while `digest` hands
+  out section **slugs** — so the digest→section round trip, the primary way
+  an agent reads an artifact, was broken by construction. The resolver now
+  accepts a bare slug, a path, or `path#anchor`; an ambiguous slug returns
+  candidates instead of a guess, and a miss lists what IS available.
+- **`archgen_plan{action:'brief'}` demanded the slug even when the caller had
+  already passed the absolute `tasks.yaml`** — a path that IS
+  `.archgen/<slug>/tasks.yaml`, so the slug was derivable. Worse, it emitted
+  `tasks.yaml` **absolute** while `slug dir` and `plans dir` were
+  **project-relative**, and a relative path in a brief resolves against the
+  *server's* root: a brief read from a worktree pointed at the wrong tree.
+  The slug is derived now, and every path in a brief is absolute, from one
+  source.
+
+### Fixed — the worker contract shipped a literal placeholder
+
+Every worker prompt began `<Domain> work: follow …`. The briefs had a
+`remainingPlaceholders` guard — which required a **lowercase** first letter,
+so `<Domain>` was invisible to it — and the worker contract had **no guard at
+all**. The follow-instruction wording also existed in three places with three
+different texts. There is now one owner, and the guard catches mixed case.
+
+### Fixed — the capability skills were downloaded and never applied
+
+- The contract pointed at a **file** and never opened it, so a design skill
+  could be installed and ignored. It now carries the skill's **normative
+  rules** — the MUST / SHOULD / NEVER lines, selected semantically and never
+  truncated — for **every** matched required skill.
+- Only `required[0]` was injected, so a task matching two required skills
+  silently lost the second. In the reported project, `fixing-accessibility`
+  was installed and named by **no contract at all**.
+- `load` searched exactly **one** path, so a skill installed above the project
+  root was reported "not installed" by the tool that installed it. The search
+  now walks the same roots the archgen skill itself is resolved from.
+- `archgen_codegraph{ensure}` ran a **global `npm install -g` without
+  approval**, while the tool documents "without `approve: true` the tool prints
+  its plan and writes nothing".
+
+### Changed — the dispatch discipline, which was missing entirely
+
+- The verifier brief demanded "exactly one line", which is a ceiling on
+  completeness: it found the first issue it was sure about, the orchestrator
+  fixed it, and the next round found the next one. The brief now requires a
+  **COVERAGE table** — every dimension PASS / FAIL / N/A — so one pass is
+  provably exhaustive. **One holistic agent** over the whole plan, never one
+  per dimension.
+- A sub-agent is a **WORK unit, not a lookup**: status, wave frontier, plan
+  health and the graph are one orchestrator tool call each.
+- **MAX 3 PARALLEL SUB-AGENTS** at a time, with disjoint read *and* write
+  footprints; gate agents never run while a wave is in flight.
+- A follow-up that needs an agent's context **continues that agent's
+  session**; the contract returns a `dispatchKey` to key the ledger on.
+- The briefs carry the evidence map, the dependency graph and the
+  reference-integrity result **already rendered**, so the sub-agent makes no
+  tool call and the orchestrator spends no call assembling context.
+- The CodeGraph directive is now **in the prompt** (server-detected) instead of
+  only in prose, and every contract forbids reading the archgen skill and
+  running the archgen tool suite — the contract IS the complete input.
+
+### Changed — the agent-facing content is a third smaller
+
+Every artifact the agent reads was rewritten: `SKILL.md`, the five protocol
+references, the four dispatch briefs and the templates. The rules are denser,
+each rule has exactly **one owner**, and the briefs carry a concrete worked
+example instead of an abstract template. The before/after measurement is in
+the [0.1.0](#010---2026-11-07) entry — it is a record of that rewrite, and a
+changelog that restates a past measurement in a later release is a second
+place for it to go stale.
+
+What 0.1.1 ships, measured by `npm run test:budget`:
+
+| | Tokens |
+|---|---:|
+| `skill/SKILL.md` (always-on) | 7,339 |
+| MCP tool catalog (9 tools, always-on) | 4,308 |
+| **Always-on total** | **11,647** — 36% of a 32k window |
+| Protocol references (on demand) | 13,265 across 5 files |
+| A typical reference section (on demand) | 238 — the median of 39 |
+| Dispatch briefs / artifact templates (on demand) | 2,626 / 2,485 |
+
+The on-demand figures are now measured **by the tool** and reported in its
+output, so the README can quote a number instead of a hand-typed one that
+goes stale on the next edit.
+
+### Fixed — the skill named two actions that do not exist
+
+`SKILL.md` is **always-on**, so these were in the context of every session:
+`archgen_docs` was documented with a `search` action (the real ones are
+`refs` and `map`), and `archgen_registry` with a `read` action (it is
+`show`). An agent following the table burned a round-trip on a typed
+`INVALID_INPUT` and recovered by guessing.
+
+There was **no gate** that said "the action names in SKILL.md must exist" —
+the repo had drift gates for the references and a schema-parity gate for the
+YAML, and nothing for the skill's own vocabulary. `skill-tool-vocabulary`
+now reads the **live schemas** and holds the skill's tool table to them.
+
+### Changed — the version lives in ONE place, and a release is ONE command
+
+- `install.sh` rendered the managed block's stamp from a **literal**. It now
+  reads the canonical config the CLI itself reads, so a release cannot forget
+  to update it and it can never disagree with the CLI.
+- `scripts/smoke.sh` hardcoded the tarball names; it now derives them from
+  the canonical version.
+- Every test that named a release version now derives it from the package.
+  The semver **algorithm** fixtures moved onto a neutral series, so they are
+  visibly arbitrary inputs rather than old archgen releases.
+- **The version gate now DISCOVERS its surfaces** instead of carrying a
+  hand-written list — from the **tracked** files, so a new package is covered
+  the moment it is committed, and an untracked local artifact (the CLI's
+  deliberately gitignored lockfile) can never fail a release. The gate also
+  proves the version appears in **exactly one place**, and that `install.sh`
+  carries no literal.
+- **`npm run release:prepare <version>`** does the whole bump: the canonical
+  version, the capability declaration, every derived surface, both lockfiles,
+  and then **every gate**. A release can no longer be half-done.
+
+### Removed — the VS Code extension
+
+The extension is gone, and everything that existed only to serve it.
+
+- **The extension package** (`packages/extension/`) — the task DAG, the
+  code-dependency graph, the rendered-doc views, the activity-bar cockpit and
+  the ▶ build button. It is deleted, not deprecated.
+- **The filesystem UI bridge** (`packages/mcp/src/core/ui-channel.mjs`) — the
+  heartbeat/command/acknowledgement queue under `.archgen/.runtime/`. It was a
+  control plane for a UI that no longer exists.
+- **`archgen_ui`** — the tool that spoke to that bridge. Its only consumer was
+  the extension, so every action could only ever have answered
+  `available:false`. The MCP catalog is now **9 tools** (8 domain +
+  `archgen_help`), down from 10 — and the always-on context cost drops with
+  it.
+- **The extension's TypeScript YAML port** — a second implementation of
+  archgen's YAML subset, which the corpus parity test existed to keep in
+  step. One implementation is better than two kept in sync.
+- **The `vextension-*` release stream** — the GitHub Release workflow that
+  built and shipped the `.vsix`. Releases are now the two npm packages alone.
+
+### Changed — the regression nets got stronger
+
+Nothing was dropped without its replacement landing first.
+
+- **The YAML corpus now has one owner, and it is the canonical parser.**
+  `fixtures/yaml-corpus/*.expected.json` was asserted by the extension's
+  suite and by nothing else — deleting the package would have silently
+  deleted the only test holding archgen's artifact format. It is now pinned by
+  `packages/mcp/test/core/yaml-corpus.test.mjs`, which asserts the parsed
+  data, the comment ledger, the error messages and the round-trip (comments
+  included, at their anchors).
+- **The action matrix is now self-maintaining.** It carried a hard-coded
+  floor of "at least 40 actions", which stopped discriminating once the
+  catalog changed — and `archgen_skills{digest}` went untested for the whole
+  life of the matrix. The gate now asserts that EVERY action the catalog
+  exposes is driven by the matrix, so a new action cannot ship without a test
+  and a removed action cannot leave a stale row behind.
+- **`fixtures/tool-matrix/`** drives every action of every tool through the
+  **real MCP binary** — 58 calls — so a broken tool fails the fixtures, not a
+  user.
+- Coverage is gated on the MCP server. The extension owned the repo's
+  coverage gate; it now covers the runtime that owns every capability.
+
+### Migration
+
+- An agent driving an **older skill** against this server will call
+  `archgen_ui` and get an unknown-tool error. Refresh the skill:
+  `npx archgen-skill init` (or `archgen-skill update`).
+- This release **requires the new server**: the skill calls
+  `archgen_skills{action:'digest'}`, bare-slug sections, and briefs that carry
+  rendered context. `metadata.requires.archgen_mcp` is now `>=0.1.0`, and
+  `archgen_setup{action:'doctor'}` reports a mismatch instead of failing
+  silently later.
+- The `.archgen/.runtime/` directory, if present, is dead state from the old
+  extension. `archgen-skill uninstall --project` now removes it; until then it
+  is safe to delete by hand.
 
 ## [0.0.7] - 2026-11-07
 

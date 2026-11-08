@@ -134,20 +134,20 @@ always-on footprint exceeds 13,400 tokens.
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 6,972 |
+| `skill/SKILL.md` | 7,339 |
 | MCP tool catalog (9 tools) | 4,308 |
-| **Always-on total** | **11,280** — 34% of a 32k window |
+| **Always-on total** | **11,647** — 36% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
-references are 12,431 tokens *in total*, but a typical section is **181
+references are 13,265 tokens *in total*, but a typical section is **238
 tokens** — the agent loads the one it needs, never the file:
 
 | On demand | In total | What is actually read |
 | --- | ---: | --- |
-| A protocol reference | 12,431 | one section — **181 tokens** |
+| A protocol reference | 13,265 | one section — **238 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
-| A dispatch brief | 2,526 | the one being dispatched |
-| An artifact template | 2,412 | the one being scaffolded |
+| A dispatch brief | 2,626 | the one being dispatched |
+| An artifact template | 2,485 | the one being scaffolded |
 
 Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
 and `archgen_skills` serve one section at a time, and a dispatch brief arrives
@@ -161,7 +161,7 @@ rules, and a hard cap of three parallel sub-agents. Shrinking a prompt to
 save tokens costs a whole extra round — making the first answer complete
 does not.
 
-Since 0.0.7 the always-on footprint is **32% smaller** (13,103 → 11,280).
+Since 0.0.7 the always-on footprint is **11% smaller** (13,103 → 11,647).
 
 ## Repository layout
 

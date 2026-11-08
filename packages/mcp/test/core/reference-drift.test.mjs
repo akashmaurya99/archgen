@@ -157,3 +157,80 @@ test('the reference states the YAML subset the parser actually accepts', () => {
   assert.match(ref, /duplicate keys/i);
   assert.doesNotMatch(ref, /Avoid flow mappings/i, 'flow mappings are supported — the old advice was wrong');
 });
+
+// ── the two standards this release added ────────────────────────────────────
+//
+// The source tree and the test tree are separate trees, and every archgen
+// artifact is committed. Both rules are stated in ONE place each, and every
+// other surface must agree with it — the skill (always-on), the standards
+// file (the workers), the templates (what the agent copies) and the verifier
+// brief (the only thing the gate agent ever sees).
+
+/** Read one canonical template. */
+const readTemplate = (name) => {
+  const p = join(REPO, 'packages', 'mcp', 'assets', 'templates', name);
+  return existsSync(p) ? readFileSync(p, 'utf8') : null;
+};
+
+/** Read one dispatch brief. */
+const readBrief = (name) => {
+  const p = join(REPO, 'packages', 'mcp', 'assets', 'briefs', name);
+  return existsSync(p) ? readFileSync(p, 'utf8') : null;
+};
+
+test('code-standards.md keeps the test tree OUT of the source tree', () => {
+  const p = join(SKILL_REFS, 'code-standards.md');
+  if (!existsSync(p)) return;
+  const text = readFileSync(p, 'utf8');
+  assert.doesNotMatch(text, /colocat/i, 'the standards still teach colocated tests');
+  assert.match(text, /sibling/i, 'the standards must say the test tree is a SIBLING of the source tree');
+  assert.match(text, /tests\/unit/, 'the standards must show the test tree');
+
+  // The layout block must not carry a tests/ directory inside the source tree.
+  const block = /```\n([\s\S]*?)```/.exec(text)?.[1] ?? '';
+  const inside = [];
+  let inSource = false;
+  for (const line of block.split('\n')) {
+    if (/^src\//.test(line)) {
+      inSource = true;
+      continue;
+    }
+    if (/^\S/.test(line)) inSource = false; // a new top-level entry
+    if (inSource && /tests\//.test(line)) inside.push(line.trim());
+  }
+  assert.deepEqual(inside, [], `the source tree still declares a tests directory: ${inside.join(', ')}`);
+});
+
+test('the templates agree with the standards on the test tree', () => {
+  const arch = readTemplate('architecture.yaml');
+  const tasks = readTemplate('tasks.yaml');
+  if (!arch || !tasks) return;
+  assert.doesNotMatch(arch, /colocated/i, 'architecture.yaml still teaches colocated tests');
+  assert.match(arch, /test_placement:[^\n]*tests\/unit/, 'architecture.yaml must place tests in the test tree');
+  assert.doesNotMatch(
+    tasks,
+    /src\/[^\n]*\.test\./,
+    'the task template still owns a test file inside src/',
+  );
+  assert.match(tasks, /tests\/unit\/[^\n]*\.test\./, 'the task template must show the mirrored test path');
+});
+
+test('the artifact-tracking section names every path that must be committed', () => {
+  const ref = read('artifact-templates.md');
+  if (!ref) return;
+  assert.match(ref, /## Artifact tracking/i, 'the reference must carry the tracking section');
+  assert.match(ref, /NEVER gitignore/i);
+  for (const p of ['.archgen/', '.agents/skills/archgen', '.claude/skills/archgen', 'AGENTS.md', 'CLAUDE.md']) {
+    assert.ok(ref.includes(p), `the tracking section must name ${p}`);
+  }
+  // The machine-local exceptions are named too, so an agent does not commit
+  // the local symbol index.
+  assert.match(ref, /\.codegraph\//);
+});
+
+test('the verifier brief audits both rules — the gate agent never reads the skill', () => {
+  const brief = readBrief('verifier.md');
+  if (!brief) return;
+  assert.match(brief, /gitignore/, 'the verifier must audit that the artifacts are not ignored');
+  assert.match(brief, /test tree/i, 'the verifier must audit the source/test separation');
+});

@@ -4,7 +4,7 @@ SCOPE: Read-only exploration, writing ONLY `<slug dir>/codebase-map.md`.
 DELIVERABLE: Write `<slug dir>/codebase-map.md` containing EXACTLY these four non-empty sections:
 ## Structure — Top 2 directory levels with 1-line purpose per folder
 ## Modules — Table: `module | responsibility | key entry points`
-## Conventions — Observed file naming, error handling, and test placement patterns
+## Conventions — Observed file naming, error handling, and where the tests live today (the source roots and the test tree)
 ## Affected — Files/modules impacted by the feature, citing exact evidence paths
 
 NAVIGATION & VERIFICATION

@@ -7,7 +7,7 @@ tasks:
   - id: C
     title: Scaffold project skeleton + typed config loader
     depends_on: []
-    file_ownership: ["src/config/**", "package.json"] # full repo-root-relative paths ONLY
+    file_ownership: ["src/config/**", "tests/unit/config/**", "package.json"] # full repo-root-relative paths ONLY
     acceptance:
       - "npm run build exits 0"
       - "config loads from env and fails fast on missing required vars"
@@ -37,7 +37,7 @@ tasks:
     parallel_group: wave-payments
     file_ownership:
       - src/features/checkout/internal/capture.ts      # per naming_conventions.dir_layout
-      - src/features/checkout/internal/capture.test.ts # per naming_conventions.test_placement
+      - tests/unit/features/checkout/internal/capture.test.ts # the mirrored test tree
       - docs/payment-retry.md
     artifacts: ["docs/payment-retry.md"]
     acceptance:

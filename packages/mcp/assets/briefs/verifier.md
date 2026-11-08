@@ -9,7 +9,8 @@ STEP 2 — AUDIT JUDGMENT & CONTRACT COMPLETENESS:
 - Wave boundaries match true dependencies without artificial serialization.
 - Acceptance criteria are objectively verifiable (runnable command or observable output).
 - Edge-case coverage satisfies the scope class (`SMALL` / `MEDIUM` / `LARGE`).
-- Planned structure and naming obey `references/code-standards.md`.
+- Planned structure and naming obey `references/code-standards.md` — including the separate source and test trees: no test tree inside the source tree, and every task that owns source owns the mirrored test path.
+- The repository does not hide archgen artifacts: no `.gitignore` rule covers `.archgen/`, `.agents/skills/archgen`, `.claude/skills/archgen`, `AGENTS.md` or `CLAUDE.md`.
 - **CONTRACT-COMPLETENESS SWEEP** (evaluate every dimension; mark `N/A` only when the system genuinely lacks that surface):
   1. `functional coverage`: Every requirement maps to a task + objective acceptance check.
   2. `security & data protection`: Authn/authz flows, session/credential lifecycle, CSRF/replay defense, encryption/privacy boundaries, boundary input validation.

@@ -36,3 +36,8 @@ packages/cli/vendor/skills/archgen/.archgen-version
 # generates one in the workspace only to resolve the dependency tree; it must
 # never be committed, or a transitive bump would land in the repo unnoticed.
 packages/cli/package-lock.json
+
+# `npm link` in packages/cli drops a symlink here that points at the GLOBALLY
+# installed archgen-mcp. It is machine-local, it dangles in a clean clone, and
+# it is not part of the published payload (the CLI publishes bin/archgen.mjs).
+packages/cli/bin/archgen-mcp

@@ -10,16 +10,18 @@ stack:
   database: postgres
 structure: # planned folder tree defined BEFORE coding
   - path: src/features/<feature>/
-    purpose: feature modules (api, internal, colocated tests)
+    purpose: feature modules (api, internal)
   - path: src/shared/
     purpose: cross-feature utilities; MUST NOT import from features/
   - path: src/config/
     purpose: typed env parsing + constants
+  - path: tests/unit/features/<feature>/
+    purpose: unit tests — the test tree, a SIBLING of src/ that mirrors the source path
 naming_conventions: # referenced by every task step and file_ownership entry
   file_naming: kebab-case files; feature folder matches module name
-  dir_layout: "<module>/{api,internal,tests}; shared utilities in src/shared/ only"
+  dir_layout: "<module>/{api,internal}; shared utilities in src/shared/ only; tests mirror the source path under tests/unit/"
   symbol_casing: PascalCase types, camelCase functions, SCREAMING_SNAKE env vars
-  test_placement: colocated <name>.test.ts beside unit under test
+  test_placement: tests/unit/<path under the source root>/<the language's test file> — the test tree is a SIBLING of the source tree, never inside it
 modules:
   - name: catalog
     responsibility: product browsing + search

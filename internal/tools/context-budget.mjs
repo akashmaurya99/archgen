@@ -301,6 +301,78 @@ async function auditCatalog(mcpDir) {
 }
 
 // --- report ------------------------------------------------------------------
+// --- ON-DEMAND CONTENT -------------------------------------------------------
+//
+// The always-on total is what a session PAYS. The on-demand content is what
+// it CAN pay — the protocol references, the dispatch briefs and the artifact
+// templates, all of which are read a section or a file at a time, never
+// whole.
+//
+// THE MEDIAN SECTION is the number that matters: an agent pulls ONE `§`, so
+// the cost of the pull is the size of that section. It is measured over the
+// same span the SERVER serves — a level-2 section runs to the next level-2
+// heading — so the figure describes what `archgen_refs{action:'read'}`
+// actually returns, not a hand-counted approximation.
+//
+// It is here because the README quotes it. A quoted number with no tool
+// behind it goes stale the moment anything changes, and a stale token figure
+// is worse than none: it is a claim the reader cannot check.
+
+/**
+ * Measure the on-demand content: the protocol references and their sections,
+ * the dispatch briefs and the artifact templates.
+ *
+ * @param {string} mcpDir the packages/mcp directory
+ * @returns {{available: boolean, references: object, briefs: object, templates: object}}
+ */
+function auditOnDemand(mcpDir) {
+  const refsDir = join(mcpDir, 'assets', 'references');
+  const briefsDir = join(mcpDir, 'assets', 'briefs');
+  const templatesDir = join(mcpDir, 'assets', 'templates');
+  const list = (dir, exts) =>
+    existsSync(dir) ? readdirSync(dir).filter((f) => exts.some((e) => f.endsWith(e))).sort() : [];
+
+  const referenceFiles = list(refsDir, ['.md']);
+  let referenceTokens = 0;
+  const sectionTokens = [];
+  for (const file of referenceFiles) {
+    const text = readFileSync(join(refsDir, file), 'utf8');
+    referenceTokens += estimateTokens(text);
+    const lines = text.split('\n');
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].startsWith('## ')) continue;
+      if (start >= 0) sectionTokens.push(estimateTokens(lines.slice(start, i).join('\n')));
+      start = i;
+    }
+    if (start >= 0) sectionTokens.push(estimateTokens(lines.slice(start).join('\n')));
+  }
+  sectionTokens.sort((a, b) => a - b);
+  const mid = Math.floor(sectionTokens.length / 2);
+  const medianSection = sectionTokens.length
+    ? sectionTokens.length % 2
+      ? sectionTokens[mid]
+      : Math.round((sectionTokens[mid - 1] + sectionTokens[mid]) / 2)
+    : 0;
+
+  const sum = (dir, files) =>
+    files.reduce((n, f) => n + estimateTokens(readFileSync(join(dir, f), 'utf8')), 0);
+
+  const briefFiles = list(briefsDir, ['.md']);
+  const templateFiles = list(templatesDir, ['.md', '.yaml']);
+  return {
+    available: referenceFiles.length > 0,
+    references: {
+      files: referenceFiles.length,
+      totalTokens: referenceTokens,
+      sections: sectionTokens.length,
+      medianSectionTokens: medianSection,
+    },
+    briefs: { files: briefFiles.length, totalTokens: sum(briefsDir, briefFiles) },
+    templates: { files: templateFiles.length, totalTokens: sum(templatesDir, templateFiles) },
+  };
+}
+
 function windowRows(scenarios) {
   return opts.windows.map((w) => {
     const cells = scenarios.map((s) => ({ id: s.id, tokens: s.tokens, pct: pctOf(s.tokens, w) }));
@@ -329,6 +401,7 @@ const skill = skillDir ? await auditSkill() : null;
 // package degrades to "not measured" rather than failing the whole report.
 const mcpDir = resolve(opts.mcpDir ?? join(SCRIPT_DIR, '..', '..', 'packages', 'mcp'));
 const catalog = await auditCatalog(mcpDir);
+const onDemand = auditOnDemand(mcpDir);
 const projectRoot = opts.project ? resolve(opts.project) : process.cwd();
 const artifacts = await auditArtifacts(projectRoot, opts.slug);
 
@@ -400,6 +473,7 @@ const report = {
     bytes: catalog.bytes,
     tools: catalog.tools,
   },
+  onDemand,
   skill: skill && {
     dir: skill.dir,
     totalTokens: skill.total,
@@ -458,6 +532,19 @@ if (opts.json) {
     line();
   } else if (catalog.reason) {
     line(`MCP TOOL CATALOG — not measured: ${catalog.reason}`);
+    line();
+  }
+
+  if (onDemand.available) {
+    line('ON-DEMAND CONTENT (pulled a section or a file at a time)');
+    line(
+      `  protocol references: ${fmtTokens(onDemand.references.totalTokens)} tokens across ${onDemand.references.files} files`,
+    );
+    line(
+      `  a typical section   : ${fmtTokens(onDemand.references.medianSectionTokens)} tokens (median of ${onDemand.references.sections} sections)`,
+    );
+    line(`  dispatch briefs     : ${fmtTokens(onDemand.briefs.totalTokens)} tokens across ${onDemand.briefs.files} briefs`);
+    line(`  artifact templates  : ${fmtTokens(onDemand.templates.totalTokens)} tokens across ${onDemand.templates.files} templates`);
     line();
   }
 

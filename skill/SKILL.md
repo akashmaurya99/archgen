@@ -93,11 +93,12 @@ archgen_refs { action: 'search', topic: 'orchestration', token: 'APPROVE' }
    3. `AGENTS.md` updated via `archgen_registry{action:'update'}`.
    After EACH completed wave, write the 10-line resume snapshot via `archgen_tasks{action:'snapshot'}`. Dispatching a new wave while status updates lag is FORBIDDEN.
 7. **Platform awareness:** Run `archgen_setup{action:'harness_info'}` before editing configs or spawning sub-agents. Unknown platform $\rightarrow$ web-search official MCP/skill docs, present findings, and obtain user approval before writing.
-8. **Contractual code quality:** Workers must obey `references/code-standards.md` (zero `any`, no unhandled `undefined`, files < 1000 LOC, modular directory layout, why-comments). The verifier rejects violations.
+8. **Contractual code quality:** Workers must obey `references/code-standards.md` (zero `any`, no unhandled `undefined`, files < 1000 LOC, modular directory layout, why-comments). **Source and tests are separate trees**—the test tree is a sibling of the source tree, never inside it; the test file NAME is the language's choice. The verifier rejects violations.
 9. **Compaction recovery:** Immediately after any context summarization, execute in order:
    1. `archgen_tasks{action:'next'}` and `archgen_tasks{action:'snapshot'}` to restore ground-truth state.
    2. Reload the current mode's `§` sections via `archgen_refs`.
    Never act on memorized state, paths, or statuses.
+10. **Version-controlled artifacts:** Every archgen artifact in the project is **COMMITTED**—the plan of record (`.archgen/<slug>/`), the installed skill, `AGENTS.md`, and the project MCP config. NEVER gitignore one; remove any rule that hides it (`§artifact-templates/artifact-tracking`).
 
 ## Codegraph — use it when you need understanding
 
@@ -116,7 +117,7 @@ Select ONE mode matching user intent and **load its required `§` sections BEFOR
 
 | Intent | Mode | Mandatory Pre-Load (`§`) |
 |---|---|---|
-| Build net-new system/module | **GENERATE** | `§interview/how-to-ask` · `§interview/step-1` · `§artifact-templates/plan-depth` · `§artifact-templates/self-containment` · `§orchestration/verifier` · `§orchestration/plan-review` |
+| Build net-new system/module | **GENERATE** | `§interview/how-to-ask` · `§interview/step-1` · `§artifact-templates/plan-depth` · `§artifact-templates/self-containment` · `§artifact-templates/artifact-tracking` · `§orchestration/verifier` · `§orchestration/plan-review` |
 | Add/modify feature in existing repo | **BROWNFIELD** | `§orchestration/survey` · then all **GENERATE** sections |
 | Execute pending tasks ("start work") | **START-WORK** | `§orchestration/dispatch` · `§orchestration/failure-policy` |
 | Change requirements mid-flight | **UPDATE** | `§orchestration/verifier` · `§orchestration/plan-review` · `§artifact-templates/plan-depth` |
@@ -129,7 +130,7 @@ Select ONE mode matching user intent and **load its required `§` sections BEFOR
 
 ## GENERATE (greenfield)
 
-**Pre-load:** `§interview/how-to-ask` · `§interview/step-1` · `§artifact-templates/plan-depth` · `§artifact-templates/self-containment` · `§orchestration/verifier` · `§orchestration/plan-review`.
+**Pre-load:** `§interview/how-to-ask` · `§interview/step-1` · `§artifact-templates/plan-depth` · `§artifact-templates/self-containment` · `§artifact-templates/artifact-tracking` · `§orchestration/verifier` · `§orchestration/plan-review`.
 
 1. **Acknowledge & scope:** State planned action + inferred scope (`SMALL`/`MEDIUM`/`LARGE`) in one sentence. Ask to proceed. `[wait for user]`
 2. **Interview:** Follow the loaded `§interview` sections—calibrate (Round 0), record `intent_class` in `answers.yaml`, batch 3–5 recommendation-first decision-fork questions per round. `[wait per round]`
@@ -137,6 +138,7 @@ Select ONE mode matching user intent and **load its required `§` sections BEFOR
    - Call `archgen_plan{action:'scaffold', scope, slug}` FIRST and populate the exact returned artifact skeletons. It returns each file's CONTENT and **writes nothing**—you write them under `.archgen/<slug>/`.
    - Ensure every task specifies `id`, `title`, `depends_on`, disjoint `file_ownership` globs, objective `acceptance` criteria, and leaves `status` unset.
    - Run the **FETCH-SKILL pre-planning scan** before finalizing.
+   - **Commit the artifact set** before the first wave—`.archgen/<slug>/` is version-controlled, never ignored (Hard Rule 10).
 4. **Validate & register:** Run `archgen_plan{action:'validate', tasksYaml}` and fix errors until `data.valid:true`. Then run `archgen_registry{action:'update', slug, status:'planned'}` (repeat after any subsequent artifact edit).
 5. **VERIFIER GATE:** Dispatch ONE holistic verifier sub-agent on the strongest reasoning tier using `archgen_plan{action:'brief', kind:'verifier'}` verbatim. Requires `APPROVE` from `archgen_plan{action:'verify', tasksYaml, planDir}`, zero broken refs from `archgen_docs{action:'validate'}`, and a complete `COVERAGE:` table (`PASS`/`FAIL`/`N/A` per dimension). Batch fixes per file; run max 2 automatic rounds, then ask user recommendation-first (`§orchestration/gate-protocol`).
 6. **PLAN-REVIEW:** Dispatch ONE read-only holistic reviewer (sized per `§orchestration/plan-review`) using `archgen_plan{action:'brief', kind:'review'}` verbatim. Fix findings yourself, re-running `validate` + Verifier Gate after edits. Bounded passes: user approval for "more review" grants exactly ONE additional pass before consolidating.
@@ -169,7 +171,7 @@ Select ONE mode matching user intent and **load its required `§` sections BEFOR
    - **Fallback.** If sub-agents are unsupported, fail to spawn, or lack file permissions $\rightarrow$ **self-execute sequentially** without asking permission. Cross-harness/CLI switching requires explicit user approval.
    - **Worker prompt.** Pass `archgen_tasks{action:'contract', tasksYaml, taskId}` verbatim. Halt if `warnings` report missing acceptance criteria, missing `file_ownership`, or uninstalled required skills.
 4. **Per-task closeout (Hard Rule 6):** As each task finishes (same turn): verify `set_status` (`done`|`failed`) landed, complete todo tracker item, and run `archgen_registry{action:'update'}`.
-5. **Wave closeout:** Once the wave settles, verify all statuses landed, update `AGENTS.md`, write the resume snapshot (`archgen_tasks{action:'snapshot'}`), and call `next`. Never auto-retry failed tasks—report failure, propose a fix task, and `[wait for user]`.
+5. **Wave closeout:** Once the wave settles, verify all statuses landed, update `AGENTS.md`, write the resume snapshot (`archgen_tasks{action:'snapshot'}`), **commit the wave's artifact state**—the updated `tasks.yaml` and the `.agent/` notes, decisions and reports—with the wave's commits, and call `next`. Never auto-retry failed tasks—report failure, propose a fix task, and `[wait for user]`.
 6. **Loop:** Repeat steps 1–5 until no actionable tasks remain.
 7. **Final report:** Summarize done/failed/blocked tasks, commits, follow-ups, clean `archgen_docs{action:'validate'}` status, and per-feature completeness checklist (Hard Rule 5); check off `.archgen/<slug>/plans/*.md` items.
 
@@ -213,7 +215,7 @@ Capability loading is mandatory whenever work matches a registry domain (`archge
 
 ## Things you must NOT do
 
-- **NEVER** violate Hard Rules 1–9.
+- **NEVER** violate Hard Rules 1–10.
 - **NEVER** overwrite or merge into an existing `.archgen/<slug>/` directory—use `-2`, `-3` suffixes.
 - **NEVER** auto-spawn external CLIs/harnesses when sub-agents fail—self-execute or get user approval.
 - **NEVER** self-execute tasks while native sub-agents are healthy and available.
@@ -240,7 +242,7 @@ Capability loading is mandatory whenever work matches a registry domain (`archge
 | `§` Topic | Scope |
 |---|---|
 | `§interview` | Elicitation playbook, intent classes, question sets, `answers.yaml` spec |
-| `§artifact-templates` | Self-containment, scope depth ladder, workspace layout, authoring rules |
+| `§artifact-templates` | Self-containment, scope depth ladder, workspace layout, artifact tracking, authoring rules |
 | `§orchestration` | Survey, Verifier, Plan-Review, Investigate, and Wave Dispatch protocols |
 | `§platforms` | Harness detection, MCP config schemas, unknown-platform flow, CodeGraph scope |
 | `§mcp-and-skills` | Approval-gated `INSTALL-MCP` and mandatory `FETCH-SKILL` workflows |

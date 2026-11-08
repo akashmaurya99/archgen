@@ -4,6 +4,8 @@
 
 `npx archgen-skill init` (or `install`) automatically wires `archgen-mcp` and CodeGraph into every detected harness. Never configure them manually. If `archgen_*` tools are missing, run `npx archgen-skill init` at the repo root and ask the user to reload the harness (`§platforms/mcp-configuration`).
 
+The install writes into the repository — the skill store, the harness bridge, `AGENTS.md`. Those files are **committed to git** (one copy, shared by the team), never gitignored (`§artifact-templates/artifact-tracking`).
+
 The procedures below govern **external** MCP servers (e.g., `context7`) and capability skills.
 
 ## INSTALL-MCP procedure (approval-gated)

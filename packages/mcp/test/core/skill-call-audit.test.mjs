@@ -224,3 +224,29 @@ test('the skill teaches the § shorthand as a slug PREFIX', () => {
     'the skill must say that a § name is a slug prefix, or an agent cannot pass what it was told',
   );
 });
+
+test('the skill says the archgen artifacts are COMMITTED, never ignored', () => {
+  if (!existsSync(SKILL)) return;
+  const markdown = readFileSync(SKILL, 'utf8');
+  // The plan of record is invisible if it is never committed, and an agent
+  // that assumes "generated files are not source" quietly gitignores it. The
+  // rule has to be in the ALWAYS-ON contract, not only in a reference.
+  assert.match(markdown, /committed/i, 'the skill must say the artifacts are committed');
+  assert.match(markdown, /gitignore/i, 'the skill must say they are never ignored');
+  assert.match(
+    markdown,
+    /artifact-tracking/,
+    'the skill must point at the section that lists the tracked paths',
+  );
+});
+
+test('the skill keeps the source tree and the test tree apart', () => {
+  if (!existsSync(SKILL)) return;
+  const markdown = readFileSync(SKILL, 'utf8');
+  assert.match(markdown, /separate trees/i, 'the skill must state the separation');
+  assert.doesNotMatch(
+    markdown,
+    /colocat/i,
+    'the skill still teaches colocated tests — that is the opposite of the standard',
+  );
+});
