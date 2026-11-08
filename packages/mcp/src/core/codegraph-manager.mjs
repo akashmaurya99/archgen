@@ -263,7 +263,7 @@ export async function manageCodegraph(opts) {
 
   /** Wire the MCP server into every detected harness (native + fallback). */
   const wireHarnesses = async (cli) => {
-    const detected = detectHarnesses(registry, projectRoot, home);
+    const detected = detectHarnesses(registry, projectRoot, home, env);
     const wanted = targets ?? detected.map((d) => d.id);
     const selected = detected.filter((d) => wanted.includes(d.id));
 
@@ -428,7 +428,7 @@ export async function manageCodegraph(opts) {
       report.cli.latest = m ? m[1] : null;
     }
     report.telemetry.state = telemetryState(cli?.bin ?? null);
-    const detected = detectHarnesses(registry, projectRoot, home);
+    const detected = detectHarnesses(registry, projectRoot, home, env);
     report.detected = detected.map((d) => d.id);
     for (const d of detected) {
       for (const cfg of Object.values(d.spec.configs ?? {})) {
