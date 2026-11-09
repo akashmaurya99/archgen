@@ -10,27 +10,20 @@
 // the worker contract points at it.
 import { z } from 'zod/v4';
 import { join } from 'node:path';
-import { registerTool, projectRootArg } from './_register.mjs';
+import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { ASSETS_DIR } from '../context.mjs';
 import { indexTopic, readTopic, searchTopic, listTopics, REF_TOPICS } from '../core/refs.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
-const ACTION_DESC =
-  'list = every reference topic with its section count; ' +
-  'index = the section list of one topic; ' +
-  'read = ONE section (no section = the index; section:"*" = the whole topic); ' +
-  'search = the sections mentioning a token.';
+const ACTION_DESC = 'list|index|read|search';
 
 const schema = z.object({
   action: z.enum(['list', 'index', 'read', 'search']).describe(ACTION_DESC),
-  topic: z.enum(REF_TOPICS).optional().describe('Which reference (index, read, search).'),
-  section: z
-    .string()
-    .optional()
-    .describe('One section (read, index). "*" = the whole topic. Omit for the section index.'),
-  token: z.string().optional().describe('The token to look for (search).'),
-  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
-  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
+  topic: z.enum(REF_TOPICS).optional().describe('Reference topic (index, read, search).'),
+  section: z.string().optional().describe('One section; "*" = whole topic; omit for the index.'),
+  token: z.string().optional().describe('Token to find (search).'),
+  limit: z.number().int().positive().optional().describe(LIMIT_DESC),
+  offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
 });
 
@@ -41,9 +34,8 @@ export function registerRefTools(server) {
   registerTool(server, 'archgen_refs', {
     title: 'ArchGen references',
     description:
-      "Load archgen's own protocol documents — the interview playbook, the artifact rules, the dispatch and " +
-      'gate protocols, the platform capability notes and the MCP/skill policies. Pull SECTIONS, never whole ' +
-      'files: call index for a topic, then read the section you need.',
+      "Read archgen's protocol references (interview, artifacts, orchestration, platforms, MCP/skills) " +
+      'by section, never whole files.',
     inputSchema: schema,
     readOnly: true,
     idempotent: true,

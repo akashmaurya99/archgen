@@ -104,11 +104,11 @@ jobs:
       - run: bash fixtures/tool-matrix/run.sh
 
   # Context-budget gate: the ALWAYS-ON cost (SKILL.md + the MCP tool catalog
-  # injected into every request) must not regress. Measured 12,548 tokens; the
-  # ceiling leaves ~7% headroom. The ON-DEMAND cost is the other half of the
+  # injected into every request) must not regress. Measured 10,947 tokens; the
+  # ceiling leaves ~5% headroom. The ON-DEMAND cost is the other half of the
   # story: the reference documents moved into the package, so the shipped skill
-  # tree dropped from 25,793 to 9,375 tokens and a section load is ~1-2 KB
-  # instead of an 11 KB document.
+  # tree dropped to 7,851 tokens and a section load is ~1-2 KB instead of an
+  # 11 KB document.
   context-budget:
     runs-on: ubuntu-latest
     steps:
@@ -118,7 +118,7 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
         working-directory: packages/mcp
-      - run: node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13400
+      - run: node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 11500
 
   # Capability contract: the skill declares the MCP server version it needs,
   # and that requirement must be satisfiable by THIS release.

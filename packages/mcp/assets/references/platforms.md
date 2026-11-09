@@ -14,7 +14,7 @@ Returns: project & global skill paths, MCP config path, top-level JSON/TOML key,
 ## Platform detection
 
 `archgen_setup{action:'harness_info'}` probes in this priority order (first match wins):
-`.claude/` (Claude Code) $\rightarrow$ `.cursor/` (Cursor) $\rightarrow$ `.windsurf/` (Windsurf) $\rightarrow$ `.opencode` / `opencode.json` (OpenCode) $\rightarrow$ `.github/copilot-instructions.md` (Copilot) $\rightarrow$ `~/.codex` (Codex) $\rightarrow$ `.gemini/` (Gemini CLI / Antigravity) $\rightarrow$ `.kiro/` (Kiro) $\rightarrow$ `.trae/` (Trae).
+`.claude/` (Claude Code) → `.cursor/` (Cursor) → `.windsurf/` (Windsurf) → `.opencode` / `opencode.json` (OpenCode) → `.github/copilot-instructions.md` (Copilot) → `~/.codex` (Codex) → `.gemini/` (Gemini CLI / Antigravity) → `.kiro/` (Kiro) → `.trae/` (Trae).
 
 ## archgen installed layout
 
@@ -23,7 +23,7 @@ Returns: project & global skill paths, MCP config path, top-level JSON/TOML key,
 | Path | Role |
 |---|---|
 | `.agents/skills/archgen/` | Canonical store: `SKILL.md` + `references/code-standards.md` |
-| `.claude/skills/archgen` | Optional symlink $\rightarrow$ canonical store for Claude Code discovery |
+| `.claude/skills/archgen` | Optional symlink → canonical store for Claude Code discovery |
 | `CLAUDE.md` | Single-line `@AGENTS.md` pointer |
 | `AGENTS.md` | Cross-harness hub hosting the feature registry between `<!-- archgen:features:start -->` and `<!-- archgen:features:end -->` |
 
@@ -38,14 +38,7 @@ Query `archgen_setup{action:'harness_info'}` for exact per-platform MCP schemas:
   - `mcp.servers.<id>`: OpenCode (nested under `mcp.servers`, never flat `mcp.<id>`)
   - `context_servers`: Zed
   - `[mcp_servers.<id>]`: Codex CLI (TOML)
-- **VS Code reads TWO formats.** The VS Code format is `servers` in
-  `.vscode/mcp.json`; the PORTABLE format is `mcpServers` in the Copilot
-  user's `mcp-config.json` — `$COPILOT_HOME/mcp-config.json`, or
-  `~/.copilot/mcp-config.json`. Copilot harness sessions read the portable
-  format directly, and `COPILOT_HOME` REPLACES the default (VS Code checks
-  only one of the two). The global wiring therefore goes to the Copilot home
-  in the portable format, so VS Code stable, VS Code Insiders, the Copilot
-  CLI and every workspace see the same server.
+- **VS Code reads TWO formats.** `.vscode/mcp.json` uses `servers`; the portable `mcp-config.json` uses `mcpServers` and lives at `$COPILOT_HOME/mcp-config.json` (or `~/.copilot/mcp-config.json`). `COPILOT_HOME` REPLACES the default. Global wiring goes to the Copilot home in the portable format, so VS Code stable/Insiders, the Copilot CLI, and every workspace see the same server.
 - **Remote URL keys vary:** `url` vs `serverUrl` vs `httpUrl` (check `harness_info`).
 - **Automated wiring:** Use `archgen_setup{action:'install_mcp', approve:true}` rather than hand-editing config files.
 

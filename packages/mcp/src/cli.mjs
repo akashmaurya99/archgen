@@ -19,8 +19,8 @@ import { Context } from './context.mjs';
 import { createServer } from './server.mjs';
 import { getToolSpec, registeredToolNames } from './tools/_register.mjs';
 import { loadAsset } from './context.mjs';
-import { wireArchgenMcp, uninstallArchgenMcp, archgenMcpStatus } from './core/mcp-server-manager.mjs';
-import { manageCodegraph, assertLocation, findCodegraph } from './core/codegraph-manager.mjs';
+import { uninstallArchgenMcp, archgenMcpStatus } from './core/mcp-server-manager.mjs';
+import { assertLocation, findCodegraph } from './core/codegraph-manager.mjs';
 import { detectHarnesses } from './core/harness-wiring.mjs';
 
 const USAGE = `archgen-mcp — MCP server for archgen
@@ -164,37 +164,54 @@ export async function runCli(argv, io = {}) {
   const registry = loadAsset('harness-mcp.json');
 
   if (opts.command === 'bootstrap') {
+    // ONE implementation: the CLI runs the SAME handler the agent calls.
+    // The old inline composition re-ran the installer and the indexer on
+    // every install and answered with the full report — the exact cost the
+    // MCP tool's no-op gate exists to remove. Delegating also means the CLI
+    // and the tool can never disagree about what "already configured" means.
     const location = assertLocation(opts.location);
-    const mcp = wireArchgenMcp({
-      projectRoot: ctx.projectRoot,
-      registry,
-      home: ctx.home,
+    const envelope = await guard(getToolSpec('archgen_setup').handler, ctx, {
+      action: 'bootstrap',
       location,
-      approved: opts.yes,
-      env: ctx.env,
+      approve: opts.yes,
     });
-    const codegraph = await manageCodegraph({
-      mode: 'ensure',
-      projectRoot: ctx.projectRoot,
-      registry,
-      location,
-      approved: opts.yes,
-      home: ctx.home,
-      env: ctx.env,
-    });
+    const report = envelope.data ?? { ok: false, detail: envelope.error?.message ?? 'bootstrap failed' };
     if (opts.json) {
-      out(JSON.stringify({ mcp, codegraph }, null, 2));
-    } else {
+      out(JSON.stringify(report, null, 2));
+    } else if (report.alreadyConfigured === true) {
+      const facts = ['already configured — nothing to change'];
+      if (typeof report.mcp?.wired === 'number') facts.push(`mcp wired in ${report.mcp.wired} config(s)`);
+      if (report.codegraph?.version) facts.push(`codegraph ${report.codegraph.version}`);
       out(`archgen-mcp bootstrap — ${ctx.projectRoot}`);
-      out(`  mcp:     ${mcp.detected.length} harness(es) detected — ${mcp.wired.map((w) => `${w.harness}:${w.status}`).join(', ') || 'none'}`);
-      out(`  binary: ${mcp.binary.bin ?? 'npx fallback'}`);
-      out(`  codegraph: ${codegraph.cli.present ? codegraph.cli.version : 'not installed'} · index ${codegraph.index.action}`);
+      out(`  + ${facts.join(' · ')}`);
+    } else {
+      const mcp = report.mcp ?? {};
+      const counts = [
+        mcp.written ? `${mcp.written} written` : '',
+        mcp.unchanged ? `${mcp.unchanged} already wired` : '',
+        mcp.planned ? `${mcp.planned} planned` : '',
+      ].filter(Boolean);
+      // A server this CLI meets may answer with the historical per-config
+      // array instead of counts; render either, never crash on `.map`.
+      const rows = Array.isArray(mcp.wired)
+        ? mcp.wired.map((w) => `${w.harness}:${w.status}`).join(', ')
+        : '';
+      out(`archgen-mcp bootstrap — ${ctx.projectRoot}`);
+      out(`  mcp:     ${mcp.detected?.length ?? 0} harness(es) detected — ${rows || counts.join(', ') || 'no changes'}`);
+      out(`  binary: ${report.mcp?.binary?.bin ?? 'npx fallback'}`);
+      const cgVersion = report.codegraph?.cli?.present
+        ? report.codegraph.cli.version
+        : report.codegraph?.version ?? 'not installed';
+      const cgIndex = report.codegraph?.index?.action ?? (report.codegraph?.indexed ? 'already-indexed' : 'none');
+      out(`  codegraph: ${cgVersion} · index ${cgIndex}`);
     }
-    return codegraph.ok === false ? 1 : 0;
+    // A bootstrap that could not write a config is not a success: the
+    // handler's `ok` folds in both the MCP and CodeGraph sides.
+    return envelope.ok && report.ok !== false && report.codegraph?.ok !== false ? 0 : 1;
   }
 
   if (opts.command === 'doctor') {
-    const status = archgenMcpStatus({ projectRoot: ctx.projectRoot, registry, home: ctx.home });
+    const status = archgenMcpStatus({ projectRoot: ctx.projectRoot, registry, home: ctx.home, env: ctx.env });
     const codegraph = findCodegraph(ctx.env);
     const report = {
       projectRoot: ctx.projectRoot,

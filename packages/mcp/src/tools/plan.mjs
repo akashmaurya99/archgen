@@ -5,7 +5,7 @@
 // enum costs far less context than five thin tools — and it removes the
 // "which one do I call?" confusion the whole MCP exercise exists to fix.
 import { z } from 'zod/v4';
-import { registerTool, projectRootArg } from './_register.mjs';
+import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
 import { buildScaffold } from '../core/scaffold.mjs';
 import { loadBrief, remainingPlaceholders, renderBriefContext, BRIEF_KINDS } from '../core/briefs.mjs';
@@ -20,34 +20,30 @@ import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information.
-const ACTION_DESC =
-  'validate | verify | graph | impact | coverage | scaffold | brief — see archgen_help.';
+const ACTION_DESC = 'validate|verify|graph|impact|coverage|scaffold|brief';
 
 const schema = z.object({
   action: z.enum(['validate', 'verify', 'graph', 'impact', 'coverage', 'scaffold', 'brief']).describe(ACTION_DESC),
   tasksYaml: z
     .string()
     .optional()
-    .describe('Absolute path to tasks.yaml. Required for validate, verify, impact and coverage.'),
-  planDir: z.string().optional().describe('Absolute path to the plans directory (verify, coverage, brief).'),
+    .describe('tasks.yaml path (validate, verify, impact, coverage).'),
+  planDir: z.string().optional().describe('plans/ dir (verify, coverage, brief).'),
   target: z.string().optional().describe('Task id or artifact path (impact).'),
-  taskId: z.string().optional().describe('ONE task id (coverage).'),
-  node: z.string().optional().describe('Restrict the graph to one task neighborhood (graph).'),
-  format: z.enum(['json', 'mermaid']).optional().describe('Graph output format. Defaults to json.'),
-  status: z.boolean().optional().describe('Include status styling (graph, mermaid only).'),
-  module: z.string().optional().describe('Restrict the graph to one module (graph).'),
-  scope: z.enum(['SMALL', 'MEDIUM', 'LARGE']).optional().describe('Scope class (scaffold).'),
+  taskId: z.string().optional().describe('One task (coverage).'),
+  node: z.string().optional().describe('One task neighborhood (graph).'),
+  format: z.enum(['json', 'mermaid']).optional().describe('json|mermaid (graph).'),
+  status: z.boolean().optional().describe('Status styling (graph, mermaid).'),
+  module: z.string().optional().describe('One module (graph).'),
+  scope: z.enum(['SMALL', 'MEDIUM', 'LARGE']).optional().describe('SMALL|MEDIUM|LARGE (scaffold).'),
   slug: z.string().optional().describe('Project slug (scaffold, brief).'),
-  file: z.string().optional().describe('ONE artifact file (scaffold) — returns just that skeleton.'),
-  kind: z.enum(BRIEF_KINDS).optional().describe('Which dispatch brief (brief).'),
-  featureRequest: z
-    .string()
-    .optional()
-    .describe('The feature being requested, in one line (brief). Defaults to the slug.'),
+  file: z.string().optional().describe('One artifact file (scaffold).'),
+  kind: z.enum(BRIEF_KINDS).optional().describe('verifier|review|survey|investigate (brief).'),
+  featureRequest: z.string().optional().describe('One-line feature request (brief).'),
   topic: z.string().optional().describe('Investigation topic (brief).'),
-  round: z.number().int().positive().optional().describe('Investigation round number (brief).'),
-  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
-  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
+  round: z.number().int().positive().optional().describe('Investigation round (brief).'),
+  limit: z.number().int().positive().optional().describe(LIMIT_DESC),
+  offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
 });
 
@@ -58,8 +54,8 @@ export function registerPlanTools(server) {
   registerTool(server, 'archgen_plan', {
     title: 'ArchGen plan',
     description:
-      'Validate and analyze an archgen plan (tasks.yaml + plans/). Use after generating or editing a plan, ' +
-      'before the verifier gate, and when you need the dependency graph or the blast radius of a change.',
+      'Validate and analyze an archgen plan: schema validation, verifier gate, dependency graph, ' +
+      'blast radius, coverage, artifact scaffold, and dispatch brief.',
     inputSchema: schema,
     readOnly: true,
     idempotent: true,

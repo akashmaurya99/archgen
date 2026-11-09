@@ -1,6 +1,6 @@
 // tasks.mjs — the `archgen_tasks` tool: the wave execution loop.
 import { z } from 'zod/v4';
-import { registerTool, projectRootArg } from './_register.mjs';
+import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { resolveWaves, listTasks } from '../core/wave-resolver.mjs';
 import { buildWorkerContract } from '../core/worker-contract.mjs';
 import { matchSkills, findInstalledSkill, skillRules, skillSections } from '../core/skill-manager.mjs';
@@ -36,20 +36,20 @@ function slugDirFor(tasksFile, action) {
   }
 }
 
-const ACTION_DESC = 'next | set_status | list | snapshot | contract — see archgen_help.';
+const ACTION_DESC = 'next|set_status|list|snapshot|contract';
 
 const schema = z.object({
   action: z.enum(['next', 'set_status', 'list', 'snapshot', 'contract']).describe(ACTION_DESC),
-  tasksYaml: z.string().optional().describe('Absolute path to tasks.yaml. Required for next, set_status and list.'),
-  taskId: z.string().optional().describe('Task id (set_status, contract). ONE task (list, next).'),
+  tasksYaml: z.string().optional().describe('tasks.yaml path (all actions).'),
+  taskId: z.string().optional().describe('Task id (set_status, contract); one task (list, next).'),
   status: z.enum(STATUSES).optional().describe('New status (set_status).'),
   force: z.boolean().optional().describe('Allow reopening a done task (set_status).'),
   filterStatus: z.string().optional().describe('Filter by status (list).'),
-  slugDir: z.string().optional().describe('The .archgen/<slug>/ directory (contract) — locates the plan docs.'),
-  codeStandardsPath: z.string().optional().describe('Path to the code-standards reference (contract).'),
-  module: z.string().optional().describe('Filter by module path fragment (list).'),
-  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
-  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
+  slugDir: z.string().optional().describe('.archgen/<slug>/ dir (contract).'),
+  codeStandardsPath: z.string().optional().describe('Code-standards path (contract).'),
+  module: z.string().optional().describe('Module path fragment (list).'),
+  limit: z.number().int().positive().optional().describe(LIMIT_DESC),
+  offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
 });
 
@@ -60,8 +60,8 @@ export function registerTaskTools(server) {
   registerTool(server, 'archgen_tasks', {
     title: 'ArchGen tasks',
     description:
-      'Execute an archgen plan: resolve the next dependency-safe wave, update task status atomically, ' +
-      'list tasks, or write the resume snapshot that survives context compaction.',
+      'Execute an archgen plan: next dependency-safe wave, atomic status updates, task listing, ' +
+      'resume snapshot, and the assembled worker contract.',
     inputSchema: schema,
     readOnly: false,
     destructive: true,

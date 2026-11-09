@@ -16,10 +16,10 @@
 // SAFETY: MCP configs are written only with approval (otherwise the plan is
 // reported); non-JSON configs are reported, never rewritten.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { detectHarnesses, wireServer, recordWiring } from './harness-wiring.mjs';
+import { detectHarnesses, wireServer, recordWiring, configHasServer, configTargetFor } from './harness-wiring.mjs';
 import { invalidInput } from './errors.mjs';
 
 export const CODEGRAPH_PACKAGE = '@colbymchenry/codegraph';
@@ -140,6 +140,40 @@ export function findCodegraph(env = process.env) {
   return { bin, version };
 }
 
+/**
+ * Read-only CodeGraph install state: CLI, index, and whether each detected
+ * harness config already carries the CodeGraph entry.
+ *
+ * This is the cheap gate in front of `ensure`: when the CLI, the index and
+ * every relevant config are already in place, there is nothing to run —
+ * no installer, no indexer, no writes.
+ *
+ * @param {{registry: any, projectRoot: string, home?: string, env?: Record<string,string|undefined>, location?: 'project'|'global'|'both'}} opts
+ * @returns {{cli: {bin: string, version: string}|null, indexed: boolean, targets: Array<{harness: string, location: string, path: string, key: string, exists: boolean, wired: boolean}>}}
+ */
+export function codegraphState(opts) {
+  const { registry, projectRoot, home = homedir(), env = process.env, location = 'both' } = opts;
+  const cli = findCodegraph(env);
+  const targets = [];
+  for (const d of detectHarnesses(registry, projectRoot, home, env)) {
+    for (const [loc, cfg] of Object.entries(d.spec.configs ?? {})) {
+      if (location !== 'both' && loc !== location) continue;
+      if (loc === 'global' && !d.atHome) continue;
+      if (loc === 'project' && !d.atProject) continue;
+      const target = configTargetFor(cfg, { projectRoot, home, env });
+      targets.push({
+        harness: d.id,
+        location: loc,
+        path: target.path,
+        key: cfg.format === 'toml' ? `mcp_servers.codegraph` : cfg.key,
+        exists: existsSync(target.path),
+        wired: configHasServer(target.path, cfg, 'codegraph'),
+      });
+    }
+  }
+  return { cli, indexed: existsSync(join(projectRoot, '.codegraph')), targets };
+}
+
 /** Current telemetry state: 'enabled' | 'disabled' | 'unknown'. */
 export function telemetryState(bin) {
   if (!bin) return 'unknown';
@@ -186,15 +220,10 @@ export async function manageCodegraph(opts) {
 
   const report = {
     mode,
-    projectRoot,
     cli: { present: false, version: null, bin: null, latest: null, action: 'none' },
     telemetry: { state: 'unknown', action: 'none' },
     wiring: { native: [], manual: [], skipped: [] },
     index: { initialized: false, action: 'none', files: null, detail: null },
-    realtime: {
-      watcher: true,
-      note: 'codegraph serve --mcp runs a file watcher: the index stays in sync automatically while the MCP server runs',
-    },
     detected: [],
     ok: true,
   };
@@ -267,10 +296,30 @@ export async function manageCodegraph(opts) {
     const wanted = targets ?? detected.map((d) => d.id);
     const selected = detected.filter((d) => wanted.includes(d.id));
 
+    // A harness whose relevant configs already carry the entry needs no
+    // installer run. This is what makes a second `ensure` a true no-op:
+    // without it, `codegraph install --yes` rewrote every config on every
+    // bootstrap even though nothing had changed.
+    const alreadyWired = (d) => {
+      const locs = location === 'both' ? ['global', 'project'] : [location];
+      let checked = false;
+      for (const loc of locs) {
+        const cfg = d.spec.configs?.[loc];
+        if (!cfg) continue;
+        if (loc === 'global' && !d.atHome) continue;
+        if (loc === 'project' && !d.atProject) continue;
+        checked = true;
+        const target = configTargetFor(cfg, { projectRoot, home, env });
+        if (!configHasServer(target.path, cfg, 'codegraph')) return false;
+      }
+      return checked;
+    };
+
     const nativeIds = [];
     for (const d of selected) {
       const target = d.spec.codegraphTarget;
       if (!target) continue;
+      if (alreadyWired(d)) continue;
       if (location === 'project') {
         if (d.atProject) nativeIds.push(target);
       } else if (location === 'global') {
@@ -328,7 +377,10 @@ export async function manageCodegraph(opts) {
     });
     for (const w of manual.wired) {
       report.wiring.manual.push({ harness: w.harness, path: w.path, key: w.key, ...w });
-      if (w.status === 'error') report.ok = false;
+      // `skipped` means the config exists but could not be merged (unreadable,
+      // unparseable, or a shape we refuse to rewrite): the harness is NOT
+      // wired, so the ensure did not fully succeed.
+      if (w.status === 'error' || w.status === 'skipped') report.ok = false;
     }
     report.wiring.skipped.push(...manual.skipped);
 
@@ -361,6 +413,7 @@ export async function manageCodegraph(opts) {
     const codegraphDir = join(projectRoot, '.codegraph');
     if (existsSync(codegraphDir)) {
       report.index.action = 'already-indexed';
+      report.index.initialized = true;
       const st = run(cli.bin ?? 'codegraph', ['status', projectRoot, '--json'], { timeout: 60000, env });
       if (st.ok) {
         try {
@@ -417,37 +470,25 @@ export async function manageCodegraph(opts) {
   };
 
   if (mode === 'status') {
-    const cli = findCodegraph(env);
-    report.cli.present = Boolean(cli);
-    report.cli.bin = cli?.bin ?? null;
-    report.cli.version = cli?.version ?? null;
-    // Official freshness check — reports what "latest" means today, no pin.
-    if (cli) {
-      const chk = await runAsync(cli.bin, ['upgrade', '--check'], { timeout: 120000, env });
-      const m = /latest\s+v?([0-9][^\s]*)/i.exec((chk.stdout ?? '') + (chk.stderr ?? ''));
-      report.cli.latest = m ? m[1] : null;
-    }
-    report.telemetry.state = telemetryState(cli?.bin ?? null);
-    const detected = detectHarnesses(registry, projectRoot, home, env);
-    report.detected = detected.map((d) => d.id);
-    for (const d of detected) {
-      for (const cfg of Object.values(d.spec.configs ?? {})) {
-        if (cfg.format === 'toml') continue;
-        const absPath = cfg.path.startsWith('~') ? join(home, cfg.path.slice(2)) : join(projectRoot, cfg.path);
-        const { data, existed, error } = readConfig(absPath);
-        if (!existed) continue;
-        const bucket = data && typeof data === 'object' ? data[cfg.key] : null;
-        const wired = bucket && typeof bucket === 'object' && Boolean(bucket.codegraph);
-        report.wiring.manual.push({
-          harness: d.id,
-          path: absPath,
-          key: cfg.key,
-          status: error ? 'not-parseable' : wired ? 'wired' : 'present-no-codegraph',
-          detail: error ? `left untouched: ${error}` : undefined,
-        });
-      }
-    }
-    report.index.action = existsSync(join(projectRoot, '.codegraph')) ? 'indexed' : 'not-indexed';
+    const state = codegraphState({ registry, projectRoot, home, env, location });
+    report.cli.present = Boolean(state.cli);
+    report.cli.bin = state.cli?.bin ?? null;
+    report.cli.version = state.cli?.version ?? null;
+    // No network check here: `status` answers what is installed NOW, and an
+    // `upgrade --check` made a read-only diagnostic depend on the registry.
+    report.telemetry.state = telemetryState(state.cli?.bin ?? null);
+    report.detected = [...new Set(state.targets.map((t) => t.harness))];
+    report.wiring.manual = state.targets.map((t) => ({
+      harness: t.harness,
+      location: t.location,
+      path: t.path,
+      key: t.key,
+      status: t.wired ? 'wired' : t.exists ? 'present-no-codegraph' : 'absent',
+    }));
+    report.index.action = state.indexed ? 'indexed' : 'not-indexed';
+    report.index.initialized = state.indexed;
+    report.alreadyConfigured =
+      Boolean(state.cli) && state.indexed && state.targets.length > 0 && state.targets.every((t) => t.wired);
   } else if (mode === 'init') {
     const cli = await ensureCli();
     await applyTelemetry(cli);
@@ -467,12 +508,17 @@ export async function manageCodegraph(opts) {
     const detected = await wireHarnesses(cli);
     if (mode === 'ensure') {
       if (!approved && !dryRun) {
-        // Without approval: print the plan, write no MCP config. The CLI
-        // itself is still installed if it was missing (a program, not a user
-        // config); an existing one is never touched.
+        // Without approval: print the plan and write nothing. An index that
+        // ALREADY exists is not a pending write — reporting it as one made a
+        // configured project look unconfigured on every unapproved call.
         report.ok = true;
-        report.planned = true;
-        report.index.action = 'would-index';
+        if (existsSync(join(projectRoot, '.codegraph'))) {
+          report.index.action = 'already-indexed';
+          report.index.initialized = true;
+        } else {
+          report.planned = true;
+          report.index.action = 'would-index';
+        }
       } else {
         await initIndex(cli);
       }
@@ -490,17 +536,51 @@ export async function manageCodegraph(opts) {
     );
   }
 
-  return report;
-}
-
-/** Read + parse a JSON config; null when absent, {error} when unparseable. */
-function readConfig(abs) {
-  if (!existsSync(abs)) return { data: null, existed: false };
-  try {
-    return { data: JSON.parse(readFileSync(abs, 'utf8')), existed: true };
-  } catch (e) {
-    return { data: null, existed: true, error: e.message };
+  report.planned =
+    report.planned === true ||
+    report.cli.action === 'would-install' ||
+    report.index.action === 'would-index' ||
+    report.wiring.native.some((n) => n.status === 'planned') ||
+    report.wiring.manual.some((w) => w.status === 'planned');
+  report.changed =
+    report.cli.action === 'installed' ||
+    report.telemetry.action.startsWith('set-') ||
+    report.index.action === 'indexed' ||
+    report.wiring.native.some((n) => n.status === 'wired') ||
+    written.length > 0;
+  if (mode !== 'status') {
+    // `alreadyConfigured` is a claim that the project needs NOTHING. It must
+    // survive every part of the report: a missing CLI, a pending install or
+    // index, or an unwired config each falsify it. The index is what `ensure`
+    // promises and `wire` never touches, so only `ensure` requires it.
+    report.alreadyConfigured =
+      report.ok !== false &&
+      !report.changed &&
+      !report.planned &&
+      Boolean(report.cli.present) &&
+      (mode !== 'ensure' || report.index.action === 'already-indexed');
   }
+
+  // A no-op is a RESULT, not a status dump. The full report is only worth its
+  // bytes when something changed or something needs approval; otherwise the
+  // caller gets the facts it needs to stop: what is present and what is
+  // indexed.
+  if (mode !== 'status' && report.alreadyConfigured) {
+    return {
+      ok: true,
+      changed: false,
+      alreadyConfigured: true,
+      detected: report.detected,
+      cli: { present: report.cli.present, version: report.cli.version, action: report.cli.action },
+      telemetry: { state: report.telemetry.state },
+      index:
+        report.index.action === 'none'
+          ? undefined
+          : { initialized: report.index.initialized, action: report.index.action, files: report.index.files },
+    };
+  }
+
+  return report;
 }
 
 /** Validate the location argument. */

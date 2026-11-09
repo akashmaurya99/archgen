@@ -2,6 +2,107 @@
 
 Nothing yet.
 
+## [0.1.3] - 2026-11-09
+
+A token-and-noise release: the same capabilities, a **14% smaller always-on
+footprint**, and a second install call that does nothing because there is
+nothing left to do.
+
+**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.**
+
+| Artifact | Published as | Tag |
+|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.3` |
+| `packages/cli` | `archgen-skill` | `vcli-0.1.3` |
+
+### Changed — the always-on surface is 14% smaller
+
+The always-on cost is what every request pays before the agent does anything:
+`SKILL.md` plus the tool catalog the client injects. Both were rewritten to say
+only what the caller cannot infer from the schema.
+
+- **The catalog** measures 4,695 tokens, down from 5,242. Repeated argument
+  wording now comes from four shared constants (`limit`, `offset`, `location`,
+  `approve`), so the same sentence cannot drift between nine tools.
+- **`SKILL.md`** keeps every rule, gate, mode and `§` obligation, and drops the
+  prose that restated them.
+- **`archgen_help`** keeps every action, argument and gotcha; only repeated
+  wording was cut.
+- **Reference and brief prose** was tightened without dropping a single pinned
+  fact, section slug, or coverage dimension; the verifier and reviewer gates
+  are unchanged in substance.
+
+Measured, 0.1.2 → 0.1.3:
+
+| | 0.1.2 | 0.1.3 |
+|---|---:|---:|
+| `skill/SKILL.md` (always-on) | 7,420 | 6,252 |
+| MCP tool catalog (9 tools, always-on) | 5,242 | 4,695 |
+| **Always-on total** | **12,662** | **10,947** |
+| Protocol references (on demand) | 13,265 | 12,931 |
+| Dispatch briefs (on demand) | 2,626 | 2,416 |
+| Artifact templates (on demand) | 2,358 | 2,347 |
+
+The CI ceiling is tightened to **11,500** tokens, so a regression fails the
+build instead of reaching a user.
+
+### Changed — a configured project is a no-op
+
+The install path was idempotent in effect but not in cost: a second
+`bootstrap` or `codegraph ensure` re-ran the installer and the indexer, then
+answered with the full report. A second call now returns
+`alreadyConfigured: true` with what is present — and runs nothing.
+
+- **Detect the entry, not just the file.** `archgenMcpStatus` and the new
+  `codegraphState` read the config and report `wired` per harness; a config
+  that already carries the entry is not rewritten.
+- **Skip the installer when every target is wired.** `codegraph ensure` no
+  longer runs `codegraph install` on a configured project, and `status` no
+  longer makes a network call (`upgrade --check`) for a local fact.
+- **Report the result, not the process.** A no-op returns only the facts the
+  caller needs; a pending CLI, index build or unapproved write is never
+  reported as `alreadyConfigured`.
+- **The archgen entry must be exact.** The no-op check asks the real writer in
+  dry-run mode, so a config that merely has the key — a stale absolute path,
+  a different command — is a pending rewrite, not a configured project.
+- **`doctor` reports problems only.** A healthy install answers with status,
+  summary and versions; the five always-OK rows — and the per-harness wiring
+  table — are gone.
+- **The CLI uses the same handler.** `archgen-mcp bootstrap` now runs the
+  `archgen_setup` handler instead of a second copy of the composition, so
+  `archgen init` gets the compact no-op and the same approval gates. It also
+  accepts the historical per-config report, because an older global server
+  can still answer the call. Failed and skipped wiring is surfaced instead of
+  printed as an ordinary row.
+
+### Fixed — the status check used a second copy of the path rules
+
+`archgenMcpStatus` detected harnesses and resolved config paths by hand
+instead of using the writer's `detectHarnesses` and `configTargetFor`. A
+`COPILOT_HOME` or a `~/`-relative config was therefore checked in a different
+place than it was written, and the no-op decision disagreed with the install.
+Both now share one implementation, and the server passes its own environment.
+
+`archgen_codegraph{action:'status'}` reports the tri-state honestly — `absent`,
+`present-no-codegraph`, or `wired` — instead of treating an existing config as
+a wired one.
+
+### Fixed — a paginated CodeGraph result pointed at the wrong action
+
+`meta.next` from `archgen_codegraph` always said `action:'status'`, even when
+the call was `ensure` or `wire`. The next slice now belongs to the action that
+produced it.
+
+### Tests
+
+`packages/mcp/test/core/setup-idempotency.test.mjs` pins the whole no-op
+contract: JSON and TOML entry detection, per-target MCP status, the second
+ensure running no installer or indexer, a stale entry counting as pending, an
+unmergeable config reporting `ok:false`, the tri-state status, the compact
+bootstrap payload, issues-only doctor output, and the Copilot-home environment
+resolution. The CLI suite pins both report shapes, the failure/skip
+surfacing, and the nonzero exit when a config cannot be merged.
+
 ## [0.1.2] - 2026-11-09
 
 The release that makes the plan of record **visible**, keeps the tests **out of

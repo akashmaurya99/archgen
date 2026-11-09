@@ -7,7 +7,7 @@
 // those, and gets the file path a worker must follow.
 import { z } from 'zod/v4';
 import { readFileSync } from 'node:fs';
-import { registerTool, projectRootArg } from './_register.mjs';
+import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { loadAsset } from '../context.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
@@ -24,29 +24,20 @@ import {
   HARNESS_AGENT_IDS,
 } from '../core/skill-manager.mjs';
 
-const ACTION_DESC =
-  'match = which capability skills a task needs; ' +
-  'install = install ONE capability skill (needs approve); ' +
-  'installed = what is already installed; ' +
-  'load = read a skill SKILL.md (or ONE section of it) for prompt injection; ' +
-  'digest = the section index of an installed skill; ' +
-  'list = the registry.';
+const ACTION_DESC = 'match|install|installed|load|digest|list';
 
 const schema = z.object({
   action: z.enum(['match', 'install', 'installed', 'load', 'digest', 'list']).describe(ACTION_DESC),
   title: z.string().optional().describe('Task title (match).'),
   summary: z.string().optional().describe('Task summary (match).'),
-  fileOwnership: z.array(z.string()).optional().describe('Task file_ownership globs (match).'),
-  skillId: z.string().optional().describe('Registry skill id or slug (install, load, digest, list).'),
-  section: z
-    .string()
-    .optional()
-    .describe('One section of the skill (load, digest). Omit for the section index.'),
-  harness: z.string().optional().describe('Harness id to install for (install). Defaults to universal.'),
-  global: z.boolean().optional().describe('Install for the user instead of the project (install).'),
-  approve: z.boolean().optional().describe('Required to install. Without it you get the plan and nothing is written.'),
-  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
-  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
+  fileOwnership: z.array(z.string()).optional().describe('Task file globs (match).'),
+  skillId: z.string().optional().describe('Skill id or slug.'),
+  section: z.string().optional().describe('One skill section (load, digest).'),
+  harness: z.string().optional().describe('Target harness (install; default universal).'),
+  global: z.boolean().optional().describe('Install for the user, not the project (install).'),
+  approve: z.boolean().optional().describe('Required to install; without it returns the plan.'),
+  limit: z.number().int().positive().optional().describe(LIMIT_DESC),
+  offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
 });
 
@@ -57,9 +48,8 @@ export function registerSkillTools(server) {
   registerTool(server, 'archgen_skills', {
     title: 'ArchGen skills',
     description:
-      'Match a task against the capability-skill registry, install exactly the matched skill, and load its ' +
-      'SKILL.md for prompt injection. Use before dispatching a worker whose work touches a registered capability ' +
-      'domain (UI, accessibility, motion, design systems…).',
+      'Match, install, load, and inspect capability skills (UI, accessibility, motion) from the registry; ' +
+      'one skill is installed per call.',
     inputSchema: schema,
     readOnly: false,
     destructive: false,

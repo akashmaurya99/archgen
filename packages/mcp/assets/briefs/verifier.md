@@ -2,8 +2,8 @@ TASK: Verify the archgen plan in `<slug dir>` before execution.
 SCOPE: Read-only. NEVER edit files; report verdict, coverage table, and findings only.
 
 STEP 1 — RUN DETERMINISTIC CHECKS FIRST (both must pass):
-1. `archgen_plan { action: 'verify', tasksYaml: <tasks.yaml>, planDir: <plans dir> }` $\rightarrow$ must return `verdict: 'APPROVE'` (validates DAG, dangling refs, wave ownership disjointness, acceptance presence, and bidirectional plan$\leftrightarrow$task coverage).
-2. `archgen_docs { action: 'validate', slugDir: <slug dir> }` (if markdown artifacts exist) $\rightarrow$ must return `valid: true` (zero broken links or heading anchors).
+1. `archgen_plan { action: 'verify', tasksYaml: <tasks.yaml>, planDir: <plans dir> }` → must return `verdict: 'APPROVE'` (validates DAG, dangling refs, wave ownership disjointness, acceptance presence, and bidirectional plan↔task coverage).
+2. `archgen_docs { action: 'validate', slugDir: <slug dir> }` (if markdown artifacts exist) → must return `valid: true` (zero broken links or heading anchors).
 
 STEP 2 — AUDIT JUDGMENT & CONTRACT COMPLETENESS:
 - Wave boundaries match true dependencies without artificial serialization.
@@ -24,29 +24,15 @@ STEP 2 — AUDIT JUDGMENT & CONTRACT COMPLETENESS:
 DELIVERABLE — ONE message in this exact format:
 
 ```
-VERDICT: APPROVE
+VERDICT: APPROVE | ISSUES
 COVERAGE:
 | dimension | status | reason |
 | --- | --- | --- |
 | functional coverage | PASS | all FR IDs map to tasks with runnable checks |
 | security & data protection | N/A | internal CLI with no auth or sensitive data |
-| data integrity | PASS | schemas and migrations are fully typed and owned |
 | state, lifecycle & recovery | FAIL | TASK-07 mutates state without rollback or idempotency |
-| resource limits & abuse | N/A | no shared or public network surface |
-| operational entrypoints | PASS | build, test, and CLI entrypoints have owning tasks |
-| metric traceability | PASS | PRD latency target verified by benchmark acceptance command |
-| consistency | PASS | all contracts align across architecture.yaml and plans |
-```
-
-or
-
-```
-VERDICT: ISSUES
-COVERAGE:
-| dimension | status | reason |
-| --- | --- | --- |
-| ... all 8 dimensions above marked PASS, FAIL, or N/A ... |
-FINDINGS:
+| ... every one of the 8 dimensions, PASS / FAIL / N/A, 1-line reason ... |
+FINDINGS:   (present when VERDICT: ISSUES)
 1. tasks.yaml § SCAFFOLD — acceptance #2 has no observable check — worker cannot verify completion — replace with "npm run build exits 0"
 2. plans/demo.md § Risks — config-drift risk has no owning task — mitigation never built — assign mitigation to TASK-01
 ```

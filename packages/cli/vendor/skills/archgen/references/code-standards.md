@@ -42,7 +42,7 @@ The test tree is a **sibling** of the source tree, never a child.
 - **One exception:** a language whose test runner discovers tests only inside the package directory keeps those files beside the code they cover. Everything the runner can discover elsewhere—integration and end-to-end tests—still lives in the test tree.
 - **Ownership follows the tree:** a task that owns `src/features/x/**` also owns `tests/unit/features/x/**`. A worker may not write outside `file_ownership`, so the mirrored path must be in it. A plan that gives the tests to a dedicated task is valid too—as long as some task owns them.
 
-Why: one directory holding both `foo.ts` and its test grows a second, undeclared structure. The test files become half the listing, imports blur, and "where does this go?" becomes a per-file judgement call that different agents answer differently.
+Why: one directory holding both `foo.ts` and its test grows a second, undeclared structure and makes "where does this go?" a per-file judgment call.
 
 ## File naming
 
@@ -64,7 +64,7 @@ Why: one directory holding both `foo.ts` and its test grows a second, undeclared
 
 ## Enforcement hooks
 
-- Every `tasks.yaml` acceptance list MUST include $\ge 1$ objectively verifiable check (exit code or observable output).
+- Every `tasks.yaml` acceptance list MUST include ≥1 objectively verifiable check (exit code or observable output).
 - The verifier runs `archgen_plan{action:'verify'}` and audits plans against this file; violations trigger `ISSUES`.
-- The plan must declare both trees: `architecture.yaml`'s `structure:` lists the source tree AND the test tree, and every task that owns source owns the mirrored test path.
-- Workers receive this file path in their prompt contract and are strictly bound by it.
+- The plan must declare both trees: `architecture.yaml`'s `structure:` lists the source tree AND the test tree; every task that owns source owns the mirrored test path.
+- Workers receive this file's path in their contract and are strictly bound by it.

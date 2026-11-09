@@ -117,4 +117,12 @@ export function resetServerContext() {
 export const projectRootArg = z
   .string()
   .optional()
-  .describe('Absolute path to the project root. Defaults to the server working directory.');
+  .describe('Absolute project root; defaults to the server cwd.');
+
+// Shared schema words. The catalog is injected into every request, so a
+// description that repeats across nine tools is nine times the cost. One
+// definition keeps the wording identical everywhere and impossible to drift.
+export const LIMIT_DESC = 'Max items to return. Default 50.';
+export const OFFSET_DESC = 'Skip this many items.';
+export const LOCATION_DESC = 'project | global | both. Default both.';
+export const APPROVE_DESC = 'Required to write; without it returns the plan.';

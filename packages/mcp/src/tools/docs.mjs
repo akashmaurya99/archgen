@@ -3,25 +3,22 @@
 import { z } from 'zod/v4';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { registerTool, projectRootArg } from './_register.mjs';
+import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { docIndex } from '../core/doc-navigator.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
-const ACTION_DESC = 'index | digest | section | refs | map | validate — see archgen_help.';
+const ACTION_DESC = 'index|digest|section|refs|map|validate';
 
 const schema = z.object({
   action: z.enum(['index', 'digest', 'section', 'refs', 'map', 'validate']).describe(ACTION_DESC),
-  slugDir: z
-    .string()
-    .optional()
-    .describe('Absolute path to the .archgen/<slug>/ directory. Defaults to the active slug under the project root.'),
-  token: z.string().optional().describe('The token to look for (refs, map).'),
-  section: z.string().optional().describe('Section path, optionally path#anchor (section).'),
-  file: z.string().optional().describe('Scope to one document (repo-root-relative or slug-relative).'),
-  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
-  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
+  slugDir: z.string().optional().describe('Absolute .archgen/<slug>/ dir; defaults to the active slug.'),
+  token: z.string().optional().describe('Token to find (refs, map).'),
+  section: z.string().optional().describe('Section slug, path, or path#anchor.'),
+  file: z.string().optional().describe('Scope to one document.'),
+  limit: z.number().int().positive().optional().describe(LIMIT_DESC),
+  offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
 });
 
@@ -32,8 +29,8 @@ export function registerDocTools(server) {
   registerTool(server, 'archgen_docs', {
     title: 'ArchGen docs',
     description:
-      'Navigate the markdown artifacts of an archgen plan without pulling whole files into context. ' +
-      'Prefer digest + section over reading a document end to end.',
+      'Navigate an archgen plan\'s markdown by section — digest, section, map, refs, index, validate — ' +
+      'without loading whole files.',
     inputSchema: schema,
     readOnly: true,
     idempotent: true,

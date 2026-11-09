@@ -16,7 +16,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { wireServer, recordWiring, removeWiring } from './harness-wiring.mjs';
+import { wireServer, recordWiring, removeWiring, configHasServer, detectHarnesses, configTargetFor } from './harness-wiring.mjs';
 import { which } from './codegraph-manager.mjs';
 
 export const MCP_PACKAGE = 'archgen-mcp';
@@ -121,21 +121,33 @@ export function uninstallArchgenMcp(projectRoot, home = homedir(), location = 'b
 
 /**
  * Report whether the archgen MCP is wired into each detected harness.
- * @param {{projectRoot: string, registry: any, home?: string}} opts
+ *
+ * Detection and path resolution go through the SAME functions the writer
+ * uses. A second, hand-rolled copy of either is how a `COPILOT_HOME` or a
+ * `~/`-relative config gets checked in the wrong place — and the check then
+ * disagrees with the write that follows it.
+ *
+ * @param {{projectRoot: string, registry: any, home?: string, env?: Record<string, string|undefined>}} opts
  */
 export function archgenMcpStatus(opts) {
-  const { projectRoot, registry, home = homedir() } = opts;
-  const resolved = resolveMcpBinary({ projectRoot, home });
+  const { projectRoot, registry, home = homedir(), env = process.env } = opts;
+  const resolved = resolveMcpBinary({ projectRoot, home, env });
   const rows = [];
-  for (const [id, h] of Object.entries(registry.harnesses ?? {})) {
-    const atHome = (h.detectHome ?? []).some((m) => existsSync(join(home, m)));
-    const atProject = (h.detectProject ?? []).some((m) => existsSync(join(projectRoot, m)));
-    if (!atHome && !atProject) continue;
-    for (const [loc, cfg] of Object.entries(h.configs ?? {})) {
-      if (loc === 'global' && !atHome) continue;
-      if (loc === 'project' && !atProject) continue;
-      const abs = cfg.path.startsWith('~') ? join(home, cfg.path.slice(2)) : join(projectRoot, cfg.path);
-      rows.push({ harness: id, location: loc, path: abs, key: cfg.key ?? `mcp_servers.archgen`, exists: existsSync(abs) });
+  for (const d of detectHarnesses(registry, projectRoot, home, env)) {
+    for (const [loc, cfg] of Object.entries(d.spec.configs ?? {})) {
+      if (loc === 'global' && !d.atHome) continue;
+      if (loc === 'project' && !d.atProject) continue;
+      const abs = configTargetFor(cfg, { projectRoot, home, env }).path;
+      rows.push({
+        harness: d.id,
+        location: loc,
+        path: abs,
+        key: cfg.key ?? `mcp_servers.archgen`,
+        exists: existsSync(abs),
+        // `wired` is the fact bootstrap needs: the file may exist for other
+        // harnesses while the archgen entry is missing.
+        wired: configHasServer(abs, cfg, 'archgen'),
+      });
     }
   }
   return { binary: resolved, targets: rows };

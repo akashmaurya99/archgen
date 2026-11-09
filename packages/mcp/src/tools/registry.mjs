@@ -4,17 +4,17 @@
 // forgets to refresh it after a wave, leaves every harness reading a stale
 // feature map. This tool is the only sanctioned writer.
 import { z } from 'zod/v4';
-import { registerTool, projectRootArg } from './_register.mjs';
+import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { updateRegistry, showRegistry, DISPLAY_STATUSES } from '../core/registry-updater.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const schema = z.object({
-  action: z.enum(['update', 'show']).describe('update = rewrite the registry from .archgen/; show = read it without writing.'),
+  action: z.enum(['update', 'show']).describe('update|show'),
   projectRoot: projectRootArg,
-  slug: z.string().optional().describe('Upsert one feature row (update). Requires status.'),
-  status: z.enum(DISPLAY_STATUSES).optional().describe('Registry status for the upserted row (update).'),
-  limit: z.number().int().positive().optional().describe('Max rows to return (show). Default 50; null for all.'),
-  offset: z.number().int().nonnegative().optional().describe('Skip this many rows (pagination).'),
+  slug: z.string().optional().describe('Upsert one feature row (update; needs status).'),
+  status: z.enum(DISPLAY_STATUSES).optional().describe('Status for the upserted row (update).'),
+  limit: z.number().int().positive().optional().describe(LIMIT_DESC),
+  offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
 });
 
 /**
@@ -23,9 +23,7 @@ const schema = z.object({
 export function registerRegistryTools(server) {
   registerTool(server, 'archgen_registry', {
     title: 'ArchGen registry',
-    description:
-      'Keep the AGENTS.md features registry in sync with .archgen/. Call update after every task completes ' +
-      'and after every plan change — the registry is what every harness reads to know what exists.',
+    description: 'Read or rewrite the AGENTS.md features registry from .archgen/.',
     inputSchema: schema,
     readOnly: false,
     destructive: false,

@@ -1,28 +1,57 @@
 // setup.mjs — the `archgen_setup` tool: install, MCP wiring, health.
 import { z } from 'zod/v4';
-import { registerTool, projectRootArg } from './_register.mjs';
+import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, APPROVE_DESC } from './_register.mjs';
 import { loadAsset } from '../context.mjs';
 import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary, uninstallArchgenMcp } from '../core/mcp-server-manager.mjs';
-import { manageCodegraph, assertLocation, findCodegraph } from '../core/codegraph-manager.mjs';
+import { manageCodegraph, assertLocation, findCodegraph, codegraphState } from '../core/codegraph-manager.mjs';
 import { detectHarnesses } from '../core/harness-wiring.mjs';
 import { platformCapabilities, detectHarness } from '../core/platform-caps.mjs';
 import { checkCapability } from '../core/compat.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
-const ACTION_DESC =
-  'doctor | bootstrap | install_mcp | uninstall_mcp | harnesses | harness_info — see archgen_help.';
+const ACTION_DESC = 'doctor|bootstrap|install_mcp|uninstall_mcp|harnesses|harness_info';
 
 const schema = z.object({
   action: z.enum(['doctor', 'bootstrap', 'install_mcp', 'uninstall_mcp', 'harnesses', 'harness_info']).describe(ACTION_DESC),
-  location: z.enum(['project', 'global', 'both']).optional().describe('Which scope to wire. Defaults to both.'),
-  approve: z.boolean().optional().describe('Required to write any MCP config. Without it you get the plan and nothing is written.'),
-  telemetry: z.enum(['keep', 'off', 'on']).optional().describe('CodeGraph telemetry preference (bootstrap).'),
-  harness: z.string().optional().describe('Harness id (harness_info, harnesses). One harness (harnesses).'),
-  limit: z.number().int().positive().optional().describe('Max items to return. Default 50.'),
-  offset: z.number().int().nonnegative().optional().describe('Skip this many items.'),
+  location: z.enum(['project', 'global', 'both']).optional().describe(LOCATION_DESC),
+  approve: z.boolean().optional().describe(APPROVE_DESC),
+  telemetry: z.enum(['keep', 'off', 'on']).optional().describe('keep|off|on (bootstrap).'),
+  harness: z.string().optional().describe('Harness id (harnesses, harness_info).'),
+  limit: z.number().int().positive().optional().describe(LIMIT_DESC),
+  offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
 });
+
+/**
+ * Collapse a wiring result into counts. The per-config rows are useful when a
+ * write fails; on the happy path they repeat the same status for every
+ * harness and cost more than they say.
+ *
+ * @param {{detected: string[], wired: Array<Record<string, any>>, planned: boolean, binary: any}} result
+ */
+export function summarizeWiring(result) {
+  const rows = result.wired ?? [];
+  const failed = rows.filter((w) => w.status === 'error');
+  // A SKIPPED row is not noise: the config exists but could not be merged
+  // (unreadable, unparseable, or a format we refuse to rewrite), so the
+  // harness is still missing the server. Silence here looks like success.
+  const skipped = rows.filter((w) => w.status === 'skipped');
+  const summary = {
+    detected: result.detected ?? [],
+    written: rows.filter((w) => w.status === 'written').length,
+    unchanged: rows.filter((w) => w.status === 'unchanged').length,
+    planned: rows.filter((w) => w.status === 'planned').length,
+    binary: { bin: result.binary?.bin ?? null, source: result.binary?.source ?? null },
+  };
+  if (failed.length) {
+    summary.failed = failed.map((w) => ({ harness: w.harness, path: w.path, detail: w.detail }));
+  }
+  if (skipped.length) {
+    summary.skipped = skipped.map((w) => ({ harness: w.harness, path: w.path, detail: w.detail }));
+  }
+  return summary;
+}
 
 /**
  * @param {import('@modelcontextprotocol/server').McpServer} server
@@ -31,8 +60,8 @@ export function registerSetupTools(server) {
   registerTool(server, 'archgen_setup', {
     title: 'ArchGen setup',
     description:
-      'Install and wire archgen: report the health of an install, wire the archgen MCP server into every detected ' +
-      'harness, bootstrap CodeGraph (CLI + its MCP + the project index), or remove what was wired.',
+      'ArchGen install health and wiring: doctor, bootstrap, install/uninstall MCP, ' +
+      'detected harnesses, and harness capabilities.',
     inputSchema: schema,
     readOnly: false,
     destructive: false,
@@ -115,7 +144,7 @@ export function registerSetupTools(server) {
       }
 
       if (args.action === 'doctor') {
-        const status = archgenMcpStatus({ projectRoot: ctx.projectRoot, registry, home: ctx.home });
+        const status = archgenMcpStatus({ projectRoot: ctx.projectRoot, registry, home: ctx.home, env: ctx.env });
         const codegraph = findCodegraph(ctx.env);
         const checks = [];
 
@@ -126,12 +155,11 @@ export function registerSetupTools(server) {
         checks.push({
           status: compat.compatible ? 'OK' : 'FAIL',
           msg: !ctx.skill
-            ? 'capability contract — no skill installed, nothing to check (run `npx archgen-skill init`)'
+            ? 'no skill installed — run `npx archgen-skill init`'
             : compat.compatible
-              ? `capability contract satisfied (skill requires archgen-mcp ${compat.required}, server is ${compat.running})`
-              : `CAPABILITY MISMATCH — ${compat.reason}. Update the server: npm i -g archgen-mcp@latest`,
+              ? `capability contract satisfied (needs archgen-mcp ${compat.required}; running ${compat.running})`
+              : `CAPABILITY MISMATCH — ${compat.reason}. Update: npm i -g archgen-mcp@latest`,
         });
-
         checks.push({
           status: ctx.skill ? 'OK' : 'WARN',
           msg: ctx.skill
@@ -140,22 +168,34 @@ export function registerSetupTools(server) {
         });
         checks.push({
           status: status.binary.bin ? 'OK' : 'WARN',
-          msg: `archgen-mcp binary: ${status.binary.bin ?? 'not on PATH (npx fallback used)'} (${status.binary.source})`,
+          msg: status.binary.bin
+            ? `archgen-mcp binary: ${status.binary.bin} (${status.binary.source})`
+            : 'archgen-mcp not on PATH — npx fallback will be used',
         });
         checks.push({
           status: codegraph ? 'OK' : 'WARN',
-          msg: codegraph ? `codegraph ${codegraph.version} at ${codegraph.bin}` : 'codegraph not installed — run archgen_codegraph { action: "ensure" }',
+          msg: codegraph
+            ? `codegraph ${codegraph.version} at ${codegraph.bin}`
+            : 'codegraph not installed — run archgen_codegraph { action: "ensure" }',
         });
         checks.push({
           status: 'OK',
           msg: `node ${process.versions.node} · server ${ctx.serverVersion}`,
         });
+        // Only a problem is worth reporting. A healthy install answers with
+        // its summary and versions; the five OK rows were the same bytes on
+        // every call.
+        const issues = checks.filter((c) => c.status !== 'OK');
+        const failed = issues.some((c) => c.status === 'FAIL');
         return {
-          checks,
-          tally: checks.reduce((acc, c) => ({ ...acc, [c.status]: (acc[c.status] ?? 0) + 1 }), {}),
-          versions: { skill: ctx.skill?.version ?? null, server: ctx.serverVersion, codegraph: codegraph?.version ?? null },
-          mcpTargets: status.targets,
-          node: process.versions.node,
+          status: failed ? 'FAIL' : issues.length ? 'WARN' : 'OK',
+          summary: `${checks.length - issues.length}/${checks.length} checks OK`,
+          checks: issues,
+          versions: {
+            skill: ctx.skill?.version ?? null,
+            server: ctx.serverVersion,
+            codegraph: codegraph?.version ?? null,
+          },
         };
       }
 
@@ -187,6 +227,57 @@ export function registerSetupTools(server) {
       // A capability mismatch is reported, never silently ignored: wiring a
       // skill to an incompatible server is how a broken install is born.
       const compat = checkCapability({ skillDir: ctx.skill?.path ?? null, serverVersion: ctx.serverVersion });
+
+      // An already-wired install is a NO-OP, not a rewrite. "Wired" must mean
+      // the config carries the EXACT entry this server would write — a stale
+      // absolute path is present but broken. A dry run asks the real writer,
+      // so the no-op decision cannot drift from the write it skips.
+      const mcpCheck = wireArchgenMcp({
+        projectRoot: ctx.projectRoot,
+        registry,
+        home: ctx.home,
+        location,
+        approved: false,
+        dryRun: true,
+        env: ctx.env,
+      });
+      const mcpReady = mcpCheck.wired.length > 0 && mcpCheck.wired.every((t) => t.status === 'unchanged');
+
+      // CodeGraph is probed only when the MCP side needs no work: the probe
+      // reads configs and runs local status commands, and there is no reason
+      // to pay for it on an install that is going to write anyway.
+      const cgCheck =
+        mcpReady && (args.telemetry ?? 'keep') === 'keep'
+          ? await manageCodegraph({
+              mode: 'ensure',
+              projectRoot: ctx.projectRoot,
+              registry,
+              location,
+              approved: false,
+              dryRun: true,
+              telemetry: 'keep',
+              home: ctx.home,
+              env: ctx.env,
+            })
+          : null;
+      if (mcpReady && cgCheck?.alreadyConfigured === true) {
+        const cgState = codegraphState({ registry, projectRoot: ctx.projectRoot, home: ctx.home, env: ctx.env, location });
+        return {
+          alreadyConfigured: true,
+          compat,
+          mcp: {
+            wired: mcpCheck.wired.length,
+            binary: { bin: mcpCheck.binary.bin, source: mcpCheck.binary.source },
+          },
+          codegraph: {
+            installed: Boolean(cgState.cli),
+            version: cgCheck.cli.version ?? cgState.cli?.version ?? null,
+            indexed: cgState.indexed,
+            wired: cgState.targets.filter((t) => t.wired).length,
+          },
+        };
+      }
+
       const mcp = wireArchgenMcp({
         projectRoot: ctx.projectRoot,
         registry,
@@ -205,11 +296,15 @@ export function registerSetupTools(server) {
         home: ctx.home,
         env: ctx.env,
       });
+      const mcpSummary = summarizeWiring(mcp);
       return {
         compat,
-        mcp: { detected: mcp.detected, wired: mcp.wired, planned: mcp.planned, binary: mcp.binary },
+        mcp: mcpSummary,
         codegraph,
-        ok: codegraph.ok !== false,
+        // `ok` is the caller's branch point. A config that could not be
+        // merged is still missing the server, so it must not look like
+        // success just because CodeGraph succeeded.
+        ok: codegraph.ok !== false && !mcpSummary.failed && !mcpSummary.skipped,
       };
     },
   });

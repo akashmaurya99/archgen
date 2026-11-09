@@ -229,6 +229,42 @@ export function readJsonConfig(abs) {
 }
 
 /**
+ * True when a config already carries `serverId` under its own key.
+ *
+ * This is a cheap PRESENCE check, shared by the status report and the
+ * installer-skip gate: it answers "is the entry there?", not "is it byte-for-
+ * byte what we would write?". Exact equality is decided by the real writer in
+ * dry-run mode (`mergeJsonConfig` / `mergeTomlConfig`), so the no-op decision
+ * cannot drift from the write it skips.
+ *
+ * A TOML config is checked by its section header — the writer emits exactly
+ * that shape — and a JSON/JSONC config by walking the dotted key.
+ *
+ * @param {string} abs absolute config path
+ * @param {any} cfg the registry's config entry (key + format)
+ * @param {string} serverId 'archgen' | 'codegraph'
+ * @returns {boolean}
+ */
+export function configHasServer(abs, cfg, serverId) {
+  if (!existsSync(abs)) return false;
+  try {
+    if (cfg.format === 'toml') {
+      const header = `[mcp_servers.${serverId}]`;
+      return readFileSync(abs, 'utf8').split('\n').some((l) => l.trim() === header);
+    }
+    const { data } = readJsonConfig(abs);
+    let cur = data;
+    for (const part of String(cfg.key ?? 'mcpServers').split('.')) {
+      if (!cur || typeof cur !== 'object') return false;
+      cur = cur[part];
+    }
+    return Boolean(cur && typeof cur === 'object' && cur[serverId]);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The nested object for a new config file.
  *
  * The key may be a DOTTED PATH: opencode keeps its servers at

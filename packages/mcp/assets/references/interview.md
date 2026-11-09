@@ -31,10 +31,10 @@ Classify into ONE `intent_class`, state it in one sentence, and record in `answe
 
 | `intent_class` | Signal | Elicitation Strategy | Max Rounds (incl. R0) | Default `scope_class` |
 |---|---|---|---|---|
-| `GREENFIELD-SYSTEM` | Net-new system; no host repo | Full PRD-grade discovery | $\le 6$ | `LARGE` |
-| `GREENFIELD-MODULE` | Net-new module in existing repo | Infer from host repo first; targeted forks | $\le 3$ | `MEDIUM` |
-| `BROWNFIELD-FEATURE` | Additive behavior in existing repo | Survey first; ask only unresolved gaps ($\le 5$ Qs) | $\le 3$ | `MEDIUM` / `SMALL` |
-| `BROWNFIELD-CHANGE` | Modify existing behavior in place | Survey first; diff current vs target behavior | $\le 3$ | `SMALL` |
+| `GREENFIELD-SYSTEM` | Net-new system; no host repo | Full PRD-grade discovery | ≤6 | `LARGE` |
+| `GREENFIELD-MODULE` | Net-new module in existing repo | Infer from host repo first; targeted forks | ≤3 | `MEDIUM` |
+| `BROWNFIELD-FEATURE` | Additive behavior in existing repo | Survey first; ask only unresolved gaps (≤5 Qs) | ≤3 | `MEDIUM` / `SMALL` |
+| `BROWNFIELD-CHANGE` | Modify existing behavior in place | Survey first; diff current vs target behavior | ≤3 | `SMALL` |
 
 Infer `scope_class` (`SMALL`/`MEDIUM`/`LARGE`), state with 1-line reasoning, and let the user confirm or override. Never interrogate brownfield tasks with greenfield PRD questions.
 
@@ -73,9 +73,7 @@ Present the finalized module map + numeric NFRs for confirmation. `[wait for use
 
 ### Traceability — `feeds:` tags
 
-Valid literal `feeds:` targets (join multiple with `|`, e.g., `feeds: prd.goals|arch.modules`):
-- **PRD:** `prd.problem`, `prd.goals`, `prd.non_goals`, `prd.personas`, `prd.metrics`, `prd.nfrs`, `prd.constraints`, `prd.integrations`, `prd.risks`, `prd.out_of_scope`
-- **Architecture:** `arch.modules`, `arch.data_contracts`, `arch.api_contracts`, `arch.environment_matrix`, `arch.naming_conventions`
+`feeds:` targets are the `prd.*` keys (`problem`, `goals`, `non_goals`, `personas`, `metrics`, `nfrs`, `constraints`, `integrations`, `risks`, `out_of_scope`) and the `arch.*` keys (`modules`, `data_contracts`, `api_contracts`, `environment_matrix`, `naming_conventions`). Join multiple with `|` (e.g. `feeds: prd.goals|arch.modules`).
 
 ## GREENFIELD-MODULE — net-new inside an existing system (≤3 rounds)
 
@@ -109,8 +107,8 @@ Immediately surface contradictions (scale vs budget, feature vs technical constr
 ## Token discipline
 
 - Batch 3–5 questions per turn; never ping-pong single questions.
-- Respect round ceilings (`GREENFIELD-SYSTEM` $\le 6$, all others $\le 3$ including R0).
-- Never re-ask facts provided in the prompt, calibration, or `codebase-map.md`.
+- Respect round ceilings (`GREENFIELD-SYSTEM` ≤6; all others ≤3 including R0).
+- Never re-ask what the prompt, calibration, or `codebase-map.md` already answers.
 
 ## Answers-file format (machine-readable, enables non-interactive runs)
 

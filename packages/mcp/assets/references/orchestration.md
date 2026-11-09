@@ -22,8 +22,8 @@ Dispatch AFTER artifacts exist and `archgen_plan{action:'validate'}` returns `da
 ### Verification pass — FULL-DEPTH, every run
 
 Pass the output of `archgen_plan{action:'brief', kind:'verifier'}` verbatim (includes pre-rendered evidence map, Mermaid dependency graph, and `archgen_docs` validation status). The verifier executes all four steps:
-1. Runs `archgen_plan{action:'verify', tasksYaml, planDir}` $\rightarrow$ requires `APPROVE` (checks cycles, dangling refs, wave ownership overlap, acceptance criteria, bidirectional plan$\leftrightarrow$task coverage).
-2. Runs `archgen_docs{action:'validate', slugDir}` (if markdown exists) $\rightarrow$ requires `valid:true` (zero broken links/anchors).
+1. Runs `archgen_plan{action:'verify', tasksYaml, planDir}` → requires `APPROVE` (checks cycles, dangling refs, wave ownership overlap, acceptance criteria, bidirectional plan↔task coverage).
+2. Runs `archgen_docs{action:'validate', slugDir}` (if markdown exists) → requires `valid:true` (zero broken links/anchors).
 3. Audits judgment dimensions across `plans/` and `tasks.yaml`:
    - Wave boundary sanity (no artificial serialization).
    - Objectively verifiable acceptance criteria (runnable command or observable output).
@@ -40,20 +40,20 @@ Pass the output of `archgen_plan{action:'brief', kind:'verifier'}` verbatim (inc
    ```
    *Any report missing the `COVERAGE:` table is incomplete—treat as `ISSUES` and require examination of omitted dimensions.*
 
-### Efficiency — fewer rounds + zero duplicate work, NEVER shallower checks
-Never weaken or skip checks. Efficiency comes strictly from: (1) the exhaustive coverage table, (2) capping automatic rounds at 2, (3) batching fixes per file, and (4) never re-applying failed edits.
+### Efficiency — fewer rounds, never shallower checks
+Never weaken or skip checks. Efficiency comes only from the exhaustive coverage table, the 2-round cap, batching fixes per file, and never re-applying a failed edit.
 
 ### Fix discipline — batch per file, dedupe repeats
 When `VERDICT: ISSUES` returns:
 - Group findings by file and apply all fixes to a file in a single edit pass.
-- If Round $N$ reports the identical finding as Round $N-1$, re-read the target file and apply a structural fix rather than repeating the prior edit.
+- If Round N reports the identical finding as Round N-1, re-read the target file and apply a structural fix rather than repeating the prior edit.
 - If you disagree with a verifier finding, surface it verbatim to the user rather than ignoring or silently overriding it.
 
 ### Gate protocol — 2 automatic rounds, then ask the user
-1. **Round 1:** Dispatch verifier. `APPROVE` $\rightarrow$ proceed to `§plan-review`. `ISSUES` $\rightarrow$ batch-fix all findings $\rightarrow$ Round 2.
+1. **Round 1:** Dispatch verifier. `APPROVE` → proceed to `§plan-review`. `ISSUES` → batch-fix all findings → Round 2.
 2. **Round 2:** Dispatch verifier.
-   - `APPROVE` $\rightarrow$ ask user recommendation-first: *"Run the verifier once more? 1. No, proceed (recommended) 2. Yes, run one more pass."*
-   - `ISSUES` $\rightarrow$ batch-fix all findings $\rightarrow$ ask user recommendation-first: *"Run the verifier once more to confirm fixes? 1. Yes, one more pass (recommended) 2. Waive remaining findings and proceed."*
+   - `APPROVE` → ask user recommendation-first: *"Run the verifier once more? 1. No, proceed (recommended) 2. Yes, run one more pass."*
+   - `ISSUES` → batch-fix all findings → ask user recommendation-first: *"Run the verifier once more to confirm fixes? 1. Yes, one more pass (recommended) 2. Waive remaining findings and proceed."*
 3. **Round 3+ (user-approved):** Each approval runs 1 pass.
 4. **Proceeding without `APPROVE`:** If the user declines another pass without a prior `APPROVE` on record, quote all unverified/outstanding findings verbatim and obtain an **explicit user waiver** before entering `§plan-review` (Hard Rule 2). Never cite token/cost numbers when reporting rounds.
 
@@ -65,8 +65,8 @@ Run AFTER Verifier `APPROVE` and BEFORE the User Gate. Dispatch read-only review
 - **LARGE:** 1 top-tier holistic reviewer (2nd allowed ONLY if context size requires splitting `plans/` vs `docs/`; never split by concern).
 
 Reviewers are strictly read-only. The orchestrator applies fixes, re-runs `validate` + Verifier Gate, and manages the bounded review loop:
-1. **Pass 1:** Zero findings $\rightarrow$ stage complete. Findings $\rightarrow$ batch-fix per file, re-run `validate` + Verifier Gate $\rightarrow$ Pass 2.
-2. **Pass 2:** Zero findings $\rightarrow$ stage complete. Findings remain $\rightarrow$ consolidate and ask user once (`§interview/how-to-ask`): *"Run one more targeted review pass on the N open findings? 1. One more pass (recommended) 2. Waive findings and proceed."*
+1. **Pass 1:** Zero findings → stage complete. Findings → batch-fix per file, re-run `validate` + Verifier Gate → Pass 2.
+2. **Pass 2:** Zero findings → stage complete. Findings remain → consolidate and ask user once (`§interview/how-to-ask`): *"Run one more targeted review pass on the N open findings? 1. One more pass (recommended) 2. Waive findings and proceed."*
 3. **Pass 3 (final):** On `1`, run **EXACTLY ONE** final pass, then stop. If findings remain, require an explicit user waiver before the User Gate.
 
 ## §investigate — root-cause protocol
@@ -104,7 +104,7 @@ Maintain a **dispatch ledger** (`dispatchKey -> agent session` using the `dispat
 
 ### Parallel dispatch — no overlap, and never more than three at once
 
-**HARD CAP: MAX 3 LIVE PARALLEL SUB-AGENTS.** Execute larger waves in batches of $\le 3$. Before parallel dispatch, verify all six invariants:
+**HARD CAP: MAX 3 LIVE PARALLEL SUB-AGENTS.** Execute larger waves in batches of ≤3. Before parallel dispatch, verify all six invariants:
 1. **Same wave only:** Dispatch only tasks returned in the current wave by `archgen_tasks{action:'next'}`.
 2. **Disjoint write globs:** Enforced by `next` (`OWNERSHIP_CONFLICT` blocks overlap).
 3. **No concurrent gate agents:** Never run Verifier or Reviewer agents while worker waves are executing.
@@ -114,7 +114,7 @@ Maintain a **dispatch ledger** (`dispatchKey -> agent session` using the `dispat
 
 ### Native sub-agents (preferred)
 - **Claude Code:** Background `Agent` tool per task; use `git worktree` isolation when globs border shared files.
-- **Cursor:** Background subagents; enable isolation when running $>2$ parallel workers.
+- **Cursor:** Background subagents; enable isolation when running >2 parallel workers.
 - **Antigravity:** Async `invoke_subagent`.
 - **Codex:** `spawn_agent` (children cannot nest—flatten orchestration).
 - **Gemini CLI:** Parallel `@agents` lack write isolation—use only for read-only/survey waves unless wrapped in `git worktree`.
@@ -143,7 +143,7 @@ It bundles: task ID/title, verbatim acceptance criteria, `file_ownership` globs,
 
 ## Failure policy
 
-- **Mechanism failure** (missing/spawn crash/permissions) $\rightarrow$ follow fallback flow above (do not mark task `failed`).
-- **Task execution failure** (non-zero exit or unmet acceptance) $\rightarrow$ mark `failed` via `set_status`. **NEVER auto-retry.**
+- **Mechanism failure** (missing/spawn crash/permissions) → follow fallback flow above (do not mark task `failed`).
+- **Task execution failure** (non-zero exit or unmet acceptance) → mark `failed` via `set_status`. **NEVER auto-retry.**
 - Downstream dependents are automatically held in `blockedByFailure` by the resolver.
 - Report failed task ID, logs, and a proposed fix task (`new ID`, `depends_on: []`, inheriting failed `file_ownership` globs) to the user. `[wait for user]`

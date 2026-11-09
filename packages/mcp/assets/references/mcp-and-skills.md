@@ -27,7 +27,7 @@ Capability-skill loading is **MANDATORY** whenever planned work matches a regist
 0. **Execution points (runs TWICE per matched task):**
    - **Pre-planning scan:** During GENERATE / BROWNFIELD / UPDATE, match every task before finalizing the plan.
    - **Pre-dispatch verification:** Immediately before dispatching a worker, verify required skills are installed.
-1. **MATCH:** Call `archgen_skills{action:'match', title, summary, fileOwnership}`. Uses case-insensitive whole-word (`\b`) matching (e.g., `"ui"` matches `"redesign the ui"` or `"ui-skills"`, never `"build"` or `"guide"`). Any hit with `policy: "required"` makes steps 2–5 mandatory.
+1. **MATCH:** Call `archgen_skills{action:'match', title, summary, fileOwnership}`. Matching is case-insensitive whole-word (`\b`): `"ui"` matches `"redesign the ui"`, never `"build"`. Any hit with `policy: "required"` makes steps 2–5 mandatory.
 2. **RESOLVE:** `archgen_skills` checks all project, harness, and global skill directories (`<project>/.agents/skills/<slug>/SKILL.md` and `~/.agents/skills/<slug>/`) and reports installation status and path.
 3. **INSTALL (if missing):** Skip if already installed (cache hit). Otherwise call:
    ```
@@ -58,7 +58,7 @@ Managed by `archgen_skills` at `packages/mcp/assets/skill-registry.json` (never 
 }
 ```
 
-- `domain`: Human-readable label injected into the worker contract (`"Motion work: follow ..."`).
-- `matches[]`: Case-insensitive whole-word tokens matched against task `title`, `summary`, and `file_ownership`.
-- `policy`: `"required"` (mandatory pre-planning + pre-dispatch enforcement) or `"on-demand"` (loaded only when explicitly requested).
-- **Granular install:** Each domain maps to and installs ONE specific skill (`--skill <slug>`), never an entire skill family.
+- `domain`: label injected into the worker contract.
+- `matches[]`: case-insensitive whole-word tokens matched against task `title`, `summary`, and `file_ownership`.
+- `policy`: `"required"` (mandatory pre-planning + pre-dispatch) or `"on-demand"` (only when requested).
+- **Granular install:** each domain installs ONE skill (`--skill <slug>`), never a family.
