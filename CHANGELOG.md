@@ -2,6 +2,188 @@
 
 Nothing yet.
 
+## [0.1.2] - 2026-11-09
+
+The release that makes the plan of record **visible**, keeps the tests **out of
+the source tree**, and stops the tools from **dumping** what the agent only
+needed a piece of.
+
+**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.**
+
+| Artifact | Published as | Tag |
+|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.2` |
+| `packages/cli` | `archgen-skill` | `vcli-0.1.2` |
+
+### Fixed — the codegraph manager ignored the server's own environment
+
+The dangling half of the Copilot-home commit: `detectHarnesses` takes the
+environment so it can resolve a NAMED home (`COPILOT_HOME`), but
+`manageCodegraph` was still reading the implicit `process.env` default. Every
+other caller already passed it — the tools, the CLI, the wiring module. A
+server running with its OWN environment (a sandbox, a test harness, a
+`COPILOT_HOME` that is not the process default) detected the Copilot harness
+from the WRONG environment and wired the file the client never reads.
+
+### Added — every archgen artifact is committed
+
+Nothing told the agent to commit the plan. Worse, the worker contract says
+*"commit your work scoped to the owned files"* — and `file_ownership` only
+ever names product code — so `.archgen/<slug>/` was **structurally
+un-committable**, and the natural fallback was to gitignore it. The plan of
+record, the run state and the decisions were invisible in the history, and a
+reviewer could not see what was planned or why it changed.
+
+The whole archgen footprint is now version-controlled:
+
+- `.archgen/<slug>/` — the plan of record, including the `.agent/` run state;
+- `.agents/skills/archgen/` — the canonical installed skill, one copy for the
+  team;
+- `.claude/skills/archgen` — the harness bridge into that store;
+- `AGENTS.md` and `CLAUDE.md` — the registry hub and its pointer;
+- the project MCP config — the wiring that gives the team the tools.
+
+Machine-local state stays out: `.codegraph/` (the local symbol index),
+`.archgen/.runtime/` (the legacy heartbeat) and the `.archgen-version` deploy
+stamp.
+
+The rule is stated **once per audience** — the invariant in the always-on
+`SKILL.md` (Hard Rule 10), the path list in the on-demand
+`§artifact-templates/artifact-tracking`, the commit points in the GENERATE
+and START-WORK steps, and the audit in the verifier brief, because the gate
+agent never reads the skill and the brief is the only thing that reaches it.
+
+### Changed — the source tree and the test tree are separate
+
+`references/code-standards.md` said *"colocate tests beside the code they
+test—never in a disconnected root `/tests` directory"*, and
+`architecture.yaml` said `test_placement: colocated`. Agents were not
+ignoring the rule — **the rule was the opposite of the standard**, and the
+template the agent copies taught it.
+
+The test tree is now a **sibling** of the source tree, never a child:
+
+```
+src/features/catalog/api/routes.ts
+  -> tests/unit/features/catalog/api/<the language's test file>
+```
+
+- **The PLACE is fixed; the NAME is not.** The standard says where a test
+  lives, never what it is called — the naming convention belongs to the
+  language's ecosystem and to the host repository, so no per-language pattern
+  is hardcoded anywhere.
+- **Ownership follows the tree.** A task that owns `src/features/x/**` also
+  owns `tests/unit/features/x/**` — a worker may not write outside
+  `file_ownership`, so the mirrored path has to be in it. A plan may give the
+  tests to a dedicated task instead, as long as some task owns them.
+- **One narrow exception:** a language whose runner discovers tests only
+  inside the package directory keeps those files beside the code; everything
+  the runner can discover elsewhere still lives in the test tree.
+- **In a brownfield repo** the survey reports where the tests live today, and
+  the plan moves only the modules it touches — it never migrates the rest.
+
+The standards file, the templates, the always-on skill and the verifier brief
+now say the same thing, and six gates hold them there.
+
+### Changed — the tools fetch; they no longer dump
+
+The root cause was not a big payload. It was that **no collection-shaped
+action had an item-level selector** — so "I need one section" cost "the whole
+topic", and the only way to get one row was to take the whole set and pick
+from it. The tool surface made dumping the cheaper option for the server and
+the more expensive one for the agent.
+
+Four changes, applied uniformly:
+
+- **A selector on every collection.** `taskId` (tasks, plan coverage),
+  `skillId` (skills), `file` + `section` (docs), `harness` (setup),
+  `section` (references, skills). One item instead of the set.
+- **A bound the caller owns.** Every tool takes `limit` and `offset`
+  (default 50). A bound never hides data: the count is in `meta.total`, and
+  `meta.next` is the exact call that returns the next slice. A large project
+  — a 500-task plan, a 250-node graph, a 200-file artifact tree — can no
+  longer dump itself.
+- **A map to the rest.** Every answer's `meta` carries `available` (what
+  else exists), `more` (the call that fetches one item) and `next`. The
+  agent always knows there is more without the server having sent any of it.
+- **The expensive default is gone.** `archgen_refs{action:'read'}` with no
+  section returned the WHOLE topic (4,013 tokens); it now returns the
+  section index, and the whole topic is `section: '*'` — deliberate.
+
+Measured on a real plan, before → after:
+
+| Call | Before | After |
+|---|---:|---:|
+| `archgen_refs{read}` (no section) | 4,013 tok | 1,353 tok |
+| `archgen_refs{search}` | 1,641 tok | 853 tok |
+| `archgen_skills{load}` (installed) | the file **three times** | rules + index |
+
+### Fixed — the same text delivered twice
+
+Measured, not guessed: every payload was scanned for text delivered more than
+once.
+
+- **`archgen_skills{action:'load'}` returned the skill file THREE times** — as
+  `content`, as the extracted `rules`, and as the section index. The rules
+  are what the agent must obey and the index is what it may pull; the file
+  itself is one call away. The raw content is gone.
+- **`archgen_skills{action:'match'}` returned every matched row three
+  times** — under `matched`, `required` and `installed`. The install state
+  now rides ON the row, and the two subsets are ids.
+- **A search reported the same line once per nested section.** Sections
+  overlap (a parent's body contains its children's), so a three-level nesting
+  delivered the same sentence three times. Every hit is now reported ONCE,
+  under the deepest section that contains it — in `archgen_refs{search}` and
+  `archgen_docs{map}` alike.
+- **The reference index listed the topic's own H1 as a section**, so index 0
+  was "the whole document". The H1 is the topic, not a section.
+- **The setup harness list was delivered under two keys.** One key now.
+
+The two payloads that were NOT changed are deliberate: the gate `brief` and
+the worker `contract` carry the same facts as prose (for the sub-agent) and
+as fields (for the orchestrator) — two audiences, two formats.
+
+### Changed — the token figures are measured, not typed
+
+`npm run test:budget` now measures the ON-DEMAND content too — the protocol
+references, the median section, the dispatch briefs, the artifact templates —
+and reports it in its output. The README quotes the tool instead of a
+hand-typed number that went stale on the next edit: every figure in it was
+already out of date when this release started.
+
+What 0.1.2 ships, measured:
+
+| | Tokens |
+|---|---:|
+| `skill/SKILL.md` (always-on) | 7,420 |
+| MCP tool catalog (9 tools, always-on) | 5,242 |
+| **Always-on total** | **12,662** — 39% of a 32k window |
+| Protocol references (on demand) | 13,265 across 5 files |
+| A typical reference section (on demand) | 238 — the median of 39 |
+| Dispatch briefs / artifact templates (on demand) | 2,626 / 2,358 |
+
+### Fixed — the changelog had stopped being a changelog
+
+The sections were out of order (0.1.0 sat above 0.1.1) and the rewrite
+measurement was duplicated across two releases, so there were two places for
+it to go stale. The file is back to its own convention — `[Unreleased]`, then
+every release newest first — and each measurement lives in the release that
+produced it.
+
+`docs/architecture.md` also claimed that *"archgen does not build its own
+history layer"* while the new rule requires the plan of record to be
+committed. Git IS the history layer; the document now says so, and says what
+is tracked.
+
+### Migration
+
+- **Upgrading is recommended** — the skill's rules changed: the archgen
+  artifacts are committed, and the tests live in their own tree. Run
+  `npx archgen-skill init` (or `archgen-skill update`) to pick them up.
+- The 0.1.1 symlink-path upgrade note still applies if your project path
+  contains a symlink: on macOS that includes anything under `/tmp` or
+  `/var`.
+
 ## [0.1.1] - 2026-11-07
 
 A patch release. One defect shipped in 0.1.0 and it was severe enough to
@@ -145,66 +327,6 @@ pays — and then the on-demand cost per section, measured: the five protocol
 references are 13,265 tokens *in total*, but the **median section is 238
 tokens**, and a capability skill's rules are ~160.
 
-### Added — every archgen artifact is committed
-
-Nothing told the agent to commit the plan. Worse, the worker contract says
-*"commit your work scoped to the owned files"* — and `file_ownership` only
-ever names product code — so `.archgen/<slug>/` was **structurally
-un-committable**, and the natural fallback was to gitignore it. The plan of
-record, the run state and the decisions were invisible in the history, and a
-reviewer could not see what was planned or why it changed.
-
-The whole archgen footprint is now version-controlled:
-
-- `.archgen/<slug>/` — the plan of record, including the `.agent/` run state;
-- `.agents/skills/archgen/` — the canonical installed skill, one copy for the
-  team;
-- `.claude/skills/archgen` — the harness bridge into that store;
-- `AGENTS.md` and `CLAUDE.md` — the registry hub and its pointer;
-- the project MCP config — the wiring that gives the team the tools.
-
-Machine-local state stays out: `.codegraph/` (the local symbol index),
-`.archgen/.runtime/` (the legacy heartbeat) and the `.archgen-version` deploy
-stamp.
-
-The rule is stated **once per audience** — the invariant in the always-on
-`SKILL.md` (Hard Rule 10), the path list in the on-demand
-`§artifact-templates/artifact-tracking`, the commit points in the GENERATE
-and START-WORK steps, and the audit in the verifier brief, because the gate
-agent never reads the skill and the brief is the only thing that reaches it.
-
-### Changed — the source tree and the test tree are separate
-
-`references/code-standards.md` said *"colocate tests beside the code they
-test—never in a disconnected root `/tests` directory"*, and
-`architecture.yaml` said `test_placement: colocated`. Agents were not
-ignoring the rule — **the rule was the opposite of the standard**, and the
-template the agent copies taught it.
-
-The test tree is now a **sibling** of the source tree, never a child:
-
-```
-src/features/catalog/api/routes.ts
-  -> tests/unit/features/catalog/api/<the language's test file>
-```
-
-- **The PLACE is fixed; the NAME is not.** The standard says where a test
-  lives, never what it is called — the naming convention belongs to the
-  language's ecosystem and to the host repository, so no per-language pattern
-  is hardcoded anywhere.
-- **Ownership follows the tree.** A task that owns `src/features/x/**` also
-  owns `tests/unit/features/x/**` — a worker may not write outside
-  `file_ownership`, so the mirrored path has to be in it. A plan may give the
-  tests to a dedicated task instead, as long as some task owns them.
-- **One narrow exception:** a language whose runner discovers tests only
-  inside the package directory keeps those files beside the code; everything
-  the runner can discover elsewhere still lives in the test tree.
-- **In a brownfield repo** the survey reports where the tests live today, and
-  the plan moves only the modules it touches — it never migrates the rest.
-
-The standards file, the templates, the always-on skill and the verifier brief
-now say the same thing, and six gates hold them there.
-
 ### Migration
 
 - **Upgrading is required if your project path contains a symlink.** On
@@ -303,83 +425,15 @@ different texts. There is now one owner, and the guard catches mixed case.
 Every artifact the agent reads was rewritten: `SKILL.md`, the five protocol
 references, the four dispatch briefs and the templates. The rules are denser,
 each rule has exactly **one owner**, and the briefs carry a concrete worked
-example instead of an abstract template. The before/after measurement is in
-the [0.1.0](#010---2026-11-07) entry — it is a record of that rewrite, and a
-changelog that restates a past measurement in a later release is a second
-place for it to go stale.
+example instead of an abstract template.
 
-What 0.1.1 ships, measured by `npm run test:budget`:
-
-| | Tokens |
-|---|---:|
-| `skill/SKILL.md` (always-on) | 7,420 |
-| MCP tool catalog (9 tools, always-on) | 5,242 |
-| **Always-on total** | **12,662** — 39% of a 32k window |
-| Protocol references (on demand) | 13,265 across 5 files |
-| A typical reference section (on demand) | 238 — the median of 39 |
-| Dispatch briefs / artifact templates (on demand) | 2,626 / 2,358 |
-
-The on-demand figures are now measured **by the tool** and reported in its
-output, so the README can quote a number instead of a hand-typed one that
-goes stale on the next edit.
-
-### Changed — the tools fetch; they no longer dump
-
-The root cause was not a big payload. It was that **no collection-shaped
-action had an item-level selector** — so "I need one section" cost "the whole
-topic", and the only way to get one row was to take the whole set and pick
-from it. The tool surface made dumping the cheaper option for the server and
-the more expensive one for the agent.
-
-Four changes, applied uniformly:
-
-- **A selector on every collection.** `taskId` (tasks, plan coverage),
-  `skillId` (skills), `file` + `section` (docs), `harness` (setup),
-  `section` (references, skills). One item instead of the set.
-- **A bound the caller owns.** Every tool takes `limit` and `offset`
-  (default 50). A bound never hides data: the count is in `meta.total`, and
-  `meta.next` is the exact call that returns the next slice. A large project
-  — a 500-task plan, a 250-node graph, a 200-file artifact tree — can no
-  longer dump itself.
-- **A map to the rest.** Every answer's `meta` carries `available` (what
-  else exists), `more` (the call that fetches one item) and `next`. The
-  agent always knows there is more without the server having sent any of it.
-- **The expensive default is gone.** `archgen_refs{action:'read'}` with no
-  section returned the WHOLE topic (4,013 tokens); it now returns the
-  section index, and the whole topic is `section: '*'` — deliberate.
-
-Measured on a real plan, before → after:
-
-| Call | Before | After |
-|---|---:|---:|
-| `archgen_refs{read}` (no section) | 4,013 tok | 1,353 tok |
-| `archgen_refs{search}` | 1,641 tok | 853 tok |
-| `archgen_skills{load}` (installed) | the file **three times** | rules + index |
-
-### Fixed — the same text delivered twice
-
-Measured, not guessed: every payload was scanned for text delivered more than
-once.
-
-- **`archgen_skills{action:'load'}` returned the skill file THREE times** — as
-  `content`, as the extracted `rules`, and as the section index. The rules
-  are what the agent must obey and the index is what it may pull; the file
-  itself is one call away. The raw content is gone.
-- **`archgen_skills{action:'match'}` returned every matched row three
-  times** — under `matched`, `required` and `installed`. The install state
-  now rides ON the row, and the two subsets are ids.
-- **A search reported the same line once per nested section.** Sections
-  overlap (a parent's body contains its children's), so a three-level nesting
-  delivered the same sentence three times. Every hit is now reported ONCE,
-  under the deepest section that contains it — in `archgen_refs{search}` and
-  `archgen_docs{map}` alike.
-- **The reference index listed the topic's own H1 as a section**, so index 0
-  was "the whole document". The H1 is the topic, not a section.
-- **The setup harness list was delivered under two keys.** One key now.
-
-The two payloads that were NOT changed are deliberate: the gate `brief` and
-the worker `contract` carry the same facts as prose (for the sub-agent) and
-as fields (for the orchestrator) — two audiences, two formats.
+| | Before | After | |
+|---|---:|---:|---|
+| `skill/SKILL.md` (always-on) | 8,240 | 6,916 | −16.1% |
+| Protocol references | 17,676 | 12,431 | −29.7% |
+| Dispatch briefs | 2,874 | 2,526 | −12.1% |
+| **All agent-readable content** | 32,019 | 25,265 | **−21.1%** |
+| **Always-on (SKILL.md + tool catalog)** | 13,103 | **11,280** | **−14.3%** |
 
 ### Fixed — the skill named two actions that do not exist
 
