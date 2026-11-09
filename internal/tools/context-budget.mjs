@@ -124,15 +124,17 @@ function classifySkillFile(rel) {
   return 'other';
 }
 
-/** Which references each SKILL.md mode actually pulls in. */
+/** Which references each SKILL.md mode actually pulls in. The protocol
+ * documents live in the MCP package now (`assets/references/`), so the paths
+ * are relative to the MCP dir, not the skill tree. */
 const MODE_REFERENCES = {
-  'GENERATE': ['references/interview.md', 'references/artifact-templates.md', 'references/orchestration.md', 'references/code-standards.md', 'references/platforms.md'],
-  'BROWNFIELD': ['references/interview.md', 'references/artifact-templates.md', 'references/orchestration.md', 'references/code-standards.md', 'references/platforms.md'],
-  'START-WORK': ['references/orchestration.md', 'references/code-standards.md', 'references/artifact-templates.md', 'references/platforms.md'],
-  'UPDATE': ['references/orchestration.md', 'references/artifact-templates.md', 'references/code-standards.md'],
-  'ROLLBACK': ['references/orchestration.md'],
-  'INSTALL-MCP': ['references/mcp-and-skills.md', 'references/platforms.md'],
-  'FETCH-SKILL': ['references/mcp-and-skills.md'],
+  'GENERATE': ['assets/references/interview.md', 'assets/references/artifact-templates.md', 'assets/references/orchestration.md', 'assets/references/platforms.md'],
+  'BROWNFIELD': ['assets/references/interview.md', 'assets/references/artifact-templates.md', 'assets/references/orchestration.md', 'assets/references/platforms.md'],
+  'START-WORK': ['assets/references/orchestration.md', 'assets/references/artifact-templates.md', 'assets/references/platforms.md'],
+  'UPDATE': ['assets/references/orchestration.md', 'assets/references/artifact-templates.md'],
+  'ROLLBACK': ['assets/references/orchestration.md'],
+  'INSTALL-MCP': ['assets/references/mcp-and-skills.md', 'assets/references/platforms.md'],
+  'FETCH-SKILL': ['assets/references/mcp-and-skills.md'],
 };
 
 /** Dev-only subtrees that never ship to users (mirrors the CLI's DEV_ONLY_RELPATHS). */
@@ -145,7 +147,7 @@ function isDevOnly(rel) {
   return DEV_ONLY_RELPATHS.some((p) => rel === p || rel.startsWith(p + '/'));
 }
 
-async function auditSkill() {
+async function auditSkill(mcpDir) {
   const files = walk(skillDir);
   const { rows, total, exact } = await countFiles(files);
   const allFiles = rows.map((r) => ({ file: relative(skillDir, r.file).split(sep).join('/'), tokens: r.tokens, bytes: r.bytes }));
@@ -165,7 +167,11 @@ async function auditSkill() {
 
   const scenarios = [];
   const modeRefs = MODE_REFERENCES['GENERATE'];
-  const modeRefTokens = modeRefs.reduce((n, rel) => n + find(rel), 0);
+  const mcpRef = (rel) => {
+    const p = join(mcpDir, rel);
+    return existsSync(p) ? estimateTokens(readFileSync(p, 'utf8')) : 0;
+  };
+  const modeRefTokens = modeRefs.reduce((n, rel) => n + mcpRef(rel), 0);
   const refAndAssets = byFile
     .filter((r) => r.file.startsWith('references/') || r.file.startsWith('assets/'))
     .reduce((n, r) => n + r.tokens, 0);
@@ -177,15 +183,15 @@ async function auditSkill() {
   });
   scenarios.push({
     id: 'skill-mode',
-    label: "SKILL.md + one mode's references (GENERATE path)",
+    label: "SKILL.md + one mode's protocol references (GENERATE path)",
     tokens: skillMd + modeRefTokens,
-    note: `SKILL.md + ${modeRefs.length} reference files`,
+    note: `SKILL.md + ${modeRefs.length} MCP-served reference files`,
   });
   scenarios.push({
     id: 'skill-reference-max',
-    label: 'SKILL.md + ALL references + assets (max readable prose)',
+    label: 'SKILL.md + local references/assets (max readable prose in the skill)',
     tokens: skillMd + refAndAssets,
-    note: 'the ceiling for a well-behaved agent that pulls every reference',
+    note: 'the ceiling for prose that actually ships inside the skill tree',
   });
   scenarios.push({
     id: 'skill-full',
@@ -396,10 +402,8 @@ function statusFor(pct) {
   return 'OK';
 }
 
-const skill = skillDir ? await auditSkill() : null;
-// The MCP catalog is measured from the live server; a missing/unloadable MCP
-// package degrades to "not measured" rather than failing the whole report.
 const mcpDir = resolve(opts.mcpDir ?? join(SCRIPT_DIR, '..', '..', 'packages', 'mcp'));
+const skill = skillDir ? await auditSkill(mcpDir) : null;
 const catalog = await auditCatalog(mcpDir);
 const onDemand = auditOnDemand(mcpDir);
 const projectRoot = opts.project ? resolve(opts.project) : process.cwd();

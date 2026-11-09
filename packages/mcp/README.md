@@ -37,7 +37,7 @@ Requires **Node.js >= 20** (the official MCP SDK v2 floor).
 
 | Tool | Use it for |
 |---|---|
-| `archgen_plan` | validate · verifier gate · dependency graph · blast radius · coverage · **scaffold** (the artifact set for a scope class) · **brief** (a dispatch brief) |
+| `archgen_plan` | validate · verifier gate · dependency graph · blast radius · coverage · **profile** (evidence-based scope + per-artifact decisions) · **scaffold** (the artifact set for a scope class) · **brief** (a dispatch brief) |
 | `archgen_tasks` | next wave · set status · list · resume snapshot · **contract** (the assembled worker prompt) |
 | `archgen_docs` | navigate markdown artifacts: section index, one section, token map, reference integrity |
 | `archgen_registry` | refresh / read the AGENTS.md features registry |

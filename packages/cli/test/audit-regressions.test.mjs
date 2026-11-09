@@ -18,6 +18,21 @@ const CLI_ROOT = join(HERE, '..');            // packages/cli
 const REPO_ROOT = join(CLI_ROOT, '..', '..'); // monorepo root
 const BIN = join(CLI_ROOT, 'bin', 'archgen.mjs');
 
+/**
+ * Copy the CLI package without node_modules. Installed dependencies can carry
+ * symlinks or transient files that make cpSync throw ENOENT, which used to
+ * turn this regression test flaky for an unrelated reason. The copy is done
+ * entry by entry: a cpSync `filter` trips a Node 26 ERR_INTERNAL_ASSERTION
+ * on this tree's `bin/archgen-mcp` symlink.
+ */
+function copyCliPackage(dest) {
+  mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(CLI_ROOT, { withFileTypes: true })) {
+    if (entry.name === 'node_modules') continue;
+    cpSync(join(CLI_ROOT, entry.name), join(dest, entry.name), { recursive: true });
+  }
+}
+
 let dir;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'archgen-audit-')); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
@@ -123,7 +138,7 @@ test('BUG-SYNC1 // AUDIT-REGRESSION sync-vendor does not copy OS junk (.DS_Store
   const sandbox = mkdtempSync(join(tmpdir(), 'archgen-sync-'));
   try {
     mkdirSync(join(sandbox, 'packages'), { recursive: true });
-    cpSync(CLI_ROOT, join(sandbox, 'packages', 'cli'), { recursive: true });
+    copyCliPackage(join(sandbox, 'packages', 'cli'));
     cpSync(join(REPO_ROOT, 'skill'), join(sandbox, 'skill'), { recursive: true });
     writeFileSync(join(sandbox, 'skill', '.DS_Store'), 'junk');
     const r = spawnSync(
@@ -160,7 +175,7 @@ test('BUG-SYNC2 // AUDIT-REGRESSION sync-config main() runs when launched throug
   const sandbox = mkdtempSync(join(tmpdir(), 'archgen-sync2-'));
   try {
     mkdirSync(join(sandbox, 'packages'), { recursive: true });
-    cpSync(CLI_ROOT, join(sandbox, 'packages', 'cli'), { recursive: true });
+    copyCliPackage(join(sandbox, 'packages', 'cli'));
     cpSync(join(REPO_ROOT, 'skill'), join(sandbox, 'skill'), { recursive: true });
     cpSync(join(REPO_ROOT, 'archgen.config.json'), join(sandbox, 'archgen.config.json'));
 

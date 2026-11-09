@@ -1,16 +1,165 @@
 {
-  "version": 1,
+  "version": 2,
   "_readme": [
-    "Canonical depth ladder: scope class -> the artifact set a plan MUST have.",
+    "Canonical depth ladder: scope class -> the artifact set a plan MAY need.",
     "",
-    "This is the machine-readable twin of references/artifact-templates.md § Plan",
-    "depth by scope class. The reference keeps the AUTHORING RULES; this file",
-    "owns the ARTIFACT SET, so the orchestrator never guesses which files a",
-    "SMALL/MEDIUM/LARGE plan needs. `archgen_plan{action:'scaffold'}` serves it.",
+    "`profile` is the evidence-based classifier: an intent baseline plus",
+    "explicit signals produces a score, a scope class, and a per-artifact",
+    "create / reuse / omit decision. `archgen_plan{action:'profile'}` serves it.",
     "",
-    "A drift test (packages/mcp/test/core/depth-ladder.test.mjs) pins this file",
-    "against the reference's stated minimums."
+    "`classes` remains the authoring contract: it carries the plan sections,",
+    "the edge-case minimum and the forbidden artifacts for each scope.",
+    "",
+    "A drift test (packages/mcp/test/core/depth-ladder.test.mjs and",
+    "plan-profile.test.mjs) pins this file against the reference and the",
+    "classifier's behavior."
   ],
+  "profile": {
+    "_readme": [
+      "Scope = intent baseline + signal weights + module count.",
+      "Missing evidence NEVER pushes the class up: an uncertain profile stays",
+      "low-confidence and asks ONE question. That rule is what stops the",
+      "'everything is LARGE' default."
+    ],
+    "intentBase": {
+      "BROWNFIELD-CHANGE": 0,
+      "BROWNFIELD-FEATURE": 1,
+      "GREENFIELD-MODULE": 2,
+      "GREENFIELD-SYSTEM": 4
+    },
+    "signalWeights": {
+      "new-module": 2,
+      "multi-module": 2,
+      "public-contract": 2,
+      "data-migration": 3,
+      "security-sensitive": 2,
+      "multi-service": 3,
+      "external-integration": 1,
+      "cross-team": 1,
+      "regulated": 3,
+      "irreversible": 2,
+      "product-facing": 1,
+      "production": 1,
+      "prototype": -1,
+      "existing-prd": 0,
+      "existing-architecture": 0,
+      "existing-adr": 0
+    },
+    "moduleWeights": [
+      { "min": 2, "add": 1 },
+      { "min": 4, "add": 2 }
+    ],
+    "thresholds": { "medium": 2, "large": 5 },
+    "signals": [
+      "new-module",
+      "multi-module",
+      "public-contract",
+      "data-migration",
+      "security-sensitive",
+      "multi-service",
+      "external-integration",
+      "cross-team",
+      "regulated",
+      "irreversible",
+      "product-facing",
+      "production",
+      "prototype",
+      "existing-prd",
+      "existing-architecture",
+      "existing-adr"
+    ],
+    "artifactRules": [
+      {
+        "path": ".archgen/<slug>/tasks.yaml",
+        "purpose": "the task contract every plan needs"
+      },
+      {
+        "path": ".archgen/<slug>/plans/<slug>.md",
+        "purpose": "the plan of record"
+      },
+      {
+        "path": ".archgen/<slug>/answers.yaml",
+        "scopeIn": ["MEDIUM", "LARGE"],
+        "purpose": "captured requirements and the plan profile"
+      },
+      {
+        "path": ".archgen/<slug>/codebase-map.md",
+        "intentIn": ["BROWNFIELD-FEATURE", "BROWNFIELD-CHANGE"],
+        "purpose": "survey evidence; reuse a fresh map when one already exists"
+      },
+      {
+        "path": ".archgen/<slug>/docs/prd.md",
+        "scopeIn": ["LARGE"],
+        "intentIn": ["GREENFIELD-SYSTEM"],
+        "signalSome": ["product-facing", "production"],
+        "reuseSignal": "existing-prd",
+        "purpose": "product requirements for a product-facing system"
+      },
+      {
+        "path": ".archgen/<slug>/architecture.yaml",
+        "scopeIn": ["MEDIUM", "LARGE"],
+        "signalSome": [
+          "new-module",
+          "multi-module",
+          "public-contract",
+          "data-migration",
+          "multi-service",
+          "external-integration"
+        ],
+        "reuseSignal": "existing-architecture",
+        "purpose": "the contract source of truth for cross-module work"
+      },
+      {
+        "path": ".archgen/<slug>/decisions/NNNN-<title>.md",
+        "signalSome": ["irreversible", "regulated", "data-migration"],
+        "max": 3,
+        "reuseSignal": "existing-adr",
+        "purpose": "irreversible decisions only — never routine choices"
+      },
+      {
+        "path": ".archgen/<slug>/docs/<module>.md",
+        "scopeIn": ["LARGE"],
+        "signalSome": ["multi-module", "multi-service", "external-integration"],
+        "purpose": "topology diagrams for non-obvious systems (<=15 nodes)"
+      },
+      {
+        "path": ".archgen/<slug>/docs/mermaid-snippets.md",
+        "purpose": "diagram snippets — only when a diagram is created"
+      }
+    ],
+    "depthBudgets": {
+      "SMALL": {
+        "planContextParagraphs": 1,
+        "edgeCasesPerTask": 0,
+        "maxTasks": 5,
+        "prdPagesPerModule": 0,
+        "architectureLinesPerModule": 0,
+        "maxDiagramNodes": 0,
+        "maxAdrs": 0,
+        "maxPlanLines": 60
+      },
+      "MEDIUM": {
+        "planContextParagraphs": 4,
+        "edgeCasesPerTask": 3,
+        "maxTasks": 12,
+        "prdPagesPerModule": 0,
+        "architectureLinesPerModule": 20,
+        "maxDiagramNodes": 0,
+        "maxAdrs": 1,
+        "maxPlanLines": 180
+      },
+      "LARGE": {
+        "planContextParagraphs": 4,
+        "edgeCasesPerTask": 7,
+        "maxTasks": 30,
+        "prdPagesPerModule": 1,
+        "architectureLinesPerModule": 20,
+        "maxDiagramNodes": 15,
+        "maxAdrs": 3,
+        "maxPlanLines": 400
+      }
+    }
+  },
   "classes": {
     "SMALL": {
       "label": "SMALL — add or touch a few things",
@@ -20,13 +169,13 @@
         { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
         { "path": ".archgen/<slug>/plans/<slug>-note.md", "required": true, "purpose": "a lean plan note" }
       ],
-      "planSections": ["Intent", "Tasks", "Risks"],
+      "planSections": ["Profile", "Intent", "Tasks", "Risks"],
       "minEdgeCasesPerTask": 0,
       "requires": [],
-      "forbids": ["docs/prd.md", "architecture.yaml", "decisions/"],
+      "forbids": ["docs/prd.md", "architecture.yaml", "decisions/", "docs/<module>.md"],
       "notes": [
         "Every task entry STILL carries repo-root-relative paths verbatim in file_ownership, in each step, and in verification commands.",
-        "No Context section, no diagrams, no PRD."
+        "No Context section, no diagrams, no PRD, no architecture contract, no ADRs."
       ]
     },
     "MEDIUM": {
@@ -34,16 +183,18 @@
       "intentDefaults": ["GREENFIELD-MODULE", "BROWNFIELD-FEATURE"],
       "roundCap": 3,
       "artifacts": [
+        { "path": ".archgen/<slug>/answers.yaml", "required": true, "purpose": "captured requirements and the plan profile" },
         { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
         { "path": ".archgen/<slug>/plans/<slug>.md", "required": true, "purpose": "the full plan" }
       ],
-      "planSections": ["Context", "Per-task sections", "Verification steps"],
+      "planSections": ["Profile", "Context", "Per-task sections", "Verification steps"],
       "minEdgeCasesPerTask": 3,
       "requires": ["plan context of 2-4 paragraphs", "per-task sections with approach + edge cases + out-of-scope", "ordered runnable verification steps"],
-      "forbids": ["docs/prd.md", "architecture.yaml"],
+      "forbids": ["docs/prd.md"],
       "notes": [
         "One `<id> — <title>` heading per task, in dependency order.",
-        "Verification steps are repo-root-relative (no `../`, no `--plan .`), exact, and runnable."
+        "Verification steps are repo-root-relative (no `../`, no `--plan .`), exact, and runnable.",
+        "architecture.yaml is created ONLY when the profile finds a cross-module or contract trigger; fetch its skeleton with scaffold{scope:'LARGE',file:'architecture.yaml'}."
       ]
     },
     "LARGE": {
@@ -51,27 +202,28 @@
       "intentDefaults": ["GREENFIELD-SYSTEM"],
       "roundCap": 6,
       "artifacts": [
-        { "path": ".archgen/<slug>/answers.yaml", "required": true, "purpose": "the captured requirements" },
+        { "path": ".archgen/<slug>/answers.yaml", "required": true, "purpose": "the captured requirements and plan profile" },
         { "path": ".archgen/<slug>/docs/prd.md", "required": true, "purpose": "the product requirements — FR ids tasks cite" },
         { "path": ".archgen/<slug>/architecture.yaml", "required": true, "purpose": "the contract source of truth" },
         { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
         { "path": ".archgen/<slug>/plans/<slug>.md", "required": true, "purpose": "the full plan" },
-        { "path": ".archgen/<slug>/decisions/NNNN-<title>.md", "required": false, "purpose": "formal ADRs (one per decision)" },
-        { "path": ".archgen/<slug>/docs/<module>.md", "required": false, "purpose": "per-module diagrams (≤15 nodes each)" }
+        { "path": ".archgen/<slug>/decisions/NNNN-<title>.md", "required": false, "purpose": "formal ADRs (irreversible decisions only)" },
+        { "path": ".archgen/<slug>/docs/<module>.md", "required": false, "purpose": "per-module diagrams (<=15 nodes each) when topology is non-obvious" }
       ],
-      "planSections": ["Context", "Per-task sections", "Edge-case matrices", "Verification steps"],
+      "planSections": ["Profile", "Context", "Per-task sections", "Edge-case matrices", "Verification steps"],
       "minEdgeCasesPerTask": 3,
       "requires": [
-        "docs/prd.md written BEFORE tasks.yaml (~1 page per major module)",
+        "docs/prd.md when the profile marks it create (~1 page per major module)",
         "architecture.yaml with naming_conventions, data_contracts, api_contracts and environment_matrix",
         "an edge-case matrix per task (every row maps to an acceptance bullet)",
-        "per-module diagrams (≤15 nodes each) plus one integration diagram",
+        "per-module diagrams only when the profile marks them create (<=15 nodes each) plus one integration diagram",
         "MEDIUM-grade plan sections"
       ],
       "forbids": [],
       "notes": [
         "Requirement ids (FR-<MODULE>-nn) are defined in docs/prd.md and cited from tasks.yaml acceptance lines.",
-        "architecture.yaml is the anti-hallucination source of truth: tasks cite its keys instead of restating shapes from memory."
+        "architecture.yaml is the anti-hallucination source of truth: tasks cite its keys instead of restating shapes from memory.",
+        "Every artifact is conditional on the profile: a LARGE plan may reuse an existing PRD or architecture document, and must record that decision."
       ]
     }
   },

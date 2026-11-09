@@ -44,14 +44,16 @@ private key. So the server owns a boundary:
 The same principle runs through the installer: it asserts containment
 **before** it mutates anything.
 
-## The two-gate flow
+## The gate flow
 
-No task executes until two gates pass, in order — never skipped, even for SMALL scopes:
+No task executes until the gates pass, in order — never skipped. Gate **depth**
+scales with the profile; the deterministic floor runs for every scope:
 
-1. **Verifier gate.** A verifier sub-agent runs `archgen_plan{action:'verify'}` (deterministic floor: cycles, dangling refs, same-wave ownership overlap, missing acceptance criteria, plan↔task coverage), then judges what the tools cannot: wave-boundary sanity, objectively verifiable acceptance criteria, edge-case coverage, code-standards plausibility. It returns a verdict **plus a coverage table** — every dimension marked `PASS` / `FAIL` / `N/A` — so one exhaustive pass replaces a discovery loop. The orchestrator fixes and re-dispatches until APPROVE.
-2. **User gate.** Only after verifier approval does the orchestrator present the artifact list, wave summary (`archgen_tasks{action:'next'}`), and ownership map, and ask "Approve to start work?"
+1. **Verifier gate.** `archgen_plan{action:'verify'}` always runs the deterministic floor (cycles, dangling refs, same-wave ownership overlap, missing acceptance criteria, plan↔task coverage). Judgment scales: SMALL is audited by the main agent; MEDIUM by one strong verifier sub-agent; LARGE by one top-tier verifier. The verifier judges wave-boundary sanity, objectively verifiable acceptance criteria, edge-case coverage against the profile budget, code-standards plausibility, and **scope & artifact necessity** (no artifact without a consumer, no duplicated host document, every reuse/omit recorded). It returns a verdict **plus a coverage table** — every dimension marked `PASS` / `FAIL` / `N/A` — so one exhaustive pass replaces a discovery loop.
+2. **Plan review.** Zero findings, or an explicit user waiver. SMALL/MEDIUM are reviewed by the main agent against the profile; LARGE gets one independent reviewer. Review areas include `scope fit & minimalism`; the loop is capped at three passes.
+3. **User gate.** The orchestrator presents the artifact list with create/reuse/omit decisions, the wave summary (`archgen_tasks{action:'next'}`), and the ownership map, and asks "Approve to start work?"
 
-Both gates are ONE holistic agent over the WHOLE plan — never one agent per
+A gate pass is ONE holistic agent over the WHOLE plan — never one agent per
 dimension or per concern. Cross-issue reasoning catches contradictions a
 narrow slice misses, and one agent costs a fraction of several.
 
@@ -61,6 +63,23 @@ graph, and the reference-integrity result. The sub-agent therefore makes no
 tool call of its own, and the orchestrator spends no call assembling
 context — which is also why the brief is read from any working directory
 (every path in it is absolute).
+
+## Scope is an evidence decision
+
+`archgen_plan{action:'profile'}` is read-only and deterministic: an intent
+baseline plus explicit signals (module count, public contracts, migrations,
+security surface, production/product-facing, existing host documents, …)
+produces a score, a `SMALL` / `MEDIUM` / `LARGE` class, a confidence, and one
+`create` / `reuse` / `omit` decision per artifact with a reason.
+
+Two rules stop the old "everything is LARGE" default: **missing evidence never
+pushes the class up** (a thin profile stays low-confidence and asks exactly one
+question), and **each artifact is decided independently** (a LARGE plan may
+still omit ADRs and diagrams). Existing host PRDs, architecture docs, and ADRs
+come back as `reuse`; the plan records the path and writes only the delta.
+`scaffold` then serves only the skeletons for the required set, and the plan's
+`## Profile` section (or `answers.yaml plan_profile:`) records every decision so
+the verifier can audit it.
 
 ## Wave execution & ownership discipline
 
@@ -79,7 +98,7 @@ archgen does not build its own history layer — **git is the history layer, and
 
 ## Dot-folder convention
 
-Everything generated goes inside `.archgen/<project-slug>/` at the target repo root — architecture.yaml, Mermaid docs, ADRs in `decisions/`, plans, `tasks.yaml`, worker logs under `results/`. Nothing else is written outside it except source edits performed by approved-task workers. Generation is right-sized: SMALL scopes get tasks entries only; MEDIUM gets plan + tasks.yaml; LARGE/greenfield gets the full artifact set. Existing artifacts are never regenerated unless reality changed. The whole `.archgen/<slug>/` tree is **version-controlled** — it is the plan of record, not scratch space.
+Everything generated goes inside `.archgen/<project-slug>/` at the target repo root — the artifacts the profile marks create: `tasks.yaml`, plans, and, only with a trigger, `architecture.yaml`, PRD docs, ADRs in `decisions/`, diagrams, and worker/gate state under `.agent/` (`notes/`, `reports/`, `resume.md`). Nothing else is written outside it except source edits performed by approved-task workers. Generation is right-sized by evidence: a localized change gets a plan note + `tasks.yaml` + a recorded profile; a real feature adds the contract and depth its signals justify; only a production, product-facing, multi-module system gets the full stack. Existing host documents are cited, never regenerated, and every omit/reuse decision is recorded in the plan's Profile section. The whole `.archgen/<slug>/` tree is **version-controlled** — it is the plan of record, not scratch space.
 
 ## Platform detection & web-search fallback
 
@@ -163,6 +182,7 @@ to ship a skill whose declared minimum exceeds the server's version.
 
 | Tool output | Replaces hand-assembly in |
 |---|---|
+| `archgen_plan { action: 'profile' }` | the scope score + per-artifact create/reuse/omit decisions + depth budgets |
 | `archgen_plan { action: 'scaffold' }` | the depth ladder's artifact set + skeletons |
 | `archgen_plan { action: 'brief' }` | the verifier / review / survey / investigate briefs |
 | `archgen_tasks { action: 'contract' }` | the worker prompt contract (8 rules) |

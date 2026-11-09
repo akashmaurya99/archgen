@@ -209,10 +209,14 @@ test('the templates agree with the standards on the test tree', () => {
   assert.match(arch, /test_placement:[^\n]*tests\/unit/, 'architecture.yaml must place tests in the test tree');
   assert.doesNotMatch(
     tasks,
-    /src\/[^\n]*\.test\./,
-    'the task template still owns a test file inside src/',
+    /(^|["'\s])src\/[^\n]*(\.test\.|\.spec\.)/,
+    'the task template still owns a language-specific test file inside src/',
   );
-  assert.match(tasks, /tests\/unit\/[^\n]*\.test\./, 'the task template must show the mirrored test path');
+  assert.match(
+    tasks,
+    /<test-root>\/unit\/<[^>]+>/,
+    'the task template must show the mirrored sibling test path',
+  );
 });
 
 test('the artifact-tracking section names every path that must be committed', () => {

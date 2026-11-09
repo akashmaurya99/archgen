@@ -25,7 +25,8 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 | \`validate\` | schema, cycles, dangling refs, ownership, acceptance | tasksYaml, planDir? |
 | \`verify\` | deterministic verifier gate → APPROVE or ISSUES | tasksYaml, planDir |
 | \`coverage\` | tasks covered vs missing in the plans | tasksYaml, planDir |
-| \`scaffold\` | required artifact set + skeletons for a scope class | scope, slug? |
+| \`profile\` | evidence-based scope + per-artifact create/reuse/omit decisions | intent, signals?, modules?, tasks?, slug? |
+| \`scaffold\` | artifact set + skeletons for a scope class | scope, slug?, file? |
 | \`brief\` | ready-to-send sub-agent prompt (graph, docs check, evidence map rendered) | kind, tasksYaml? |
 | \`graph\` | dependency graph; \`format:'mermaid'\` for a diagram | tasksYaml, node?, module?, format?, status? |
 | \`impact\` | direct + transitive dependents of a task id or path | tasksYaml, target |
@@ -39,7 +40,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 **Gotchas**
 - \`status\` only affects mermaid; \`module\` cannot combine with \`node\` or mermaid.
 - Whole-graph mermaid is refused above 250 nodes—scope with \`node\` or \`module\`.
-- \`scaffold\` returns each file's CONTENT and **writes nothing**—you write under \`.archgen/<slug>/\`. Adding or dropping files is a right-sizing defect.
+- \`scaffold\` returns each file's CONTENT and **writes nothing**—you write under \`.archgen/<slug>/\`. The profile decides which artifacts are create/reuse/omit; required files must exist and every omission needs a recorded reason.
 - \`brief\` kinds: verifier | review | survey | investigate. It derives the slug from \`tasksYaml\` when omitted; every path is ABSOLUTE (works from any cwd). Verifier/review briefs render the graph, reference-integrity result, and evidence map, so the sub-agent needs no tool call.
 - Verifier/reviewer return \`VERDICT:\` + a COVERAGE table (every dimension PASS / FAIL / N/A); findings without it are INCOMPLETE.
 - Every error carries the exact next call (\`Next:\`/\`Why:\`)—do not retry the same call.

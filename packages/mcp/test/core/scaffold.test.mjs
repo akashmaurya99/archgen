@@ -48,6 +48,18 @@ test('every scoped artifact carries the same generator token', () => {
   }
 });
 
+test('the scaffold emits EXACTLY ONE provenance header per artifact', () => {
+  // The canonical templates used to carry their own header AND scaffold
+  // prepended one, so every served tasks.yaml/architecture.yaml opened with
+  // two schema_version blocks. One header, one source of truth.
+  const s = buildScaffold(ladder, 'LARGE', { slug: 'demo', generator: 'archgen v1.2.3' });
+  for (const name of ['tasks.yaml', 'architecture.yaml']) {
+    const body = s.skeletons[name];
+    const headers = body.match(/^# schema_version:/gm) ?? [];
+    assert.equal(headers.length, 1, `${name} must carry exactly one provenance header`);
+  }
+});
+
 test('an unknown scope class is a typed INVALID_INPUT', () => {
   assert.throws(
     () => buildScaffold(ladder, 'HUGE', { slug: 'demo' }),
@@ -125,7 +137,7 @@ test('the scaffold serves the CANONICAL templates, not a second copy', () => {
   // The served copy is the template + the provenance header + slug substitution.
   const served = s.skeletons['architecture.yaml'];
   assert.ok(served.includes('# schema_version: 1'), 'the provenance header is prepended');
-  for (const line of onDisk.split('\n').filter((l) => l.trim() && !l.includes('<slug>') && !l.includes('<feature>'))) {
+  for (const line of onDisk.split('\n').filter((l) => l.trim() && !l.includes('<slug>') && !l.includes('<feature>') && !l.includes('<project name>'))) {
     assert.ok(served.includes(line), `the served template must contain the canonical line: ${line}`);
   }
   assert.ok(s.skeletons['docs/mermaid-snippets.md'].includes('graph TB'), 'the mermaid snippets must be served');

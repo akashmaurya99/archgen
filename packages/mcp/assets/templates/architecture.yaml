@@ -1,54 +1,51 @@
-# schema_version: 1
-# generator: archgen
-# generated_at: 2026-08-26T09:00:00.000Z
-name: Acme Shop
-slug: acme-shop # maps to .archgen/acme-shop/
-stack:
-  language: typescript
-  runtime: node20
-  framework: nextjs
-  database: postgres
-structure: # planned folder tree defined BEFORE coding
-  - path: src/features/<feature>/
-    purpose: feature modules (api, internal)
-  - path: src/shared/
-    purpose: cross-feature utilities; MUST NOT import from features/
-  - path: src/config/
-    purpose: typed env parsing + constants
-  - path: tests/unit/features/<feature>/
-    purpose: unit tests — the test tree, a SIBLING of src/ that mirrors the source path
-naming_conventions: # referenced by every task step and file_ownership entry
-  file_naming: kebab-case files; feature folder matches module name
-  dir_layout: "<module>/{api,internal}; shared utilities in src/shared/ only; tests mirror the source path under tests/unit/"
-  symbol_casing: PascalCase types, camelCase functions, SCREAMING_SNAKE env vars
+name: <project name>
+slug: <slug> # maps to .archgen/<slug>/
+toolchain: # the host ecosystem — survey fills this before planning
+  language: <language>
+  runtime: <runtime and version>
+  package_manager: <package manager and command>
+  build: <build command>
+  test: <test command>
+  lint: <lint command>
+  typecheck: <typecheck command, or "not applicable">
+  source_root: <source root>
+  test_root: <test root>
+existing_docs: # host sources of truth; cite these instead of regenerating them
+  - { path: "<path>", kind: "prd|architecture|adr|readme", status: "current|stale" }
+structure: # planned tree, defined BEFORE coding
+  - path: <source-root>/<module>/
+    purpose: <one-line purpose>
+  - path: <test-root>/unit/<module>/
+    purpose: unit tests — the test tree, a SIBLING of the source root, mirroring the source path
+naming_conventions: # every task step and file_ownership entry cites these
+  file_naming: <host language/framework convention>
+  dir_layout: "<source-root>/<module>/...; shared code is separate; tests mirror the source path under <test-root>/unit/"
+  symbol_casing: <host language convention>
   test_placement: tests/unit/<path under the source root>/<the language's test file> — the test tree is a SIBLING of the source tree, never inside it
 modules: # one entry per module; repeat per module
-  - name: catalog
-    responsibility: product browsing + search
-    owns: ["src/features/catalog/**"]
+  - name: <module>
+    responsibility: <single purpose>
+    owns: ["<source-root>/<module>/**", "<test-root>/unit/<module>/**"]
     depends_on_modules: [] # DAG; drives task depends_on edges
     key_interfaces: # ONLY exports other modules may import
-      - CatalogApi (src/features/catalog/api/index.ts)
+      - <InterfaceName> (<source-root>/<module>/<entry file>)
 data_contracts: # one block per entity; repeat per entity
-  order:
-    storage: postgres table orders (migrations/NNNN_orders.sql)
+  <entity>:
+    storage: <table/file/store + migration path>
     fields:
-      - { field: id, type: uuid, required: true, notes: pk }
-      - { field: total_cents, type: integer, required: true, notes: ">= 0" }
-      - { field: status, type: "enum(pending,paid,failed)", required: true }
+      - { field: <name>, type: <type>, required: true, notes: "<constraint>" }
 api_contracts: # one block per operation; repeat per operation
-  payments:
-    - endpoint: /api/checkout/pay
-      method: POST
-      auth: session cookie; 401 when absent
-      request_payload: { order_id: uuid }
-      success: "200 {payment_id: uuid, status: paid}"
-      error_shape: { code: string, message: string, retryable: boolean }
-environment_matrix: # unparsed vars fail fast at startup in src/config/
-  - { var: DATABASE_URL, dev: local docker postgres, ci: ephemeral service, prod: secret ref, required: true }
-decisions: # summary index; full records live in decisions/NNNN-title.md
+  <module>:
+    - endpoint: <METHOD /path or function signature>
+      auth: <rule, or none>
+      request_payload: { <field>: <type> }
+      success: "<status/shape or return type>"
+      error_shape: { code: "<type>", message: "<type>", retryable: "<type>" }
+environment_matrix: # unparsed vars fail fast at the config boundary
+  - { var: <ENV_VAR>, dev: <value>, ci: <value>, prod: <value>, required: true }
+decisions: # index only; full records live in decisions/NNNN-title.md
   - id: D1
-    title: Postgres over MongoDB
-    context: ACID order transactions + relational reporting
-    decision: Postgres 16 with Prisma
-    consequences: schema migrations required per release
+    title: <irreversible or hard-to-reverse decision>
+    context: <forces and constraints>
+    decision: <chosen option>
+    consequences: <trade-offs and migration cost>

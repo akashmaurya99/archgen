@@ -1,6 +1,100 @@
 ## [Unreleased]
 
-Nothing yet.
+Scope is now **measured**, and an artifact has to **earn** its place.
+
+### Added — `archgen_plan{action:'profile'}` — the scope classifier
+
+The skill used to map an intent straight onto a scope class, and a scope class
+made every artifact in it mandatory. A greenfield prototype therefore paid for a
+PRD, an architecture contract, ADRs and diagrams it did not need.
+
+The new action is read-only and deterministic. An intent baseline plus explicit
+signals (module count, public contracts, data migrations, security surface,
+production/product-facing, existing host documents, …) produces a score, a
+`SMALL` / `MEDIUM` / `LARGE` class, a confidence, and **one decision per
+artifact**:
+
+```
+archgen_plan { action: 'profile', intent: 'BROWNFIELD-FEATURE',
+               signals: ['multi-module'], modules: 2, slug: 'demo' }
+```
+
+- **`scopeClass`, `confidence`, `score`, `rationale`, `missingSignals`,
+  `escalateIf`** — the decision is explainable, not a vibe.
+- **`artifacts[]`** — `create` / `reuse` / `omit` per artifact, each with a
+  reason. Existing host PRDs, architecture documents and ADRs come back as
+  `reuse`; the plan cites the path and writes only the delta.
+- **`depth`** — hard ceilings for plan context, edge cases per task, PRD pages,
+  architecture lines, diagram nodes, ADRs and plan length.
+- **Missing evidence never raises the class.** A thin profile stays
+  low-confidence and asks exactly one calibration question.
+
+`scaffold` now answers with `requiredArtifacts`, `optionalArtifacts`,
+`artifactPolicy`, `omissionPolicy` and `depthBudgets`, and its `nextStep`
+starts at the profile. The decision is recorded in the plan's `## Profile`
+section (SMALL) or `answers.yaml` `plan_profile:` (MEDIUM/LARGE).
+
+### Changed — artifacts have a consumer, and the host repository wins
+
+- **Necessity over completeness.** Every candidate artifact answers: who reads
+  it, what decision it changes, is the fact already in the repo, and what
+  breaks if it is omitted. No consumer → do not create it; record why.
+- **Reuse over regenerate.** A second copy of an existing PRD, architecture
+  document or ADR is a defect, not thoroughness.
+- **Proportional gates.** The deterministic `verify` floor runs for every
+  scope; the judgment verifier and the plan review scale with it — SMALL is
+  audited by the main agent, MEDIUM gets one verifier sub-agent, LARGE gets a
+  top-tier verifier and an independent reviewer. A ninth coverage dimension,
+  **scope & artifact necessity**, joins the verifier's sweep, and the reviewer's
+  "enhancement opportunities" area becomes **scope fit & minimalism**.
+- **The interview stopped guessing.** Round 0 is scope calibration, the
+  intent→scope column is gone, and a question the prompt, repo, profile or
+  survey already answers is never asked.
+- **The survey got two more sections**: `Existing docs` (host documents and
+  freshness — the reuse candidates) and `Toolchain` (source/test roots,
+  build/test/lint commands, naming conventions).
+
+### Changed — the skill no longer prescribes a stack
+
+`references/code-standards.md` and every template are language-neutral: the host
+ecosystem's toolchain, formatter, naming and test runner come first, and the
+skill states only invariants (strict checking, explicit absence, structured
+errors, one purpose per module, < 1000 LOC, why-comments, a sibling test tree).
+The canonical templates carry `toolchain:` and `existing_docs:` blocks and
+neutral placeholders instead of a TypeScript/Next.js/Prisma example.
+
+### Fixed
+
+- **Two provenance headers per artifact.** The canonical templates carried their
+  own `schema_version`/`generator`/`generated_at` header AND `scaffold`
+  prepended one, so every served `tasks.yaml` and `architecture.yaml` opened
+  with two. Exactly one now, and a regression test pins it.
+- **The token report measured files that no longer exist.** The context-budget
+  tool still pointed at `skill/references/*.md`; the protocol documents live in
+  the MCP package now, so the GENERATE scenario measures the files the server
+  actually serves.
+- **The regression test copied the tree it did not need.** `BUG-SYNC1` copied
+  `packages/cli` wholesale, including installed dependencies whose symlinks can
+  make `cpSync` throw — a flake with nothing to do with the behaviour under
+  test. The copy now skips `node_modules`.
+- **A stale path in the docs.** The architecture walkthrough still pointed at
+  `results/`; gate and investigation reports live under `.agent/reports/`.
+
+Measured, 0.1.3 → unreleased:
+
+| | 0.1.3 | Unreleased |
+|---|---:|---:|
+| `skill/SKILL.md` (always-on) | 6,252 | 5,996 |
+| MCP tool catalog (9 tools, always-on) | 4,695 | 5,056 |
+| **Always-on total** | **10,947** | **11,052** |
+| Protocol references (on demand) | 12,931 | 11,829 |
+| Median reference section | 238 | 224 |
+| Dispatch briefs (on demand) | 2,416 | 2,921 |
+| Artifact templates (on demand) | 2,347 | 2,592 |
+
+The catalog grew by the new action; `SKILL.md` and the five protocol references
+shrank. The always-on total stays under the **11,500** CI ceiling, so the gate
+still fails a regression instead of reaching a user.
 
 ## [0.1.3] - 2026-11-09
 

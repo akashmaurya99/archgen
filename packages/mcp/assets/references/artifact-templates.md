@@ -1,6 +1,6 @@
 # Artifact templates — copy, fill, never invent structure
 
-## Provenance header (SHOULD on every NEW tasks.yaml / architecture.yaml)
+## Provenance header (every NEW tasks.yaml / architecture.yaml)
 
 Begin `tasks.yaml` and `architecture.yaml` with the three YAML comment lines returned by `archgen_plan{action:'scaffold'}`:
 
@@ -10,130 +10,131 @@ Begin `tasks.yaml` and `architecture.yaml` with the three YAML comment lines ret
 # generated_at: 2026-08-26T09:00:00.000Z
 ```
 
-**Version token rules (NEVER guess or hand-type a version):**
-1. Paste the header `scaffold` returns verbatim.
-2. When backfilling manually, resolve in this order: exact `MAJOR.MINOR.PATCH` from `.archgen-version` adjacent to `SKILL.md`; else the semver `"version"` in adjacent `archgen.config.json`; else omit the token (`# generator: archgen`).
-3. `npx archgen-skill migrate --apply` (`--check` is the default dry run) snapshots to `.archgen/.backup/<ts>/migrate/` and backfills missing headers idempotently.
+**Never guess or hand-type a version:** paste the header verbatim. Manual backfill resolves in order: exact semver from `.archgen-version` next to `SKILL.md`; the semver in adjacent `archgen.config.json`; otherwise omit the token. `npx archgen-skill migrate --apply` backfills idempotently (`--check` is the dry run). All files from one run share one `generated_at`.
 
-All files created in a single run share one ISO-8601 `generated_at` timestamp at line 1–3.
+## Artifact necessity & reuse
 
-## Self-containment rules (anti-hallucination)
+An artifact exists only when it has a consumer and changes a decision. Apply this test to every candidate:
 
-Artifacts are executed by sub-agents with zero conversation history. Enforce strictly:
+1. **Consumer** — which worker, verifier, maintainer, or operator reads it?
+2. **Decision** — what future choice does it change?
+3. **Source** — is the fact already in code, `README`, a host ADR, or another artifact? If yes, cite that source; do not duplicate it.
+4. **Risk** — what defect does omitting it cause? If "none", omit it and record the reason.
 
-1. **Full repo-root-relative paths:** Every task step, `file_ownership` glob, artifact, and verification command MUST use complete paths (`src/features/catalog/api/routes.ts`), sourced exclusively from `architecture.yaml` (`structure:`/`owns[]`) or surveyed code. Never use bare filenames.
-2. **Traceable naming:** Every file, symbol, table, and env var must cite its governing `naming_conventions` key (e.g., `camelCase per naming_conventions.symbol_casing`). Add missing keys to `architecture.yaml` before citing them.
-3. **Zero chat dependency:** `.archgen/<slug>/` must be 100% self-contained. Unwritten facts do not exist.
-4. **Forbidden phrases:** Never write `"as discussed"`, `"the usual pattern"`, `"same as before"`, or `"see chat"`. Cite concrete artifact paths/keys instead.
-5. **Artifact-relative cross-references:** Point to contracts rather than restating them (e.g., `see ../architecture.yaml data_contracts.orders` or `../architecture.yaml api_contracts.payments.request_payload`).
-6. **GitHub-exact heading anchors:** Lowercase, strip punctuation (keep `-` and `_`), and convert every whitespace character to `-` without collapsing runs (`## TASK-02 — Auth API` → `#task-02--auth-api`). Broken anchors block verification.
-7. **Verifier-compatible IDs:** `archgen_plan{action:'verify'}` rejects unknown `UPPERCASE-NN` tokens in `plans/*.md`. Cite `FR-<MODULE>-nn` IDs in `tasks.yaml` acceptance criteria and `docs/prd.md`; inside `plans/*.md`, link via anchor (`../docs/prd.md#fr-catalog-01`). Every `tasks.yaml` ID must appear in `plans/*.md` (bidirectional coverage check).
+`archgen_plan{action:'profile'}` decides each artifact independently:
+
+- **create** — the trigger is present; write it to the depth budget and stop.
+- **reuse** — the host repository already owns the fact. Record the exact path in the plan Profile (and `answers.yaml` when present); write only the delta if the source is stale.
+- **omit** — record the reason. Never create an unneeded artifact to look complete.
+
+**No artifact without a consumer.** A generated copy of an existing PRD, architecture document, or ADR is a defect. So is an architecture file for a localized change, an ADR for a routine choice, a diagram for a trivial flow, or a task with no requirement.
 
 ## Plan depth by scope class
 
-Select ONE scope class before authoring. Always fetch the required file set and skeletons from the tool:
+Run `archgen_plan{action:'profile'}` first; fetch skeletons with `archgen_plan{action:'scaffold', scope, slug}`. **Required files must exist; a file the profile omits must not be created.** Authoring depth:
 
-```
-archgen_plan { action: 'scaffold', scope: 'SMALL' | 'MEDIUM' | 'LARGE', slug: '<slug>' }
-```
-
-Adding or omitting files is a right-sizing defect. Authoring depth per class:
-
-- **SMALL** (localized change): Lean plan note only (no Context, PRD, or diagrams; full repo-root paths still mandatory):
+- **SMALL** (localized change): lean plan note only — no Context, PRD, architecture, ADRs, or diagrams; full repo-root paths still mandatory:
   ```markdown
   # <feature> — plan note (SMALL)
   Intent: <one paragraph>
   Tasks: see tasks.yaml entries <ids>
   Risks: <bullets or none>
   ```
-- **MEDIUM**: Plan includes:
-  - **Context** (2–4 paragraphs max: why now, current state, delta).
-  - **Per-task sections** (`## <id> — <title>`): Approach (short bullets), **Edge cases** (≥3 bullets feeding the edge-case matrix), and **Out-of-scope**.
-  - **Verification steps**: Ordered, runnable, repo-root-relative commands. No PRD or diagrams unless structural changes require them.
-- **LARGE / greenfield-from-scratch**: Full stack—PRD (~1 page/module) + expanded `architecture.yaml` (`naming_conventions`, `data_contracts`, `api_contracts`, `environment_matrix`) + per-task edge-case matrices + per-module & integration Mermaid diagrams (≤15 nodes each) + MEDIUM plan sections.
+- **MEDIUM**: plan includes **Context** (2–4 paragraphs: why now, current state, delta), **per-task sections** (`## <id> — <title>` with approach, **Edge cases ≥3** feeding the matrix, out-of-scope), and ordered runnable verification steps. No PRD; architecture only when the profile finds a contract trigger.
+- **LARGE**: MEDIUM sections plus the artifacts the profile marks create — PRD (~1 page/module), expanded `architecture.yaml` (`naming_conventions`, `data_contracts`, `api_contracts`, `environment_matrix`), per-task edge matrices, and per-module/integration diagrams (≤15 nodes each). ADRs and diagrams remain conditional.
+
+## Depth budgets
+
+The profile returns hard ceilings. Stop when the consumer is satisfied; "complete" means the required decisions are covered, not that every possible document exists.
+
+| Scope | Plan context | Edge cases/task | PRD | Architecture | Diagrams | ADRs |
+|---|---|---|---|---|---|---|
+| SMALL | 1 paragraph | 0 | none | none | none | none |
+| MEDIUM | 2–4 paragraphs | 3 | none | ≤20 lines/module, only for contracts | none | ≤1, only if irreversible |
+| LARGE | 2–4 paragraphs | 3–7 | ≤1 page/module | ≤20 lines/module | ≤15 nodes each, when topology is non-obvious | ≤3 total |
+
+Plan-length ceilings: SMALL ≤60 lines, MEDIUM ≤180, LARGE ≤400. Task ceilings: 5 / 12 / 30.
+
+## Self-containment rules (anti-hallucination)
+
+Artifacts are executed by sub-agents with zero conversation history. Enforce strictly:
+
+1. **Full repo-root-relative paths:** every task step, `file_ownership` glob, artifact, and verification command uses the complete path (`src/features/catalog/api/routes.ts`), sourced from `architecture.yaml` (`structure:`/`owns[]`) or surveyed code. Never bare filenames.
+2. **Traceable naming:** every file, symbol, table, and env var cites its governing `naming_conventions` key. Add a missing key before citing it.
+3. **Zero chat dependency:** `.archgen/<slug>/` must be 100% self-contained. Unwritten facts do not exist.
+4. **Forbidden phrases:** never `"as discussed"`, `"the usual pattern"`, `"same as before"`, or `"see chat"`. Cite artifact paths/keys instead.
+5. **Cross-reference, do not restate:** point at contracts (`../architecture.yaml data_contracts.orders`).
+6. **GitHub-exact anchors:** lowercase, strip punctuation except `-` and `_`, and convert every whitespace character to `-` without collapsing runs (`## TASK-02 — Auth API` → `#task-02--auth-api`).
+7. **Verifier-compatible IDs:** `verify` rejects unknown `UPPERCASE-NN` tokens in `plans/*.md`. Define `FR-<MODULE>-nn` in `docs/prd.md`, cite them in `tasks.yaml` acceptance, link via anchors inside plans, and keep every task ID present in `plans/*.md`.
 
 ## Structural correctness — verifier-enforced authoring rules
 
-- **Topological waves:** Wave / `parallel_group` labels MUST match the `depends_on` topological order (`archgen_plan{action:'graph', format:'mermaid'}`). Dependents never precede or share a wave with prerequisites.
-- **`artifacts` ⊆ `file_ownership`:** Every path in `artifacts` must match the task's `file_ownership` globs.
-- **Runnable verification commands:** Repo-root-relative (no `../` or `--plan .`), specifying exact commands, flags, sample sizes, and thresholds.
-- **Restricted YAML subset:** Block mappings, block sequences, and single-line flow collections (`["a/**", "b.ts"]`, `{id: A}`) ONLY. **BANNED:** block scalars (`|` / `>`), duplicate keys, and multi-line flow collections.
-- **Targeted `tasks.yaml` edits:** Apply small, surgical edits or a clean full regeneration—never large multi-region patches.
-- **Both trees declared:** `architecture.yaml` `structure:` lists the source tree AND its sibling test tree, and a task that owns source owns the mirrored test path (`references/code-standards.md` owns the rule).
+- **Topological waves:** wave / `parallel_group` labels match the `depends_on` order (`archgen_plan{action:'graph', format:'mermaid'}`). Dependents never precede or share a wave with prerequisites.
+- **`artifacts` ⊆ `file_ownership`:** every artifact path matches the task's ownership globs.
+- **Runnable verification:** repo-root-relative commands (no `../`, no `--plan .`) with exact flags, sample sizes, and thresholds.
+- **Restricted YAML subset:** block mappings/sequences and single-line flow collections only. **BANNED:** block scalars (`|` / `>`), duplicate keys, and multi-line flow collections.
+- **Targeted edits:** small surgical edits or a clean full regeneration—never large multi-region patches.
+- **Both trees:** `structure:` lists the source tree and its sibling test tree; a task that owns source owns the mirrored test path (`references/code-standards.md`).
 
 ## Agent workspace & artifact location — the two-tier rule
 
-- **INSIDE `.archgen/<slug>/`** (self-contained planning & execution state):
-  - `tasks.yaml`, `plans/`, `architecture.yaml`, `answers.yaml`, `codebase-map.md`.
-  - `docs/prd.md` (planning artifact defining `FR-*` IDs validated by `archgen_docs`).
-  - `decisions/NNNN-title.md` (formal feature ADRs).
-  - `.agent/` (process state excluded from doc validation):
-    - `.agent/decisions/NNNN-<slug>.md` — runtime sub-agent implementation decisions.
-    - `.agent/learnings.md` — append-only discovered repo conventions.
-    - `.agent/notes/<task-id-or-topic>.md` — worker/survey/investigator working notes.
-    - `.agent/reports/<verifier|reviewer|investigate>-<round>.md` — gate & investigation reports.
-    - `.agent/resume.md` — ≤10-line compaction re-entry snapshot (slug, wave index, done/failed/blocked IDs, `archgen_tasks{action:'next'}`, remaining task plan sections), updated after every wave.
-- **OUTSIDE `.archgen/`** (product deliverables written to task `file_ownership` paths):
-  - Source code (`src/...`) and shipped user/operator documentation (`README.md`, API docs, runbooks).
-  - *Durable ADRs:* Promote repo-wide architectural decisions from `.archgen/<slug>/decisions/` to the project's canonical ADR directory (`docs/adr/`). Supersede rather than deleting/renumbering accepted ADRs.
+- **INSIDE `.archgen/<slug>/`:** `tasks.yaml`, `plans/`, `architecture.yaml`, `answers.yaml`, `codebase-map.md`, `docs/prd.md`, `decisions/NNNN-title.md`, and `.agent/`:
+  - `.agent/decisions/NNNN-<slug>.md` — runtime implementation decisions.
+  - `.agent/learnings.md` — append-only discovered repo conventions.
+  - `.agent/notes/<task-id-or-topic>.md` — working notes.
+  - `.agent/reports/<verifier|reviewer|investigate>-<round>.md` — gate/investigation reports.
+  - `.agent/resume.md` — ≤10-line compaction snapshot, updated after every wave.
+- **OUTSIDE `.archgen/`:** product deliverables at their `file_ownership` paths (`src/...`, `README.md`, API docs, runbooks). Promote durable decisions from `.archgen/<slug>/decisions/` to the project's canonical ADR directory (`docs/adr/`); supersede rather than delete or renumber accepted ADRs.
 
-Every path under `.archgen/<slug>/` is committed — the `.agent/` run state included, because it is the audit trail of how the work went (`§artifact-tracking`).
+Every path under `.archgen/<slug>/` is committed, `.agent/` included — it is the audit trail (`§artifact-tracking`).
 
 ## Artifact tracking — every archgen artifact is committed
 
-The plan of record belongs in the repository and in the history, next to the code it plans: `git log` must show what was decided, when it changed, and what shipped.
+The plan of record belongs in the repository and its history: `git log` must show what was decided, when it changed, and what shipped.
 
-**Committed — the whole archgen footprint:**
-- `.archgen/<slug>/` — the plan of record: `tasks.yaml`, `plans/`, `docs/`, `architecture.yaml`, `decisions/`, and the `.agent/` run state.
-- `.agents/skills/archgen/` — the canonical installed skill, one copy for the team.
-- `.claude/skills/archgen` — the harness bridge into that store.
-- `AGENTS.md` and `CLAUDE.md` — the registry hub and its pointer.
-- The project MCP config (`.mcp.json`, `.cursor/mcp.json`, `opencode.json`, `.vscode/mcp.json`, …) — the wiring that gives the team the tools.
+**Committed:** `.archgen/<slug>/` (tasks, plans, docs, architecture, decisions, `.agent/`), `.agents/skills/archgen/` (canonical installed skill), `.claude/skills/archgen` (harness bridge), `AGENTS.md` and `CLAUDE.md` (registry hub + pointer), and the project MCP config (`.mcp.json`, `.cursor/mcp.json`, `opencode.json`, `.vscode/mcp.json`, …).
 
-**Never committed — machine-local state:** `.codegraph/` (the local symbol index), `.archgen/.runtime/` (the legacy heartbeat), the `.archgen-version` deploy stamp.
+**Never committed:** `.codegraph/` (local symbol index), `.archgen/.runtime/` (legacy heartbeat), the `.archgen-version` deploy stamp.
 
 **Rules:**
-1. **NEVER gitignore an archgen artifact.** A rule covering `.archgen/`, `.agents/`, `.claude/` or `AGENTS.md` is a defect — remove it.
+1. **NEVER gitignore an archgen artifact.** A rule covering `.archgen/`, `.agents/`, `.claude/`, or `AGENTS.md` is a defect—remove it.
 2. **Commit the plan before the first wave**, then each wave's artifact state (statuses, notes, decisions, reports, snapshot) with that wave's commits.
-3. **Fix the ignore rule before force-adding** — a forced add hides the rule from the next person; if you must force-add, say so in the completion report.
-4. **Never rewrite published history** to hide an artifact — the plan of record is append-only, like the code it plans.
+3. **Fix the ignore rule before force-adding**; if you must force-add, say so in the completion report.
+4. **Never rewrite published history** to hide an artifact—the plan of record is append-only, like the code it plans.
 
-## architecture.yaml (LARGE scope)
+## architecture.yaml
 
-Generated via `archgen_plan{action:'scaffold', scope:'LARGE'}`. Authoring rules for the four anti-hallucination contract blocks:
-- Keep each module/domain contract block concise (~10–20 lines; split before exceeding 40 lines).
-- `modules[].depends_on_modules` MUST be a DAG (drives task `depends_on`).
-- `key_interfaces` lists ONLY exports consumable by other modules.
-- `environment_matrix` vars must fail fast if unparsed in `src/config/`.
+Generated only when the profile marks it create. Rules for the anti-hallucination blocks:
+- Keep each module/domain contract ~10–20 lines; split before 40.
+- `modules[].depends_on_modules` is a DAG (drives task `depends_on`).
+- `key_interfaces` lists only exports other modules may consume.
+- `environment_matrix` vars fail fast when unparsed at the config boundary.
+- Record `toolchain:` (language, build/test/lint/typecheck commands, source and test roots) and `existing_docs:` (host sources of truth) so tasks cite them instead of guessing.
 
-## Product requirements document (PRD) — LARGE/greenfield
+## Product requirements document (PRD)
 
-Generated via `scaffold` (`docs/prd.md`) and authored BEFORE `tasks.yaml` (~1 bullet-dense page per module):
-- `FR-<MODULE>-nn` IDs are **immutable** once referenced by `tasks.yaml`.
-- NFRs require concrete numbers (latency, RPS, compliance standard); adjectives fail verification.
-- Success metrics require `<baseline> -> <target> within <window>`.
+Generated only when the profile marks it create. Author it BEFORE `tasks.yaml` (~1 bullet-dense page per module):
+- `FR-<MODULE>-nn` IDs are immutable once referenced by `tasks.yaml`.
+- NFRs need concrete numbers (latency, throughput, compliance standard); adjectives fail verification.
+- Success metrics state `<baseline> -> <target> within <window>`.
 
-## tasks.yaml (canonical shape)
+## tasks.yaml
 
 Generated via `scaffold` (`schemas/tasks.schema.json`, `schema_version: 1`):
-- `depends_on` lists prerequisite task IDs (never dependents).
-- Same-wave `file_ownership` globs must be strictly disjoint.
-- `acceptance` criteria must be objectively checkable and cite edge-matrix rows (`E1`–`En`) and `FR-<MODULE>-nn` IDs (for LARGE).
+- `depends_on` lists prerequisites only.
+- Same-wave `file_ownership` globs are strictly disjoint.
+- `acceptance` is objectively checkable; cite edge rows (`E1`–`En`) and PRD IDs where the profile created a PRD.
 
-## Edge-case matrix (per task, MEDIUM+)
+## Edge-case matrix (MEDIUM+)
 
-Generated via `scaffold` and placed in each MEDIUM/LARGE task's plan section (≤10 rows per table; split by concern if larger):
-- **Mandatory coverage classes:** empty/null, boundary values, authz denied, concurrent/conflicting write, failure/retry path, i18n/formatting edge.
-- **Infra tasks (migrations, deploys, queues) add:** partial-failure recovery, rollback path.
-- **Traceability:** Every row maps to `Covered by` (`<task-id>#<1-based acceptance index>`); zero orphan rows.
+Generated via `scaffold`, placed in each MEDIUM/LARGE task's plan section (≤10 rows; split by concern):
+- **Coverage classes:** empty/null, boundary values, authz denied, concurrent/conflicting write, failure/retry path, i18n/formatting edge.
+- **Infra tasks add:** partial-failure recovery and rollback.
+- **Traceability:** every row maps to `Covered by` (`<task-id>#<1-based acceptance index>`); zero orphan rows.
 
-## ADR template & Mermaid snippets
+## ADR & diagrams
 
-Generated via `scaffold` (`decisions/NNNN-title.md` and `docs/mermaid-snippets.md`).
+Generated via `scaffold` only when the profile's trigger fired (`decisions/NNNN-title.md`, `docs/mermaid-snippets.md`). An ADR records an irreversible or hard-to-reverse decision — never a routine choice.
 
-## Per-module diagram (LARGE)
-
-Generated via `scaffold`. Authoring rules:
-- One flowchart per `modules:` entry showing internal components (≤6 nodes) plus inbound `depends_on_modules` edges (consumer → provider).
-- One system integration diagram wiring modules as atomic nodes (no module internals).
-- **Hard limit:** ≤15 nodes per diagram (split if larger).
+- One flowchart per `modules:` entry showing internals (≤6 nodes) plus inbound `depends_on_modules` edges; one integration diagram with modules as atomic nodes.
+- **Hard limit:** ≤15 nodes per diagram (split if larger). No diagram for a trivial or single-module flow.

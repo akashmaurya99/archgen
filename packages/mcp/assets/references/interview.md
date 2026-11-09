@@ -1,13 +1,14 @@
-# Interview playbook — requirement elicitation
+# Interview playbook — evidence first, questions second
 
-Goal: achieve complete, conflict-free requirements in minimal round-trips. Batch 3–5 questions per turn, infer aggressively from context, ask only material decision-forks, and state derivative choices as veto-able defaults.
+Goal: complete, conflict-free requirements in minimal round-trips. Infer from context, profile scope, ask only material decision-forks, and state derivative choices as veto-able defaults.
 
 ## How to ask
 
-- **Tool-first, inline-fallback:** Use the harness's interactive question/choice tool if available; otherwise present numbered inline options.
-- **Recommendation-first:** Lead every question with your recommended option tagged `(recommended)` + brief rationale. Never present bare options.
-- **Ask forks, state decisions:** Ask ONLY questions that materially branch the architecture. For derivative choices, declare: *"I'll use X because Y — let me know if you prefer Z."*
-- **Scale volume to scope:** Round caps are ceilings, not targets. For simple/SMALL prompts, ask 1–2 core forks and infer the rest.
+- **Tool-first, inline-fallback:** use the harness's interactive question/choice tool when available; otherwise present numbered inline options.
+- **Recommendation-first:** lead with your recommendation tagged `(recommended)` + one-line rationale. Never present bare options.
+- **Ask forks, state decisions:** ask only questions that materially branch the architecture. For derivative choices: *"I'll use X because Y — let me know if you prefer Z."*
+- **Scale volume to scope:** round caps are ceilings, not targets. For SMALL work, ask 1–2 core forks and infer the rest.
+- **Never re-ask** what the prompt, repo, profile, `codebase-map.md`, or a host document already answers.
 
 *Example:*
 > Rollout strategy?
@@ -16,144 +17,148 @@ Goal: achieve complete, conflict-free requirements in minimal round-trips. Batch
 > 3. Versioned API alongside — if legacy clients cannot upgrade
 > Reply 1–3, or "ok" to accept recommended.
 
-## Round 0 — calibration exchange (skippable)
+## Round 0 — scope calibration (not a questionnaire)
 
-Infer from the prompt and repo first; ask only if genuinely ambiguous (skip entirely for SMALL/simple prompts or when already stated):
-1. **Target scale:** Prototype, MVP, or production-bound? (State inference + 1-line rationale for confirmation).
-2. **Team & tooling constraints:** Solo vs team, existing CI/lint/style conventions?
-3. **Timeline pressure:** None, moderate, or crunch?
+1. **Profile first:** run `archgen_plan{action:'profile'}` with the intent and the signals the prompt/repo evidence supports (`SKILL.md` Step 2).
+2. **State one sentence:** scope class, the evidence, the artifact create/reuse/omit list. Ask the user to confirm or correct it. `[wait for user]`
+3. **Ask at most ONE question** when `confidence` is low — the profile's `question`. Do not run a calibration interview when `confidence` is high.
+4. **Record** the confirmed profile in `answers.yaml` (`plan_profile:`) or the plan's `## Profile` section. Keep `escalateIf` so a later signal can move the class.
 
-Record under `calibration:` in `answers.yaml`.
+## Step 1 — classify intent & collect signals
 
-## Step 1 — classify intent (decide during round 1)
+Classify ONE `intent_class`, state it in one sentence, and record it. Scope is **computed by the profile**, never inherited from this table.
 
-Classify into ONE `intent_class`, state it in one sentence, and record in `answers.yaml`:
+| `intent_class` | Signal | Elicitation strategy | Max rounds (incl. R0) |
+|---|---|---|---|
+| `GREENFIELD-SYSTEM` | Net-new system; no host repo | Full discovery, PRD-grade only if the profile creates a PRD | ≤6 |
+| `GREENFIELD-MODULE` | Net-new module in an existing repo | Infer from host repo first; targeted forks | ≤3 |
+| `BROWNFIELD-FEATURE` | Additive behavior in an existing repo | Survey first; ask only unresolved gaps | ≤3 |
+| `BROWNFIELD-CHANGE` | Modify existing behavior in place | Survey first; diff current vs target behavior | ≤3 |
 
-| `intent_class` | Signal | Elicitation Strategy | Max Rounds (incl. R0) | Default `scope_class` |
-|---|---|---|---|---|
-| `GREENFIELD-SYSTEM` | Net-new system; no host repo | Full PRD-grade discovery | ≤6 | `LARGE` |
-| `GREENFIELD-MODULE` | Net-new module in existing repo | Infer from host repo first; targeted forks | ≤3 | `MEDIUM` |
-| `BROWNFIELD-FEATURE` | Additive behavior in existing repo | Survey first; ask only unresolved gaps (≤5 Qs) | ≤3 | `MEDIUM` / `SMALL` |
-| `BROWNFIELD-CHANGE` | Modify existing behavior in place | Survey first; diff current vs target behavior | ≤3 | `SMALL` |
+**Escalation signals** (pass them to `profile`): `new-module`, `multi-module`, `public-contract`, `data-migration`, `security-sensitive`, `multi-service`, `external-integration`, `cross-team`, `regulated`, `irreversible`, `product-facing`, `production`. **De-escalation:** `prototype`. **Reuse:** `existing-prd`, `existing-architecture`, `existing-adr`.
 
-Infer `scope_class` (`SMALL`/`MEDIUM`/`LARGE`), state with 1-line reasoning, and let the user confirm or override. Never interrogate brownfield tasks with greenfield PRD questions.
+**Default down:** missing evidence never raises the class. A low-confidence result asks one question, and an unanswered or ambiguous answer keeps the lower class. Never interrogate brownfield work with greenfield PRD questions.
 
 ## GREENFIELD-SYSTEM — professional discovery (≤6 rounds)
 
-Tag recorded answers with `feeds:` targets for downstream traceability.
+Tag answers with `feeds:` targets for downstream traceability.
 
 ### R1 — problem, users, success → PRD
-1. Core problem, target audience, and explicit non-goals? (`feeds: prd.problem|prd.non_goals`)
-2. 1–3 primary personas: role, job-to-be-done, operating environment? (`feeds: prd.personas`)
-3. Measurable success metrics (activation, latency, error rate—no adjectives)? (`feeds: prd.metrics`)
+1. Core problem, target audience, explicit non-goals? (`feeds: prd.problem|prd.non_goals`)
+2. 1–3 primary personas: role, job-to-be-done, environment? (`feeds: prd.personas`)
+3. Measurable success metrics—no adjectives? (`feeds: prd.metrics`)
 
-### R2 — shape & module decomposition → architecture.yaml `modules`
-4. Confirm inferred tech stack + hosting target? (`feeds: prd.constraints`)
-5. External integrations (auth, payments, messaging, 3rd-party APIs)? (`feeds: prd.integrations`)
-6. **Strawman module map:** Propose candidate modules (`name — responsibility`) and ask user to add, merge, split, or rename until agreed. (`feeds: arch.modules`)
+### R2 — shape & modules → architecture.yaml `modules`
+4. Confirm inferred stack + hosting target? (`feeds: prd.constraints`)
+5. External integrations (auth, payments, messaging, APIs)? (`feeds: prd.integrations`)
+6. **Strawman module map:** propose modules (`name — responsibility`); ask the user to add, merge, split, or rename. (`feeds: arch.modules`)
 
-### R3 — data & API sketches → `data_contracts`, `api_contracts`
-7. Core entities, key fields, and relationships (`belongs-to`/`has-many`)? (`feeds: arch.data_contracts`)
-8. Primary API operations (5–10 core `VERB + resource` endpoints/actions)? (`feeds: arch.api_contracts`)
+### R3 — data & API → contracts
+7. Core entities, key fields, relationships? (`feeds: arch.data_contracts`)
+8. Primary operations (5–10 `VERB + resource`)? (`feeds: arch.api_contracts`)
 
 ### R4 — NFRs with numbers → PRD
-9. Performance budgets: p95 latency, peak RPS/throughput? (`feeds: prd.nfrs`)
-10. Scale targets: active users, requests/day, annual data volume? (`feeds: prd.nfrs`)
-11. Security/compliance (GDPR/HIPAA/PCI), i18n locales, accessibility target (e.g., WCAG 2.2 AA)? (`feeds: prd.nfrs`)
+9. Performance budgets: p95 latency, peak throughput? (`feeds: prd.nfrs`)
+10. Scale targets: users, requests/day, annual data volume? (`feeds: prd.nfrs`)
+11. Security/compliance, i18n locales, accessibility target? (`feeds: prd.nfrs`)
 
-### R5 — environment & naming → `environment_matrix`, `naming_conventions`
-12. Environments (dev/staging/prod), secret management, deploy cadence? (`feeds: arch.environment_matrix`)
-13. Existing naming, domain glossary, or brand casing rules (`none` is valid)? (`feeds: arch.naming_conventions`)
+### R5 — environment & naming → contracts
+12. Environments, secret management, deploy cadence? (`feeds: arch.environment_matrix`)
+13. Existing naming, glossary, brand casing (`none` is valid)? (`feeds: arch.naming_conventions`)
 
 ### R6 — close-out → PRD
-14. Explicit out-of-scope items excluded from this build? (`feeds: prd.out_of_scope`)
-15. Top 2 known technical or product risks? (`feeds: prd.risks`)
+14. Explicit out-of-scope items? (`feeds: prd.out_of_scope`)
+15. Top 2 technical or product risks? (`feeds: prd.risks`)
 
 Present the finalized module map + numeric NFRs for confirmation. `[wait for user]`
 
 ### Traceability — `feeds:` tags
 
-`feeds:` targets are the `prd.*` keys (`problem`, `goals`, `non_goals`, `personas`, `metrics`, `nfrs`, `constraints`, `integrations`, `risks`, `out_of_scope`) and the `arch.*` keys (`modules`, `data_contracts`, `api_contracts`, `environment_matrix`, `naming_conventions`). Join multiple with `|` (e.g. `feeds: prd.goals|arch.modules`).
+`feeds:` targets are the `prd.*` keys (`problem`, `goals`, `non_goals`, `personas`, `metrics`, `nfrs`, `constraints`, `integrations`, `risks`, `out_of_scope`) and the `arch.*` keys (`modules`, `data_contracts`, `api_contracts`, `environment_matrix`, `naming_conventions`). Join multiple with `|`.
 
 ## GREENFIELD-MODULE — net-new inside an existing system (≤3 rounds)
 
-Infer from the host repo first, then confirm:
-1. Host touchpoints: which existing modules does it import from or expose interfaces to? (`feeds: arch.modules`)
-2. Data & API delta: new entities, events, or endpoints vs existing ones? (`feeds: arch.data_contracts|arch.api_contracts`)
-3. NFRs: inherit host perf/a11y/i18n baselines or define custom targets? (`feeds: prd.nfrs`)
+Infer from the host repo first, then confirm only:
+1. Host touchpoints: which modules it imports from or exposes interfaces to? (`feeds: arch.modules`)
+2. Data/API delta: new entities, events, endpoints? (`feeds: arch.data_contracts|arch.api_contracts`)
+3. NFRs: inherit host baselines or define custom targets? (`feeds: prd.nfrs`)
 4. Confirm adherence to host `naming_conventions`? (`feeds: arch.naming_conventions`)
 
 ## BROWNFIELD classes — survey BEFORE questioning (mandatory)
 
-Execute the codebase survey (`SKILL.md` BROWNFIELD steps 1–2) to produce `.archgen/<slug>/codebase-map.md` BEFORE asking questions. Never ask what the code already answers—cite the file path and confirm.
+Produce `.archgen/<slug>/codebase-map.md` first (`SKILL.md` BROWNFIELD steps 1–2, including `## Existing docs` and `## Toolchain`). Never ask what the code answers—cite the path and confirm.
 
-### BROWNFIELD-FEATURE (additive; max ~5 questions, 1 batched message)
+### BROWNFIELD-FEATURE (additive; max ~5 questions, one batched message)
 1. Target acceptance behavior and critical edge cases not evident from code?
 2. Backward-compatibility requirements for existing data/clients?
 3. Rollout mechanism (feature flag, staged, immediate)?
-4. Protected paths outside `codebase-map.md` that must not be modified?
-5. Any corrections to `codebase-map.md`?
+4. Protected paths outside `codebase-map.md`?
+5. Corrections to `codebase-map.md`?
 
 ### BROWNFIELD-CHANGE (behavior modification; ≤3 rounds)
-1. Exact behavioral diff: current vs desired behavior, plus invariants that must remain unchanged?
-2. Migration path: in-place update, parallel versioned endpoint, or breaking cutover?
-3. Verification criteria proving legacy behavior is removed and new behavior holds?
+1. Exact behavioral diff: current vs desired, plus invariants that must remain?
+2. Migration path: in-place, parallel versioned endpoint, or breaking cutover?
+3. Verification proving legacy behavior is removed and new behavior holds?
 
 ## Conflict detection
 
-Immediately surface contradictions (scale vs budget, feature vs technical constraint, requirement vs `codebase-map.md`) one at a time:
+Surface contradictions (scale vs budget, feature vs constraint, requirement vs `codebase-map.md`) one at a time:
 *"I see a tension between X and Y. Which takes precedence?"* `[wait for user]`
 
 ## Token discipline
 
 - Batch 3–5 questions per turn; never ping-pong single questions.
 - Respect round ceilings (`GREENFIELD-SYSTEM` ≤6; all others ≤3 including R0).
-- Never re-ask what the prompt, calibration, or `codebase-map.md` already answers.
+- Re-profile instead of re-interviewing when a delta changes signals.
 
 ## Answers-file format (machine-readable, enables non-interactive runs)
 
-When `.archgen/<slug>/answers.yaml` is present and valid, treat it as authoritative input and skip conversational rounds. Generate its skeleton via `archgen_plan{action:'scaffold'}`:
+When `.archgen/<slug>/answers.yaml` is present and valid, treat it as authoritative and skip conversational rounds. Generate the skeleton via `archgen_plan{action:'scaffold'}`:
 
 ```yaml
-scope_class: MEDIUM              # SMALL | MEDIUM | LARGE (REQUIRED by SKILL.md)
-intent_class: GREENFIELD-SYSTEM  # optional: GREENFIELD-SYSTEM | GREENFIELD-MODULE | BROWNFIELD-FEATURE | BROWNFIELD-CHANGE
+scope_class: MEDIUM              # SMALL | MEDIUM | LARGE (from the profile)
+intent_class: GREENFIELD-SYSTEM  # optional
 calibration:                     # optional
   scale: production              # prototype | mvp | production
   teamConstraints: solo dev, repo lint rules apply
   pressure: medium               # low | medium | high
+plan_profile:                    # record every profile decision
+  confidence: high
+  signals: [new-module, public-contract]
+  artifacts:
+    - path: .archgen/acme/architecture.yaml
+      decision: create
+      reason: cross-module contract
+    - path: .archgen/acme/docs/prd.md
+      decision: omit
+      reason: internal tool; no product personas
+  escalate_if: [data-migration]
 problem: one-line problem statement
 success_criteria:
   - text: measurable outcome
     feeds: prd.metrics
 constraints:
   - must-not-change item # feeds: prd.constraints
-non_goals:                       # optional (GREENFIELD-SYSTEM)
-  - multi-tenant accounts
-personas:                        # optional (GREENFIELD-SYSTEM)
-  - role: shopper
-    goal: find and buy in under two minutes
-nfrs:                            # optional; numeric values required for GREENFIELD-SYSTEM
-  - "p95 API latency < 300ms at 50 rps"
-  - "locales: en, de"
-  - "accessibility: WCAG 2.2 AA"
-out_of_scope: []                 # optional
+non_goals: []                    # optional
+personas: []                     # optional
+nfrs: []                         # numeric for GREENFIELD-SYSTEM
+out_of_scope: []
 stack:
-  language: typescript
-  runtime: node
-  hosting: vercel
-integrations: [auth0, stripe]
+  language: ""
+  runtime: ""
+  hosting: ""
+integrations: []
 compliance: []
-risks:
-  - known risk text
+risks: []
 ```
 
-All fields added beyond `scope_class`, `problem`, `success_criteria`, `constraints`, `stack`, `integrations`, `compliance`, and `risks` are optional and backward-compatible. `feeds:` tags may appear as object keys or trailing `# feeds:` comments.
+Fields beyond `scope_class`, `problem`, `success_criteria`, `constraints`, `stack`, `integrations`, `compliance`, and `risks` are optional and backward-compatible. `feeds:` tags may be object keys or trailing `# feeds:` comments.
 
 ## Completion test
 
 Elicitation is complete only when ALL hold:
-- All applicable intent-class questions are answered or explicitly waived.
+- Applicable intent questions are answered or explicitly waived.
 - Inferred decisions are confirmed or corrected by the user.
 - Zero unresolved conflicts remain.
-- `scope_class` (`SMALL`/`MEDIUM`/`LARGE`) and `intent_class` are agreed and recorded in `answers.yaml`.
-- For `GREENFIELD-SYSTEM`: strawman module map is agreed AND every NFR contains a concrete numeric target.
+- The profile's `scopeClass`, artifact decisions, and `intent_class` are agreed and recorded.
+- For `GREENFIELD-SYSTEM` with a created PRD: the module map is agreed and every NFR has a numeric target.

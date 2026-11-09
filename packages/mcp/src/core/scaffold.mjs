@@ -63,12 +63,13 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   // The PRD + architecture contract are LARGE-only artifacts; the ADR and the
   // Mermaid snippets are optional extras any class may add.
   const isLarge = key === 'LARGE';
+  const isMediumPlus = key !== 'SMALL';
   const header = provenanceHeader(generatedAt, generator);
   const tasksYaml = templatesDir
     ? `${header}\n${readTemplate(templatesDir, 'tasks.yaml', slug)}`
     : `${header}\n${minimalTasksYaml()}`;
   const planMd = renderPlanMd(key, spec, slug, generatedAt);
-  const answersYaml = isLarge ? renderAnswersYaml(generatedAt, generator) : null;
+  const answersYaml = isMediumPlus ? renderAnswersYaml(key, generatedAt, generator) : null;
   const prdMd = isLarge && templatesDir ? readTemplate(templatesDir, 'prd.md', slug) : null;
   const architectureYaml =
     isLarge && templatesDir ? `${header}\n${readTemplate(templatesDir, 'architecture.yaml', slug)}` : null;
@@ -78,6 +79,10 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     : renderEdgeMatrix(ladder);
   const mermaid = templatesDir ? readTemplate(templatesDir, 'mermaid.md', slug) : null;
 
+  const requiredArtifacts = artifacts.filter((a) => a.required !== false).map((a) => a.path);
+  const optionalArtifacts = artifacts.filter((a) => a.required === false).map((a) => a.path);
+  const depthBudgets = ladder.profile?.depthBudgets?.[key] ?? null;
+
   return {
     scopeClass: key,
     label: spec.label,
@@ -86,7 +91,18 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     // otherwise gets "missing or not a directory" from every artifact tool
     // and reads it as a broken tool rather than an unwritten plan.
     writes: false,
-    writeThese: artifacts.map((a) => a.path),
+    writeThese: requiredArtifacts,
+    requiredArtifacts,
+    optionalArtifacts,
+    artifactPolicy:
+      'Write a REQUIRED artifact. Write an OPTIONAL artifact only when the plan profile marks it create. ' +
+      'A reuse decision cites an existing repository source; an omit decision records its reason. ' +
+      'Unrecorded omissions and artifacts without a consumer are defects.',
+    omissionPolicy: {
+      allowed: true,
+      mustRecord: 'Write every create/reuse/omit decision and its reason to the plan profile (answers.yaml or the plan Profile section).',
+    },
+    depthBudgets,
     intentDefaults: spec.intentDefaults ?? [],
     roundCap: spec.roundCap ?? null,
     artifacts,
@@ -108,8 +124,8 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     },
     edgeMatrixTemplate: edgeMatrix,
     nextStep:
-      'Fill the skeletons, then run archgen_plan{action:"validate"} and archgen_plan{action:"verify"}. ' +
-      'The artifact set above is REQUIRED — adding or dropping files is a right-sizing defect.',
+      'Run archgen_plan{action:"profile"} first; then fill only the skeletons whose profile decision is create. ' +
+      'Then run archgen_plan{action:"validate"} and archgen_plan{action:"verify"}.',
   };
 }
 
@@ -138,7 +154,16 @@ function renderPlanMd(scopeClass, spec, slug, generatedAt) {
   const lines = [`# ${slug} — plan (${scopeClass})`, '', `_Generated ${generatedAt}_`, ''];
   for (const section of sections) {
     lines.push(`## ${section}`, '');
-    if (section === 'Context') {
+    if (section === 'Profile') {
+      lines.push(
+        '- Scope: <SMALL | MEDIUM | LARGE> — <one-line evidence-based rationale>',
+        '- Create: <artifact paths from the profile>',
+        '- Reuse: <existing repository paths, or none>',
+        '- Omit: <artifact paths + one-line reasons, or none>',
+        '- Escalate if: <signals that would move the scope up, or none>',
+        '',
+      );
+    } else if (section === 'Context') {
       lines.push('- Why now:', '- What exists:', '- What changes:', '');
     } else if (section === 'Per-task sections') {
       lines.push('### <ID> — <title>', '');
@@ -154,15 +179,23 @@ function renderPlanMd(scopeClass, spec, slug, generatedAt) {
   return lines.join('\n');
 }
 
-/** The answers.yaml skeleton (LARGE only) — the captured requirements. */
-function renderAnswersYaml(generatedAt, generator) {
+/** The answers.yaml skeleton (MEDIUM and LARGE) — requirements + plan profile. */
+function renderAnswersYaml(scopeClass, generatedAt, generator) {
   return `${provenanceHeader(generatedAt, generator)}
-scope_class: LARGE
-intent_class: GREENFIELD-SYSTEM
+scope_class: ${scopeClass}
+intent_class: ""
 calibration:
-  scale: production
+  scale: ""
   teamConstraints: ""
-  pressure: medium
+  pressure: ""
+plan_profile:
+  confidence: high | medium | low
+  signals: []
+  artifacts:
+    - path: ""
+      decision: create | reuse | omit
+      reason: ""
+  escalate_if: []
 problem: ""
 success_criteria:
   - text: ""

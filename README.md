@@ -89,7 +89,7 @@ implementation, two ways in, so the two can never disagree.
 
 | Tool | Does |
 | --- | --- |
-| `archgen_plan` | validate · verify · graph · impact · coverage · scaffold · brief |
+| `archgen_plan` | validate · verify · graph · impact · coverage · **profile** (evidence-based scope + per-artifact decisions) · scaffold · brief |
 | `archgen_tasks` | next wave · set status · list · resume snapshot · worker contract |
 | `archgen_docs` | index · digest · section · refs · map · validate the user's artifacts |
 | `archgen_registry` | refresh or read the `AGENTS.md` features registry |
@@ -117,13 +117,18 @@ Open your project in any supported agent and talk naturally.
 | *"roll back the auth changes"* | Impact analysis → reverse-order revert plan → approval |
 | *"fetch the design skill"* | Capability-skill registry: match, install, apply |
 
-Nothing is written until two gates pass, in order, and never skipped — even
-for a SMALL scope. The **verifier gate** is one holistic sub-agent over the
-whole plan: it runs the deterministic floor, judges what the tools cannot,
-and returns a verdict plus a coverage table marking every dimension `PASS` /
-`FAIL` / `N/A` — so one pass is exhaustive instead of a discovery loop. The
-**user gate** then presents the artifacts, the wave summary and the ownership
-map, and asks for approval.
+Nothing is written until three gates pass, in order, and never skipped — even
+for a SMALL scope. Gate depth scales with the profile, while the deterministic
+floor always runs. The **verifier gate** runs `archgen_plan{action:'verify'}`
+(cycles, dangling refs, ownership, acceptance, coverage) and then judges what
+the tools cannot — including **scope & artifact necessity**: every artifact has
+a consumer, every reuse names a real host path, every omission has a recorded
+reason. SMALL is audited by the main agent, MEDIUM by one verifier sub-agent,
+LARGE by one top-tier verifier; each returns a verdict plus a coverage table
+marking every dimension `PASS` / `FAIL` / `N/A`, so one pass is exhaustive
+instead of a discovery loop. The **plan review** then checks scope fit and
+minimalism, and the **user gate** presents the create/reuse/omit artifact list,
+the wave summary and the ownership map before asking for approval.
 
 ## Token footprint
 
@@ -134,20 +139,20 @@ always-on footprint exceeds 11,500 tokens.
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 6,252 |
-| MCP tool catalog (9 tools) | 4,695 |
-| **Always-on total** | **10,947** — 33% of a 32k window |
+| `skill/SKILL.md` | 5,996 |
+| MCP tool catalog (9 tools) | 5,056 |
+| **Always-on total** | **11,052** — 34% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
-references are 12,931 tokens *in total*, but a typical section is **238
+references are 11,829 tokens *in total*, but a typical section is **224
 tokens** — the agent loads the one it needs, never the file:
 
 | On demand | In total | What is actually read |
 | --- | ---: | --- |
-| A protocol reference | 12,931 | one section — **238 tokens** |
+| A protocol reference | 11,829 | one section — **224 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
-| A dispatch brief | 2,416 | the one being dispatched |
-| An artifact template | 2,347 | the one being scaffolded |
+| A dispatch brief | 2,921 | the one being dispatched |
+| An artifact template | 2,592 | the one being scaffolded |
 
 Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
 and `archgen_skills` serve one section at a time, and a dispatch brief arrives
@@ -161,7 +166,7 @@ rules, and a hard cap of three parallel sub-agents. Shrinking a prompt to
 save tokens costs a whole extra round — making the first answer complete
 does not.
 
-This release's tool-surface pass cut the always-on footprint to **10,947** (from 12,662) — 14% smaller, with no capability removed.
+This release adds evidence-based scope profiling (`archgen_plan{action:'profile'}`) and per-artifact create/reuse/omit decisions without expanding the always-on surface beyond its 11,500-token gate. The catalog grew by the new action; `SKILL.md` and the five protocol references shrank.
 
 ## Repository layout
 

@@ -8,6 +8,7 @@ import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
 import { buildScaffold } from '../core/scaffold.mjs';
+import { buildPlanProfile, INTENTS, SCOPE_SIGNALS } from '../core/plan-profile.mjs';
 import { loadBrief, remainingPlaceholders, renderBriefContext, BRIEF_KINDS } from '../core/briefs.mjs';
 import { resolveBriefScope, briefVars } from '../core/brief-scope.mjs';
 import { buildBriefContext } from '../core/brief-context.mjs';
@@ -20,10 +21,10 @@ import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information.
-const ACTION_DESC = 'validate|verify|graph|impact|coverage|scaffold|brief';
+const ACTION_DESC = 'validate|verify|graph|impact|coverage|profile|scaffold|brief';
 
 const schema = z.object({
-  action: z.enum(['validate', 'verify', 'graph', 'impact', 'coverage', 'scaffold', 'brief']).describe(ACTION_DESC),
+  action: z.enum(['validate', 'verify', 'graph', 'impact', 'coverage', 'profile', 'scaffold', 'brief']).describe(ACTION_DESC),
   tasksYaml: z
     .string()
     .optional()
@@ -36,7 +37,11 @@ const schema = z.object({
   status: z.boolean().optional().describe('Status styling (graph, mermaid).'),
   module: z.string().optional().describe('One module (graph).'),
   scope: z.enum(['SMALL', 'MEDIUM', 'LARGE']).optional().describe('SMALL|MEDIUM|LARGE (scaffold).'),
-  slug: z.string().optional().describe('Project slug (scaffold, brief).'),
+  slug: z.string().optional().describe('Project slug (profile, scaffold, brief).'),
+  intent: z.enum(INTENTS).optional().describe('Scope intent (profile).'),
+  signals: z.array(z.enum(SCOPE_SIGNALS)).optional().describe('Evidence signals (profile).'),
+  modules: z.number().int().positive().optional().describe('Modules touched/created (profile).'),
+  tasks: z.number().int().positive().optional().describe('Estimated task count (profile).'),
   file: z.string().optional().describe('One artifact file (scaffold).'),
   kind: z.enum(BRIEF_KINDS).optional().describe('verifier|review|survey|investigate (brief).'),
   featureRequest: z.string().optional().describe('One-line feature request (brief).'),
@@ -55,7 +60,7 @@ export function registerPlanTools(server) {
     title: 'ArchGen plan',
     description:
       'Validate and analyze an archgen plan: schema validation, verifier gate, dependency graph, ' +
-      'blast radius, coverage, artifact scaffold, and dispatch brief.',
+      'blast radius, coverage, evidence-based scope profile, artifact scaffold, and dispatch brief.',
     inputSchema: schema,
     readOnly: true,
     idempotent: true,
@@ -118,6 +123,20 @@ export function registerPlanTools(server) {
             blast,
             moreMeta({ total: p.total, returned: p.returned, next: p.next, available: { impacted: p.total } }),
           );
+        }
+        case 'profile': {
+          if (!args.intent) {
+            throw invalidInput('profile requires intent (GREENFIELD-SYSTEM | GREENFIELD-MODULE | BROWNFIELD-FEATURE | BROWNFIELD-CHANGE)', {
+              action,
+            });
+          }
+          return buildPlanProfile(loadAsset('depth-ladder.json'), {
+            intent: args.intent,
+            signals: args.signals ?? [],
+            modules: args.modules,
+            tasks: args.tasks,
+            slug: args.slug ?? null,
+          });
         }
         case 'scaffold': {
           if (!args.scope) throw invalidInput('scaffold requires scope (SMALL | MEDIUM | LARGE)', { action });

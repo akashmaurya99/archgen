@@ -1,47 +1,45 @@
-# schema_version: 1
-# generator: archgen
-# generated_at: 2026-08-26T09:00:00.000Z
 # comment lines are preserved by archgen_tasks{set_status}
 tasks:
-  # Wave 1 — Foundation
-  - id: C
-    title: Scaffold project skeleton + typed config loader
+  # Wave 1 — foundation
+  - id: TASK-01
+    title: <outcome this task delivers>
     depends_on: []
-    file_ownership: ["src/config/**", "tests/unit/config/**", "package.json"] # full repo-root-relative paths ONLY
+    file_ownership: ["<source-root>/<module>/**", "<test-root>/unit/<module>/**"] # repo-root-relative, disjoint per wave
     acceptance:
-      - "npm run build exits 0"
-      - "config loads from env and fails fast on missing required vars"
+      - "<build command> exits 0"
+      - "<observable behavior check> produces <expected output>"
 
-  # Wave 2 — Core domain
-  - id: B
-    title: Catalog API endpoints
-    depends_on: [C]
-    file_ownership: ["src/features/catalog/**"]
+  # Wave 2 — feature
+  - id: TASK-02
+    title: <feature behavior>
+    depends_on: [TASK-01]
+    file_ownership: ["<source-root>/<feature>/**", "<test-root>/unit/<feature>/**"]
     acceptance:
-      - "GET /products returns seeded catalog list with 200 status"
+      - "<test command> passes with <sample size or threshold>"
+      - "<API/CLI behavior> returns <observable result>"
 
-  # Wave 3 — Feature integration
-  - id: A
-    title: Checkout flow wired to catalog
-    depends_on: [B]
+  # Final integration
+  - id: TASK-03
+    title: <integration outcome>
+    depends_on: [TASK-02]
     parallel_group: wave-final
-    file_ownership: ["src/features/checkout/**", "docs/checkout-flow.md"]
-    artifacts: ["docs/checkout-flow.md"] # must be a subset of file_ownership
+    file_ownership: ["<source-root>/<feature>/**", "<test-root>/integration/<feature>/**", "docs/<feature>.md"]
+    artifacts: ["docs/<feature>.md"] # must be a subset of file_ownership
     acceptance:
-      - "e2e test completes purchase flow against stub payment gateway"
+      - "<integration command> completes <journey> against <test double or environment>"
 
-  # LARGE-scope task example (traces edge-matrix rows E1-En and PRD FR-* IDs)
-  - id: PAY-2
-    title: Order payment capture with exponential backoff retry
-    depends_on: [A]
-    parallel_group: wave-payments
+  # LARGE-scope task example (cites edge-row IDs; PRD FR-* IDs when a PRD exists)
+  - id: TASK-04
+    title: <failure-sensitive operation with retry>
+    depends_on: [TASK-03]
+    parallel_group: wave-final
     file_ownership:
-      - src/features/checkout/internal/capture.ts      # per naming_conventions.dir_layout
-      - tests/unit/features/checkout/internal/capture.test.ts # the mirrored test tree
-      - docs/payment-retry.md
-    artifacts: ["docs/payment-retry.md"]
+      - <source-root>/<feature>/<implementation file>            # per naming_conventions.dir_layout
+      - <test-root>/unit/<feature>/<mirrored test file>          # the mirrored test tree
+      - docs/<feature>-recovery.md
+    artifacts: ["docs/<feature>-recovery.md"]
     acceptance:
-      - "capture() sends idempotency key; duplicate submission charges once (E3)"
-      - "gateway 5xx retries 3x with exponential backoff, then raises PaymentFailed (E5)"
-      - "declined card returns 402 matching ../architecture.yaml api_contracts.payments.error_shape (FR-PAYMENTS-02)"
-      - "currency amounts format via session locale using integer cents math (E6)"
+      - "duplicate submission performs the operation once (E1)"
+      - "<dependency> 5xx retries <n> times, then returns <structured error> (E2)"
+      - "<invalid input> returns <error shape> matching ../architecture.yaml api_contracts.<module>.error_shape (FR-<MODULE>-02)"
+      - "<locale/format case> produces <expected representation> (E3)"

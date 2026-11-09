@@ -1,40 +1,37 @@
 ## Mermaid snippets
 
-C4 context:
+System context (only when the profile creates diagrams):
 ```mermaid
 graph TB
-  user([Customer]) --> sys[Acme Shop]
-  sys --> pay[Stripe]
-  sys --> mail[Email Service]
+  actor([<actor>]) --> system[<system>]
+  system --> external[<external service>]
 ```
 
-Container:
+Container view:
 ```mermaid
 graph LR
-  web[Next.js App] --> api[API Routes]
-  api --> db[(Postgres)]
-  api --> cache[(Redis)]
+  client[<client>] --> service[<service>]
+  service --> store[(<data store>)]
+  service --> queue[(<queue or cache>)]
 ```
 
 ## Per-module diagram (LARGE)
 
-Rules: One flowchart per `modules:` entry in `architecture.yaml` showing internal components (≤6 nodes) + inbound `depends_on_modules` edges (consumer → provider), plus ONE integration diagram wiring modules as atomic nodes. **Hard limit:** ≤15 nodes per diagram.
+Rules: one flowchart per `modules:` entry in `architecture.yaml` showing internal components (≤6 nodes) plus inbound `depends_on_modules` edges (consumer → provider), plus ONE integration diagram wiring modules as atomic nodes. **Hard limit:** ≤15 nodes per diagram. Skip diagrams for trivial or single-module flows.
 
-Catalog module (internals + inbound `depends_on` edge):
+<module> (internals + inbound `depends_on` edge):
 ```mermaid
 graph LR
-  subgraph catalog
-    routes[api routes] --> svc[search service]
-    svc --> repo[(product repository)]
+  subgraph <module>
+    entry[<entry point>] --> core[<core component>]
+    core --> store[(<store>)]
   end
-  checkout -.->|depends_on CatalogApi| routes
+  <consumer> -.->|depends_on <InterfaceName>| entry
 ```
 
 Integration (module-level DAG mirroring `depends_on_modules`):
 ```mermaid
 graph LR
-  accounts --> catalog
-  cart --> catalog
-  checkout --> cart
-  checkout --> accounts
+  <module-a> --> <module-b>
+  <module-c> --> <module-a>
 ```

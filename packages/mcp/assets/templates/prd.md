@@ -8,18 +8,19 @@
 - <explicit exclusions to prevent scope creep>
 
 ## Personas / stakeholders
-- <persona>: <core job-to-be-done> -> <measurable success state>
+- <persona>: <job-to-be-done> -> <measurable success state>
 
 ## Functional requirements — <module-name> (repeat per module)
 - FR-<MODULE>-01: <single objectively verifiable behavior>
 - FR-<MODULE>-02: <single objectively verifiable behavior>
-<!-- FR IDs are immutable once cited in tasks.yaml -->
+<!-- FR ids are immutable once cited in tasks.yaml -->
 
 ## Non-functional requirements (concrete numbers mandatory; no adjectives)
-- Perf: p95 API latency < 300 ms at 50 rps; LCP < 2.5 s
-- Security: authz enforced on all routes; zero secrets in repo; OWASP Top 10 mitigated
-- i18n: externalized copy; ICU pluralization; RTL-safe layout
-- A11y: WCAG 2.2 AA compliance; full keyboard navigation; contrast >= 4.5:1
+- Performance: <metric> <operator> <number> at <load or sample size>
+- Security: <control> enforced on <surface>; <data-handling rule>; <standard, if required>
+- Reliability: <failure mode> -> <required recovery or availability target>
+- i18n: <locale/formatting rule, or "not applicable">
+- Accessibility: <standard and level, or "not applicable">
 
 ## Success metrics
 - <metric>: <baseline> -> <target> within <evaluation window>

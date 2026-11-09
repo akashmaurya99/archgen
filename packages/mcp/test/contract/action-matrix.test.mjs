@@ -90,6 +90,7 @@ function matrix() {
   rows.push(['archgen_plan', 'graph', { tasksYaml: t, module: 'src/features/api' }]);
   rows.push(['archgen_plan', 'impact', { tasksYaml: t, target: 'API' }]);
   rows.push(['archgen_plan', 'coverage', { tasksYaml: t, planDir: p }]);
+  rows.push(['archgen_plan', 'profile', { intent: 'BROWNFIELD-FEATURE', signals: ['multi-module'], slug: 'demo' }]);
   rows.push(['archgen_plan', 'scaffold', { scope: 'LARGE' }]);
   rows.push(['archgen_plan', 'scaffold', { scope: 'SMALL', slug: 'demo' }]);
   for (const kind of ['verifier', 'review', 'survey', 'investigate']) {
