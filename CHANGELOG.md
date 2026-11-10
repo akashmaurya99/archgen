@@ -122,6 +122,90 @@ is off, loudly**: `"the mirrored-test-tree rule is NOT ENFORCED — declare
 toolchain.source_root and toolchain.test_root"`. A language-neutrality test
 pins it: the audit core may not contain a default path prefix at all.
 
+### Fixed — the profile and the scaffold read two different lists
+
+The artifact set was written TWICE in the ladder — once in the profile rules,
+once per scope class — and the two had drifted:
+
+```
+in profile but NOT in scaffold:  [codebase-map.md, docs/mermaid-snippets.md]
+```
+
+So "write only what the profile marked `create`" could silently not happen:
+the profile said create, the scaffold never offered the file. There is **one
+list** now — `profile.artifactRules` — and
+`archgen_plan{action:'scaffold', scope, slug, intent, signals}` serves exactly
+the create set. Without an intent it serves the class's candidate set, with
+the required ones flagged and the conditional ones marked as such.
+
+### Fixed — the profile's decisions were never proved
+
+"Artifact necessity" was still judged by the agent, because the floor never
+compared the recorded decisions with the files on disk. It does now:
+
+- every `create` artifact exists (`PROFILE_CREATE_MISSING`);
+- every `omit` artifact does **not** (`PROFILE_OMIT_PRESENT`);
+- every `reuse` cites a file that exists (`PROFILE_REUSE_MISSING`);
+- every artifact on disk has a decision (`PROFILE_UNRECORDED`) — an artifact
+  without a consumer is the defect this whole mechanism exists to prevent;
+- a SMALL plan records its profile in the plan's `## Profile` YAML block, so
+  the check covers every scope class, not only MEDIUM/LARGE.
+
+### Fixed — a brief could be stale
+
+The brief is rendered at dispatch; if the plan changed afterwards, the agent
+would judge content the brief never described. The brief now carries a **plan
+snapshot** — task, requirement and edge-row counts plus a fingerprint — and the
+verifier is told: if what it reads disagrees with the snapshot, report it and
+stop judging stale content.
+
+### Added — every finding carries a stable code
+
+Fixes can now be batched by code and per file, tests assert behaviour instead
+of prose, and CI counts classes (`issueCodes` / `warningCodes` on the verify
+result): `MIRROR_MISSING`, `MATRIX_CLAIM_MISMATCH`, `PROFILE_OMIT_PRESENT`,
+`REQ_UNCITED`, `WAVE_LABEL_DRIFT`, `NO_ACCEPTANCE`, `CYCLE`, and the rest —
+the full table is in [`docs/ci.md`](docs/ci.md).
+
+### Added — the gate names its subject, and a corpus locks its behaviour
+
+- `plan_profile.gate` now records **who approved** the gate (`verifier`), the
+  rounds used, the findings by class, the waived count and the residual. The
+  floor warns when no verifier is recorded (`GATE_IDENTITY_MISSING`) — an
+  approval without a subject is not an approval.
+- `fixtures/plan-corpus/` holds poisoned plans with their expected codes, so
+  the floor's behaviour is locked by example (the yaml-corpus precedent): every
+  case must produce exactly its codes, and no others.
+
+### Changed — the brief is a map, not a copy
+
+A 30-task plan with 60 edge rows rendered every map in full: **6,034 tokens**
+in one message — a fifth of a 32k window. The maps are now bounded by a shared
+budget, and the budget is a **ceiling, not a quota**:
+
+- a small plan is **never** truncated — the ceiling only binds when there are
+  more rows than a brief can carry;
+- the budget is allocated by use (the matrix map first, then requirements, then
+  ownership and the module DAG) and a map with fewer rows than its share hands
+  the surplus to the next one;
+- nothing is dropped silently: the brief says how many rows it left out and
+  where they live, and the verifier is told to read that section and check
+  every row there — while the floor's own checks stay complete either way.
+
+A clean 30-task brief is now ~3,000 tokens.
+
+### Changed — workers receive the cases they owe
+
+An acceptance that claims `(covers E4)` now reaches the worker as the **case**,
+not just the link: the worker contract carries "E4: probe persistence — result
+stored for audit", so it implements exactly the cases the plan claims.
+
+### Changed — one coverage report
+
+`archgen_plan{action:'coverage'}` now reports the whole traceability picture —
+tasks, requirements, edge cases, and whether a profile was recorded — instead
+of a second report that knew nothing about traceability.
+
 ### Changed — the gate runs at most twice, and the verifier cannot invent requirements
 
 - **Round 1 is exhaustive; round 2 is a delta.** Round 2 re-checks only round
@@ -203,19 +287,19 @@ Measured, 0.1.3 → unreleased:
 
 | | 0.1.3 | Unreleased |
 |---|---:|---:|
-| `skill/SKILL.md` (always-on) | 6,252 | 6,298 |
+| `skill/SKILL.md` (always-on) | 6,252 | 6,375 |
 | MCP tool catalog (9 tools, always-on) | 4,695 | 5,056 |
-| **Always-on total** | **10,947** | **11,354** |
-| Protocol references (on demand) | 12,931 | 13,633 |
+| **Always-on total** | **10,947** | **11,431** |
+| Protocol references (on demand) | 12,931 | 14,298 |
 | Median reference section | 238 | 243 |
-| Dispatch briefs (on demand) | 2,416 | 3,337 |
-| Artifact templates (on demand) | 2,347 | 2,592 |
+| Dispatch briefs (on demand) | 2,416 | 3,497 |
+| Artifact templates (on demand) | 2,347 | 2,596 |
 
 The catalog grew by the `profile` action, and the protocol references by the
-floor protocol, its invariants and the traceability rules; the always-on total
-stays under the CI ceiling, which moves **11,500 → 11,800** because the floor
-protocol and the waiver rule are part of the always-on contract. The gate
-still fails a regression beyond that.
+floor protocol, its invariants, the traceability rules and the code table; the
+always-on total stays under the CI ceiling, which moves **11,500 → 11,800**
+because the floor protocol and the waiver rule are part of the always-on
+contract. The gate still fails a regression beyond that.
 
 ## [0.1.3] - 2026-11-09
 

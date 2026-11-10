@@ -1,0 +1,5 @@
+{
+  "name": "the profile says create, but the artifact is missing",
+  "codes": ["PROFILE_CREATE_MISSING"],
+  "warnings": []
+}

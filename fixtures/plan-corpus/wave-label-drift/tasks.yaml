@@ -1,0 +1,15 @@
+tasks:
+  - id: T1
+    title: core
+    depends_on: []
+    parallel_group: wave-1
+    file_ownership: ["src/core/**"]
+    acceptance:
+      - "the core behaviour holds"
+  - id: T2
+    title: api
+    depends_on: [T1]
+    parallel_group: wave-1
+    file_ownership: ["src/api/**"]
+    acceptance:
+      - "the api behaviour holds"

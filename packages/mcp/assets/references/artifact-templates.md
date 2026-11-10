@@ -92,6 +92,15 @@ The floor then joins the two sides instead of asking a model to infer them: the 
 
 Claims are optional per plan, but the convention is detected: as soon as one acceptance claims an edge id, the mutual link is enforced for every row. Until then the floor reports that the claims are not declared, so the gap is visible.
 
+### The plan profile record — where the decisions live
+
+The profile is recorded, not remembered, and the floor checks it against the files on disk:
+
+- **MEDIUM / LARGE** → `answers.yaml` → `plan_profile.artifacts[]`, each `{path, decision, reason}` plus `host_path` for a `reuse` decision (the existing file it cites).
+- **SMALL** → the plan's `## Profile` section, as the fenced YAML block the scaffold writes.
+
+The floor then proves: every `create` artifact exists, every `omit` artifact does NOT exist, every `reuse` cites a file that exists, and every artifact on disk has a decision. An artifact without a decision is `PROFILE_UNRECORDED` — the defect this whole mechanism exists to prevent.
+
 ### Waivers — approved deviations, recorded
 
 A waived finding is an audit event, not a conversation. Write it to `.archgen/<slug>/waivers.yaml` **before** proceeding past it:

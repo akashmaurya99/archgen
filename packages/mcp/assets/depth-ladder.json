@@ -124,6 +124,8 @@
       },
       {
         "path": ".archgen/<slug>/docs/mermaid-snippets.md",
+        "scopeIn": ["LARGE"],
+        "signalSome": ["multi-module", "multi-service", "external-integration"],
         "purpose": "diagram snippets — only when a diagram is created"
       }
     ],
@@ -160,15 +162,16 @@
       }
     }
   },
+  "_classes_readme": [
+    "The artifact set is NOT listed here: `profile.artifactRules` is the only",
+    "list, and the scaffold derives the class's candidates from it. A second",
+    "copy is how the profile and the scaffold drifted apart."
+  ],
   "classes": {
     "SMALL": {
       "label": "SMALL — add or touch a few things",
       "intentDefaults": ["BROWNFIELD-CHANGE"],
       "roundCap": 3,
-      "artifacts": [
-        { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
-        { "path": ".archgen/<slug>/plans/<slug>-note.md", "required": true, "purpose": "a lean plan note" }
-      ],
       "planSections": ["Profile", "Intent", "Tasks", "Risks"],
       "minEdgeCasesPerTask": 0,
       "requires": [],
@@ -182,11 +185,6 @@
       "label": "MEDIUM — a real feature with real risk",
       "intentDefaults": ["GREENFIELD-MODULE", "BROWNFIELD-FEATURE"],
       "roundCap": 3,
-      "artifacts": [
-        { "path": ".archgen/<slug>/answers.yaml", "required": true, "purpose": "captured requirements and the plan profile" },
-        { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
-        { "path": ".archgen/<slug>/plans/<slug>.md", "required": true, "purpose": "the full plan" }
-      ],
       "planSections": ["Profile", "Context", "Per-task sections", "Verification steps"],
       "minEdgeCasesPerTask": 3,
       "requires": ["plan context of 2-4 paragraphs", "per-task sections with approach + edge cases + out-of-scope", "ordered runnable verification steps"],
@@ -194,22 +192,13 @@
       "notes": [
         "One `<id> — <title>` heading per task, in dependency order.",
         "Verification steps are repo-root-relative (no `../`, no `--plan .`), exact, and runnable.",
-        "architecture.yaml is created ONLY when the profile finds a cross-module or contract trigger; fetch its skeleton with scaffold{scope:'LARGE',file:'architecture.yaml'}."
+        "architecture.yaml is created ONLY when the profile finds a cross-module or contract trigger; the scaffold serves it when it is marked create."
       ]
     },
     "LARGE": {
       "label": "LARGE — a full professional stack (greenfield from scratch)",
       "intentDefaults": ["GREENFIELD-SYSTEM"],
       "roundCap": 6,
-      "artifacts": [
-        { "path": ".archgen/<slug>/answers.yaml", "required": true, "purpose": "the captured requirements and plan profile" },
-        { "path": ".archgen/<slug>/docs/prd.md", "required": true, "purpose": "the product requirements — FR ids tasks cite" },
-        { "path": ".archgen/<slug>/architecture.yaml", "required": true, "purpose": "the contract source of truth" },
-        { "path": ".archgen/<slug>/tasks.yaml", "required": true, "purpose": "the task contract" },
-        { "path": ".archgen/<slug>/plans/<slug>.md", "required": true, "purpose": "the full plan" },
-        { "path": ".archgen/<slug>/decisions/NNNN-<title>.md", "required": false, "purpose": "formal ADRs (irreversible decisions only)" },
-        { "path": ".archgen/<slug>/docs/<module>.md", "required": false, "purpose": "per-module diagrams (<=15 nodes each) when topology is non-obvious" }
-      ],
       "planSections": ["Profile", "Context", "Per-task sections", "Edge-case matrices", "Verification steps"],
       "minEdgeCasesPerTask": 3,
       "requires": [

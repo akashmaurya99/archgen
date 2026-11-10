@@ -33,6 +33,9 @@ the ones that make the plan wrong.
   `(covers E4)` claim link between a row and the acceptance it points at;
 - every PRD requirement cited by an acceptance, and no dangling requirement
   citation;
+- **the recorded profile honoured** — every `create` artifact exists, every
+  `omit` artifact does NOT, every `reuse` cites a file that exists, and every
+  artifact on disk has a decision;
 - every declared path owned by a task, and every declared decision backed by
   its file;
 - `parallel_group` labels that match the computed wave.
@@ -40,6 +43,21 @@ the ones that make the plan wrong.
 A rule that cannot run — because the plan declares no `toolchain` roots, or
 has no `architecture.yaml` — is reported as **NOT ENFORCED** rather than
 silently skipped.
+
+## The codes
+
+Every finding carries a stable code, so CI can group and count:
+
+| Group | Codes |
+|---|---|
+| Profile | `PROFILE_NOT_RECORDED`, `PROFILE_CREATE_MISSING`, `PROFILE_OMIT_PRESENT`, `PROFILE_REUSE_MISSING`, `PROFILE_UNRECORDED`, `PROFILE_DECISION_INVALID` |
+| Traceability | `MATRIX_UNKNOWN_TASK`, `MATRIX_INDEX_OUT_OF_RANGE`, `MATRIX_CLAIM_MISMATCH`, `MATRIX_DANGLING_CLAIM`, `REQ_UNCITED`, `REQ_UNKNOWN` |
+| Structure | `MIRROR_MISSING`, `DECISION_MISSING`, `PATH_UNOWNED`, `WAVE_LABEL_DRIFT`, `WAVE_GROUP_SPANS` |
+| Task file | `NO_ACCEPTANCE`, `EMPTY_OWNERSHIP`, `OWNERSHIP_OVERLAP`, `CYCLE`, `DANGLING_DEP`, `PLAN_TASK_COVERAGE`, `UNKNOWN_TASK_ID` |
+| Warnings (never blocking) | `CONFIG_NOT_ENFORCED`, `OWNERSHIP_CONTAINED`, `WAIVER_COUNT_MISMATCH`, `GATE_IDENTITY_MISSING` |
+
+`archgen_plan{action:'verify'}` returns `issues`, `warnings`, and the counts
+`issueCodes` / `warningCodes`.
 
 ## A GitHub Actions step
 

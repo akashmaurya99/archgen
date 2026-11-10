@@ -1,0 +1,5 @@
+{
+  "name": "a declared decision has no file",
+  "codes": ["DECISION_MISSING"],
+  "warnings": ["CONFIG_NOT_ENFORCED"]
+}

@@ -45,14 +45,31 @@ Pass `archgen_plan{action:'brief', kind:'verifier'}` verbatim (pre-rendered evid
 
 **The verifier does not invent requirements.** A missing capability that no PRD, decision, `answers.yaml` or code-standard asked for is an OBSERVATION — one line, never blocking, never a fix demand. Without this rule the gate keeps discovering new features and the plan never converges.
 
-### Fix discipline — batch per file, one pass
+### Fix discipline — batch per file AND per code, one pass
 
-When `ISSUES` returns: group findings by file and apply every fix to that file in ONE pass. NITs are not fixed and never justify another round. If you disagree with a finding, surface it verbatim to the user rather than silently overriding it.
+When `ISSUES` returns: group findings by file and by CODE, and apply every fix to that file in ONE pass. NITs are not fixed and never justify another round. If you disagree with a finding, surface it verbatim to the user rather than silently overriding it.
+
+### The floor's codes — group fixes by code, not by sentence
+
+Every finding carries a stable code, so fixes can be batched and counted:
+
+| Code | Meaning |
+|---|---|
+| `PROFILE_NOT_RECORDED` | no profile was recorded — artifact necessity cannot be checked |
+| `PROFILE_CREATE_MISSING` / `PROFILE_OMIT_PRESENT` / `PROFILE_REUSE_MISSING` | the recorded decision and the files on disk disagree |
+| `PROFILE_UNRECORDED` | an artifact exists with no recorded decision |
+| `MIRROR_MISSING` | a source-owning task has no mirrored test path |
+| `MATRIX_UNKNOWN_TASK` / `MATRIX_INDEX_OUT_OF_RANGE` / `MATRIX_CLAIM_MISMATCH` / `MATRIX_DANGLING_CLAIM` | the edge-case matrix and the acceptances disagree |
+| `REQ_UNCITED` / `REQ_UNKNOWN` | the PRD and the acceptances disagree |
+| `DECISION_MISSING` / `PATH_UNOWNED` / `WAVE_LABEL_DRIFT` / `WAVE_GROUP_SPANS` | the declared structure and the plan disagree |
+| `NO_ACCEPTANCE` / `EMPTY_OWNERSHIP` / `OWNERSHIP_OVERLAP` / `CYCLE` / `DANGLING_DEP` / `PLAN_TASK_COVERAGE` / `UNKNOWN_TASK_ID` | the task file itself is defective |
+
+Warnings carry their own codes (`CONFIG_NOT_ENFORCED`, `OWNERSHIP_CONTAINED`, `WAIVER_COUNT_MISMATCH`, `GATE_IDENTITY_MISSING`) and never block.
 
 ### Waivers and gate metrics — the audit trail
 
 - **A waiver is a file, not a sentence.** When the user accepts a residual finding, write it to `.archgen/<slug>/waivers.yaml` (`scope`, `finding`, `reason`, `approved_by`, `approved_at`) BEFORE proceeding, and say so in the completion report. A waived finding is not a defect to fix and the verifier must not re-raise it unless it regressed.
-- **The gate measures itself.** After the gate, record `plan_profile.gate` in `answers.yaml` (MEDIUM/LARGE) or the plan's `## Profile` (SMALL): rounds used, findings by class, waived count, residual. The floor compares the recorded waived count with the ledger.
+- **The gate measures itself, and it names its subject.** After the gate, record `plan_profile.gate` in `answers.yaml` (MEDIUM/LARGE) or the plan's `## Profile` (SMALL): `verifier` (who approved it), `rounds` used, findings by class, waived count, residual, and the ISO timestamp. The floor checks the recorded waived count against the ledger and warns when no verifier is recorded — an approval without a subject is not an approval.
 
 ### Gate protocol — TWO rounds, then the user
 

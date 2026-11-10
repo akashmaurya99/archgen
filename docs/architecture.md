@@ -52,22 +52,32 @@ scales with the profile; the deterministic floor runs for every scope:
 1. **The floor, first.** `archgen_plan{action:'verify'}` is the deterministic
    truth and it runs BEFORE any gate agent is dispatched: cycles, dangling
    refs, same-wave ownership overlap, plan↔task coverage, the **mirrored test
-   tree**, **matrix citations that resolve**, **PRD requirements that are
-   cited**, **decision files that exist**, **declared paths that have an
-   owner**, and **wave labels that match the DAG**. The orchestrator fixes
-   every issue it reports and re-runs until `APPROVE` — a local loop, at zero
-   agent cost. A gate agent that never sees a mechanical defect can spend its
-   pass on judgment.
+   tree**, **matrix citations that resolve** (and the explicit
+   `(covers E4)` claim link), **PRD requirements that are cited**, **the
+   recorded profile decisions that were honoured** (a create that is missing,
+   an omit that exists, an artifact with no decision), **decision files that
+   exist**, **declared paths that have an owner**, and **wave labels that
+   match the DAG**. The orchestrator fixes every issue it reports and re-runs
+   until `APPROVE` — a local loop, at zero agent cost. A gate agent that
+   never sees a mechanical defect can spend its pass on judgment.
+   Every finding carries a **stable code** (`MIRROR_MISSING`,
+   `MATRIX_CLAIM_MISMATCH`, `PROFILE_OMIT_PRESENT`, …), so fixes are batched
+   per code and per file, tests assert behaviour instead of prose, and CI can
+   count classes.
 2. **Verifier gate.** Judgment scales: SMALL is audited by the main agent;
    MEDIUM by one strong verifier sub-agent; LARGE by one top-tier verifier.
-   The brief carries the floor's result and four rendered maps — requirement
-   map, edge-case matrix map, ownership map, module DAG — so the agent checks
-   ALIGNMENT (does the acceptance a matrix row cites verify the stated case?)
-   instead of re-deriving facts. Findings are classified **BLOCKING**,
-   **NIT** (cosmetic, never blocks), or **OBSERVATION** (a capability nobody
-   asked for, never blocks). The verifier may not invent requirements: a
-   missing capability that no PRD, decision or `answers.yaml` asked for is an
-   observation, not a defect.
+   The brief carries the floor's result, a **plan snapshot** (task, requirement
+   and row counts plus a fingerprint — the agent compares them against what
+   it reads and reports a stale plan instead of judging one), and four rendered
+   maps — requirement map, edge-case matrix map, ownership map, module DAG —
+   so the agent checks ALIGNMENT (does the acceptance a matrix row cites
+   verify the stated case?) instead of re-deriving facts. The maps are bounded
+   by a shared budget (a ceiling, not a quota: a small plan is never
+   truncated, and anything left out is named with the section to read).
+   Findings are classified **BLOCKING**, **NIT** (cosmetic, never blocks), or
+   **OBSERVATION** (a capability nobody asked for, never blocks). The verifier
+   may not invent requirements: a missing capability that no PRD, decision or
+   `answers.yaml` asked for is an observation, not a defect.
 3. **Plan review.** Zero findings, or an explicit user waiver. SMALL/MEDIUM are
    reviewed by the main agent against the profile; LARGE gets one independent
    reviewer. Review areas include `scope fit & minimalism`.
@@ -104,9 +114,19 @@ pushes the class up** (a thin profile stays low-confidence and asks exactly one
 question), and **each artifact is decided independently** (a LARGE plan may
 still omit ADRs and diagrams). Existing host PRDs, architecture docs, and ADRs
 come back as `reuse`; the plan records the path and writes only the delta.
-`scaffold` then serves only the skeletons for the required set, and the plan's
-`## Profile` section (or `answers.yaml plan_profile:`) records every decision so
-the verifier can audit it.
+
+**One list, not two.** The artifact set used to be written twice — in the
+profile rules and again per scope class — and the two drifted: the profile
+could mark an artifact `create` that the scaffold never offered, so "write
+only what the profile says create" silently did not happen. The profile rules
+are now the only list, and `archgen_plan{action:'scaffold', scope, slug,
+intent, signals}` serves EXACTLY the create set (without an intent it serves
+the class's candidate set, with the required ones flagged).
+
+The decision is recorded — in `answers.yaml` `plan_profile:` (MEDIUM/LARGE) or
+the plan's `## Profile` YAML block (SMALL) — and the floor **proves** it:
+every create exists, every omit does not, every reuse cites a file that
+exists, and every artifact on disk has a decision.
 
 ## Wave execution & ownership discipline
 

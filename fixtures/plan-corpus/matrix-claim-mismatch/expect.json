@@ -1,0 +1,5 @@
+{
+  "name": "a matrix row cites the acceptance that does not claim it",
+  "codes": ["MATRIX_CLAIM_MISMATCH"],
+  "warnings": []
+}

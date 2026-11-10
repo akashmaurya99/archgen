@@ -1,0 +1,5 @@
+{
+  "name": "a source owner with no mirrored test path",
+  "codes": ["MIRROR_MISSING"],
+  "warnings": []
+}

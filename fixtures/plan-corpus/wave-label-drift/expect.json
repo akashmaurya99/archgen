@@ -1,0 +1,5 @@
+{
+  "name": "a wave label disagrees with the dependency graph",
+  "codes": ["WAVE_LABEL_DRIFT", "WAVE_GROUP_SPANS"],
+  "warnings": []
+}

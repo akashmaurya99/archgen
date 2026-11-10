@@ -173,6 +173,30 @@ export function renderBriefContext(ctx = {}) {
 
 /** How many rows of a map the brief carries before it truncates. */
 const MAP_ROW_CAP = 60;
+/**
+ * The TOTAL number of map lines a brief may carry.
+ *
+ * A 30-task plan with 60 edge rows rendered every map in full: 6,034 tokens,
+ * a fifth of a 32k window in one message. The maps exist to PAIR a row with
+ * its acceptance — not to reproduce the plan.
+ *
+ * THE BUDGET IS A CEILING, NOT A QUOTA, and it is allocated by USE, never by
+ * a fixed per-map cap:
+ *
+ *   - a SMALL plan (few rows) is NEVER truncated — the ceiling only binds
+ *     when there are more rows than a brief can carry, which is exactly when
+ *     the agent should read sections instead of having everything inline;
+ *   - the budget is shared and flows: the matrix gets half (it carries the
+ *     link the floor just proved), requirements a third, ownership and the
+ *     module DAG the rest — and a map with fewer rows than its share hands
+ *     the surplus to the next one;
+ *   - nothing is dropped SILENTLY: the brief says how many rows it omitted
+ *     and where they live, and the verifier is told to read that section and
+ *     check every row there.
+ */
+const MAP_LINE_BUDGET = 90;
+/** The share of the budget each map may take, in priority order. */
+const MAP_SHARES = { edgeMatrix: 0.5, requirements: 0.3, ownership: 0.2, modules: 0.2 };
 
 /**
  * Render the mechanical floor and the maps a gate agent reads instead of
@@ -182,6 +206,11 @@ const MAP_ROW_CAP = 60;
  * matrix row points at an acceptance that exists, that every requirement is
  * cited, and that each task owns what it claims. Those are facts; the facts
  * are rendered here, so the agent spends its pass on judgment.
+ *
+ * COMPACT BY DESIGN. A 30-task plan with 60 edge rows rendered as markdown
+ * tables measured 6,034 tokens — a fifth of a 32k window in one message. One
+ * line per row, with the row caps, keeps the brief to the facts the agent
+ * needs and nothing else.
  */
 function renderAudit(audit) {
   const out = [];
@@ -191,11 +220,11 @@ function renderAudit(audit) {
 
   out.push('### Mechanical floor — computed for you (do NOT re-derive)');
   out.push('');
-  out.push(`- blocking issues: ${issues.length}`);
-  out.push(`- warnings: ${warnings.length}`);
+  out.push(`- blocking issues: ${issues.length}${summarizeCodes(issues)}`);
+  out.push(`- warnings: ${warnings.length}${summarizeCodes(warnings)}`);
   if (issues.length) {
     out.push('');
-    out.push('BLOCKING (each one is a defect; report it once, with the fix):');
+    out.push('BLOCKING (report each once, with the fix):');
     for (const i of issues) out.push(`- ${i}`);
   }
   if (warnings.length) {
@@ -206,50 +235,120 @@ function renderAudit(audit) {
   }
   out.push('');
 
-  const reqs = maps.requirements ?? [];
-  if (reqs.length) {
-    out.push('#### Requirement map — every PRD requirement, and the acceptance that cites it');
+  const snapshot = audit.snapshot;
+  if (snapshot) {
+    out.push('### PLAN SNAPSHOT — compare it against what you read');
     out.push('');
-    out.push('| requirement | what it asks for | cited by | the acceptance it points at |');
-    out.push('|---|---|---|---|');
-    for (const r of reqs.slice(0, MAP_ROW_CAP)) {
-      const acc = r.acceptanceText ? r.acceptanceText.slice(0, 140) : 'NOT CITED — no acceptance claims it';
-      out.push(
-        `| ${r.id} | ${String(r.text ?? '').slice(0, 110)} | ${r.covered ? r.citedBy.join(', ') : '—'} | ${acc} |`,
-      );
-    }
-    if (reqs.length > MAP_ROW_CAP) out.push(`| … ${reqs.length - MAP_ROW_CAP} more | | | |`);
-    out.push('');
-    out.push('Compare the two texts: does the acceptance verify the requirement it claims?');
+    out.push(
+      `- tasks: ${snapshot.tasks} · requirements: ${snapshot.requirements} · edge rows: ${snapshot.edgeRows} ` +
+        `(linked: ${snapshot.linkedRows}) · fingerprint: ${snapshot.fingerprint}`,
+    );
+    out.push(
+      'If the files you read disagree with these numbers, the plan CHANGED after this brief was rendered: ' +
+        'report that as a finding and stop judging stale content.',
+    );
     out.push('');
   }
 
+  const reqs = maps.requirements ?? [];
   const rows = maps.edgeMatrix ?? [];
+  const own = maps.ownership ?? [];
+  const mods = maps.modules ?? [];
+
+  // The map blocks, in PRIORITY order: the matrix carries the link the floor
+  // just proved, so it gets the budget first.
+  const blocks = [];
   if (rows.length) {
-    out.push('#### Edge-case matrix map — each row and the acceptance it cites');
-    out.push('');
-    out.push('| row | case | cited | the acceptance it points at | claims |');
-    out.push('|---|---|---|---|---|');
-    for (const r of rows.slice(0, MAP_ROW_CAP)) {
-      const text = r.acceptance ? r.acceptance.slice(0, 140) : 'NO SUCH ACCEPTANCE';
-      const claimed = (r.claims ?? []).length ? r.claims.join(', ') : '—';
-      out.push(`| ${r.row} | ${String(r.case).slice(0, 80)} | ${r.task}#${r.index} | ${text} | ${claimed} |`);
+    blocks.push({
+      key: 'edgeMatrix',
+      title: '#### Edge-case matrix map — row | case | cited | the acceptance | claims',
+      where: "the plan's edge-case matrix section",
+      lines: rows.map((r) => {
+        const text = r.acceptance ? String(r.acceptance).slice(0, 110) : 'NO SUCH ACCEPTANCE';
+        const claimed = (r.claims ?? []).length ? r.claims.join(', ') : '—';
+        return `${r.row} | ${String(r.case).slice(0, 70)} | ${r.task}#${r.index} | ${text} | ${claimed}`;
+      }),
+      footer: 'The claim link is already checked. Judge the rest: does the cited acceptance verify the stated case?',
+    });
+  }
+  if (reqs.length) {
+    blocks.push({
+      key: 'requirements',
+      title: '#### Requirement map — id | what it asks for | cited by | the acceptance',
+      where: 'docs/prd.md',
+      lines: reqs.map((r) => {
+        const acc = r.acceptanceText ? String(r.acceptanceText).slice(0, 110) : 'NOT CITED';
+        return `${r.id} | ${String(r.text ?? '').slice(0, 90)} | ${r.covered ? r.citedBy.join(', ') : '—'} | ${acc}`;
+      }),
+      footer: 'Compare the two texts: does the acceptance verify the requirement it claims?',
+    });
+  }
+  if (own.length) {
+    blocks.push({
+      key: 'ownership',
+      title: '#### Ownership map — task | wave | paths',
+      where: 'tasks.yaml',
+      lines: own.map((o) => `${o.id} | ${o.wave ?? '?'} | ${o.globs.join(', ')}`),
+      footer: '',
+    });
+  }
+  if (mods.length) {
+    blocks.push({
+      key: 'modules',
+      title: '#### Module DAG — module | depends_on_modules | owning tasks',
+      where: 'architecture.yaml',
+      lines: mods.map((m) => `${m.name} | ${m.dependsOn.join(', ') || '—'} | ${m.ownedBy.join(', ') || 'NONE'}`),
+      footer: '',
+    });
+  }
+
+  // Allocate the shared budget by share, and let a map with fewer rows than
+  // its share hand the surplus to the next one. Nothing is dropped silently,
+  // and the total never exceeds the ceiling.
+  let remaining = MAP_LINE_BUDGET;
+  let carry = 0;
+  const rendered = [];
+  let omitted = 0;
+  for (const block of blocks) {
+    const share = Math.max(1, Math.floor(MAP_LINE_BUDGET * (MAP_SHARES[block.key] ?? 0.2)));
+    const allowance = share + carry;
+    const take = Math.min(block.lines.length, allowance, remaining);
+    carry = allowance - take; // the unused share flows to the next map
+    remaining -= take;
+    const left = block.lines.length - take;
+    omitted += left;
+    rendered.push({ ...block, shown: block.lines.slice(0, take), omitted: left });
+  }
+
+  for (const block of rendered) {
+    if (!block.lines.length) continue;
+    out.push(block.title);
+    for (const line of block.shown) out.push(line);
+    if (block.omitted > 0) {
+      out.push(`… ${block.omitted} more row(s) in ${block.where} — read that section and check every row there`);
     }
-    if (rows.length > MAP_ROW_CAP) out.push(`| … ${rows.length - MAP_ROW_CAP} more | | | | |`);
+    if (block.footer) {
+      out.push('');
+      out.push(block.footer);
+    }
     out.push('');
-    out.push('The `claims` column is the explicit link the floor already checked. Judge the rest: does the cited acceptance actually verify the stated case?');
+  }
+  if (omitted > 0) {
+    out.push(
+      `The floor already checked EVERY row it did not show you (the links, the citations, the claims). ` +
+        `Your judgement covers the rows above plus every row in the sections named above.`,
+    );
     out.push('');
   }
 
   const waivers = audit.waivers ?? [];
   if (waivers.length) {
     out.push('#### Waived findings — approved deviations, not defects to fix');
-    out.push('');
     for (const w of waivers) {
       out.push(
-        `- ${w.id || 'waiver'} — ${w.scope.join(', ') || 'unscoped'} — ${w.finding}` +
-          `${w.reason ? ` — reason: ${w.reason}` : ''}` +
-          `${w.approvedBy ? ` — approved by ${w.approvedBy}${w.approvedAt ? ` on ${w.approvedAt}` : ''}` : ''}`,
+        `${w.id || 'waiver'} | ${w.scope.join(', ') || 'unscoped'} | ${w.finding}` +
+          `${w.reason ? ` | reason: ${w.reason}` : ''}` +
+          `${w.approvedBy ? ` | approved by ${w.approvedBy}${w.approvedAt ? ` on ${w.approvedAt}` : ''}` : ''}`,
       );
     }
     out.push('');
@@ -257,31 +356,17 @@ function renderAudit(audit) {
     out.push('');
   }
 
-  const own = maps.ownership ?? [];
-  if (own.length) {
-    out.push('#### Ownership map — task → the paths it owns (and its wave)');
-    out.push('');
-    out.push('| task | wave | paths |');
-    out.push('|---|---|---|');
-    for (const o of own.slice(0, MAP_ROW_CAP)) {
-      out.push(`| ${o.id} | ${o.wave ?? '?'} | ${o.globs.join(', ')} |`);
-    }
-    if (own.length > MAP_ROW_CAP) out.push(`| … ${own.length - MAP_ROW_CAP} more | | |`);
-    out.push('');
-  }
-
-  const mods = maps.modules ?? [];
-  if (mods.length) {
-    out.push('#### Module DAG — module → depends_on_modules → the tasks that own it');
-    out.push('');
-    out.push('| module | depends_on_modules | owning tasks |');
-    out.push('|---|---|---|');
-    for (const m of mods.slice(0, MAP_ROW_CAP)) {
-      out.push(`| ${m.name} | ${m.dependsOn.join(', ') || '—'} | ${m.ownedBy.join(', ') || 'NONE'} |`);
-    }
-    if (mods.length > MAP_ROW_CAP) out.push(`| … ${mods.length - MAP_ROW_CAP} more | | |`);
-    out.push('');
-  }
-
   return out;
+}
+
+/** " (3 codes: A x1, B x2)" — the counts the orchestrator groups fixes by. */
+function summarizeCodes(list) {
+  if (!list.length) return '';
+  const counts = new Map();
+  for (const m of list) {
+    const code = String(m).split(':')[0];
+    counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  const parts = [...counts.entries()].map(([code, n]) => `${code} x${n}`);
+  return ` (${parts.join(', ')})`;
 }

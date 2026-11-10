@@ -12,6 +12,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { invalidInput } from './errors.mjs';
 import { TEMPLATES_DIR } from '../context.mjs';
+import { buildPlanProfile, scopeArtifactRules } from './plan-profile.mjs';
+
+/**
+ * Which skeleton serves which artifact.
+ *
+ * The artifact path is the PLAN's name for the file; the skeleton key is the
+ * TEMPLATE's name. The mapping is by suffix (see skeletonKeyFor), so the
+ * scaffold can serve exactly the artifacts a profile marked `create`.
+ */
 
 /**
  * Read a canonical template and substitute the project slug.
@@ -35,13 +44,31 @@ function readTemplate(templatesDir, name, slug) {
 /**
  * The artifact set + skeletons for one scope class.
  *
+ * TWO MODES, ONE SOURCE OF TRUTH.
+ *
+ * - With `intent` (and optionally `signals`): the PROFILE decides. The
+ *   scaffold serves exactly the artifacts it marked `create`, and reports the
+ *   `reuse` and `omit` decisions with their reasons. This is the mode the
+ *   skill uses, because it is the only one that cannot drift from the
+ *   recorded decision.
+ * - Without `intent`: the scope class's CANDIDATE set — the same artifact
+ *   rules, filtered by the class. `writeThese` is the required subset; the
+ *   conditional artifacts are listed with `required: false` and their
+ *   skeleton is served on request.
+ *
+ * The artifact set used to be listed TWICE in the ladder (once in the profile
+ * rules, once per class), and the two drifted — the profile could mark an
+ * artifact `create` that the scaffold never offered. There is one list now:
+ * `profile.artifactRules`.
+ *
  * @param {object} ladder the depth-ladder.json content
  * @param {string} scopeClass 'SMALL' | 'MEDIUM' | 'LARGE'
- * @param {{slug?: string, generator?: string, generatedAt?: string, templatesDir?: string}} opts
+ * @param {{slug?: string, generator?: string, generatedAt?: string, templatesDir?: string,
+ *          intent?: string, signals?: string[], modules?: number, tasks?: number}} opts
  */
 export function buildScaffold(ladder, scopeClass, opts = {}) {
-  const key = String(scopeClass ?? '').toUpperCase();
-  const spec = ladder.classes?.[key];
+  const requested = String(scopeClass ?? '').toUpperCase();
+  const spec = ladder.classes?.[requested];
   if (!spec) {
     throw invalidInput(`unknown scope class '${scopeClass}' (allowed: ${Object.keys(ladder.classes ?? {}).join('|')})`, {
       scopeClass,
@@ -53,47 +80,100 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   const generator = opts.generator ?? 'archgen';
   const templatesDir = opts.templatesDir ?? TEMPLATES_DIR;
 
-  // The artifact set, with <slug> resolved (a path may mention it twice).
-  const artifacts = (spec.artifacts ?? []).map((a) => ({
-    ...a,
-    path: a.path.replaceAll('<slug>', slug),
-  }));
+  // The profile, when the caller knows the intent: it decides the set.
+  const profile = opts.intent
+    ? buildPlanProfile(ladder, {
+        intent: opts.intent,
+        signals: opts.signals ?? [],
+        modules: opts.modules,
+        tasks: opts.tasks,
+        slug,
+      })
+    : null;
+  const key = profile ? profile.scopeClass : requested;
+
+  // The artifact set: one list (the profile rules), filtered by scope.
+  const rules = scopeArtifactRules(ladder, key);
+  const artifacts = profile
+    ? profile.artifacts.map((a) => ({
+        path: a.path,
+        purpose: a.purpose ?? null,
+        required: a.decision === 'create',
+        decision: a.decision,
+        reason: a.reason,
+      }))
+    : rules.map((r) => ({
+        path: r.path.replaceAll('<slug>', slug),
+        purpose: r.purpose ?? null,
+        required: r.required,
+      }));
+
+  const createPaths = profile
+    ? profile.artifacts.filter((a) => a.decision === 'create').map((a) => a.path)
+    : artifacts.filter((a) => a.required).map((a) => a.path);
+  const reusePaths = profile ? profile.artifacts.filter((a) => a.decision === 'reuse').map((a) => a.path) : [];
+  const omitPaths = profile ? profile.artifacts.filter((a) => a.decision === 'omit').map((a) => a.path) : [];
 
   // The canonical templates (assets/templates/) — one copy, served here.
-  // The PRD + architecture contract are LARGE-only artifacts; the ADR and the
-  // Mermaid snippets are optional extras any class may add.
-  const isLarge = key === 'LARGE';
-  const isMediumPlus = key !== 'SMALL';
   const header = provenanceHeader(generatedAt, generator);
   const tasksYaml = templatesDir
     ? `${header}\n${readTemplate(templatesDir, 'tasks.yaml', slug)}`
     : `${header}\n${minimalTasksYaml()}`;
   const planMd = renderPlanMd(key, spec, slug, generatedAt);
-  const answersYaml = isMediumPlus ? renderAnswersYaml(key, generatedAt, generator) : null;
-  const prdMd = isLarge && templatesDir ? readTemplate(templatesDir, 'prd.md', slug) : null;
-  const architectureYaml =
-    isLarge && templatesDir ? `${header}\n${readTemplate(templatesDir, 'architecture.yaml', slug)}` : null;
+  const answersYaml = key !== 'SMALL' ? renderAnswersYaml(key, generatedAt, generator) : null;
+  const prdMd = templatesDir ? readTemplate(templatesDir, 'prd.md', slug) : null;
+  const architectureYaml = templatesDir ? `${header}\n${readTemplate(templatesDir, 'architecture.yaml', slug)}` : null;
   const adrMd = templatesDir ? readTemplate(templatesDir, 'adr.md', slug) : null;
   const edgeMatrix = templatesDir
     ? `${renderEdgeMatrix(ladder)}\n${readTemplate(templatesDir, 'edge-matrix.md', slug)}`
     : renderEdgeMatrix(ladder);
   const mermaid = templatesDir ? readTemplate(templatesDir, 'mermaid.md', slug) : null;
 
-  const requiredArtifacts = artifacts.filter((a) => a.required !== false).map((a) => a.path);
-  const optionalArtifacts = artifacts.filter((a) => a.required === false).map((a) => a.path);
+  const skeletonBodies = {
+    'answers.yaml': answersYaml,
+    'tasks.yaml': tasksYaml,
+    'plans/<slug>.md': planMd,
+    'docs/prd.md': prdMd,
+    'architecture.yaml': architectureYaml,
+    'decisions/NNNN-title.md': adrMd,
+    'docs/mermaid-snippets.md': mermaid,
+  };
+
+  // In profile mode the scaffold serves EXACTLY the create set. In class mode
+  // it serves the candidates, with the required ones flagged.
+  const wanted = profile ? artifacts.filter((a) => a.decision === 'create') : artifacts;
+  const served = {};
+  for (const a of wanted) {
+    const key = skeletonKeyFor(a.path);
+    if (key && skeletonBodies[key]) served[key] = skeletonBodies[key];
+  }
+
+  const requiredArtifacts = profile
+    ? createPaths
+    : artifacts.filter((a) => a.required).map((a) => a.path);
+  const optionalArtifacts = profile
+    ? reusePaths
+    : artifacts.filter((a) => !a.required).map((a) => a.path);
   const depthBudgets = ladder.profile?.depthBudgets?.[key] ?? null;
 
   return {
     scopeClass: key,
     label: spec.label,
     // THIS TOOL WRITES NOTHING. It returns the CONTENT of every file the
-    // scope class needs, and the caller writes them. An agent that assumes
+    // profile requires, and the caller writes them. An agent that assumes
     // otherwise gets "missing or not a directory" from every artifact tool
     // and reads it as a broken tool rather than an unwritten plan.
     writes: false,
     writeThese: requiredArtifacts,
     requiredArtifacts,
     optionalArtifacts,
+    reuseArtifacts: reusePaths,
+    omittedArtifacts: omitPaths,
+    profile,
+    scopeMismatch:
+      profile && profile.scopeClass !== requested
+        ? `the profile says ${profile.scopeClass}, not ${requested} — the profile's class wins`
+        : null,
     artifactPolicy:
       'Write a REQUIRED artifact. Write an OPTIONAL artifact only when the plan profile marks it create. ' +
       'A reuse decision cites an existing repository source; an omit decision records its reason. ' +
@@ -113,20 +193,31 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     notes: spec.notes ?? [],
     edgeCaseClasses: ladder.edgeCaseClasses ?? [],
     edgeCaseExtras: ladder.edgeCaseExtras ?? {},
-    skeletons: {
-      'answers.yaml': answersYaml,
-      'tasks.yaml': tasksYaml,
-      'plans/<slug>.md': planMd,
-      'docs/prd.md': prdMd,
-      'architecture.yaml': architectureYaml,
-      'decisions/NNNN-title.md': adrMd,
-      'docs/mermaid-snippets.md': mermaid,
-    },
+    skeletons: served,
     edgeMatrixTemplate: edgeMatrix,
     nextStep:
       'Run archgen_plan{action:"profile"} first; then fill only the skeletons whose profile decision is create. ' +
       'Then run archgen_plan{action:"validate"} and archgen_plan{action:"verify"}.',
   };
+}
+
+/**
+ * The skeleton key that serves an artifact path (null when there is none).
+ *
+ * By SUFFIX, not by a table: the artifact path is the plan's name for the
+ * file and the skeleton key is the template's name, and the plan's name
+ * carries the slug (`plans/<slug>.md`) where the template's does not.
+ */
+function skeletonKeyFor(artifactPath) {
+  const p = String(artifactPath);
+  if (p.endsWith('/tasks.yaml')) return 'tasks.yaml';
+  if (p.endsWith('/answers.yaml')) return 'answers.yaml';
+  if (p.endsWith('/docs/prd.md')) return 'docs/prd.md';
+  if (p.endsWith('/architecture.yaml')) return 'architecture.yaml';
+  if (/\/decisions\/[^/]+\.md$/.test(p)) return 'decisions/NNNN-title.md';
+  if (p.endsWith('/docs/mermaid-snippets.md')) return 'docs/mermaid-snippets.md';
+  if (/\/plans\/[^/]+\.md$/.test(p)) return 'plans/<slug>.md';
+  return null;
 }
 
 /** The three-line provenance header every new artifact carries. */
@@ -161,6 +252,22 @@ function renderPlanMd(scopeClass, spec, slug, generatedAt) {
         '- Reuse: <existing repository paths, or none>',
         '- Omit: <artifact paths + one-line reasons, or none>',
         '- Escalate if: <signals that would move the scope up, or none>',
+        '',
+        'The block below is the RECORD — the floor reads it and checks every',
+        'create/reuse/omit decision against the files on disk. Keep it in step',
+        'with the bullets above.',
+        '',
+        '```yaml',
+        'scope_class: ' + scopeClass,
+        'intent_class: ""',
+        'signals: []',
+        'artifacts:',
+        '  - path: ""',
+        '    decision: create | reuse | omit',
+        '    reason: ""',
+        '    host_path: "" # for a reuse decision: the existing file it cites',
+        'escalate_if: []',
+        '```',
         '',
       );
     } else if (section === 'Context') {
@@ -197,6 +304,7 @@ plan_profile:
       reason: ""
   escalate_if: []
   gate: # recorded after the gate; the floor compares it with waivers.yaml
+    verifier: "" # who approved it — an approval needs a subject
     rounds: 0
     findings:
       blocking: 0
@@ -204,6 +312,7 @@ plan_profile:
       observation: 0
     waived: 0
     residual: 0
+    at: "" # ISO-8601 timestamp of the approval
 problem: ""
 success_criteria:
   - text: ""

@@ -1,0 +1,11 @@
+plan_profile:
+  artifacts:
+    - path: .archgen/demo/tasks.yaml
+      decision: create
+      reason: the task contract
+    - path: .archgen/demo/plans/plan.md
+      decision: create
+      reason: the plan of record
+    - path: .archgen/demo/docs/prd.md
+      decision: omit
+      reason: internal tool; no product personas

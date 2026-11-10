@@ -121,16 +121,19 @@ Nothing is written until three gates pass, in order, and never skipped — even
 for a SMALL scope. Gate depth scales with the profile, while the deterministic
 floor always runs. **The floor comes first**: `archgen_plan{action:'verify'}`
 is driven to `APPROVE` by the orchestrator — ownership overlap, the mirrored
-test tree, matrix citations, PRD requirement coverage, decision files, declared
-paths, wave labels — before any gate agent is dispatched, so the agent never
-spends a round on arithmetic. The **verifier gate** then judges what the tools
-cannot, from rendered maps: every artifact has a consumer, every reuse names a
-real host path, every omission has a recorded reason, every matrix row cites an
-acceptance that verifies it. Findings are **BLOCKING**, **NIT** (cosmetic) or
-**OBSERVATION** (a capability nobody asked for) — the verifier may not invent
-requirements. The gate runs **at most two rounds**: round 1 exhaustive, round 2
-a delta re-check, and what remains escalates to the user. The **plan review**
-then checks scope fit and minimalism, and the **user gate** presents the
+test tree, matrix citations, PRD requirement coverage, **the recorded profile
+decisions**, decision files, declared paths, wave labels — before any gate
+agent is dispatched, so the agent never spends a round on arithmetic. Every
+finding carries a stable **code**, so fixes batch by code and file and CI
+counts classes. The **verifier gate** then judges what the tools cannot, from
+rendered maps and a plan snapshot (so a stale brief is caught, not judged):
+every artifact has a consumer, every reuse names a real host path, every
+omission has a recorded reason, every matrix row cites an acceptance that
+verifies it. Findings are **BLOCKING**, **NIT** (cosmetic) or **OBSERVATION**
+(a capability nobody asked for) — the verifier may not invent requirements. The
+gate runs **at most two rounds**: round 1 exhaustive, round 2 a delta
+re-check, and what remains escalates to the user. The **plan review** then
+checks scope fit and minimalism, and the **user gate** presents the
 create/reuse/omit artifact list, the wave summary and the ownership map before
 asking for approval.
 

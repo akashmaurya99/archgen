@@ -1,0 +1,7 @@
+tasks:
+  - id: T1
+    title: probe
+    depends_on: []
+    file_ownership: ["src/probe/**"]
+    acceptance:
+      - "the probe returns the expected value (covers E5)"

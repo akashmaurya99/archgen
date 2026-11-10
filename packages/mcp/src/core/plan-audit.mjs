@@ -6,9 +6,9 @@
 // source-owning task owns the mirrored test path, that an edge-case matrix row
 // points at an acceptance that exists, that every PRD requirement is cited, that
 // a declared decision file is on disk, that a declared path has an owner, that
-// a wave label matches the DAG. Those are all FACTS, and facts belong in a
-// tool: an agent re-deriving them burns rounds, misses some, and reports
-// "small small issues" one category at a time.
+// a wave label matches the DAG, that the recorded profile was honoured. Those
+// are all FACTS, and facts belong in a tool: an agent re-deriving them burns
+// rounds, misses some, and reports "small small issues" one category at a time.
 //
 // So the floor computes them, and the agent is left with the judgment it is
 // actually for: does this plan deliver what the user agreed to?
@@ -22,11 +22,14 @@
 //      ENFORCED — loudly — instead of silently weakening.
 //   3. It never assumes a language, a framework, a package manager or a path
 //      shape. The host repo declares those; this file only reads them.
+//   4. Every finding carries a STABLE CODE, so fixes can be grouped, tests
+//      can assert behaviour, and CI can count classes.
 //
-// It is also language-neutral BY CONSTRUCTION: the ids it joins are artifact
-// ids (edge rows, requirement ids, task ids), never code-level names.
+// It is language-neutral BY CONSTRUCTION: the ids it joins are artifact ids
+// (edge rows, requirement ids, task ids), never code-level names.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { join, resolve } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { buildGraph, computeWaves, globsMayOverlap } from './graph.mjs';
 
@@ -39,23 +42,60 @@ const MATRIX_REF = /([A-Za-z0-9][A-Za-z0-9._-]*)#(\d+)/g;
 /** What an acceptance claims to cover: "(covers E4, FR-API-01)". */
 const CLAIMS = /\bcovers\s+([A-Z][A-Z0-9-]*(?:\s*,\s*[A-Z][A-Z0-9-]*)*)/gi;
 
+/** Every code the floor can report. Stable: tests and CI depend on them. */
+export const ISSUE_CODES = {
+  PROFILE_NOT_RECORDED: 'the plan records no profile — artifact necessity cannot be checked',
+  PROFILE_CREATE_MISSING: 'the profile says create, but the artifact is not on disk',
+  PROFILE_OMIT_PRESENT: 'the profile says omit, but the artifact exists',
+  PROFILE_REUSE_MISSING: 'the profile says reuse, but the cited host file does not exist',
+  PROFILE_UNRECORDED: 'an artifact exists that the profile does not record a decision for',
+  PROFILE_DECISION_INVALID: 'the profile records a decision the floor cannot interpret',
+  MIRROR_MISSING: 'a source-owning task has no mirrored test path',
+  MATRIX_UNKNOWN_TASK: 'a matrix row cites a task that does not exist',
+  MATRIX_INDEX_OUT_OF_RANGE: 'a matrix row cites an acceptance that does not exist',
+  MATRIX_CLAIM_MISMATCH: 'a matrix row and the acceptance it cites disagree',
+  MATRIX_DANGLING_CLAIM: 'an acceptance claims an edge row that does not exist',
+  REQ_UNCITED: 'a PRD requirement is not cited by any acceptance',
+  REQ_UNKNOWN: 'an acceptance cites a requirement the PRD does not define',
+  DECISION_MISSING: 'a declared decision has no file',
+  PATH_UNOWNED: 'a declared path has no owning task',
+  WAVE_LABEL_DRIFT: 'a wave label disagrees with the dependency graph',
+  WAVE_GROUP_SPANS: 'one parallel group spans several dependency waves',
+};
+
+/** Every code the floor can warn about. */
+export const WARNING_CODES = {
+  CONFIG_NOT_ENFORCED: 'a rule could not run because the plan does not declare what it needs',
+  OWNERSHIP_CONTAINED: "one task's paths contain another's",
+  WAIVER_COUNT_MISMATCH: 'the recorded waived count disagrees with the ledger',
+  GATE_IDENTITY_MISSING: 'the gate block records no verifier',
+};
+
+/** Format one finding with its stable code. */
+function finding(code, message) {
+  return `${code}: ${message}`;
+}
+
 /**
  * Audit one plan's artifacts.
  *
  * @param {{slugDir: string, tasks: any[]}} input
- * @returns {{issues: string[], warnings: string[], maps: object, waivers: object[]}}
+ * @returns {{issues: string[], warnings: string[], maps: object, waivers: object[], profile: object|null}}
  */
 export function auditPlan({ slugDir, tasks }) {
   const issues = [];
   const warnings = [];
   const maps = { requirements: [], edgeMatrix: [], ownership: [], modules: [], decisions: [] };
-  if (!slugDir || !Array.isArray(tasks) || tasks.length === 0) return { issues, warnings, maps, waivers: [] };
+  if (!slugDir || !Array.isArray(tasks) || tasks.length === 0) {
+    return { issues, warnings, maps, waivers: [], profile: null, snapshot: null };
+  }
 
   const architecture = readYaml(join(slugDir, 'architecture.yaml'));
   const prdText = readText(join(slugDir, 'docs', 'prd.md'));
   const planText = readPlans(join(slugDir, 'plans'));
   const decisionFiles = listFiles(join(slugDir, 'decisions'));
   const waivers = readWaivers(join(slugDir, 'waivers.yaml'));
+  const answers = readYaml(join(slugDir, 'answers.yaml'));
 
   const byId = new Map(tasks.map((t) => [String(t?.id ?? ''), t]));
   const acceptanceOf = (id) => (byId.get(id)?.acceptance ?? []).map(String);
@@ -96,14 +136,77 @@ export function auditPlan({ slugDir, tasks }) {
     });
   }
 
-  // ── 1. the mirrored test tree ────────────────────────────────────────────
+  // ── 1. the recorded profile was honoured ─────────────────────────────────
+  const profile = readProfile(answers, planText);
+  if (!profile) {
+    warnings.push(finding('PROFILE_NOT_RECORDED', ISSUE_CODES.PROFILE_NOT_RECORDED));
+  } else {
+    const projectRoot = projectRootOf(slugDir);
+    const decided = new Set();
+    for (const a of profile.artifacts ?? []) {
+      const path = String(a?.path ?? '').trim();
+      const decision = String(a?.decision ?? '').trim().toLowerCase();
+      if (!path) continue;
+      decided.add(normalizeArtifactPath(path));
+      if (decision === 'create') {
+        if (!existsUnder(slugDir, path)) {
+          issues.push(
+            finding(
+              'PROFILE_CREATE_MISSING',
+              `the profile marks '${path}' as create, but it does not exist under the artifact space`,
+            ),
+          );
+        }
+      } else if (decision === 'omit') {
+        if (existsUnder(slugDir, path)) {
+          issues.push(
+            finding(
+              'PROFILE_OMIT_PRESENT',
+              `the profile marks '${path}' as omit, but the artifact exists — delete it or record the decision`,
+            ),
+          );
+        }
+      } else if (decision === 'reuse') {
+        const host = String(a?.host_path ?? '').trim();
+        if (host && !existsUnder(projectRoot, host)) {
+          issues.push(
+            finding(
+              'PROFILE_REUSE_MISSING',
+              `the profile marks '${path}' as reuse of '${host}', but that file does not exist`,
+            ),
+          );
+        }
+      } else if (decision) {
+        issues.push(
+          finding('PROFILE_DECISION_INVALID', `'${path}' has an unknown decision '${a.decision}'`),
+        );
+      }
+    }
+    // Every artifact on disk needs a decision: an artifact without a consumer
+    // is the defect this whole mechanism exists to prevent.
+    for (const artifact of listArtifacts(slugDir)) {
+      if (!decided.has(artifact)) {
+        issues.push(
+          finding(
+            'PROFILE_UNRECORDED',
+            `'${artifact}' exists but the profile records no create/reuse/omit decision for it`,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── 2. the mirrored test tree ────────────────────────────────────────────
   const roots = sourceAndTestRoots(architecture);
   if (!roots.enforced) {
     // FAIL LOUD: a rule that cannot run must say so, not quietly pass.
     warnings.push(
-      architecture
-        ? 'the mirrored-test-tree rule is NOT ENFORCED — declare toolchain.source_root and toolchain.test_root in architecture.yaml'
-        : 'no architecture.yaml — the mirrored-test-tree, declared-path and decision-file rules are NOT ENFORCED',
+      finding(
+        'CONFIG_NOT_ENFORCED',
+        architecture
+          ? 'the mirrored-test-tree rule is NOT ENFORCED — declare toolchain.source_root and toolchain.test_root in architecture.yaml'
+          : 'no architecture.yaml — the mirrored-test-tree, declared-path and decision-file rules are NOT ENFORCED',
+      ),
     );
   } else {
     for (const t of tasks) {
@@ -120,15 +223,18 @@ export function auditPlan({ slugDir, tasks }) {
         );
         if (!covered) {
           issues.push(
-            `task '${id}' owns '${g}' but no task owns the mirrored test path '${mirroredDir}/**' ` +
-              '(code-standards: the test tree is a sibling and mirrors the source path)',
+            finding(
+              'MIRROR_MISSING',
+              `task '${id}' owns '${g}' but no task owns the mirrored test path '${mirroredDir}/**' ` +
+                '(code-standards: the test tree is a sibling and mirrors the source path)',
+            ),
           );
         }
       }
     }
   }
 
-  // ── 2. edge-case matrix traceability AND the explicit claim link ─────────
+  // ── 3. edge-case matrix traceability AND the explicit claim link ─────────
   const matrixRows = parseEdgeMatrix(planText);
   const definedEdges = new Set(matrixRows.map((r) => String(r.row).trim().toUpperCase()));
   for (const row of matrixRows) {
@@ -149,10 +255,13 @@ export function auditPlan({ slugDir, tasks }) {
       claimOk,
     });
     if (!byId.has(row.task)) {
-      issues.push(`edge-case matrix row '${edgeId}' cites unknown task '${row.task}'`);
+      issues.push(finding('MATRIX_UNKNOWN_TASK', `edge-case matrix row '${edgeId}' cites unknown task '${row.task}'`));
     } else if (!cited) {
       issues.push(
-        `edge-case matrix row '${edgeId}' cites ${row.task}#${row.index}, but '${row.task}' has ${acc.length} acceptance criteria`,
+        finding(
+          'MATRIX_INDEX_OUT_OF_RANGE',
+          `edge-case matrix row '${edgeId}' cites ${row.task}#${row.index}, but '${row.task}' has ${acc.length} acceptance criteria`,
+        ),
       );
     } else if (claimsUsed && !claimOk) {
       // The explicit link: the acceptance the row points at does not claim the
@@ -164,8 +273,11 @@ export function auditPlan({ slugDir, tasks }) {
         ? `the acceptance that claims it is ${claimedElsewhere.join(', ')}`
         : 'no acceptance claims it';
       issues.push(
-        `edge-case matrix row '${edgeId}' cites ${row.task}#${row.index}, but that acceptance does not claim '${edgeId}' — ${detail}. ` +
-          'Fix the citation or add "(covers ' + edgeId + ')" to the acceptance.',
+        finding(
+          'MATRIX_CLAIM_MISMATCH',
+          `edge-case matrix row '${edgeId}' cites ${row.task}#${row.index}, but that acceptance does not claim '${edgeId}' — ${detail}. ` +
+            `Fix the citation or add "(covers ${edgeId})" to the acceptance.`,
+        ),
       );
     }
   }
@@ -174,13 +286,13 @@ export function auditPlan({ slugDir, tasks }) {
     for (const [key, c] of claims) {
       for (const edge of c.edges) {
         if (!definedEdges.has(edge)) {
-          issues.push(`acceptance ${key} claims edge case '${edge}' but no matrix row defines it`);
+          issues.push(finding('MATRIX_DANGLING_CLAIM', `acceptance ${key} claims edge case '${edge}' but no matrix row defines it`));
         }
       }
     }
   }
 
-  // ── 3. requirement coverage ──────────────────────────────────────────────
+  // ── 4. requirement coverage ──────────────────────────────────────────────
   if (prdText) {
     const defined = new Map();
     for (const m of prdText.matchAll(/^\s*[-*]?\s*(FR-[A-Z0-9]+(?:-[A-Z0-9]+)*)\s*[:—]\s*(.*)$/gm)) {
@@ -214,19 +326,22 @@ export function auditPlan({ slugDir, tasks }) {
         covered: where.length > 0,
       });
       if (!where.length) {
-        issues.push(`requirement '${id}' is defined in docs/prd.md but no task acceptance cites it`);
+        issues.push(finding('REQ_UNCITED', `requirement '${id}' is defined in docs/prd.md but no task acceptance cites it`));
       }
     }
     for (const [id, where] of cited) {
       if (!defined.has(id)) {
         issues.push(
-          `task acceptance cites requirement '${id}' (${where.map((w) => w.ref).join(', ')}) which is not defined in docs/prd.md`,
+          finding(
+            'REQ_UNKNOWN',
+            `task acceptance cites requirement '${id}' (${where.map((w) => w.ref).join(', ')}) which is not defined in docs/prd.md`,
+          ),
         );
       }
     }
   }
 
-  // ── 4. declared decisions exist on disk ──────────────────────────────────
+  // ── 5. declared decisions exist on disk ──────────────────────────────────
   for (const d of architecture?.decisions ?? []) {
     const id = String(d?.id ?? '');
     const title = String(d?.title ?? '');
@@ -236,11 +351,11 @@ export function auditPlan({ slugDir, tasks }) {
       : decisionFiles.find((f) => slug(title) && f.includes(slug(title)));
     maps.decisions.push({ id, title, file: file ?? null, exists: Boolean(file) });
     if (!file) {
-      issues.push(`architecture.yaml declares decision '${id}' but no decisions/ file matches it`);
+      issues.push(finding('DECISION_MISSING', `architecture.yaml declares decision '${id}' but no decisions/ file matches it`));
     }
   }
 
-  // ── 5. every declared path has an owner ──────────────────────────────────
+  // ── 6. every declared path has an owner ──────────────────────────────────
   const declared = [];
   for (const s of architecture?.structure ?? []) {
     if (typeof s?.path === 'string' && !s.path.includes('<')) declared.push(s.path);
@@ -250,10 +365,10 @@ export function auditPlan({ slugDir, tasks }) {
   }
   for (const p of declared) {
     const covered = tasks.some((t) => (t?.file_ownership ?? []).some((g) => globsMayOverlap(g, p)));
-    if (!covered) issues.push(`architecture.yaml declares '${p}' but no task owns it`);
+    if (!covered) issues.push(finding('PATH_UNOWNED', `architecture.yaml declares '${p}' but no task owns it`));
   }
 
-  // ── 6. wave labels agree with the DAG ────────────────────────────────────
+  // ── 7. wave labels agree with the DAG ────────────────────────────────────
   const groups = new Map();
   for (const t of tasks) {
     const id = String(t?.id ?? '');
@@ -263,7 +378,10 @@ export function auditPlan({ slugDir, tasks }) {
     const wave = waveOf.get(id);
     if (m && wave && Number(m[1]) !== wave) {
       issues.push(
-        `task '${id}' is labeled parallel_group '${g}' but its dependency wave is ${wave} — recompute the label from the DAG or drop it`,
+        finding(
+          'WAVE_LABEL_DRIFT',
+          `task '${id}' is labeled parallel_group '${g}' but its dependency wave is ${wave} — recompute the label from the DAG or drop it`,
+        ),
       );
     }
     if (!groups.has(g)) groups.set(g, []);
@@ -273,12 +391,15 @@ export function auditPlan({ slugDir, tasks }) {
     const ws = new Set(ids.map((id) => waveOf.get(id)).filter(Boolean));
     if (ws.size > 1) {
       issues.push(
-        `parallel_group '${g}' spans ${ws.size} dependency waves (${ids.join(', ')}) — tasks in one group must share a wave`,
+        finding(
+          'WAVE_GROUP_SPANS',
+          `parallel_group '${g}' spans ${ws.size} dependency waves (${ids.join(', ')}) — tasks in one group must share a wave`,
+        ),
       );
     }
   }
 
-  // ── 7. ownership containment across waves ────────────────────────────────
+  // ── 8. ownership containment across waves ────────────────────────────────
   for (let i = 0; i < tasks.length; i++) {
     for (let j = i + 1; j < tasks.length; j++) {
       const a = tasks[i];
@@ -288,11 +409,17 @@ export function auditPlan({ slugDir, tasks }) {
         for (const g2 of b?.file_ownership ?? []) {
           if (containsGlob(g1, g2)) {
             warnings.push(
-              `task '${b.id}' owns '${g2}', which is INSIDE '${g1}' owned by '${a.id}' — a later wave can overwrite the earlier task's files`,
+              finding(
+                'OWNERSHIP_CONTAINED',
+                `task '${b.id}' owns '${g2}', which is INSIDE '${g1}' owned by '${a.id}' — a later wave can overwrite the earlier task's files`,
+              ),
             );
           } else if (containsGlob(g2, g1)) {
             warnings.push(
-              `task '${a.id}' owns '${g1}', which is INSIDE '${g2}' owned by '${b.id}' — a later wave can overwrite the earlier task's files`,
+              finding(
+                'OWNERSHIP_CONTAINED',
+                `task '${a.id}' owns '${g1}', which is INSIDE '${g2}' owned by '${b.id}' — a later wave can overwrite the earlier task's files`,
+              ),
             );
           }
         }
@@ -300,14 +427,21 @@ export function auditPlan({ slugDir, tasks }) {
     }
   }
 
-  // ── 8. the waiver ledger and the recorded gate metrics ───────────────────
-  const answers = readYaml(join(slugDir, 'answers.yaml'));
+  // ── 9. the waiver ledger and the recorded gate ───────────────────────────
   const recorded = answers?.plan_profile?.gate ?? answers?.gate ?? null;
   if (recorded) {
     const waived = Number(recorded.waived ?? 0);
     if (Number.isFinite(waived) && waived !== waivers.length) {
       warnings.push(
-        `the plan records ${waived} waived finding(s) but waivers.yaml lists ${waivers.length} — keep the ledger and the record in step`,
+        finding(
+          'WAIVER_COUNT_MISMATCH',
+          `the plan records ${waived} waived finding(s) but waivers.yaml lists ${waivers.length} — keep the ledger and the record in step`,
+        ),
+      );
+    }
+    if (!String(recorded.verifier ?? '').trim()) {
+      warnings.push(
+        finding('GATE_IDENTITY_MISSING', 'the gate block records no verifier — an approval needs a subject'),
       );
     }
   }
@@ -331,7 +465,71 @@ export function auditPlan({ slugDir, tasks }) {
     });
   }
 
-  return { issues, warnings, maps, waivers };
+  return { issues, warnings, maps, waivers, profile, snapshot: planSnapshot(tasks, maps, planText, prdText, architecture) };
+}
+
+/**
+ * What the brief claims about the plan — and how to tell it is STALE.
+ *
+ * The brief is rendered once, at dispatch. If the plan changes afterwards,
+ * the agent would judge content the brief never described. The snapshot is
+ * the cheap check: the counts are readable, so the agent can compare what it
+ * reads against what it was handed, and the fingerprint lets the orchestrator
+ * prove it.
+ */
+export function planSnapshot(tasks, maps, planText, prdText, architecture) {
+  const rows = maps?.edgeMatrix ?? [];
+  const fingerprint = createHash('sha256')
+    .update(
+      [JSON.stringify(tasks ?? []), planText ?? '', prdText ?? '', JSON.stringify(architecture ?? null)].join('\n'),
+    )
+    .digest('hex')
+    .slice(0, 12);
+  return {
+    tasks: Array.isArray(tasks) ? tasks.length : 0,
+    requirements: (maps?.requirements ?? []).length,
+    edgeRows: rows.length,
+    linkedRows: rows.filter((r) => r.valid && r.claimOk).length,
+    fingerprint: `sha256:${fingerprint}`,
+  };
+}
+
+/**
+ * The recorded plan profile.
+ *
+ * MEDIUM/LARGE keep it in `answers.yaml` (`plan_profile`); SMALL keeps it in
+ * the plan's Profile section as a fenced YAML block. Both are machine-readable,
+ * so the floor can check the recorded decisions against the files on disk.
+ *
+ * @param {object|null} answers the parsed answers.yaml
+ * @param {string} planText the plan markdown
+ * @returns {{artifacts: Array<object>, scope_class?: string}|null}
+ */
+export function readProfile(answers, planText) {
+  const fromAnswers = answers?.plan_profile ?? answers?.profile ?? null;
+  if (fromAnswers && Array.isArray(fromAnswers.artifacts)) return fromAnswers;
+  return readPlanProfile(planText);
+}
+
+/**
+ * The Profile section's fenced YAML block — the SMALL plan's record.
+ *
+ * @param {string} planText
+ * @returns {{artifacts: Array<object>}|null}
+ */
+export function readPlanProfile(planText) {
+  const text = String(planText ?? '');
+  const heading = /#{1,4}[^\n]*profile[^\n]*\n/i.exec(text);
+  if (!heading) return null;
+  const rest = text.slice(heading.index + heading[0].length);
+  const fence = /```ya?ml\s*\n([\s\S]*?)```/i.exec(rest);
+  if (!fence) return null;
+  try {
+    const data = parseYaml(fence[1], { filename: 'plan-profile' }).data;
+    return data && Array.isArray(data.artifacts) ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -415,6 +613,52 @@ function slug(title) {
     .slice(0, 24);
 }
 
+/** The project root that contains an artifact space (`<root>/.archgen/<slug>`). */
+function projectRootOf(slugDir) {
+  const parent = resolve(slugDir, '..');
+  return resolve(parent, '..');
+}
+
+/** An artifact path relative to the artifact space, whatever form it was recorded in. */
+function normalizeArtifactPath(path) {
+  const p = String(path).replaceAll('\\', '/').replace(/^\.\//, '');
+  const at = p.indexOf('.archgen/');
+  if (at >= 0) return p.slice(at + '.archgen/'.length).replace(/^[^/]+\//, '');
+  return p;
+}
+
+/** Does a recorded path exist under a base directory? */
+function existsUnder(base, path) {
+  const rel = normalizeArtifactPath(path);
+  if (!rel) return false;
+  try {
+    return existsSync(join(base, rel));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The artifacts that live in an artifact space.
+ *
+ * The run state (`.agent/`) and the waiver ledger are NOT artifacts: they are
+ * process state, and a profile decision about them would be noise.
+ *
+ * `answers.yaml` is excluded too: it is where the profile is RECORDED, so
+ * demanding a decision for it would be circular.
+ */
+function listArtifacts(slugDir) {
+  const out = [];
+  const names = ['tasks.yaml', 'architecture.yaml', 'codebase-map.md'];
+  for (const n of names) if (existsSync(join(slugDir, n))) out.push(n);
+  for (const dir of ['docs', 'decisions', 'plans']) {
+    const full = join(slugDir, dir);
+    if (!existsSync(full)) continue;
+    for (const f of listFiles(full)) out.push(`${dir}/${f}`);
+  }
+  return out;
+}
+
 function readText(path) {
   try {
     return existsSync(path) ? readFileSync(path, 'utf8') : null;
@@ -455,7 +699,8 @@ export function readWaivers(path) {
     }));
 }
 
-function readPlans(dir) {
+/** The plan markdown of an artifact space (every plans/*.md, concatenated). */
+export function readPlans(dir) {
   if (!existsSync(dir)) return '';
   try {
     return readdirSync(dir)

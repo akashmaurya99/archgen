@@ -249,3 +249,35 @@ function ruleMustCreate(rule) {
     !rule.signalNone
   );
 }
+
+/**
+ * The artifact rules that apply at a SCOPE CLASS, with `required` derived.
+ *
+ * WHY THIS EXISTS: the ladder used to carry the artifact set TWICE — once in
+ * `profile.artifactRules` (what the profile decides) and once in
+ * `classes[].artifacts` (what the scaffold serves). The two drifted: the
+ * profile could mark `codebase-map.md` and `docs/mermaid-snippets.md` as
+ * `create` while the scaffold never offered them, so "write only what the
+ * profile says create" silently did not happen.
+ *
+ * The rules are now the ONLY list. A rule applies to a class when its scope
+ * matches and its intent condition (if any) matches the class's default
+ * intent; it is REQUIRED when nothing else can switch it off, and conditional
+ * otherwise.
+ *
+ * @param {object} ladder the parsed depth-ladder.json
+ * @param {string} scopeClass SMALL | MEDIUM | LARGE
+ * @returns {Array<object>} the applicable rules, with a derived `required`
+ */
+export function scopeArtifactRules(ladder, scopeClass) {
+  const rules = ladder?.profile?.artifactRules ?? [];
+  const defaultIntent = (ladder?.classes?.[scopeClass]?.intentDefaults ?? [])[0] ?? null;
+  const out = [];
+  for (const rule of rules) {
+    if (rule.scopeIn && !rule.scopeIn.includes(scopeClass)) continue;
+    if (rule.intentIn && !(defaultIntent && rule.intentIn.includes(defaultIntent))) continue;
+    const conditional = Boolean(rule.signalSome || rule.signalAll || rule.signalNone);
+    out.push({ ...rule, required: !conditional });
+  }
+  return out;
+}

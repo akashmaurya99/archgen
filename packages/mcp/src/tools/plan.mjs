@@ -100,7 +100,16 @@ export function registerPlanTools(server) {
             next: `archgen_plan{action:'coverage',tasksYaml:'${file}',planDir:'${args.planDir}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
           });
           return withMeta(
-            { ...covered, covered: p.items.slice(0, (covered.covered ?? []).length) },
+            {
+              ...covered,
+              covered: p.items.slice(0, (covered.covered ?? []).length),
+              // ONE coverage report: tasks, requirements and edge cases.
+              traceability: {
+                requirements: covered.requirements ?? { total: 0, covered: 0, uncovered: [] },
+                edgeCases: covered.edgeCases ?? { total: 0, linked: 0, unlinked: [] },
+                profileRecorded: covered.profileRecorded === true,
+              },
+            },
             moreMeta({
               total: p.total,
               returned: p.returned,
@@ -143,6 +152,15 @@ export function registerPlanTools(server) {
           const built = buildScaffold(loadAsset('depth-ladder.json'), args.scope, {
             slug: args.slug ?? null,
             templatesDir: TEMPLATES_DIR,
+            // With an intent, the PROFILE decides the artifact set: the
+            // scaffold then serves exactly the artifacts marked `create`, and
+            // reports the reuse and omit decisions with their reasons. Without
+            // one, the class's candidate set is served and `writeThese` is the
+            // required subset.
+            intent: args.intent ?? null,
+            signals: args.signals ?? [],
+            modules: args.modules ?? null,
+            tasks: args.tasks ?? null,
             // The generator token carries the RUNNING server's version. The
             // server knows it exactly, so the artifact records the truth
             // instead of the agent having to guess, copy or type a version —

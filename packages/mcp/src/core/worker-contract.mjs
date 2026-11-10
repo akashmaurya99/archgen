@@ -30,6 +30,7 @@ import { dirname, join } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { buildGraph, GraphError } from './graph.mjs';
 import { skillDirective } from './skill-manager.mjs';
+import { parseEdgeMatrix, readPlans } from './plan-audit.mjs';
 import { invalidInput } from './errors.mjs';
 import { noSuchTask } from './guidance.mjs';
 
@@ -47,6 +48,36 @@ import { noSuchTask } from './guidance.mjs';
  *   codegraph?: boolean,
  * }} opts
  */
+/**
+ * The edge-case rows THIS task's acceptances claim.
+ *
+ * The acceptance says "(covers E4)" — that is the link, and the plan's matrix
+ * holds the case. The worker gets the CASE, not just the link: a worker told
+ * "E4" and nothing else has to go hunting for what E4 means.
+ *
+ * @param {{acceptance: string[], taskId: string, slugDir: string|null, tasksYaml: string}} input
+ * @returns {Array<{row: string, case: string}>}
+ */
+function claimedCases({ acceptance, taskId, slugDir, tasksYaml }) {
+  const claimed = new Set();
+  for (const a of acceptance ?? []) {
+    for (const m of String(a).matchAll(/\bcovers\s+([A-Z][A-Z0-9-]*(?:\s*,\s*[A-Z][A-Z0-9-]*)*)/gi)) {
+      for (const raw of m[1].split(',')) claimed.add(raw.trim().toUpperCase());
+    }
+  }
+  if (!claimed.size) return [];
+  const planDir = slugDir ? join(slugDir, 'plans') : join(dirname(tasksYaml), 'plans');
+  let rows = [];
+  try {
+    rows = parseEdgeMatrix(readPlans(planDir));
+  } catch {
+    return []; // a missing plan is the orchestrator's problem, not the worker's
+  }
+  return rows
+    .filter((r) => String(r.task) === String(taskId) && claimed.has(String(r.row).trim().toUpperCase()))
+    .map((r) => ({ row: String(r.row).trim().toUpperCase(), case: r.case }));
+}
+
 export function buildWorkerContract(opts) {
   const { tasksYaml, taskId, slugDir = null } = opts;
   if (!taskId) throw invalidInput('taskId is required to build a worker contract', {});
@@ -91,6 +122,13 @@ export function buildWorkerContract(opts) {
   const ownership = Array.isArray(task.file_ownership) ? task.file_ownership : [];
   const artifacts = Array.isArray(task.artifacts) ? task.artifacts : [];
 
+  // ── the edge cases THIS task must cover ──────────────────────────────────
+  //
+  // The acceptance says "(covers E4)" — that is the link. The worker gets the
+  // CASE, not just the link: a worker told "E4" and nothing else has to go
+  // hunting for what E4 means, and a worker told the case cannot guess.
+  const cases = claimedCases({ acceptance, taskId, slugDir, tasksYaml });
+
   const capabilities = Array.isArray(opts.capabilities) ? opts.capabilities : [];
 
   const lines = [];
@@ -112,6 +150,11 @@ export function buildWorkerContract(opts) {
     for (const g of ownership) lines.push(`- ${g}`);
   }
   lines.push('');
+  if (cases.length) {
+    lines.push('**Cases you must cover (from the plan\'s edge-case matrix — each one is a test you owe):**');
+    for (const c of cases) lines.push(`- ${c.row}: ${c.case}`);
+    lines.push('');
+  }
   if (artifacts.length) {
     lines.push('**Artifacts you produce:**');
     for (const a of artifacts) lines.push(`- ${a}`);

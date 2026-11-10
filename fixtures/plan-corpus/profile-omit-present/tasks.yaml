@@ -1,0 +1,7 @@
+tasks:
+  - id: T1
+    title: api
+    depends_on: []
+    file_ownership: ["src/api/**"]
+    acceptance:
+      - "the api returns the list the caller asked for (covers FR-API-01)"

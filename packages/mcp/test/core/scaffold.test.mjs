@@ -13,6 +13,16 @@ import { parseYaml } from '../../src/core/yaml.mjs';
 
 const ladder = loadAsset('depth-ladder.json');
 
+test('the depth ladder carries ONE artifact list — the profile rules', () => {
+  // The artifact set used to be written twice (the profile rules AND a per
+  // class list), and the two drifted: the profile could mark an artifact
+  // `create` that the scaffold never offered. The class lists are gone.
+  for (const [cls, spec] of Object.entries(ladder.classes)) {
+    assert.equal(spec.artifacts, undefined, `${cls} must not carry a second artifact list`);
+  }
+  assert.ok((ladder.profile?.artifactRules ?? []).length > 0, 'the profile rules are the only list');
+});
+
 test('every scope class produces a scaffold', () => {
   for (const scope of ['SMALL', 'MEDIUM', 'LARGE']) {
     const s = buildScaffold(ladder, scope, { slug: 'demo' });
@@ -95,10 +105,72 @@ test('LARGE requires the PRD and the architecture contract', () => {
   assert.ok(s.skeletons['answers.yaml'], 'LARGE must ship an answers skeleton');
 });
 
-test('MEDIUM does NOT ship the PRD or architecture skeletons', () => {
+test('MEDIUM does NOT ship the PRD, and its architecture contract is conditional', () => {
   const s = buildScaffold(ladder, 'MEDIUM', { slug: 'demo' });
-  assert.equal(s.skeletons['docs/prd.md'], null);
-  assert.equal(s.skeletons['architecture.yaml'], null);
+  // The PRD is a LARGE artifact — MEDIUM never has one.
+  assert.equal(s.skeletons['docs/prd.md'] ?? null, null);
+  // The architecture contract is CONDITIONAL: the skeleton is served (the
+  // agent may need it), but it is not in writeThese until the profile finds a
+  // contract trigger.
+  assert.ok(s.skeletons['architecture.yaml'], 'the conditional skeleton is served');
+  assert.ok(
+    !s.writeThese.some((p) => p.endsWith('architecture.yaml')),
+    'a conditional artifact must not be in writeThese without a trigger',
+  );
+  assert.ok(
+    s.optionalArtifacts.some((p) => p.endsWith('architecture.yaml')),
+    'a conditional artifact is listed as optional',
+  );
+});
+
+test('with an intent, the PROFILE decides the artifact set the scaffold serves', () => {
+  // The artifact set used to be listed TWICE (profile rules + class list) and
+  // the two drifted: the profile could mark an artifact `create` that the
+  // scaffold never offered. One list now.
+  const plain = buildScaffold(ladder, 'MEDIUM', { slug: 'demo' });
+  const contracted = buildScaffold(ladder, 'MEDIUM', {
+    slug: 'demo',
+    intent: 'BROWNFIELD-FEATURE',
+    signals: ['public-contract'],
+  });
+  assert.ok(
+    !plain.writeThese.some((p) => p.endsWith('architecture.yaml')),
+    'no contract trigger -> no architecture contract',
+  );
+  assert.ok(
+    contracted.writeThese.some((p) => p.endsWith('architecture.yaml')),
+    'a contract trigger -> the architecture contract is written',
+  );
+  assert.ok(contracted.skeletons['architecture.yaml'], 'its skeleton is served');
+  // The omitted ones are reported with their reasons.
+  const omitted = contracted.artifacts.filter((a) => a.decision === 'omit');
+  assert.ok(omitted.length > 0, 'the omitted artifacts are reported');
+  assert.ok(omitted.every((a) => typeof a.reason === 'string' && a.reason.length > 0));
+});
+
+test('the profile and the scaffold agree on the artifact set', () => {
+  const s = buildScaffold(ladder, 'LARGE', {
+    slug: 'demo',
+    intent: 'GREENFIELD-SYSTEM',
+    signals: ['production', 'product-facing', 'multi-module'],
+  });
+  const creates = s.artifacts.filter((a) => a.decision === 'create').map((a) => a.path);
+  assert.deepEqual([...creates].sort(), [...s.writeThese].sort(), 'writeThese IS the profile create set');
+  // Every create artifact the profile named has a skeleton (or is written by
+  // the survey, which has no template).
+  for (const path of creates) {
+    const key = path.endsWith('/tasks.yaml')
+      ? 'tasks.yaml'
+      : path.endsWith('/answers.yaml')
+        ? 'answers.yaml'
+        : path.endsWith('/architecture.yaml')
+          ? 'architecture.yaml'
+          : path.endsWith('/docs/prd.md')
+            ? 'docs/prd.md'
+            : null;
+    if (!key) continue;
+    assert.ok(s.skeletons[key], `the create artifact '${path}' must have a skeleton`);
+  }
 });
 
 test('every canonical YAML template PARSES with the real parser', () => {
