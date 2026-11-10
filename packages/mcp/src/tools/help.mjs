@@ -230,7 +230,7 @@ Nine tools, one domain each. The server resolves paths, validates input, and ret
 
 | tool | domain | use it for |
 |---|---|---|
-| \`archgen_plan\` | plan | validate / verify / graph / impact / coverage / scaffold / brief |
+| \`archgen_plan\` | plan | validate / verify / graph / impact / coverage / profile / scaffold / brief |
 | \`archgen_tasks\` | execution | next wave / set_status / list / snapshot / contract |
 | \`archgen_docs\` | artifacts | digest / section / map / refs / index / validate |
 | \`archgen_registry\` | registry | show / update the AGENTS.md features table |

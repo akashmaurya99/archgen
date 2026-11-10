@@ -48,15 +48,33 @@ COVERAGE:
 | --- | --- | --- |
 | functional coverage | PASS | every FR id maps to an acceptance that verifies it |
 | security & data protection | N/A | internal CLI with no auth or sensitive data |
+| data integrity | PASS | every persisted write states its invariant |
 | state, lifecycle & recovery | FAIL | TASK-07 mutates state without rollback or idempotency |
+| resource limits & abuse | N/A | no unbounded input is accepted |
+| operational entrypoints | PASS | one named entrypoint, runnable from the repo root |
+| metric traceability | N/A | no metric is promised |
+| consistency | PASS | one vocabulary across plan, tasks and contract |
 | scope & artifact necessity | PASS | profile recorded; PRD omitted for an internal change, reason cited |
-| ... every one of the 9 dimensions, PASS / FAIL / N/A, 1-line reason ... |
 FINDINGS:   (present when VERDICT: ISSUES)
 1. [BLOCKING] tasks.yaml § SCAFFOLD — acceptance #2 has no observable check — worker cannot verify completion — replace with "the project build command exits 0"
 2. [NIT] plans/demo.md § Risks — heading capitalisation — one word
 OBSERVATIONS:   (optional, never blocking)
 - a retention policy for the audit table would reduce unbounded growth
 ```
+
+THE NINE DIMENSIONS — every report marks all nine, `PASS` / `FAIL` / `N/A`, with a one-line reason:
+
+1. **functional coverage** — every requirement maps to an acceptance that verifies it
+2. **security & data protection** — auth, secrets, untrusted input, PII
+3. **data integrity** — invariants, migrations, idempotency, concurrency
+4. **state, lifecycle & recovery** — what happens on partial failure, retry, rollback
+5. **resource limits & abuse** — unbounded input, unbounded growth, denial of service
+6. **operational entrypoints** — how the thing is actually started, run and verified
+7. **metric traceability** — every promised outcome has a measurable signal
+8. **consistency** — one vocabulary and one shape across plan, tasks, contract and code
+9. **scope & artifact necessity** — every artifact has a consumer; every omission a reason
+
+`N/A` needs a reason too ("internal CLI with no auth or sensitive data"), not a blank cell.
 
 ROUNDS — THE GATE RUNS AT MOST TWICE
 - **Round 1:** exhaustive — report every defect you can find in this pass.
@@ -66,5 +84,5 @@ ROUNDS — THE GATE RUNS AT MOST TWICE
 RULES
 - **MANDATORY COVERAGE TABLE:** every report (even `APPROVE`) includes all 9 dimensions marked `PASS`, `FAIL`, or `N/A` with a one-line reason. Missing rows = INCOMPLETE (treated as `ISSUES`).
 - **VERDICT:** `APPROVE` only when no BLOCKING finding remains. NITs and OBSERVATIONS never block.
-- **Top-tier holistic agent:** the strongest reasoning model available (never a quick/explore/cheap tier), ONE agent over the entire plan.
+- **ONE agent, the whole plan, ONE pass.** Never split verification by concern; split only by artifact volume when context forces it (`plans/` vs `docs/`).
 - **Exhaustive single pass:** report EVERY defect found in this pass with exact `file § section — defect — impact — fix`. Never hold findings back for a later round.

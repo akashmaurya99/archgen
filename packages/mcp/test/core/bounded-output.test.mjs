@@ -63,10 +63,11 @@ test('coverage bounds the uncovered list and reports the total', () => {
   const p = brokenPlan(60);
   try {
     const out = planCoverage(p.tasksYaml, p.plansDir);
-    assert.ok(out.uncovered.length <= MAX_FINDINGS, 'the list is bounded');
+    assert.ok(out.tasks.uncovered.length <= MAX_FINDINGS, 'the list is bounded');
     // The plan mentions T1, so T1 is covered and the other 59 are not.
-    assert.equal(out.uncoveredTotal, 59, 'the total is exact');
-    assert.ok(out.findingsTotal >= out.findings.length, 'the findings are bounded and counted');
+    assert.equal(out.tasks.uncoveredTotal, 59, 'the total is exact');
+    assert.equal(out.tasks.coveredTotal, 1, 'the covered total is exact');
+    assert.ok(out.findings.total >= out.findings.items.length, 'the findings are bounded and counted');
   } finally {
     rmSync(p.root, { recursive: true, force: true });
   }

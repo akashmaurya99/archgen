@@ -21,7 +21,7 @@
 //      worker sub-agents may have no MCP tools.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseMarkdown, buildSections, findSection } from './docs.mjs';
+import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd } from './docs.mjs';
 import { notFound } from './errors.mjs';
 import { noSuchSection } from './guidance.mjs';
 
@@ -57,6 +57,31 @@ export function resolveTopic(topic, opts) {
 }
 
 /**
+ * The unknown-topic error — with a KNOWN list that is actually known.
+ *
+ * The list used to be the full `REF_TOPICS` constant, which names topics
+ * this server cannot serve (the skill's own references resolve only when the
+ * skill is installed). The error then said "unknown reference
+ * 'code-standards'" and listed 'code-standards' as known — a contradiction
+ * the caller could not act on.
+ *
+ * @param {string} topic
+ * @param {{assetsDir: string, skillDir: string|null}} opts
+ */
+function unknownTopic(topic, opts) {
+  const known = REF_TOPICS.filter((t) => resolveTopic(t, opts) !== null);
+  const missing = REF_TOPICS.filter((t) => !known.includes(t));
+  const hint = missing.length
+    ? {
+        hint:
+          `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} served only when the archgen skill is installed — ` +
+          'run `npx archgen-skill init` to install it',
+      }
+    : {};
+  return notFound(`unknown reference '${topic}'`, { topic, known, ...hint });
+}
+
+/**
  * Index one reference topic: its title, purpose and section list.
  *
  * With `section`, it returns THAT section's entry — the same map, narrowed.
@@ -68,7 +93,7 @@ export function resolveTopic(topic, opts) {
  */
 export function indexTopic(topic, opts) {
   const resolved = resolveTopic(topic, opts);
-  if (!resolved) throw notFound(`unknown reference '${topic}'`, { topic, known: REF_TOPICS });
+  if (!resolved) throw unknownTopic(topic, opts);
   const doc = parseMarkdown(readFileSync(resolved.path, 'utf8'));
   const sections = buildSections(doc)
     // The topic's own H1 is not a SECTION — it is the topic. Listing it
@@ -120,7 +145,7 @@ export function indexTopic(topic, opts) {
  */
 export function readTopic(topic, opts) {
   const resolved = resolveTopic(topic, opts);
-  if (!resolved) throw notFound(`unknown reference '${topic}'`, { topic, known: REF_TOPICS });
+  if (!resolved) throw unknownTopic(topic, opts);
 
   // The whole topic — asked for explicitly.
   if (opts.section === '*') {
@@ -152,15 +177,33 @@ export function readTopic(topic, opts) {
     const available = buildSections(doc).map((s) => s.slug);
     throw noSuchSection(resolved.topic, opts.section, available);
   }
-  return {
+  // A section OWNS its nested subsections, so returning `section.body`
+  // returned the whole subtree — the caller paid for every child and still
+  // had no map of what it got. The section returns its OWN content and NAMES
+  // its children, exactly like archgen_docs{action:'section'}.
+  const children = sectionChildren(doc, section).map((c) => ({ slug: c.slug, title: c.title, line: c.line }));
+  const ownEnd = sectionOwnEnd(doc, section);
+  const text = doc.lines.slice(section.line - 1, ownEnd).join('\n');
+  const out = {
     topic: resolved.topic,
     root: resolved.root,
     section: section.slug,
     title: section.title,
+    level: section.level,
     line: section.line,
-    endLine: section.endLine,
-    text: section.body,
+    endLine: ownEnd,
+    text,
+    lines: text.split('\n').length,
+    bytes: text.length,
+    children,
   };
+  if (ownEnd !== section.endLine) out.sectionEndLine = section.endLine;
+  if (children.length) {
+    out.next =
+      `archgen_refs{action:'read',topic:'${resolved.topic}',section:'<child slug>'} — ` +
+      `${children.length} nested subsection(s) were not included`;
+  }
+  return out;
 }
 
 /**
@@ -175,7 +218,7 @@ export function readTopic(topic, opts) {
  */
 export function searchTopic(topic, token, opts) {
   const resolved = resolveTopic(topic, opts);
-  if (!resolved) throw notFound(`unknown reference '${topic}'`, { topic, known: REF_TOPICS });
+  if (!resolved) throw unknownTopic(topic, opts);
   const doc = parseMarkdown(readFileSync(resolved.path, 'utf8'));
   const esc = String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Whole-word: a hit must not be glued to word characters on either side.
@@ -228,6 +271,11 @@ export function searchTopic(topic, token, opts) {
         line: section.line,
         endLine: section.endLine,
         occurrences: matches.length,
+        // What was left out is COUNTED. `occurrences: 20` next to ten
+        // excerpts used to imply twenty were available when ten arrived,
+        // with no way to reach the rest.
+        excerptsReturned: Math.min(10, matches.length),
+        excerptsOmitted: Math.max(0, matches.length - 10),
         matches: matches.slice(0, 10),
       });
     }

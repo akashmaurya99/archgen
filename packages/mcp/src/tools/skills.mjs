@@ -106,23 +106,32 @@ export function registerSkillTools(server) {
         const p = project(rows, {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_skills{action:'match',title:'${args.title ?? ''}',limit:${bound},offset:${from + bound}}`,
+          // The continuation carries EVERY argument that drives the match.
+          // It used to carry only the title, so a task matched on its summary
+          // or its file ownership produced an EMPTY next page — the agent
+          // followed the tool's own cursor and got nothing.
+          next: `archgen_skills{action:'match',title:'${args.title ?? ''}',summary:'${args.summary ?? ''}',fileOwnership:[${(args.fileOwnership ?? []).map((f) => `'${f}'`).join(',')}],limit:${bound},offset:${from + bound}}`,
         });
+        // The required and installed lists are computed from the WHOLE match
+        // set, not from the page. They used to be computed from the page, so
+        // `limit: 1` reported one required skill when three matched — and
+        // the note still said "install every required skill".
+        const required = rows.filter((m) => m.policy === 'required').map((m) => m.slug);
+        const installed = rows.filter((m) => m.installed).map((m) => m.slug);
         return withMeta(
           {
             matched: p.items,
-            // The required ones, by id — the rows are already above.
-            required: p.items.filter((m) => m.policy === 'required').map((m) => m.slug),
-            installed: p.items.filter((m) => m.installed).map((m) => m.slug),
+            required,
+            installed,
             note: matched.length
-              ? 'Install every required skill before dispatching the worker.'
+              ? `Install every required skill before dispatching the worker.${required.length ? '' : ' (none is required)'}`
               : 'No capability domain matched — no external skill is needed.',
           },
           moreMeta({
             total: p.total,
             returned: p.returned,
             next: p.next,
-            available: { skills: p.total, required: p.items.filter((m) => m.policy === 'required').length },
+            available: { skills: p.total, required: required.length, installed: installed.length },
           }),
         );
       }
@@ -191,7 +200,17 @@ export function registerSkillTools(server) {
               available: sections.map((s) => s.slug),
             });
           }
-          sections = [hit];
+          // The named section IS the answer. The page projection used to
+          // slice it away when `offset > 0`, so the call returned an empty
+          // list with ok:true and no hint.
+          return {
+            skill: entry.slug,
+            installed: true,
+            path: found.path,
+            scope: found.scope,
+            section: hit.slug,
+            sections: [hit],
+          };
         }
         const p = project(sections, {
           limit: args.limit,

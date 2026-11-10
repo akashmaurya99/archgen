@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { docIndex } from './doc-navigator.mjs';
 import { planGraph } from './plan-grapher.mjs';
-import { auditPlan } from './plan-audit.mjs';
+import { verifyPlan } from './verifier.mjs';
 import { parseYaml } from './yaml.mjs';
 
 /**
@@ -56,6 +56,7 @@ export function buildBriefContext(kind, scope, ctx) {
     allowedCalls: ALLOWED_CALLS[kind] ?? [],
     evidence: null,
     graph: null,
+    graphNote: null,
     docsValidation: null,
     audit: null,
   };
@@ -85,6 +86,12 @@ export function buildBriefContext(kind, scope, ctx) {
 
   // The dependency graph — rendered once, so the reviewer reads it instead of
   // spending a tool call to fetch it.
+  //
+  // It used to be DROPPED SILENTLY on a plan above the whole-graph ceiling:
+  // the brief then told the reviewer the graph was "rendered for you — do not
+  // re-fetch", and there was none. A gate that silently judges without the
+  // dependency picture is not a gate. The refusal now becomes a NOTE that
+  // names the scoped call that works.
   try {
     if (existsSync(scope.tasksYaml)) {
       const g = planGraph(scope.tasksYaml, {
@@ -94,8 +101,13 @@ export function buildBriefContext(kind, scope, ctx) {
       });
       out.graph = typeof g.data === 'string' ? g.data : null;
     }
-  } catch {
-    out.graph = null; // a plan that cannot be graphed is reported by the verifier
+  } catch (e) {
+    const nodes = e?.details?.nodes ?? null;
+    out.graph = null;
+    out.graphNote = nodes
+      ? `The whole dependency graph has ${nodes} nodes, above the whole-graph ceiling, so it is NOT rendered here. ` +
+        `Fetch a scoped view instead: archgen_plan{action:'graph',node:'<task id>'}. Judge the waves from the plan and tasks.yaml.`
+      : 'The dependency graph could not be rendered for this plan — read the waves from tasks.yaml.';
   }
 
   // The reference-integrity result — the deterministic floor's second half.
@@ -115,22 +127,31 @@ export function buildBriefContext(kind, scope, ctx) {
   // The mechanical floor — the checks a gate agent used to make by hand,
   // every round. Rendered here, the agent reads them instead of re-deriving
   // them (and missing some).
+  //
+  // It is the SAME result `archgen_plan{action:'verify'}` returns — the
+  // verdict, the findings with their codes, AND the task-level codes
+  // (CYCLE, NO_ACCEPTANCE, OWNERSHIP_OVERLAP, …) that only the verifier
+  // produces. The brief used to recompute a SUBSET of the floor, so a gate
+  // agent could be told "the floor is clean" while the floor itself had
+  // findings the brief never showed.
   try {
     if (existsSync(scope.tasksYaml)) {
-      const { data } = parseYaml(readFileSync(scope.tasksYaml, 'utf8'), { filename: scope.tasksYaml });
-      const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
-      const audit = auditPlan({ slugDir: scope.slugDir, tasks });
+      const result = verifyPlan(scope.tasksYaml, scope.plansDir);
+      const audit = result.audit ?? {};
       out.audit = {
-        issues: audit.issues,
-        warnings: audit.warnings,
-        issuesTotal: audit.issuesTotal,
-        warningsTotal: audit.warningsTotal,
-        issueCodes: audit.issueCodes,
-        warningCodes: audit.warningCodes,
-        maps: audit.maps,
-        waivers: audit.waivers,
-        profile: audit.profile,
-        snapshot: audit.snapshot,
+        verdict: result.verdict,
+        issues: result.issues,
+        warnings: result.warnings,
+        issuesTotal: result.issuesTotal,
+        warningsTotal: result.warningsTotal,
+        issueCodes: result.issueCodes,
+        warningCodes: result.warningCodes,
+        waivedFindings: audit.waivedFindings ?? [],
+        waivedCodes: audit.waivedCodes ?? {},
+        maps: audit.maps ?? {},
+        waivers: audit.waivers ?? [],
+        profile: audit.profile ?? null,
+        snapshot: audit.snapshot ?? null,
       };
     }
   } catch {

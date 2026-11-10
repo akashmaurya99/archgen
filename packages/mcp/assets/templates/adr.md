@@ -1,6 +1,7 @@
 # NNNN. <decision title>
-Date: YYYY-MM-DD · Status: accepted
-<!-- Record irreversible or hard-to-reverse decisions only — never a routine choice. -->
+<!-- Record irreversible or hard-to-reverse decisions only — never a routine choice.
+     The file name IS the link: architecture.yaml decisions[].id D1 matches
+     decisions/0001-<title>.md. -->
 ## Context
 <forces and constraints at play>
 ## Decision

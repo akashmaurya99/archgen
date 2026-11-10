@@ -13,6 +13,7 @@ import { parseYaml } from './yaml.mjs';
 import { buildGraph, findCycle, GraphError } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { invalidInput, ArchgenError } from './errors.mjs';
+import { project } from '../envelope.mjs';
 
 export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 export const REQUIRED = ['id', 'title', 'file_ownership'];
@@ -28,14 +29,23 @@ export const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /**
  * Validate a tasks.yaml file.
  *
+ * The errors and the warnings are SEPARATE collections, each with its own
+ * window. A 200-task broken plan produced 400 errors and 200 warnings in one
+ * answer — 16k tokens — and the caller's `limit` changed nothing.
+ *
  * @param {string} file absolute path to tasks.yaml
- * @param {{planDir?: string|null}} [opts] planDir adds plan<->task coverage checks
- * @returns {{valid: boolean, errors: string[], warnings: string[], counts: {tasks: number, errors: number, warnings: number}}}
+ * @param {{planDir?: string|null, limit?: number, offset?: number, collection?: string}} [opts]
+ * @returns {{valid: boolean, errors: string[], warnings: string[],
+ *            errorsTotal: number, warningsTotal: number,
+ *            counts: {tasks: number, errors: number, warnings: number}}}
  */
 export function validateTasksYaml(file, opts = {}) {
   const planDir = opts.planDir ?? null;
   const errors = [];
   const warnings = [];
+  const limit = Number.isInteger(opts.limit) && opts.limit > 0 ? opts.limit : 50;
+  const offset = Number.isInteger(opts.offset) ? opts.offset : 0;
+  const collection = String(opts.collection ?? 'errors');
 
   let raw;
   try {
@@ -112,10 +122,16 @@ export function validateTasksYaml(file, opts = {}) {
     for (const f of checkPlanCoverage(planDir, tasks).findings) errors.push(f);
   }
 
+  const errWindow = project(errors, { limit, offset: collection === 'errors' ? offset : 0 });
+  const warnWindow = project(warnings, { limit, offset: collection === 'warnings' ? offset : 0 });
   return {
     valid: errors.length === 0,
-    errors,
-    warnings,
-    counts: { tasks: tasks.length, errors: errors.length, warnings: warnings.length },
+    errors: errWindow.items,
+    warnings: warnWindow.items,
+    errorsTotal: errWindow.total,
+    warningsTotal: warnWindow.total,
+    errorsOffset: errWindow.offset,
+    warningsOffset: warnWindow.offset,
+    counts: { tasks: tasks.length, errors: errWindow.total, warnings: warnWindow.total },
   };
 }

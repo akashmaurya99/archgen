@@ -20,6 +20,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { skillSearchPaths } from './skill-roots.mjs';
+import { invalidInput } from './errors.mjs';
 
 /**
  * Registry shape (see assets/skill-registry.json).
@@ -219,7 +220,16 @@ export async function installSkill(opts) {
   } = opts;
 
   const existing = findInstalledSkill(projectRoot, entry.slug, { home });
-  const agentId = HARNESS_AGENT_IDS[harness] ?? 'universal';
+  // An UNKNOWN harness used to fall back to 'universal' — a typo silently
+  // installed for the wrong target and reported success. A harness name is a
+  // target: an unknown one is a typed error, never a guess.
+  if (!Object.prototype.hasOwnProperty.call(HARNESS_AGENT_IDS, harness)) {
+    throw invalidInput(
+      `unknown harness '${harness}' (allowed: ${Object.keys(HARNESS_AGENT_IDS).join('|')})`,
+      { harness, allowed: Object.keys(HARNESS_AGENT_IDS) },
+    );
+  }
+  const agentId = HARNESS_AGENT_IDS[harness];
 
   if (existing.installed) {
     return {
@@ -323,11 +333,18 @@ export function loadSkill(opts) {
 
 /**
  * List the capability skills that are installed for this project.
+ *
+ * The registry's ROUTING entry is included. It is installable and loadable
+ * like any other skill, but the list iterated only `registry.skills` — so a
+ * routing skill that was installed on disk was reported as absent.
+ *
  * @param {{projectRoot: string, registry: SkillRegistry, home?: string}} opts
  */
 export function listInstalled(opts) {
   const out = [];
-  for (const entry of opts.registry.skills) {
+  const entries = [...(opts.registry.skills ?? [])];
+  if (opts.registry.routing) entries.push(opts.registry.routing);
+  for (const entry of entries) {
     const found = findInstalledSkill(opts.projectRoot, entry.slug, { home: opts.home });
     if (found.installed) {
       out.push({ id: entry.id, slug: entry.slug, path: found.path, scope: found.scope });

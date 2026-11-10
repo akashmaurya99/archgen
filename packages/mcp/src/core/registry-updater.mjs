@@ -212,10 +212,23 @@ export function updateRegistry(projectRoot, opts = {}) {
 
 /**
  * Read the current registry rows without writing anything.
+ *
+ * ONE SOURCE OF TRUTH: `.archgen/<slug>/tasks.yaml` — the same source
+ * `update` derives from. It used to parse the AGENTS.md block instead, so
+ * `show` reported NO rows while `update` reported one, for the very same
+ * project: an agent that read `show` believed the registry was empty.
+ *
+ * The AGENTS.md block is the RENDERING of that source, so the answer also
+ * says whether the rendering is present and in step.
+ *
  * @param {string} projectRoot
- * @returns {{rows: Array<{feature: string, status: string, updated: string}>, hasMarkers: boolean}}
+ * @returns {{rows: Array<{feature: string, status: string, updated: string}>,
+ *            hasMarkers: boolean, inSync: boolean, source: string}}
  */
 export function showRegistry(projectRoot) {
+  const rows = [...scanFeatures(projectRoot).values()].sort((a, b) =>
+    a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0,
+  );
   const agentsPath = join(projectRoot, 'AGENTS.md');
   let raw = null;
   try {
@@ -223,10 +236,23 @@ export function showRegistry(projectRoot) {
   } catch {
     /* absent */
   }
-  if (raw === null) return { rows: [], hasMarkers: false };
-  const old = oldRowsFrom(raw);
+  const rendered = raw === null ? null : oldRowsFrom(raw);
+  const hasMarkers = Boolean(raw && raw.includes(START_MARKER) && raw.includes(END_MARKER));
+  let inSync = false;
+  if (rendered) {
+    inSync =
+      rendered.size === rows.length &&
+      rows.every((r) => rendered.get(r.feature)?.status === r.status);
+  } else {
+    inSync = rows.length === 0;
+  }
   return {
-    rows: old ? [...old.entries()].map(([feature, v]) => ({ feature, status: v.status, updated: v.updated })) : [],
-    hasMarkers: raw.includes(START_MARKER) && raw.includes(END_MARKER),
+    rows,
+    hasMarkers,
+    inSync,
+    source: '.archgen/<slug>/tasks.yaml',
+    ...(rows.length && !inSync
+      ? { note: 'AGENTS.md does not match the derived rows — run archgen_registry{action:"update"}' }
+      : {}),
   };
 }

@@ -9,7 +9,6 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, A
 import { loadAsset } from '../context.mjs';
 import { manageCodegraph, assertLocation } from '../core/codegraph-manager.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
-
 const ACTION_DESC = 'ensure|status|wire';
 
 /**
@@ -17,9 +16,14 @@ const ACTION_DESC = 'ensure|status|wire';
  * mode, projectRoot, empty wiring buckets, a null `latest` and per-status
  * duplicates — none of which the caller needs, and all of which it pays for.
  *
+ * EVERY COLLECTION IS WINDOWED. The wiring lists grow with the number of
+ * detected harnesses; the manual list grew one row per harness×location and
+ * was never projected, so `limit: 2` still returned seven rows.
+ *
  * @param {any} report
+ * @param {{limit?: number, offset?: number}} [window]
  */
-function shapeReport(report) {
+export function shapeReport(report, window = {}) {
   const out = {
     ok: report.ok !== false,
     changed: report.changed === true,
@@ -38,11 +42,18 @@ function shapeReport(report) {
   if (report.index && report.index.action !== 'none') out.index = report.index;
   if (report.planned) out.planned = true;
   const native = report.wiring?.native ?? [];
-  const manual = report.wiring?.manual ?? [];
-  if (native.length || manual.length) {
+  const manual = project(report.wiring?.manual ?? [], window);
+  const skipped = report.wiring?.skipped ?? [];
+  if (native.length || manual.items.length || skipped.length) {
     out.wiring = {};
     if (native.length) out.wiring.native = native;
-    if (manual.length) out.wiring.manual = manual;
+    if (manual.items.length || manual.total) {
+      out.wiring.manual = manual.items;
+      out.wiring.manualTotal = manual.total;
+    }
+    // The SKIPPED rows used to be dropped: a config that could not be merged
+    // looks like a config that was never there.
+    if (skipped.length) out.wiring.skipped = skipped;
   }
   return out;
 }
@@ -88,19 +99,21 @@ export function registerCodegraphTools(server) {
       });
       // The wiring lists grow with the number of detected harnesses, so they
       // are bounded — and the agent is told what else it could fetch.
+      const window = { limit: args.limit, offset: args.offset };
       const p = project(report.detected ?? [], {
-        limit: args.limit,
-        offset: args.offset,
+        ...window,
         // The next slice belongs to the action that produced this slice.
         next: `archgen_codegraph{action:'${args.action}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
       });
+      const shaped = shapeReport(report, window);
+      const manualTotal = shaped.wiring?.manualTotal ?? 0;
       return withMeta(
-        { ...shapeReport(report), detected: p.items },
+        { ...shaped, detected: p.items },
         moreMeta({
           total: p.total,
           returned: p.returned,
           next: p.next,
-          available: { harnesses: p.total },
+          available: { harnesses: p.total, wiringManual: manualTotal },
         }),
       );
     },

@@ -44,7 +44,10 @@ const schema = z.object({
   taskId: z.string().optional().describe('Task id (set_status, contract); one task (list, next).'),
   status: z.enum(STATUSES).optional().describe('New status (set_status).'),
   force: z.boolean().optional().describe('Allow reopening a done task (set_status).'),
-  filterStatus: z.string().optional().describe('Filter by status (list).'),
+  filterStatus: z
+    .enum(STATUSES)
+    .optional()
+    .describe('Filter by status (list). One of the task statuses — a typo is rejected, not ignored.'),
   slugDir: z.string().optional().describe('.archgen/<slug>/ dir (contract).'),
   codeStandardsPath: z.string().optional().describe('Code-standards path (contract).'),
   module: z.string().optional().describe('Module path fragment (list).'),
@@ -77,21 +80,50 @@ export function registerTaskTools(server) {
         }
         case 'list': {
           if (!args.tasksYaml) throw invalidInput('tasksYaml is required for list', { action });
-          const listed = listTasks(ctx.contain(args.tasksYaml), {
+          // The schema rejects a bad status, but the handler does NOT rely on
+          // that: the CLI facade drives the handlers directly, and a free-text
+          // status there returned an EMPTY list for a typo — a silent
+          // "these tasks do not exist" answer.
+          if (args.filterStatus && !STATUSES.includes(args.filterStatus)) {
+            throw invalidInput(
+              `unknown status '${args.filterStatus}' (allowed: ${STATUSES.join('|')})`,
+              { action, filterStatus: args.filterStatus, allowed: STATUSES },
+            );
+          }
+          const file = ctx.contain(args.tasksYaml);
+          const listed = listTasks(file, {
             status: args.filterStatus ?? null,
             module: args.module ?? null,
           });
           // ONE task, when the caller named one.
+          //
+          // The lookup runs against the UNFILTERED task set. It used to run
+          // against the filtered one, so `list{taskId:'B', filterStatus:
+          // 'done'}` reported "no task 'B' in <tasks.yaml>" — a false claim
+          // about the plan, for a task that was right there.
           if (args.taskId) {
-            const one = (listed.tasks ?? []).find((t) => t.id === args.taskId);
+            const all = listTasks(file, {});
+            const one = (all.tasks ?? []).find((t) => t.id === args.taskId);
             if (!one) {
               throw invalidInput(`no task '${args.taskId}' in ${args.tasksYaml}`, {
                 action,
                 taskId: args.taskId,
-                available: (listed.tasks ?? []).map((t) => t.id),
+                available: (all.tasks ?? []).map((t) => t.id),
               });
             }
-            return { task: one, tasks: [one] };
+            const excludedBy = [];
+            if (args.filterStatus && one.status !== args.filterStatus) excludedBy.push(`status:${args.filterStatus}`);
+            if (args.module) {
+              const owned = (one.file_ownership ?? []).join(' ');
+              if (!owned.includes(args.module)) excludedBy.push(`module:${args.module}`);
+            }
+            return {
+              task: one,
+              tasks: [one],
+              ...(excludedBy.length
+                ? { excludedBy, note: `this task exists but does not match ${excludedBy.join(', ')}` }
+                : {}),
+            };
           }
           const p = project(listed.tasks ?? [], {
             limit: args.limit,
@@ -139,6 +171,7 @@ export function registerTaskTools(server) {
           // a pointer is a file the worker may never open, and a worker that
           // never opens it produces work that ignores the skill.
           let capabilities = [];
+          const capabilityWarnings = [];
           try {
             const registry = loadAsset('skill-registry.json');
             const raw = readFileSync(tasksFile, 'utf8');
@@ -170,23 +203,38 @@ export function registerTaskTools(server) {
                     title: s.title,
                     normative: s.normative,
                   }));
-                } catch {
-                  cap.rules = '';
-                  cap.sections = [];
+                } catch (e) {
+                  // A skill that cannot be read is a WARNING, not a silent
+                  // empty capability: the worker must know its rules are
+                  // missing from the prompt.
+                  capabilityWarnings.push(
+                    `capability skill '${m.slug}' is installed but unreadable (${e?.message ?? e}) — its rules are NOT in this contract`,
+                  );
                 }
               }
               return cap;
             });
-          } catch {
-            capabilities = []; // a missing registry or an unparsed task must not break the contract
+          } catch (e) {
+            // The capability match FAILED. It used to be swallowed into an
+            // empty list, so the contract said "no capability skill is
+            // required" when matching had never run — the worker was told
+            // nothing was required when the truth was UNKNOWN.
+            capabilityWarnings.push(
+              `capability matching failed (${e?.message ?? e}) — the required capability skills are UNKNOWN, not absent`,
+            );
           }
 
-          // The doc sections that actually contain this task's contract — never
-          // the whole plan.
+          // The doc sections that actually contain this task's contract —
+          // never the whole plan. The count of what was left out is
+          // reported: five matching sections used to arrive as two, with no
+          // count and no hint.
           let docSections = [];
+          let docSectionsTotal = 0;
           try {
             const map = docIndex(slugDir, { mode: 'map', token: args.taskId, projectRoot: ctx.projectRoot });
-            docSections = (map.data.sections ?? []).slice(0, 2).map((s) => ({
+            const all = map.data.sections ?? [];
+            docSectionsTotal = all.length;
+            docSections = all.slice(0, 2).map((s) => ({
               file: s.file,
               section: s.section,
               title: s.title,
@@ -222,7 +270,24 @@ export function registerTaskTools(server) {
             // out: the instruction only helps if it is in the prompt.
             codegraph: existsSync(join(ctx.projectRoot, '.codegraph')),
           });
-          return contract;
+          return {
+            ...contract,
+            // The cap is COUNTED, and the failures are named. A contract that
+            // silently dropped three of five doc sections, or silently
+            // emptied the capability block, was indistinguishable from a
+            // contract that had nothing more to say.
+            docSectionCount: docSections.length,
+            docSectionsTotal,
+            ...(docSectionsTotal > docSections.length
+              ? {
+                  docSectionsOmitted: docSectionsTotal - docSections.length,
+                  docSectionsHint: `read the rest with archgen_docs{action:'map',token:'${args.taskId}'}`,
+                }
+              : {}),
+            ...(capabilityWarnings.length
+              ? { warnings: [...(contract.warnings ?? []), ...capabilityWarnings] }
+              : {}),
+          };
         }
         case 'next': {
           if (!args.tasksYaml) throw invalidInput('tasksYaml is required for next', { action });
@@ -237,10 +302,14 @@ export function registerTaskTools(server) {
                 available: resolved.waves.flat().map((t) => t.id),
               });
             }
+            // The wave index is 1-BASED, like the snapshot's. It used to be
+            // the 0-based array index, so `next{taskId:'T02'}.waveIndex` was
+            // 1 (the SECOND wave) while `snapshot.waveIndex` was 1 (the
+            // FIRST) — the same field name, opposite meanings.
             return {
-              waveIndex: index,
+              waveIndex: index + 1,
+              waveCount: resolved.waves.length,
               wave: resolved.waves[index],
-              waves: [resolved.waves[index]],
               blockedByFailure: resolved.blockedByFailure,
             };
           }

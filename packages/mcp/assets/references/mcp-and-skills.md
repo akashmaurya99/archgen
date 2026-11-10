@@ -10,7 +10,7 @@ The procedures below govern **external** MCP servers and capability skills.
 
 ## INSTALL-MCP procedure (approval-gated)
 
-1. **Identify platform:** `archgen_setup{action:'harness_info'}` (or `§platforms/mcp-configuration`) for config path, top-level key (`mcpServers` / `servers` / `mcp` / `context_servers`), and URL field (`url` / `serverUrl` / `httpUrl`).
+1. **Identify platform:** `archgen_setup{action:'harness_info'}` (or `§platforms/mcp-configuration`) for the config path, the top-level key, the URL field and the restart semantics. The key vocabulary lives in `§platforms/mcp-configuration` — one list, not two.
 2. **Discover:** web-search current official install docs for the server and harness. Never guess commands or schemas.
 3. **Declare scope:** **GLOBAL** (recommended for cross-project tools like CodeGraph) or **HARNESS-SPECIFIC**.
 4. **Prefer native CLI:** Claude Code `claude mcp add --scope project --transport http <name> <url>`; Codex `codex mcp add <name> --url <url>`; Gemini CLI `gemini mcp add -s project -t http <name> <url>`.
@@ -19,16 +19,16 @@ The procedures below govern **external** MCP servers and capability skills.
 
 ## FETCH-SKILL procedure
 
-Capability loading is **MANDATORY** whenever planned work matches a registry domain—especially `ui-skills` with `policy: "required"` for UI, frontend, design, animation, component, or landing-page tasks.
+Capability loading is **MANDATORY** whenever planned work matches a registry domain — especially the `ui-skills` family with `policy: "required"` (UI, frontend, design, animation, component, accessibility, motion work).
 
 0. **Two execution points:** pre-planning scan (during GENERATE / BROWNFIELD / UPDATE) and pre-dispatch verification.
-1. **MATCH:** `archgen_skills{action:'match', title, summary, fileOwnership}`. Case-insensitive whole-word (`\b`): `"ui"` matches `"redesign the ui"`, never `"build"`. Any `policy: "required"` hit makes steps 2–5 mandatory.
-2. **RESOLVE:** `archgen_skills` checks project, harness, and global directories (`<project>/.agents/skills/<slug>/SKILL.md`, `~/.agents/skills/<slug>/`) and reports installation status and path.
+1. **MATCH:** `archgen_skills{action:'match', title, summary, fileOwnership}`. Case-insensitive whole-word over all three inputs — including the file ownership, so a path cannot smuggle in a token by containing the letters of one. `"ui"` matches `"redesign the ui"`, never `"build"`. The registry's `matches[]` tokens are the vocabulary — read them from `archgen_skills{action:'list'}`, never from memory. Any `policy: "required"` hit makes steps 2–5 mandatory.
+2. **RESOLVE:** `archgen_skills` searches the project chain (every harness skill directory) and the user-global roots, and reports the installation status and the exact path it found or looked for.
 3. **INSTALL (if missing):**
    ```
    archgen_skills { action: 'install', skillId, harness, approve: true }
    ```
-   Installs the ONE matched skill non-interactively via `npx -y skills add <repo> --skill <slug> --agent <agent> --yes --json` and verifies the resulting path. Never install a whole family.
+   Installs the ONE matched skill non-interactively via `npx -y skills add <repo> --skill <slug> --agent <agent> --yes --json` and verifies the resulting path. Never install a whole family. An unknown `harness` is rejected — it never falls back silently.
 4. **INTEGRATE:** `archgen_tasks{action:'contract', tasksYaml, taskId}` extracts every matched skill's normative rules (`MUST` / `SHOULD` / `NEVER`), file path, and section index into the worker prompt. To inspect manually: `archgen_skills{action:'load', skillId}` (rules + index, never the whole file), `{action:'digest', skillId}` (index), or `{action:'load', skillId, section}` (one section).
 5. **AUDIT:** every worker report includes one line: `Skill compliance: followed <slug> (<path/to/SKILL.md>)` or `Skill compliance: NOT followed — <reason>`.
 6. **MISSING CAPABILITY:** for an obvious domain absent from the registry, web-search reputable skill repos, propose the candidate, and add it only after explicit user approval.

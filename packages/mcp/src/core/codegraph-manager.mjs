@@ -460,8 +460,14 @@ export async function manageCodegraph(opts) {
       report.telemetry.action = 'unchanged';
       return;
     }
-    if (dryRun) {
+    // A TELEMETRY SETTING IS A GLOBAL, MACHINE-WIDE WRITE. It used to run
+    // outside the approval gate — `ensure` without `approve: true` changed
+    // it anyway, contradicting the tool's own contract ("without it you get
+    // the PLAN, nothing is written"). Without approval the action is
+    // REPORTED, not performed.
+    if (dryRun || !approved) {
       report.telemetry.action = 'would-set-' + telemetry;
+      report.telemetry.detail = 'not applied — telemetry is a global setting and needs approve: true';
       return;
     }
     const r = run(cli.bin, ['telemetry', telemetry], { timeout: 30000, env });

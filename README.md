@@ -140,26 +140,26 @@ asking for approval.
 ## Token footprint
 
 Measured, not guessed. `npm run test:budget` reports it, and CI fails if the
-always-on footprint exceeds 12,200 tokens.
+always-on footprint exceeds 13,200 tokens.
 
 **Every session pays this much, and no more:**
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 6,492 |
-| MCP tool catalog (9 tools) | 5,056 |
-| **Always-on total** | **11,646** — 36% of a 32k window |
+| `skill/SKILL.md` | 7,381 |
+| MCP tool catalog (9 tools) | 5,309 |
+| **Always-on total** | **12,690** — 39% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
-references are 15,237 tokens *in total*, but a typical section is **243
+references are 17,075 tokens *in total*, but a typical section is **271
 tokens** — the agent loads the one it needs, never the file:
 
 | On demand | In total | What is actually read |
 | --- | ---: | --- |
-| A protocol reference | 15,237 | one section — **243 tokens** |
+| A protocol reference | 17,075 | one section — **271 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
-| A dispatch brief | 3,673 | the one being dispatched |
-| An artifact template | 2,596 | the one being scaffolded |
+| A dispatch brief | 4,155 | the one being dispatched |
+| An artifact template | 2,703 | the one being scaffolded |
 
 Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
 and `archgen_skills` serve one section at a time, and a dispatch brief arrives

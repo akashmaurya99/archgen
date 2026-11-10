@@ -30,10 +30,12 @@ Classify ONE `intent_class`, state it in one sentence, and record it. Scope is *
 
 | `intent_class` | Signal | Elicitation strategy | Max rounds (incl. R0) |
 |---|---|---|---|
-| `GREENFIELD-SYSTEM` | Net-new system; no host repo | Full discovery, PRD-grade only if the profile creates a PRD | ≤6 |
-| `GREENFIELD-MODULE` | Net-new module in an existing repo | Infer from host repo first; targeted forks | ≤3 |
-| `BROWNFIELD-FEATURE` | Additive behavior in an existing repo | Survey first; ask only unresolved gaps | ≤3 |
-| `BROWNFIELD-CHANGE` | Modify existing behavior in place | Survey first; diff current vs target behavior | ≤3 |
+| `GREENFIELD-SYSTEM` | Net-new system; no host repo | Full discovery, PRD-grade only if the profile creates a PRD | 6 |
+| `GREENFIELD-MODULE` | Net-new module in an existing repo | Infer from host repo first; targeted forks | 3 |
+| `BROWNFIELD-FEATURE` | Additive behavior in an existing repo | Survey first; ask only unresolved gaps | 3 |
+| `BROWNFIELD-CHANGE` | Modify existing behavior in place | Survey first; diff current vs target behavior | 3 |
+
+**The cap comes from the profile:** `archgen_plan{action:'profile'}` returns `interviewRoundCap` for the intent it classified. These round caps are ceilings, not targets — for SMALL work, ask 1–2 core forks and infer the rest.
 
 **Escalation signals** (pass them to `profile`): `new-module`, `multi-module`, `public-contract`, `data-migration`, `security-sensitive`, `multi-service`, `external-integration`, `cross-team`, `regulated`, `irreversible`, `product-facing`, `production`. **De-escalation:** `prototype`. **Reuse:** `existing-prd`, `existing-architecture`, `existing-adr`.
 
@@ -122,10 +124,10 @@ calibration:                     # optional
   scale: production              # prototype | mvp | production
   teamConstraints: solo dev, repo lint rules apply
   pressure: medium               # low | medium | high
-plan_profile:                    # record every profile decision
+plan_profile:                    # REQUIRED for MEDIUM/LARGE — the floor reads it
   confidence: high
   signals: [new-module, public-contract]
-  artifacts:
+  artifacts:                    # one entry per artifact family the profile decided
     - path: .archgen/acme/architecture.yaml
       decision: create
       reason: cross-module contract
@@ -133,7 +135,7 @@ plan_profile:                    # record every profile decision
       decision: omit
       reason: internal tool; no product personas
   escalate_if: [data-migration]
-  gate:                          # filled in after the gate
+  gate:                          # the canonical block, filled in after the gate
     verifier: ""                 # who approved it
     rounds: 0
     findings:
@@ -162,7 +164,7 @@ compliance: []
 risks: []
 ```
 
-Fields beyond `scope_class`, `problem`, `success_criteria`, `constraints`, `stack`, `integrations`, `compliance`, and `risks` are optional and backward-compatible. `feeds:` tags may be object keys or trailing `# feeds:` comments.
+`plan_profile` is **required for MEDIUM and LARGE** — the floor checks every artifact decision against the files on disk, and without it there is nothing to check (it warns `PROFILE_NOT_RECORDED`). For SMALL, put the same block in the plan's `## Profile` fence instead. Every other field beyond `scope_class`, `problem`, `success_criteria`, `constraints`, `stack`, `integrations`, `compliance` and `risks` is optional and backward-compatible. `feeds:` tags may be object keys or trailing `# feeds:` comments.
 
 ## Completion test
 

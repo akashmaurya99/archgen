@@ -27,6 +27,3 @@
 
 ## Risks & mitigations
 - <risk> -> <mitigation>, owned by <task ID or ADR ref>
-
-## Open questions
-- <question> — owner: <name/role>, blocks: <task ID | none>

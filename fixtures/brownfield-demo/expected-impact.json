@@ -1,8 +1,12 @@
 {
+  "target": "RL1",
   "direct": [
     "RL2",
     "RL3"
   ],
   "transitive": [],
-  "artifacts": []
+  "artifacts": [],
+  "directTotal": 2,
+  "transitiveTotal": 0,
+  "artifactsTotal": 0
 }

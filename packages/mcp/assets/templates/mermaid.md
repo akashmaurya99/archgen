@@ -15,11 +15,7 @@ graph LR
   service --> queue[(<queue or cache>)]
 ```
 
-## Per-module diagram (LARGE)
-
-Rules: one flowchart per `modules:` entry in `architecture.yaml` showing internal components (≤6 nodes) plus inbound `depends_on_modules` edges (consumer → provider), plus ONE integration diagram wiring modules as atomic nodes. **Hard limit:** ≤15 nodes per diagram. Skip diagrams for trivial or single-module flows.
-
-<module> (internals + inbound `depends_on` edge):
+Per-module diagram (one per `modules:` entry in `architecture.yaml`):
 ```mermaid
 graph LR
   subgraph <module>

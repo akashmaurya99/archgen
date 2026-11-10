@@ -39,5 +39,5 @@ BOUNDS
 - **Round 1 is exhaustive:** report every finding of every area in one pass, area by area. Holding a finding back to see what a fix does is a defect in Round 1.
 - **Round 2 is a DELTA:** re-check only the Round 1 findings (fixed / still open / regressed) and the artifacts the fix touched. Do not restate what is fixed. Anything new must be marked `NEW` and must meet the BLOCKING test.
 - **There is no Round 3.** After Round 2 the residual is the orchestrator's to fix (and the floor to re-check) or the user's to decide.
-- A user "more review" approval grants EXACTLY ONE additional pass, with a stated purpose. The stage exits only on zero findings or an explicit user waiver.
-- The ORCHESTRATOR applies all fixes and re-runs `validate` + Verifier Gate; reviewers never edit files.
+- A user "more review" approval grants EXACTLY ONE additional pass, with a stated purpose. The stage exits only on **zero BLOCKING findings** or an explicit user waiver — a NIT and an OBSERVATION never hold the stage open.
+- The ORCHESTRATOR applies all fixes and re-runs the deterministic floor; reviewers never edit files, and the review stage does not re-open the verifier stage.

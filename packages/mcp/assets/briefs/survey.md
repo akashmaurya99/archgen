@@ -1,7 +1,7 @@
 TASK: Survey this repository to prepare a feature plan for: `<feature request>`
-SCOPE: Read-only exploration, writing ONLY `<slug dir>/codebase-map.md`.
+SCOPE: Read-only exploration. Writes EXACTLY ONE file: `<slug dir>/codebase-map.md`. Nothing else.
 
-DELIVERABLE: Write `<slug dir>/codebase-map.md` containing EXACTLY these six non-empty sections:
+DELIVERABLE: Write `<slug dir>/codebase-map.md` containing these six non-empty sections:
 ## Structure — Top 2 directory levels with 1-line purpose per folder; name the source and test roots.
 ## Modules — Table: `module | responsibility | key entry points`.
 ## Conventions — Observed naming, error handling, state management, and where tests actually live.

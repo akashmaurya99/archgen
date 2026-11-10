@@ -10,7 +10,7 @@ Begin `tasks.yaml` and `architecture.yaml` with the three YAML comment lines ret
 # generated_at: 2026-08-26T09:00:00.000Z
 ```
 
-**Never guess or hand-type a version:** paste the header verbatim. Manual backfill resolves in order: exact semver from `.archgen-version` next to `SKILL.md`; the semver in adjacent `archgen.config.json`; otherwise omit the token. `npx archgen-skill migrate --apply` backfills idempotently (`--check` is the dry run). All files from one run share one `generated_at`.
+**Never guess or hand-type a version:** paste the header verbatim. Manual backfill resolves from **one** source — the exact semver in `.agents/skills/archgen/.archgen-version`; when that stamp is absent or is not an exact `MAJOR.MINOR.PATCH`, the token is omitted (`# generator: archgen`) rather than guessed. `npx archgen-skill migrate --apply` backfills idempotently (`--check` is the dry run). All files from one run share one `generated_at`.
 
 ## Artifact necessity & reuse
 
@@ -27,7 +27,7 @@ An artifact exists only when it has a consumer and changes a decision. Apply thi
 - **reuse** — the host repository already owns the fact. Record the exact path in the plan Profile (and `answers.yaml` when present); write only the delta if the source is stale.
 - **omit** — record the reason. Never create an unneeded artifact to look complete.
 
-**No artifact without a consumer.** A generated copy of an existing PRD, architecture document, or ADR is a defect. So is an architecture file for a localized change, an ADR for a routine choice, a diagram for a trivial flow, or a task with no requirement.
+**No artifact without a consumer.** A generated copy of an existing PRD, architecture document, or ADR is a defect. So is an architecture file for a localized change, an ADR for a routine choice, a diagram for a trivial flow, or a task with no requirement. The floor checks the copy **inside the artifact space**; a duplicate written elsewhere in the host repository (a second PRD at the repo root) is the **reviewer's** judgement, not a floor check — look for it.
 
 ## Plan depth by scope class
 
@@ -40,20 +40,20 @@ Run `archgen_plan{action:'profile'}` first; fetch skeletons with `archgen_plan{a
   Tasks: see tasks.yaml entries <ids>
   Risks: <bullets or none>
   ```
-- **MEDIUM**: plan includes **Context** (2–4 paragraphs: why now, current state, delta), **per-task sections** (`## <id> — <title>` with approach, **Edge cases ≥3** feeding the matrix, out-of-scope), and ordered runnable verification steps. No PRD; architecture only when the profile finds a contract trigger.
-- **LARGE**: MEDIUM sections plus the artifacts the profile marks create — PRD (~1 page/module), expanded `architecture.yaml` (`naming_conventions`, `data_contracts`, `api_contracts`, `environment_matrix`), per-task edge matrices, and per-module/integration diagrams (≤15 nodes each). ADRs and diagrams remain conditional.
+- **MEDIUM**: plan includes **Context** (up to 4 paragraphs: why now, current state, delta), **per-task sections** (`## <id> — <title>` with approach, **Edge cases ≥3** feeding the matrix, out-of-scope), and ordered runnable verification steps. No PRD; architecture only when the profile finds a contract trigger.
+- **LARGE**: MEDIUM sections plus **the artifacts the profile marks create** — a PRD when the profile creates it, an expanded `architecture.yaml` when it creates it, per-task edge matrices, and per-module/integration diagrams when the profile creates them. ADRs and diagrams remain conditional. A LARGE class does NOT create every artifact: the profile decides, one artifact at a time.
 
 ## Depth budgets
 
-The profile returns hard ceilings. Stop when the consumer is satisfied; "complete" means the required decisions are covered, not that every possible document exists.
+**The profile's `depth` block is the authority** — `archgen_plan{action:'profile'}` returns the ceilings for the class it computed. These are the ceilings it serves:
 
-| Scope | Plan context | Edge cases/task | PRD | Architecture | Diagrams | ADRs |
-|---|---|---|---|---|---|---|
-| SMALL | 1 paragraph | 0 | none | none | none | none |
-| MEDIUM | 2–4 paragraphs | 3 | none | ≤20 lines/module, only for contracts | none | ≤1, only if irreversible |
-| LARGE | 2–4 paragraphs | 3–7 | ≤1 page/module | ≤20 lines/module | ≤15 nodes each, when topology is non-obvious | ≤3 total |
+| Scope | Plan context | Edge cases/task | PRD | Architecture | Diagrams | ADRs | Tasks | Plan lines |
+|---|---|---|---|---|---|---|---|---|
+| SMALL | 1 paragraph | 0 | none | none | none | none | ≤5 | ≤60 |
+| MEDIUM | ≤4 paragraphs | 3 | none | ≤20 lines/module, only for contracts | none | ≤1, only if irreversible | ≤12 | ≤180 |
+| LARGE | ≤4 paragraphs | 7 | ≤1 page/module, when created | ≤20 lines/module | ≤15 nodes each, when created | ≤3 total | ≤30 | ≤400 |
 
-Plan-length ceilings: SMALL ≤60 lines, MEDIUM ≤180, LARGE ≤400. Task ceilings: 5 / 12 / 30.
+Stop when the consumer is satisfied; "complete" means the required decisions are covered, not that every possible document exists.
 
 ## Self-containment rules (anti-hallucination)
 
@@ -71,7 +71,7 @@ Artifacts are executed by sub-agents with zero conversation history. Enforce str
 
 `archgen_plan{action:'verify'}` computes these. They are not style; each one is a fact the gate agent would otherwise have to prove by hand, every round. Author them correctly the first time:
 
-1. **Mirrored test tree:** a task that owns source under `toolchain.source_root` also owns the mirrored path under `toolchain.test_root` (the test FILE NAME is the language's choice; the PATH is not). Fill `toolchain.source_root` / `toolchain.test_root` in `architecture.yaml` — without them the floor cannot check it.
+1. **Mirrored test tree:** a task that owns source under `toolchain.source_root` also owns the mirrored path under `toolchain.test_root` (the test FILE NAME is the language's choice; the PATH is not). `test_root` is the root of the tree that **mirrors** the source tree — `tests/unit` in the common layout. Fill both roots in `architecture.yaml`: without them the floor reports `CONFIG_NOT_ENFORCED` and the layout becomes the reviewer's judgement.
 2. **Disjoint ownership:** no two tasks' globs overlap, and no glob CONTAINS another task's glob (a later wave can overwrite the earlier task's files).
 3. **Matrix citations resolve:** every edge-case row's `Covered by` cell names a task and an acceptance index that exists — and the acceptance it names must verify the stated case.
 4. **Requirements are cited:** every `FR-<MODULE>-nn` defined in `docs/prd.md` is cited by at least one acceptance; every FR id an acceptance cites exists in the PRD.
@@ -90,16 +90,35 @@ An acceptance that verifies an edge case or a requirement **says so**:
 
 The floor then joins the two sides instead of asking a model to infer them: the matrix row `E4` cites `T9#1`, and `T9#1` claims `E4`. A row pointing at an acceptance that does not claim it is an issue, and an acceptance claiming a row that does not exist is an issue. Ids are artifact ids (`E4`, `FR-API-01`) — never code names, never language-specific.
 
-Claims are optional per plan, but the convention is detected: as soon as one acceptance claims an edge id, the mutual link is enforced for every row. Until then the floor reports that the claims are not declared, so the gap is visible.
+Claims are optional per plan, but the convention is detected: as soon as one acceptance claims an edge id, the mutual link is enforced for every row. A plan that has edge-case rows and declares NO claim at all is `MATRIX_CLAIMS_UNDECLARED` — the rows exist, but nothing proves they are verified. A row still carrying the template's placeholder (`<ID>#1`) is `MATRIX_CITATION_UNRESOLVED` — it was never bound to an acceptance.
 
 ### The plan profile record — where the decisions live
 
 The profile is recorded, not remembered, and the floor checks it against the files on disk:
 
-- **MEDIUM / LARGE** → `answers.yaml` → `plan_profile.artifacts[]`, each `{path, decision, reason}` plus `host_path` for a `reuse` decision (the existing file it cites).
+- **MEDIUM / LARGE** → `answers.yaml` → `plan_profile.artifacts[]`.
 - **SMALL** → the plan's `## Profile` section, as the fenced YAML block the scaffold writes.
 
-The floor then proves: every `create` artifact exists, every `omit` artifact does NOT exist, every `reuse` cites a file that exists, and every artifact on disk has a decision. An artifact without a decision is `PROFILE_UNRECORDED` — the defect this whole mechanism exists to prevent.
+Every entry is `{path, decision, reason}`, and a **`reuse` decision also carries `host_path`** — the existing repository file it cites. A reuse without a `host_path` is `PROFILE_DECISION_INVALID`: it names no file, so nothing can be checked and the reader cannot find what the plan reused.
+
+```yaml
+plan_profile:
+  artifacts:
+    - path: .archgen/acme/architecture.yaml
+      decision: create
+      reason: cross-module contract
+    - path: .archgen/acme/docs/prd.md
+      decision: omit
+      reason: internal tool; no product personas
+    - path: .archgen/acme/docs/prd.md
+      decision: reuse
+      reason: the host PRD is current
+      host_path: docs/product-requirements.md
+```
+
+The floor then proves, per **family** (not per literal filename): every `create` family has a file on disk, every `omit`/`reuse` family does NOT, every `reuse` cites a host file that exists, and every artifact on disk belongs to a recorded family. An artifact with no recorded decision is `PROFILE_UNRECORDED` — the defect this whole mechanism exists to prevent.
+
+A family is a path pattern (`plans/*.md`, `decisions/*.md`, `docs/prd.md`): the plan may name its files as it likes, and the decision still proves.
 
 ### Waivers — approved deviations, recorded
 
@@ -108,31 +127,33 @@ A waived finding is an audit event, not a conversation. Write it to `.archgen/<s
 ```yaml
 waivers:
   - id: W1
-    scope: ["T19#2", "T19#3"]
+    scope: ["T19#2", "T19#3"]   # a CODE (MIRROR_MISSING) covers that whole class; a subject covers one instance
     finding: "the live-mode acceptances need live credentials"
     reason: "the live gate runs on the operator machine; the checklist is the artifact"
     approved_by: user
     approved_at: 2026-11-10
 ```
 
-`scope`, `finding`, `reason`, `approved_by` and `approved_at` are required — a waiver without a reason is not a waiver. The floor reports the ledger's size, the gate brief shows it, and a waived finding is not a defect to fix (unless it regressed).
+Every field is required — the floor enforces it, and a waiver missing one is `WAIVER_INVALID` and suppresses nothing. **A covered finding stops being an issue**: the plan can reach `APPROVE`, the floor reports the finding separately as a waived one, and the gate brief lists it. A waived finding is not a defect to fix (unless it regressed).
 
 ### Gate metrics — the gate measures itself
 
-After the gate, record what it cost in the plan Profile (`answers.yaml` → `plan_profile.gate`, or the plan's `## Profile`):
+After the gate, record what it cost. **This is the canonical block — one shape, used in `answers.yaml` (`plan_profile.gate`), in a SMALL plan's `## Profile` fence, and nowhere else:**
 
 ```yaml
 gate:
+  verifier: "who approved it"   # an approval needs a subject
   rounds: 2
   findings:
     blocking: 12
     nit: 3
     observation: 2
-  waived: 1
-  residual: 0
+  waived: 1        # must match the number of entries in waivers.yaml
+  residual: 0      # findings still open after the last round
+  at: "2026-11-10T09:00:00Z"   # ISO-8601 timestamp of the approval
 ```
 
-`waived` must match `waivers.yaml`. These numbers are how you prove the process improved instead of assuming it.
+`waived` must match `waivers.yaml` — a mismatch is the `WAIVER_COUNT_MISMATCH` warning. A missing `verifier` is the `GATE_IDENTITY_MISSING` warning. These numbers are how you prove the process improved instead of assuming it.
 
 ## Structural correctness — verifier-enforced authoring rules
 
@@ -141,7 +162,7 @@ gate:
 - **Runnable verification:** repo-root-relative commands (no `../`, no `--plan .`) with exact flags, sample sizes, and thresholds.
 - **Restricted YAML subset:** block mappings/sequences and single-line flow collections only. **BANNED:** block scalars (`|` / `>`), duplicate keys, and multi-line flow collections.
 - **Targeted edits:** small surgical edits or a clean full regeneration—never large multi-region patches.
-- **Both trees:** `structure:` lists the source tree and its sibling test tree; a task that owns source owns the mirrored test path (`references/code-standards.md`).
+- **Both trees:** `structure:` lists the source tree and its sibling test tree. **Every path in `structure:` and every `owns[]` glob must be owned by a task** — the floor checks it, and a path with `<...>` placeholders is skipped until you fill them in.
 
 ## Agent workspace & artifact location — the two-tier rule
 
@@ -203,5 +224,6 @@ Generated via `scaffold`, placed in each MEDIUM/LARGE task's plan section (≤10
 
 Generated via `scaffold` only when the profile's trigger fired (`decisions/NNNN-title.md`, `docs/mermaid-snippets.md`). An ADR records an irreversible or hard-to-reverse decision — never a routine choice.
 
+- **The file name IS the link.** `architecture.yaml` `decisions[].id` `D1` matches `decisions/0001-<title>.md` (zero-padded, then the title slug). The floor looks for a file whose name starts with the decision's number, and falls back to the title slug for a non-numeric id.
 - One flowchart per `modules:` entry showing internals (≤6 nodes) plus inbound `depends_on_modules` edges; one integration diagram with modules as atomic nodes.
 - **Hard limit:** ≤15 nodes per diagram (split if larger). No diagram for a trivial or single-module flow.

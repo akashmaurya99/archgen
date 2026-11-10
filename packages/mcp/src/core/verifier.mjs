@@ -18,6 +18,7 @@ import { parseYaml } from './yaml.mjs';
 import { buildGraph, findCycle, computeWaves, findOwnershipConflict, GraphError } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { auditPlan } from './plan-audit.mjs';
+import { invalidInput } from './errors.mjs';
 
 /** The codes the floor reports for the checks that predate the audit. */
 const BASE_CODES = [
@@ -100,7 +101,8 @@ function cap(list, max, offset = 0) {
  *
  * @param {string} file absolute path to tasks.yaml
  * @param {string} planDir absolute path to the plans directory
- * @param {{offset?: number}} [opts] `offset` walks the findings list
+ * @param {{offset?: number, limit?: number, collection?: 'issues'|'warnings'}} [opts]
+ *   `offset` walks the selected collection; `limit` narrows the window.
  * @returns {{verdict: 'APPROVE'|'ISSUES', issues: string[], warnings: string[],
  *            issueCodes: object, warningCodes: object, issuesTotal: number,
  *            warningsTotal: number, omitted: {issues: number, warnings: number}}}
@@ -108,6 +110,8 @@ function cap(list, max, offset = 0) {
 export function verifyPlan(file, planDir, opts = {}) {
   const issues = [];
   const warnings = [];
+  /** The audit, kept so the caller can have its maps without a second run. */
+  let lastAudit = null;
 
   let data;
   try {
@@ -121,6 +125,8 @@ export function verifyPlan(file, planDir, opts = {}) {
       warningCodes: {},
       issuesTotal: 1,
       warningsTotal: 0,
+      issuesOffset: 0,
+      warningsOffset: 0,
       omitted: { issues: 0, warnings: 0 },
     };
   }
@@ -165,6 +171,7 @@ export function verifyPlan(file, planDir, opts = {}) {
       // hand, every round. They are computed HERE so the agent is left with
       // the judgment it is actually for.
       const audit = auditPlan({ slugDir: dirname(planDir), tasks });
+      lastAudit = audit;
       issues.push(...audit.issues);
       warnings.push(...audit.warnings);
     } catch (e) {
@@ -173,9 +180,18 @@ export function verifyPlan(file, planDir, opts = {}) {
     }
   }
 
+  // The two lists are SEPARATE collections with separate windows.
+  //
+  // They used to share ONE offset over two different lengths (40 issues, 20
+  // warnings), so the warnings between index 20 and 39 fell into the gap
+  // between the windows and were reachable at NO offset — the tail was lost,
+  // not bounded. Each collection now has its own window and its own cursor.
   const offset = Number.isInteger(opts.offset) ? opts.offset : 0;
-  const cappedIssues = cap(issues, MAX_FINDINGS, offset);
-  const cappedWarnings = cap(warnings, MAX_WARNINGS, offset);
+  const limit = Number.isInteger(opts.limit) && opts.limit > 0 ? Math.min(opts.limit, MAX_FINDINGS) : MAX_FINDINGS;
+  const warningLimit = Math.min(limit, MAX_WARNINGS);
+  const collection = opts.collection === 'warnings' ? 'warnings' : 'issues';
+  const cappedIssues = cap(issues, limit, collection === 'issues' ? offset : 0);
+  const cappedWarnings = cap(warnings, warningLimit, collection === 'warnings' ? offset : 0);
   return {
     verdict: issues.length ? 'ISSUES' : 'APPROVE',
     issues: cappedIssues.shown,
@@ -187,6 +203,10 @@ export function verifyPlan(file, planDir, opts = {}) {
     issuesOffset: cappedIssues.offset,
     warningsOffset: cappedWarnings.offset,
     omitted: { issues: cappedIssues.omitted, warnings: cappedWarnings.omitted },
+    // The audit's maps, waivers and snapshot, so a caller that needs the
+    // EVIDENCE does not have to run the audit a second time — and cannot
+    // end up with a DIFFERENT set of findings than the ones reported here.
+    audit: lastAudit,
   };
 }
 
@@ -203,22 +223,32 @@ function withCode(message) {
  * requirement coverage and the edge-case coverage — so there is ONE coverage
  * report instead of two, one of which knew nothing about traceability.
  *
+ * FOUR COLLECTIONS, FOUR WINDOWS. The report carries the task list, the
+ * coverage findings, the uncovered requirements and the unlinked edge cases.
+ * They used to share ONE offset over one concatenated list, so the tool
+ * applied the offset a second time and the ids it called "covered" were the
+ * tail of the uncovered list. Each collection now carries its own window,
+ * its own total and its own cursor.
+ *
  * @param {string} file absolute path to tasks.yaml
  * @param {string} planDir absolute path to the plans directory
- * @returns {{covered: string[], uncovered: string[], findings: string[],
- *            requirements: object, edgeCases: object, profileRecorded: boolean}}
+ * @param {{offset?: number, limit?: number, collection?: string}} [opts]
+ * @returns {object}
  */
 export function planCoverage(file, planDir, opts = {}) {
+  const offset = Number.isInteger(opts.offset) ? opts.offset : 0;
+  const limit = Number.isInteger(opts.limit) && opts.limit > 0 ? Math.min(opts.limit, MAX_FINDINGS) : MAX_FINDINGS;
+  const collection = String(opts.collection ?? 'tasks');
+
   let data;
   try {
     ({ data } = parseYaml(readFileSync(file, 'utf8'), { filename: file }));
   } catch (e) {
     return {
-      covered: [],
-      uncovered: [],
-      findings: [`UNPARSEABLE: unparseable tasks.yaml: ${e.message}`],
-      requirements: { total: 0, covered: 0, uncovered: [] },
-      edgeCases: { total: 0, linked: 0, unlinked: [] },
+      tasks: { covered: [], uncovered: [], coveredTotal: 0, uncoveredTotal: 0, offset: 0 },
+      findings: { items: [`UNPARSEABLE: unparseable tasks.yaml: ${e.message}`], total: 1, offset: 0 },
+      requirements: { total: 0, covered: 0, uncovered: [], uncoveredTotal: 0, offset: 0 },
+      edgeCases: { total: 0, linked: 0, unlinked: [], unlinkedTotal: 0, offset: 0 },
       profileRecorded: false,
     };
   }
@@ -232,51 +262,77 @@ export function planCoverage(file, planDir, opts = {}) {
     const mentioned = referenced.has(id) || mentionedInTasks.has(id);
     (mentioned ? covered : uncovered).push(id);
   }
-  // The uncovered list is bounded too — and CONTINUABLE: `offset` walks it.
-  // 120 uncovered tasks is 120 ids the caller cannot act on one by one, but it
-  // CAN reach them all.
-  const offset = Number.isInteger(opts.offset) ? opts.offset : 0;
-  const uncoveredStart = Math.max(0, Math.min(offset, uncovered.length));
-  const uncoveredShown = uncovered.slice(uncoveredStart, uncoveredStart + MAX_FINDINGS);
 
-  let requirements = { total: 0, covered: 0, uncovered: [] };
-  let edgeCases = { total: 0, linked: 0, unlinked: [] };
+  // The covered ids and the uncovered ids are SEPARATE windows, so a caller
+  // paging the uncovered list never receives a covered id and never has to
+  // guess which half of the payload it is looking at.
+  const coveredWindow = cap(covered, limit, collection === 'covered' ? offset : 0);
+  const uncoveredWindow = cap(uncovered, limit, collection === 'uncovered' ? offset : 0);
+
+  let requirements = { total: 0, covered: 0, uncovered: [], uncoveredTotal: 0, offset: 0 };
+  let edgeCases = { total: 0, linked: 0, unlinked: [], unlinkedTotal: 0, offset: 0 };
   let profileRecorded = false;
   try {
     const audit = auditPlan({ slugDir: dirname(planDir), tasks });
     profileRecorded = Boolean(audit.profile);
     const reqs = audit.maps.requirements ?? [];
     const reqUncovered = reqs.filter((r) => !r.covered).map((r) => r.id);
+    const reqWindow = cap(reqUncovered, limit, collection === 'requirements' ? offset : 0);
     requirements = {
       total: reqs.length,
       covered: reqs.filter((r) => r.covered).length,
-      uncovered: reqUncovered.slice(0, MAX_FINDINGS),
-      uncoveredTotal: reqUncovered.length,
+      uncovered: reqWindow.shown,
+      uncoveredTotal: reqWindow.total,
+      offset: reqWindow.offset,
     };
     const rows = audit.maps.edgeMatrix ?? [];
     const unlinked = rows.filter((r) => !r.valid || !r.claimOk).map((r) => r.row);
+    const edgeWindow = cap(unlinked, limit, collection === 'edgeCases' ? offset : 0);
     edgeCases = {
       total: rows.length,
       linked: rows.filter((r) => r.valid && r.claimOk).length,
-      unlinked: unlinked.slice(0, MAX_FINDINGS),
-      unlinkedTotal: unlinked.length,
+      unlinked: edgeWindow.shown,
+      unlinkedTotal: edgeWindow.total,
+      offset: edgeWindow.offset,
     };
   } catch {
     // The coverage report must never crash: the audit's findings are the
     // verifier's business, not this action's.
   }
 
-  // The findings list is bounded like the gate's, and walkable with `offset`.
-  const cappedFindings = cap(findings, MAX_FINDINGS, offset);
+  const findingsWindow = cap(findings, limit, collection === 'findings' ? offset : 0);
+
+  // ONE TASK. The caller named a task, so the answer is about THAT task —
+  // its coverage verdict and the findings that mention it. It used to
+  // return the plan-wide findings list, so a caller asking about T5 got
+  // findings about T2, T3 and T4 as well.
+  if (opts.taskId) {
+    const wanted = String(opts.taskId);
+    const isCovered = covered.includes(wanted);
+    const isUncovered = uncovered.includes(wanted);
+    if (!isCovered && !isUncovered) {
+      throw invalidInput(`no task '${wanted}' in ${file}`, {
+        taskId: wanted,
+        available: [...covered, ...uncovered],
+      });
+    }
+    return {
+      taskId: wanted,
+      covered: isCovered,
+      findings: findings.filter((f) => String(f).includes(wanted)),
+      findingsTotal: findings.filter((f) => String(f).includes(wanted)).length,
+    };
+  }
+
   return {
-    covered,
-    uncovered: uncoveredShown,
-    uncoveredTotal: uncovered.length,
-    uncoveredOffset: uncoveredStart,
-    findings: cappedFindings.shown,
-    findingsTotal: cappedFindings.total,
-    findingsOffset: cappedFindings.offset,
-    omitted: { findings: cappedFindings.omitted },
+    tasks: {
+      covered: coveredWindow.shown,
+      uncovered: uncoveredWindow.shown,
+      coveredTotal: coveredWindow.total,
+      uncoveredTotal: uncoveredWindow.total,
+      offset,
+    },
+    findings: { items: findingsWindow.shown, total: findingsWindow.total, offset: findingsWindow.offset },
     requirements,
     edgeCases,
     profileRecorded,

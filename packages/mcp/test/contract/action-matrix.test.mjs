@@ -308,7 +308,7 @@ test('loading a skill never returns the whole file', async () => {
 test('every collection narrows to ONE item', async () => {
   const cases = [
     ['archgen_tasks', { action: 'list', tasksYaml: sandbox.tasksYaml, taskId: 'API' }, (d) => d.tasks.length === 1],
-    ['archgen_tasks', { action: 'next', tasksYaml: sandbox.tasksYaml, taskId: 'API' }, (d) => d.waves.length === 1],
+    ['archgen_tasks', { action: 'next', tasksYaml: sandbox.tasksYaml, taskId: 'API' }, (d) => Array.isArray(d.wave) && d.waveIndex >= 1],
     ['archgen_plan', { action: 'coverage', tasksYaml: sandbox.tasksYaml, planDir: sandbox.plansDir, taskId: 'API' }, (d) => d.taskId === 'API'],
     ['archgen_skills', { action: 'list', skillId: 'ui-baseline' }, (d) => d.skills.length === 1],
   ];

@@ -19,7 +19,7 @@ You are the **ORCHESTRATOR**: profile the work, elicit only unresolved forks, wr
 ## Bootstrap
 
 - **Tools in tool list** → proceed.
-- **Missing** → say so, run `npx archgen-skill init` at repo root, ask the user to reload. Halt until reload.
+- **Missing** → say so, run `npx archgen-skill init` at repo root, ask the user to reload. Halt until reload. The default install wires the harnesses **globally**; add `--location project` when the project must carry its own committed MCP config (Hard Rule 10).
 - **Misbehaving** → `archgen_setup{action:'doctor'}`.
 - Never bypass missing tools with scripts.
 
@@ -34,14 +34,14 @@ You are the **ORCHESTRATOR**: profile the work, elicit only unresolved forks, wr
 | `archgen_codegraph` | `status` · `ensure` · `wire` CodeGraph & its MCP |
 | `archgen_setup` | `doctor` · `bootstrap` · `install_mcp` / `uninstall_mcp` · `harnesses` · `harness_info` |
 | `archgen_skills` | `match` · `install` · `installed` · `load` / `digest` / `list` |
-| `archgen_refs` | `list` · `index` · `read` · `search`—topics: `interview`, `artifact-templates`, `orchestration`, `platforms`, `mcp-and-skills` |
+| `archgen_refs` | `list` · `index` · `read` · `search`—topics: `interview`, `artifact-templates`, `orchestration`, `platforms`, `mcp-and-skills`, `code-standards` |
 | `archgen_help` | Full briefing for one domain—use it instead of guessing argument shapes |
 
-`archgen_docs` reads `.archgen/<slug>/`; `archgen_refs` reads archgen's protocols. Read-only: `archgen_plan{validate,verify,graph,impact,coverage,profile}` · `archgen_docs` · `archgen_refs` · `archgen_help` · `archgen_tasks{next,list,contract}` · `archgen_codegraph{status}` · `archgen_setup{doctor,harnesses,harness_info}` · `archgen_skills{match,installed,load,digest,list}` · `archgen_registry{show}`. Everything else writes or installs.
+`archgen_docs` reads `.archgen/<slug>/`; `archgen_refs` reads archgen's protocols. **Read-only actions:** `archgen_plan{validate,verify,graph,impact,coverage,profile,scaffold,brief}` · `archgen_docs` (all) · `archgen_refs` (all) · `archgen_help` · `archgen_tasks{next,list,contract}` · `archgen_codegraph{status}` · `archgen_setup{doctor,harnesses,harness_info}` · `archgen_skills{match,installed,load,digest,list}` · `archgen_registry{show}`. Every other action writes, installs or mutates. The tool-level `readOnly` hint is per TOOL, so check the action.
 
 Every result is `{ ok, data, error, meta }`. `ok:false` carries a typed `error.code` (`INVALID_INPUT`, `NOT_FOUND`, `CYCLE`, `OWNERSHIP_CONFLICT`, `CONFLICT`, `PERMISSION_DENIED`, `UNAVAILABLE`, `TIMEOUT`, `INTERNAL`)—handle it as data. `ok:true` means the call succeeded; inspect `data.valid` for plan health and `data.verdict` for gates.
 
-**Token discipline:** fetch sections, never whole files—`archgen_docs{action:'digest'}` → `{action:'section'}`, `archgen_refs{action:'index'}` → `{action:'read'}`, and load at most the sections the mode table names. A section returns its own text and names its nested subsections (`include:'all'` only for the whole subtree); `file` + `section` extracts that section from that file. Collections take `limit`/`offset` and narrow to one item (`taskId`, `skillId`, `file`+`section`, `harness`); `meta` names the next call—**fetch it, never the whole set.** Settle batches with `allSettled`. Never restate a loaded reference or artifact in chat.
+**Token discipline:** fetch sections, never whole files—`archgen_docs{action:'digest'}` → `{action:'section'}`, `archgen_refs{action:'index'}` → `{action:'read'}`, and load at most the sections the mode table names. A section returns its own text and names its nested subsections (`include:'all'` only for the whole subtree); `file` + `section` extracts that section from that file. Collections take `limit`/`offset` and narrow to one item (`taskId`, `skillId`, `file`+`section`, `harness`); `meta` names the next call—**fetch it, never the whole set.** A bounded answer always reports the EXACT total; where several collections share one `limit`/`offset`, `collection` says which one the window walks. Settle batches with `allSettled`. Never restate a loaded reference or artifact in chat—except a one-line decision summary (scope class and its create/reuse/omit set), which the user needs to confirm.
 
 ## Loading a reference (§) — MANDATORY
 
@@ -53,7 +53,7 @@ archgen_refs { action: 'read', topic: 'orchestration', section: 'dispatch--wave-
 ```
 
 1. **Load BEFORE acting**—entering a mode requires its `§` sections.
-2. **Load SECTIONS, not topics.** The `§` name is a slug prefix: `§artifact-templates/plan-depth` resolves to `plan-depth-by-scope-class`. Call `index` only when ambiguous.
+2. **Load SECTIONS, not topics.** The `§` name is a slug prefix: `§artifact-templates/plan-depth` resolves to `plan-depth-by-scope-class`. A topic-only marker (`§artifact-templates`) is a MAP — `archgen_refs{action:'read', topic:'artifact-templates'}` returns the index, not the content. Call `index` only when a section name is ambiguous.
 3. **Reload after compaction** (Hard Rule 9).
 4. **Never guess a protocol**—if an unread `§` covers your next step, load it first.
 
@@ -62,19 +62,19 @@ archgen_refs { action: 'read', topic: 'orchestration', section: 'dispatch--wave-
 ## Hard rules — read first
 
 1. **Workspace isolation:** write generated files inside `.archgen/<slug>/`, including sub-agent state under `.agent/` (`§artifact-templates/agent-workspace`). Exceptions: approved edits within `file_ownership` (`§orchestration/dispatch`); `AGENTS.md` via `archgen_registry`.
-2. **Three gates, never skipped:** (a) the deterministic floor (`archgen_plan{action:'verify'}`) returns `APPROVE` **before any gate agent is dispatched**; (b) plan-review reaches zero findings or an explicit waiver; (c) user approval. **Depth scales with scope** (`§orchestration/verifier`); the floor never shrinks. Both gate stages run the SAME protocol: **at most two rounds**—round 1 exhaustive, round 2 a delta re-check—and what remains escalates to the user. A waiver is a file (`.archgen/<slug>/waivers.yaml`), never a sentence; record the gate's cost in the plan Profile.
-3. **Evidence-scoped artifacts:** run `archgen_plan{action:'profile'}` BEFORE creating files—it returns scope, depth budgets, and a create/reuse/omit decision per artifact. `archgen_plan{action:'scaffold', scope, slug, intent, signals}` then serves EXACTLY the artifacts marked create (it **writes nothing**—you write them). Reuse names an existing repository path; omit records its reason in the plan Profile. The floor later PROVES those decisions: a create that is missing, an omit that exists, or an artifact with no decision is a defect (`§artifact-templates/artifact-necessity`). A duplicate of a host document is a defect too.
+2. **Three gates, never skipped:** (a) the deterministic floor (`archgen_plan{action:'verify', tasksYaml, planDir}`) returns `APPROVE` **before any gate agent is dispatched**; (b) plan-review reaches zero BLOCKING findings or an explicit waiver; (c) user approval. **Depth scales with scope** (`§orchestration/verifier`); the floor never shrinks. Both gate stages run the SAME protocol: **at most two rounds**—round 1 exhaustive, round 2 a delta re-check—and what remains escalates to the user. (One extra pass only if the user asks for it, with a stated purpose.) A waiver is a file (`.archgen/<slug>/waivers.yaml`), never a sentence: the floor honours it and suppresses the findings it covers, so a waived finding never blocks the gate. Record the gate's cost in the plan Profile (`§artifact-templates/gate-metrics`). **Escalation:** what remains after the last round goes to the user as a decision, not as another round — present the finding, the rule it violates, the fix, and your recommendation.
+3. **Evidence-scoped artifacts:** run `archgen_plan{action:'profile'}` BEFORE creating files—it returns scope, depth budgets, and a create/reuse/omit decision per artifact. Then call `archgen_plan{action:'scaffold'}` with **the same `intent`, `signals`, `modules` and `tasks` the profile used** (the profile's `next` spells the exact call out)—it then serves EXACTLY the artifacts marked create (it **writes nothing**—you write them). Reuse names an existing repository path in `host_path`; omit records its reason in the plan Profile. The floor later PROVES those decisions: a create that is missing, an omit that exists, or an artifact with no decision is a defect (`§artifact-templates/artifact-necessity`). A duplicate of a host document is a defect too.
 4. **Self-containment:** artifacts execute from `.archgen/<slug>/` alone with zero chat history. Every task uses verbatim repo-root-relative paths. Forbidden: `"as discussed"`, `"see chat"`, `"same as before"` (`§artifact-templates/self-containment`).
 5. **Completeness:** no partial feature ships as done. Acceptance is objectively verifiable and covers edge-matrix rows. Stubs, TODOs, and mock-only paths are `failed` even if tests pass. The final report carries a per-feature completeness checklist.
-6. **Status discipline (same turn):** on EVERY task completion: (1) `archgen_tasks{action:'set_status', taskId, status:'done'|'failed'}` landed in `tasks.yaml`; (2) todo item completed; (3) `AGENTS.md` updated via `archgen_registry{action:'update'}`. After EACH wave, write `archgen_tasks{action:'snapshot'}`. Dispatching while status updates lag is FORBIDDEN.
+6. **Status discipline (same turn):** on EVERY task completion: (1) `archgen_tasks{action:'set_status', tasksYaml, taskId, status:'done'|'failed'}` landed in `tasks.yaml`; (2) todo item completed; (3) `AGENTS.md` updated via `archgen_registry{action:'update'}`. After EACH wave, write `archgen_tasks{action:'snapshot', tasksYaml}`. Dispatching while status updates lag is FORBIDDEN.
 7. **Platform awareness:** `archgen_setup{action:'harness_info'}` before editing configs or spawning sub-agents. Unknown platform → web-search official docs, present findings, get approval before writing.
-8. **Contractual code quality:** workers obey `references/code-standards.md`—host toolchain and style first, these invariants as the floor: strict checking, explicit absence, structured errors, one purpose per module, files < 1000 LOC, why-comments. **Source and tests are separate trees**—the test tree is a sibling of the source tree, never inside it; the test file NAME is the language's choice. The verifier rejects violations.
+8. **Contractual code quality:** workers obey `references/code-standards.md`—host toolchain and style first, these invariants as the floor: strict checking, explicit absence, structured errors, one purpose per module, files < 1000 LOC, why-comments. **Source and tests are separate trees**—the test tree is a sibling of the source tree, never inside it; the test file NAME is the language's choice. The floor proves the mirrored tree **when the plan declares `toolchain.source_root` and `toolchain.test_root`**; without them it reports `CONFIG_NOT_ENFORCED` and the layout becomes reviewer judgement. The rest of code-standards is reviewer judgement too.
 9. **Compaction recovery:** after any summarization, in order: `archgen_tasks{action:'next'}` + `archgen_tasks{action:'snapshot'}` restore ground truth; then reload the current mode's `§` sections. Never act on memorized state.
 10. **Version-controlled artifacts:** every archgen artifact is **COMMITTED**—the plan of record (`.archgen/<slug>/`), the installed skill, `AGENTS.md`, and the project MCP config. NEVER gitignore one; remove any rule that hides it (`§artifact-templates/artifact-tracking`).
 
 ## CodeGraph
 
-When `.codegraph/` exists, prefer CodeGraph MCP tools over `grep`/glob for dependencies, callers, and blast radius. The watcher keeps it live—**never re-index manually**. If absent, run `archgen_codegraph{action:'ensure'}` once per project; grep/glob fallback only if declined (`§platforms/codegraph-bootstrap`).
+When `.codegraph/` exists, prefer CodeGraph MCP tools over `grep`/glob for dependencies, callers, and blast radius. The watcher keeps it live—**never re-index manually**. If absent, run `archgen_codegraph{action:'ensure', approve:true}` once per project (without `approve` it returns the plan and writes nothing); grep/glob fallback only if declined (`§platforms/codegraph-bootstrap`).
 
 ## Step 0 — detect platform
 
@@ -86,7 +86,7 @@ Load the mode's `§` sections BEFORE acting:
 
 | Intent | Mode | Mandatory pre-load (`§`) |
 |---|---|---|
-| Build net-new system/module | **GENERATE** | `§interview/how-to-ask` · `§interview/step-1` · `§artifact-templates/plan-depth` · `§artifact-templates/artifact-necessity` · `§artifact-templates/self-containment` · `§artifact-templates/artifact-tracking` · `§orchestration/verifier` · `§orchestration/plan-review` |
+| Build net-new system/module | **GENERATE** | `§interview/round-0` · `§interview/how-to-ask` · `§interview/step-1` · `§artifact-templates/plan-depth` · `§artifact-templates/artifact-necessity` · `§artifact-templates/self-containment` · `§artifact-templates/artifact-tracking` · `§orchestration/verifier` · `§orchestration/plan-review` |
 | Add/modify a feature | **BROWNFIELD** | `§orchestration/survey`, then all GENERATE sections |
 | Execute pending tasks | **START-WORK** | `§orchestration/dispatch` · `§orchestration/failure-policy` |
 | Requirements changed | **UPDATE** | `§orchestration/verifier` · `§orchestration/plan-review` · `§artifact-templates/plan-depth` |
@@ -100,10 +100,11 @@ Load the mode's `§` sections BEFORE acting:
 Scope is **evidence, not a synonym for "greenfield"**. Never choose a class by intent alone.
 
 1. **Infer evidence** from the prompt and repo: intent (`GREENFIELD-SYSTEM`, `GREENFIELD-MODULE`, `BROWNFIELD-FEATURE`, `BROWNFIELD-CHANGE`) and only nameable signals (`new-module`, `multi-module`, `public-contract`, `data-migration`, `security-sensitive`, `multi-service`, `external-integration`, `cross-team`, `regulated`, `irreversible`, `product-facing`, `production`, `prototype`, `existing-prd`, `existing-architecture`, `existing-adr`).
-2. **Profile:** `archgen_plan{action:'profile', intent, signals, modules, tasks, slug}` → `scopeClass`, `confidence`, `score`, `rationale`, `missingSignals`, `escalateIf`, per-artifact decisions, `depth`. It writes nothing.
-3. **Default down.** Missing evidence never raises the class. If `confidence:low`, ask the returned `question` (exactly one), re-profile, continue. Ask nothing the prompt, repo, profile, or survey already answers.
-4. **Confirm in one sentence**—recommendation first: *"MEDIUM — new module + cross-module contract: create tasks, plan, answers, architecture; omit PRD and diagrams. Proceed?"* `[wait for user]`
-5. **Record** every create, reused path, omit reason, and `escalateIf` in the plan's `## Profile` (SMALL) or `answers.yaml` `plan_profile:` (MEDIUM/LARGE).
+2. **Profile:** `archgen_plan{action:'profile', intent, signals, modules, tasks, slug}` → `scopeClass`, `confidence`, `score`, `rationale`, `missingSignals`, `escalateIf`, `interviewRoundCap`, per-artifact decisions, `depth`. It writes nothing.
+3. **Default down.** Missing evidence never raises the class. If `confidence:low`, ask the returned `question` (exactly one), re-profile, continue. At `confidence:medium` there is no question — read `missingSignals` and treat each as a signal you could not evidence; if one would change the class, ask about THAT one, otherwise proceed. Ask nothing the prompt, repo, profile, or survey already answers.
+4. **Confirm in one sentence**—recommendation first: *"MEDIUM — a new module in an existing repo: create tasks, plan, answers; omit PRD and diagrams. Proceed?"* `[wait for user]`
+5. **Record** every create, reused path (with `host_path`), omit reason, and `escalateIf` in the plan's `## Profile` (SMALL) or `answers.yaml` `plan_profile:` (MEDIUM/LARGE).
+6. **Scaffold with the same inputs:** `archgen_plan{action:'scaffold'}` using the profile's `next` verbatim — it carries `scope`, `intent`, `signals`, `modules`, `tasks` and `slug`, so the served set is exactly the profile's create set. A scaffold called without an `intent` serves the class's CANDIDATE set instead, and says so.
 
 **Stop list:** no PRD for an internal or single-module change; no `architecture.yaml` for a localized change with no contract; no ADR for a routine choice; no diagram for a trivial flow; no second copy of a host PRD/architecture/ADR; no task without a requirement or verification. If the profile says omit, omit it and record why.
 
@@ -118,19 +119,19 @@ Depth budgets (`§artifact-templates/depth-budgets`) are ceilings: stop when the
 3. **Generate** in `.archgen/<slug>/` (collision → `<slug>-2`, `<slug>-3`; never overwrite/merge):
    - Write only `create` artifacts; cite reused host docs; record omit reasons.
    - Tasks carry `id`, `title`, `depends_on`, disjoint `file_ownership` globs, objective `acceptance`; leave `status` unset.
-   - **Mechanical invariants** (the floor proves them; make them true the FIRST time): every source-owning task owns its mirrored test path; no glob contains another task's; every edge-case row cites an acceptance that exists and that acceptance says which row it covers (`(covers E4)`); every PRD requirement is cited by an acceptance; every declared path has an owner; every decision id has its file; wave labels match the DAG.
+   - **Mechanical invariants** (the floor proves them; make them true the FIRST time): every source-owning task owns its mirrored test path (under the DECLARED `toolchain.test_root`); no glob contains another task's; every edge-case row cites an acceptance that exists and that acceptance says which row it covers (`(covers E4)`); every PRD requirement is cited by an acceptance; every declared path has an owner; every decision id has its file; wave labels match the DAG.
    - Run the **FETCH-SKILL pre-planning scan**.
    - **Commit the artifact set** before the first wave—never ignored (Hard Rule 10).
 4. **Validate & register:** `archgen_plan{action:'validate', tasksYaml}` until `data.valid:true`; then `archgen_registry{action:'update', slug, status:'planned'}`.
-5. **FLOOR, THEN GATE (sized):** run `archgen_plan{action:'verify', tasksYaml, planDir}` and fix every issue it reports until it returns `APPROVE`—the floor is the deterministic truth (ownership, mirrored tests, matrix citations, requirement coverage, profile decisions, decision files, declared paths, wave labels) and it costs no agent. Every finding carries a stable CODE: fix them grouped by code AND file, in ONE pass, then re-run the floor; if your own code comes back, the class was not fixed. Only then dispatch the gate: SMALL → main agent; MEDIUM → one verifier sub-agent; LARGE → one top-tier verifier, via `archgen_plan{action:'brief', kind:'verifier'}` verbatim. A finding BLOCKS only if it names the artifact, the rule it violates, and the fix; otherwise it is a NIT or an OBSERVATION and never starts a round. **Both gate stages run at most TWO rounds**—round 1 exhaustive, round 2 a delta re-check; there is no round 3, and the residual is the user's decision (`§orchestration/gate-protocol`). After the gate, record `plan_profile.gate` (rounds, findings by class, waived, residual, who approved it).
-6. **PLAN-REVIEW (sized):** SMALL/MEDIUM → main-agent review; LARGE → one independent top-tier reviewer in a FRESH session, via `archgen_plan{action:'brief', kind:'review'}` verbatim. Same two-round protocol as the verifier: fix findings in one pass, re-run the floor, then the delta round. One user "more review" approval = exactly ONE extra pass, with a stated purpose.
+5. **FLOOR, THEN GATE (sized):** run `archgen_plan{action:'verify', tasksYaml, planDir}` and fix every issue it reports until it returns `APPROVE`—the floor is the deterministic truth (ownership, mirrored tests, matrix citations, requirement coverage, profile decisions, decision files, declared paths, wave labels) and it costs no agent. Every finding carries a stable CODE: `issueCodes`/`warningCodes` count EVERY finding by class while the list shows a sample of 40—fix them grouped by code AND file, in ONE pass, then re-run the floor; if your own code comes back, the class was not fixed. Walk the rest with `archgen_plan{action:'verify', offset:40}` (and `collection:'warnings'` for the warnings). Only then dispatch the gate: SMALL → main agent; MEDIUM → one verifier sub-agent; LARGE → one top-tier verifier, via `archgen_plan{action:'brief', kind:'verifier', tasksYaml, planDir}` verbatim. A finding BLOCKS only if it names the artifact, the rule it violates, and the fix; otherwise it is a NIT or an OBSERVATION and never starts a round. **Both gate stages run at most TWO rounds**—round 1 exhaustive, round 2 a delta re-check; there is no round 3, and the residual is the user's decision (`§orchestration/gate-protocol`). After the gate, record the canonical `plan_profile.gate` block (`§artifact-templates/gate-metrics`).
+6. **PLAN-REVIEW (sized):** SMALL/MEDIUM → main-agent review; LARGE → one independent top-tier reviewer in a FRESH session, via `archgen_plan{action:'brief', kind:'review', tasksYaml, planDir}` verbatim. Same two-round protocol as the verifier: fix findings in one pass, re-run the floor, then the delta round. One user "more review" approval = exactly ONE extra pass, with a stated purpose.
 7. **USER GATE:** present artifacts with create/reuse/omit decisions, wave summary (`archgen_tasks{action:'next'}`), and ownership map. Ask `"Approve to start work?"` `[wait for user]`
 8. **Execute:** on approval → **START-WORK**.
 
 ## BROWNFIELD (existing codebase)
 
 1. **Acknowledge** the survey. `[wait for user]`
-2. **SURVEY:** dispatch survey sub-agent(s) with `archgen_plan{action:'brief', kind:'survey'}` verbatim; prefer CodeGraph to write `.archgen/<slug>/codebase-map.md` with **Existing docs** and **Toolchain**.
+2. **SURVEY:** dispatch survey sub-agent(s) with `archgen_plan{action:'brief', kind:'survey', tasksYaml, planDir, featureRequest}` verbatim; prefer CodeGraph to write `.archgen/<slug>/codebase-map.md` with **Existing docs** and **Toolchain**.
 3. **Profile against the map:** add `existing-*` signals when host documents are current; ask only unresolved gaps. Follow GENERATE step 3, validating every path against the map.
 4. **Gates & execution:** GENERATE steps 4–8 at the profile's depth.
 
@@ -139,7 +140,7 @@ Depth budgets (`§artifact-templates/depth-budgets`) are ceilings: stop when the
 Run from the repo root.
 
 1. **Frontier:** `archgen_tasks{action:'next', tasksYaml}`. `CYCLE`/`OWNERSHIP_CONFLICT` → fix `tasks.yaml`, re-run. `blockedByFailure` → report; exclude until re-planned. Empty + nothing blocked → step 7.
-2. **Mark running:** `archgen_tasks{action:'set_status', taskId, status:'running'}` per task.
+2. **Mark running:** `archgen_tasks{action:'set_status', tasksYaml, taskId, status:'running'}` per task.
 3. **Dispatch (`§orchestration/dispatch`):**
    - Sub-agents are for WORK, never lookups; the orchestrator calls `archgen_tasks`, `archgen_plan`, `archgen_docs`, `archgen_registry` directly.
    - Max 3 parallel; zero file overlap; one writer per path; no gate agents during a wave.
@@ -149,13 +150,13 @@ Run from the repo root.
 4. **Per-task closeout:** Hard Rule 6.
 5. **Wave closeout:** verify statuses, update `AGENTS.md`, write the snapshot, **commit the wave's artifact state**, then `next`. Never auto-retry a failure: report it, propose a fix task, `[wait for user]`.
 6. **Loop** steps 1–5 until no actionable tasks remain.
-7. **Final report (≤15 lines):** done/failed/blocked, commits, follow-ups, clean `archgen_docs{action:'validate'}`, and the completeness checklist (Hard Rule 5).
+7. **Final report (≤15 lines):** done/failed/blocked, commits, follow-ups, clean `archgen_docs{action:'validate', slugDir}`, and the completeness checklist (Hard Rule 5).
 
 ## UPDATE / ROLLBACK / INVESTIGATE
 
 - **UPDATE:** `archgen_plan{action:'impact', tasksYaml, target}` → re-profile if signals changed → edit only affected artifacts, add tasks with valid `depends_on`, remove obsolete pending tasks (never `done`) → `validate` → both gates sized to the delta → user gate.
-- **ROLLBACK:** `impact` → present reverse-topological `git revert` + status rewinds via `archgen_tasks{action:'set_status', force:true}` → **USER GATE** → execute and verify the build.
-- **INVESTIGATE:** `archgen_plan{action:'brief', kind:'investigate'}` per `§orchestration/investigate`; deliver root cause, evidence, blast radius, remediation tasks through normal gates. **Patch-fixing without a root cause is forbidden.**
+- **ROLLBACK:** `impact` → present the reverse-topological `git revert` order (one commit per reverted commit, newest first) plus status rewinds via `archgen_tasks{action:'set_status', tasksYaml, taskId, status, force:true}` → **USER GATE** → execute and verify the build.
+- **INVESTIGATE:** `archgen_plan{action:'brief', kind:'investigate', tasksYaml, planDir, topic, round}` per `§orchestration/investigate`; deliver root cause, evidence, blast radius, remediation tasks through normal gates. **Patch-fixing without a root cause is forbidden.**
 
 ## INSTALL-MCP / FETCH-SKILL
 
@@ -178,13 +179,16 @@ Run from the repo root.
 | Situation | Action |
 |---|---|
 | Slug collision | Suffix `-2`, `-3`; ask whether to adopt or archive. |
-| `tasks.yaml` edited externally | `archgen_plan{action:'validate'}` before the next wave. |
+| `tasks.yaml` edited externally | `archgen_plan{action:'validate', tasksYaml}` before the next wave. |
 | Profile low-confidence | Ask its ONE question, re-profile; never default to LARGE. |
-| Host PRD/architecture/ADR exists | Profile returns `reuse`; cite the path, write only the delta. |
+| Profile medium-confidence | No question is returned: check `missingSignals`; ask only about one that would change the class. |
+| Host PRD/architecture/ADR exists | Profile returns `reuse`; cite the path in `host_path`, write only the delta. |
+| Floor reports `CONFIG_NOT_ENFORCED` | Declare `toolchain.source_root` and `toolchain.test_root` in `architecture.yaml` — until then the mirrored-tree rule cannot run. |
+| Floor reports `WAIVER_INVALID` | A waiver is missing `scope`, `finding`, `reason`, `approved_by` or `approved_at` — fill it in; an invalid waiver suppresses nothing. |
 | Worker meets no acceptance | Mark `failed`, propose a fix task, wait. |
 | Missing tools / Node < 20 | `npx archgen-skill init` + reload / state the requirement. |
 | Contract `warnings` | Non-dispatchable; fix the plan first. |
 
 ## Reference map
 
-`§interview` elicitation · `§artifact-templates` necessity/depth/self-containment/workspace/tracking · `§orchestration` survey/verifier/review/investigate/dispatch · `§platforms` detection/MCP/CodeGraph · `§mcp-and-skills` install/fetch · `references/code-standards.md` worker rules.
+`§interview` elicitation · `§artifact-templates` necessity/depth/self-containment/workspace/tracking/gate-metrics · `§orchestration` survey/verifier/review/investigate/dispatch/gate-protocol · `§platforms` detection/MCP/CodeGraph · `§mcp-and-skills` install/fetch · `references/code-standards.md` worker rules.

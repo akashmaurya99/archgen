@@ -2,6 +2,177 @@
 
 Scope is now **measured**, and an artifact has to **earn** its place.
 
+### Fixed — the floor could never approve a waived plan
+
+Two independent audits swept every tool and every skill file and found the
+same class of defect on both sides: **the documentation promised behaviour the
+code did not have.** Every one of these is fixed at the root, and every one
+is pinned by a test.
+
+**The gate was unpassable.** A waiver suppressed nothing. Three references
+said "a waived finding is not a defect to fix", but the floor read the ledger
+and then ignored it — so a plan with an approved deviation could never reach
+`APPROVE`. A waiver now **suppresses** the findings it covers (by code, or by
+subject), the suppressed findings are reported separately so the deviation
+stays visible, and a waiver missing `scope`/`finding`/`reason`/`approved_by`/
+`approved_at` is `WAIVER_INVALID` and suppresses nothing.
+
+**A recorded `create` decision could never be satisfied.** The ladder's paths
+were literal placeholders (`decisions/NNNN-<title>.md`), so the floor compared
+the placeholder against disk and reported `PROFILE_CREATE_MISSING` for the real
+file while reporting `PROFILE_UNRECORDED` for the file that actually existed.
+Decisions are now proved against **families** (`plans/*.md`, `decisions/*.md`,
+`docs/prd.md`): the plan may name its files as it likes and the decision still
+holds. A `reuse` decision without a `host_path` is `PROFILE_DECISION_INVALID`.
+
+**Rows escaped the traceability checks.** A matrix row still carrying the
+template's placeholder (`<ID>#1`) did not parse, so it was invisible to every
+check — now `MATRIX_CITATION_UNRESOLVED`. A plan with edge-case rows and no
+declared claim was reported clean, while the reference promised the floor
+would say so — now `MATRIX_CLAIMS_UNDECLARED`.
+
+**The mirror guessed a path convention.** The floor derived the mirrored test
+path from the source glob's directory and inserted its own `unit/` level,
+demanding `tests/unit/unit/core` from a host that had declared
+`test_root: tests/unit`. The floor now mirrors into the **declared** test
+root and never guesses a level — the host owns its layout.
+
+**`PROFILE_NOT_RECORDED` was classified as an issue in the reference and
+emitted as a warning by the code.** The code tables are now the single source
+of truth, and a drift test fails CI when the reference's table and the code's
+tables disagree.
+
+**The brief carried a recomputed SUBSET of the floor.** A gate agent could be
+told "the floor is clean" while `archgen_plan{action:'verify'}` had findings
+the brief never showed — the task-level codes (`CYCLE`, `NO_ACCEPTANCE`,
+`OWNERSHIP_OVERLAP`, …) only existed in the verifier. The brief now carries the
+verdict and the full finding set, and the floor is computed once.
+
+**The brief renderer threw.** `renderAudit` read `ctx` from a frame that did
+not have it: every brief whose finding list was truncated died with
+`ReferenceError: ctx is not defined`. The same class of bug shipped in
+`archgen_refs`, which called `invalidInput` without importing it. Every
+action's **error path** is now driven by a test and must return a typed
+error — never `INTERNAL`.
+
+### Fixed — bounds that hid their tail, and one that hid the truth
+
+- `archgen_refs{action:'list'}` always returned `[]`: it read
+  `listTopics(roots).topics`, and `listTopics` returns an array. The whole
+  reference-discovery surface was dead.
+- `archgen_plan{action:'coverage'}` reported **the wrong ids** — the tool
+  applied the offset a second time over a concatenated list, so the ids it
+  called "covered" were the tail of the uncovered list — and a `meta.total`
+  that changed as it paged. Each collection now has its own window, its own
+  total and its own cursor (`collection`).
+- `archgen_plan{action:'verify'}` advertised a `limit` it ignored, and its
+  two lists shared ONE offset over two different lengths — so the warnings
+  between index 20 and 39 were reachable at no offset at all.
+- `archgen_plan{action:'impact'}` computed the limit into `meta` and returned
+  the unbounded payload, with a `next` that returned the same payload.
+- `archgen_plan{action:'validate'}` and `archgen_docs{action:'validate'}` were
+  unbounded: 400 errors and 120 broken references in one answer.
+- `archgen_docs{action:'index'}` capped at 100 files **inside the core**, so
+  files 101+ were unreachable; `archgen_docs{action:'digest'}` cut a
+  file-scoped digest at 400 sections, so a 501-section file lost 101 with no
+  way to reach them. A file-scoped digest is now that file's complete outline.
+- `archgen_docs{action:'refs'}` / `{action:'map'}` dropped the `file` scope
+  from the continuation, so the "next call" was a different query.
+- `archgen_plan{action:'graph'}` and `archgen_docs{action:'section'}` /
+  `{action:'validate'}` nested their payload under `data.data`, unlike every
+  sibling action.
+- `archgen_skills{action:'match'}` computed `required`/`installed` from the
+  PAGE, so `limit: 1` reported one required skill when three matched — and
+  its continuation dropped the summary and ownership that drive the match.
+- `archgen_plan{action:'scaffold', file}` rejected the exact paths the tool
+  publishes, and still shipped ~1,900 tokens of non-file payload.
+
+### Fixed — silent degradations
+
+- `archgen_codegraph{action:'ensure'}` changed a **machine-wide telemetry
+  setting** without `approve: true`, contradicting its own contract.
+- `archgen_setup{action:'bootstrap'}` returned a raw 11-key codegraph report
+  where `archgen_codegraph` returned a shaped 7-key one; its fast path
+  returned a third shape. `harness_info` returned three shapes. `install_mcp`
+  returned unbounded per-config rows where `bootstrap` returned counts.
+- `archgen_setup{action:'uninstall_mcp'}` reported `written: true` when it had
+  removed nothing; `doctor` said "2/5 checks OK" while carrying three rows.
+- `archgen_tasks{action:'contract'}` emptied the capability block on any
+  error — so a worker was told nothing was required when matching had never
+  run — and cut five doc sections to two with no count.
+- `archgen_skills{action:'install'}` fell back to `universal` for an unknown
+  harness, installing for the wrong target and reporting success.
+- `archgen_registry{action:'show'}` parsed the `AGENTS.md` block while
+  `{action:'update'}` derived the rows from `.archgen/` — so `show` reported
+  no features for a project that had one.
+- `archgen_tasks{action:'list'}` took a free-text status filter (a typo
+  returned an empty list) and reported "no task 'X'" for a task that existed
+  but was filtered out.
+- `archgen_tasks{action:'next'}` and `{action:'snapshot'}` used opposite
+  bases for `waveIndex` — the same field name, opposite meanings.
+- `archgen_plan{action:'profile'}` and `{action:'scaffold'}` accepted a
+  `tasks` count and ignored it. The task count is now evidence.
+
+### Fixed — the guidance contradicted the tools
+
+Every `§` section, brief and template was reconciled with the code:
+
+- the profile's own `next` hint dropped the inputs that decide the artifact
+  set — following the tool's own cursor served a **different plan**; it now
+  carries every input, and a drift test round-trips it;
+- `scaffold` without an `intent` serves the class's candidate set and now
+  says so (`mode: 'class'`) instead of pretending it served the profile;
+- every `brief` call site in `SKILL.md` now names its scope arguments, and
+  `set_status` / `snapshot` / `next` name `tasksYaml`;
+- `archgen_codegraph{action:'ensure'}` needs `approve: true`;
+- the gate-metrics block had **three shapes in three files** and the floor
+  read one of them — there is now one canonical shape, and the floor also
+  reads the gate block a SMALL plan keeps in its own `## Profile` fence;
+- the coverage dimensions were 8 in one file, 9 in another and 4 in a third —
+  there is now one list of nine, in the brief that must carry it;
+- the review brief said "zero findings" while also saying a NIT never blocks,
+  and told the orchestrator to re-run a closed stage;
+- the shipped `tasks.yaml` template **failed the floor it was meant to
+  satisfy** (`WAVE_GROUP_SPANS`, and two tasks owning the same glob);
+- `code-standards.md` claimed the verifier audited it — it audits the tree
+  layout only, and says so now;
+- the model-tier rules moved out of the brief (they are orchestrator policy);
+- the interview round cap is keyed by **intent** and served by the profile;
+- `platforms.md` and `mcp-and-skills.md` no longer restate the MCP key
+  vocabulary in two different ways.
+
+### Changed — the always-on ceiling moves, because the guidance did
+
+The floor's exact behaviour (waivers, families, the claim convention), the
+profile→scaffold round trip, the medium-confidence rule, the error semantics
+and the corrected call sites all live in the always-on kernel — where the
+agent reads them. The always-on total moves **12,690 tokens**, and the
+documented CI ceiling moves with it **12,200 → 13,200**. The budget is still
+a hard gate: CI fails if the always-on footprint exceeds it.
+
+| | Tokens |
+|---|---:|
+| `skill/SKILL.md` (always-on) | 7,381 |
+| MCP tool catalog (9 tools, always-on) | 5,309 |
+| **Always-on total** | **12,690** |
+| Protocol references (on demand) | 17,075 |
+| Median reference section | 271 |
+| Dispatch briefs (on demand) | 4,155 |
+| Artifact templates (on demand) | 2,703 |
+
+### Added — the tests that hold the rules in place
+
+- `floor-contract` — the floor's new contracts: a waiver suppresses, a family
+  satisfies a create, an unbound matrix row is visible, the mirror uses the
+  declared root.
+- `single-source-of-truth` — the code table, the gate block, the waiver
+  shape, the nine dimensions and the profile→scaffold round trip are pinned
+  to their owners.
+- `error-paths` — every action's failure path is driven and must return a
+  typed error, never `INTERNAL`.
+- `continuable` / `bounded-output` — every bound is walkable, and every count
+  is exact.
+
 ### Added — `archgen_plan{action:'profile'}` — the scope classifier
 
 The skill used to map an intent straight onto a scope class, and a scope class

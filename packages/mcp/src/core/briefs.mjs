@@ -148,6 +148,14 @@ export function renderBriefContext(ctx = {}) {
     out.push(ctx.graph);
     out.push('```');
     out.push('');
+  } else if (ctx.graphNote) {
+    // The graph is NOT here. Say so, and say where to get it — a brief that
+    // claims a graph is "rendered for you" and carries none is worse than
+    // one that never promised it.
+    out.push('### Dependency graph — NOT rendered');
+    out.push('');
+    out.push(ctx.graphNote);
+    out.push('');
   }
 
   if (ctx.docsValidation) {
@@ -169,7 +177,7 @@ export function renderBriefContext(ctx = {}) {
   }
 
   if (ctx.audit) {
-    out.push(...renderAudit(ctx.audit));
+    out.push(...renderAudit(ctx.audit, ctx.scope));
   }
 
   return out.join('\n');
@@ -225,7 +233,7 @@ const MAP_SHARES = { edgeMatrix: 0.5, requirements: 0.3, ownership: 0.2, modules
  * line per row, with the row caps, keeps the brief to the facts the agent
  * needs and nothing else.
  */
-function renderAudit(audit) {
+function renderAudit(audit, scope = null) {
   const out = [];
   const maps = audit.maps ?? {};
   const issues = audit.issues ?? [];
@@ -237,8 +245,13 @@ function renderAudit(audit) {
   const warningTotal = audit.warningsTotal ?? warnings.length;
   const shownIssues = issues.slice(0, FINDING_ROW_CAP);
   const shownWarnings = warnings.slice(0, FINDING_ROW_CAP);
+  if (audit.verdict) out.push(`- floor verdict: ${audit.verdict}`);
   out.push(`- blocking issues: ${issueTotal}${summarizeCodes(issues, audit.issueCodes)}`);
   out.push(`- warnings: ${warningTotal}${summarizeCodes(warnings, audit.warningCodes)}`);
+  const waived = audit.waivedFindings ?? [];
+  if (waived.length) {
+    out.push(`- waived (approved deviations, NOT defects): ${waived.length}${summarizeCodes(waived.map((w) => w.finding), audit.waivedCodes)}`);
+  }
   if (shownIssues.length) {
     out.push('');
     out.push('BLOCKING (report each once, with the fix):');
@@ -247,7 +260,7 @@ function renderAudit(audit) {
     if (omitted > 0) {
       out.push(
         `- … ${omitted} more of the same classes — report them BY CLASS with the counts above, not one line each` +
-          (ctx.scope?.tasksYaml
+          (scope?.tasksYaml
             ? ` (the instances are reachable: archgen_plan{action:'verify',offset:${shownIssues.length}})`
             : ''),
       );
@@ -258,7 +271,20 @@ function renderAudit(audit) {
     out.push('WARNINGS (informational; they do NOT block approval):');
     for (const w of shownWarnings) out.push(`- ${w}`);
     const omitted = Math.max(0, warningTotal - shownWarnings.length);
-    if (omitted > 0) out.push(`- … ${omitted} more`);
+    if (omitted > 0) {
+      out.push(
+        `- … ${omitted} more` +
+          (scope?.tasksYaml
+            ? ` (reachable: archgen_plan{action:'verify',collection:'warnings',offset:${shownWarnings.length}})`
+            : ''),
+      );
+    }
+  }
+  if (waived.length) {
+    out.push('');
+    out.push('WAIVED — approved deviations. Do NOT re-raise them unless they regressed:');
+    for (const w of waived.slice(0, FINDING_ROW_CAP)) out.push(`- ${w.waiver ? `${w.waiver}: ` : ''}${w.finding}`);
+    if (waived.length > FINDING_ROW_CAP) out.push(`- … ${waived.length - FINDING_ROW_CAP} more`);
   }
   out.push('');
 

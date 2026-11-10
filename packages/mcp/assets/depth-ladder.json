@@ -1,31 +1,19 @@
 {
   "version": 2,
-  "_readme": [
-    "Canonical depth ladder: scope class -> the artifact set a plan MAY need.",
-    "",
-    "`profile` is the evidence-based classifier: an intent baseline plus",
-    "explicit signals produces a score, a scope class, and a per-artifact",
-    "create / reuse / omit decision. `archgen_plan{action:'profile'}` serves it.",
-    "",
-    "`classes` remains the authoring contract: it carries the plan sections,",
-    "the edge-case minimum and the forbidden artifacts for each scope.",
-    "",
-    "A drift test (packages/mcp/test/core/depth-ladder.test.mjs and",
-    "plan-profile.test.mjs) pins this file against the reference and the",
-    "classifier's behavior."
-  ],
+  "_readme": "Canonical depth ladder: the profile classifies scope and decides artifacts; the classes carry the authoring contract.",
   "profile": {
-    "_readme": [
-      "Scope = intent baseline + signal weights + module count.",
-      "Missing evidence NEVER pushes the class up: an uncertain profile stays",
-      "low-confidence and asks ONE question. That rule is what stops the",
-      "'everything is LARGE' default."
-    ],
+    "_readme": "Scope = intent baseline + signal weights + module count + task count. Missing evidence NEVER raises the class.",
     "intentBase": {
       "BROWNFIELD-CHANGE": 0,
       "BROWNFIELD-FEATURE": 1,
       "GREENFIELD-MODULE": 2,
       "GREENFIELD-SYSTEM": 4
+    },
+    "interviewRoundCaps": {
+      "GREENFIELD-SYSTEM": 6,
+      "GREENFIELD-MODULE": 3,
+      "BROWNFIELD-FEATURE": 3,
+      "BROWNFIELD-CHANGE": 3
     },
     "signalWeights": {
       "new-module": 2,
@@ -49,6 +37,10 @@
       { "min": 2, "add": 1 },
       { "min": 4, "add": 2 }
     ],
+    "taskWeights": [
+      { "min": 6, "add": 1 },
+      { "min": 15, "add": 2 }
+    ],
     "thresholds": { "medium": 2, "large": 5 },
     "signals": [
       "new-module",
@@ -71,24 +63,29 @@
     "artifactRules": [
       {
         "path": ".archgen/<slug>/tasks.yaml",
+        "pattern": "tasks.yaml",
         "purpose": "the task contract every plan needs"
       },
       {
         "path": ".archgen/<slug>/plans/<slug>.md",
+        "pattern": "plans/*.md",
         "purpose": "the plan of record"
       },
       {
         "path": ".archgen/<slug>/answers.yaml",
+        "pattern": "answers.yaml",
         "scopeIn": ["MEDIUM", "LARGE"],
         "purpose": "captured requirements and the plan profile"
       },
       {
         "path": ".archgen/<slug>/codebase-map.md",
+        "pattern": "codebase-map.md",
         "intentIn": ["BROWNFIELD-FEATURE", "BROWNFIELD-CHANGE"],
         "purpose": "survey evidence; reuse a fresh map when one already exists"
       },
       {
         "path": ".archgen/<slug>/docs/prd.md",
+        "pattern": "docs/prd.md",
         "scopeIn": ["LARGE"],
         "intentIn": ["GREENFIELD-SYSTEM"],
         "signalSome": ["product-facing", "production"],
@@ -97,6 +94,7 @@
       },
       {
         "path": ".archgen/<slug>/architecture.yaml",
+        "pattern": "architecture.yaml",
         "scopeIn": ["MEDIUM", "LARGE"],
         "signalSome": [
           "new-module",
@@ -111,6 +109,7 @@
       },
       {
         "path": ".archgen/<slug>/decisions/NNNN-<title>.md",
+        "pattern": "decisions/*.md",
         "signalSome": ["irreversible", "regulated", "data-migration"],
         "max": 3,
         "reuseSignal": "existing-adr",
@@ -118,12 +117,14 @@
       },
       {
         "path": ".archgen/<slug>/docs/<module>.md",
+        "pattern": "docs/*.md",
         "scopeIn": ["LARGE"],
         "signalSome": ["multi-module", "multi-service", "external-integration"],
         "purpose": "topology diagrams for non-obvious systems (<=15 nodes)"
       },
       {
         "path": ".archgen/<slug>/docs/mermaid-snippets.md",
+        "pattern": "docs/mermaid-snippets.md",
         "scopeIn": ["LARGE"],
         "signalSome": ["multi-module", "multi-service", "external-integration"],
         "purpose": "diagram snippets — only when a diagram is created"
@@ -162,16 +163,11 @@
       }
     }
   },
-  "_classes_readme": [
-    "The artifact set is NOT listed here: `profile.artifactRules` is the only",
-    "list, and the scaffold derives the class's candidates from it. A second",
-    "copy is how the profile and the scaffold drifted apart."
-  ],
+  "_classes_readme": "The artifact set is NOT listed here: profile.artifactRules is the only list.",
   "classes": {
     "SMALL": {
       "label": "SMALL — add or touch a few things",
       "intentDefaults": ["BROWNFIELD-CHANGE"],
-      "roundCap": 3,
       "planSections": ["Profile", "Intent", "Tasks", "Risks"],
       "minEdgeCasesPerTask": 0,
       "requires": [],
@@ -184,7 +180,6 @@
     "MEDIUM": {
       "label": "MEDIUM — a real feature with real risk",
       "intentDefaults": ["GREENFIELD-MODULE", "BROWNFIELD-FEATURE"],
-      "roundCap": 3,
       "planSections": ["Profile", "Context", "Per-task sections", "Verification steps"],
       "minEdgeCasesPerTask": 3,
       "requires": ["plan context of 2-4 paragraphs", "per-task sections with approach + edge cases + out-of-scope", "ordered runnable verification steps"],
@@ -198,7 +193,6 @@
     "LARGE": {
       "label": "LARGE — a full professional stack (greenfield from scratch)",
       "intentDefaults": ["GREENFIELD-SYSTEM"],
-      "roundCap": 6,
       "planSections": ["Profile", "Context", "Per-task sections", "Edge-case matrices", "Verification steps"],
       "minEdgeCasesPerTask": 3,
       "requires": [

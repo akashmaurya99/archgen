@@ -4,6 +4,7 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, A
 import { loadAsset } from '../context.mjs';
 import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary, uninstallArchgenMcp } from '../core/mcp-server-manager.mjs';
 import { manageCodegraph, assertLocation, findCodegraph, codegraphState } from '../core/codegraph-manager.mjs';
+import { shapeReport } from './codegraph.mjs';
 import { detectHarnesses } from '../core/harness-wiring.mjs';
 import { platformCapabilities, detectHarness } from '../core/platform-caps.mjs';
 import { checkCapability } from '../core/compat.mjs';
@@ -74,14 +75,26 @@ export function registerSetupTools(server) {
       if (args.action === 'harness_info') {
         const caps = loadAsset('platform-capabilities.json');
         if (args.harness) return platformCapabilities(caps, args.harness);
-        // No explicit harness: report the detected one, and never throw — an
-        // unknown platform is a normal situation (the skill has a procedure
-        // for it), not an error.
+        // ONE SHAPE, always. The answer used to be the capability row when a
+        // harness was named, the detection block when it was not, and a third
+        // block when detection threw — so a client had to branch on the
+        // RESPONSE to know what it got.
         try {
-          return detectHarness(caps, { projectRoot: ctx.projectRoot, home: ctx.home });
+          const detected = detectHarness(caps, { projectRoot: ctx.projectRoot, home: ctx.home });
+          return {
+            harness: detected.primary ?? null,
+            detected: detected.detected ?? [],
+            primary: detected.primary ?? null,
+            capabilities: detected.capabilities ?? null,
+            harnesses: Object.entries(caps.harnesses ?? {}).map(([id, h]) => ({ id, label: h.label })),
+            universal: caps.universal ?? null,
+          };
         } catch (e) {
           return {
+            harness: null,
             detected: null,
+            primary: null,
+            capabilities: null,
             reason: e instanceof Error ? e.message : String(e),
             nextStep: 'Unknown platform: web-search the official MCP + skills docs, propose findings, get user approval.',
             harnesses: Object.entries(caps.harnesses ?? {}).map(([id, h]) => ({ id, label: h.label })),
@@ -97,12 +110,17 @@ export function registerSetupTools(server) {
           label: d.label,
           atHome: d.atHome,
           atProject: d.atProject,
-          configs: Object.entries(d.spec.configs ?? {}).map(([loc, cfg]) => ({
-            location: loc,
-            path: cfg.path,
-            key: cfg.key ?? `mcp_servers.archgen`,
-            format: cfg.format ?? 'json',
-          })),
+          // The LOCATION FILTER IS APPLIED. It used to be accepted, echoed
+          // and ignored, so `location:'project'` still listed the global
+          // config path — and the agent wired the wrong file.
+          configs: Object.entries(d.spec.configs ?? {})
+            .filter(([loc]) => location === 'both' || loc === location)
+            .map(([loc, cfg]) => ({
+              location: loc,
+              path: cfg.path,
+              key: cfg.key ?? `mcp_servers.archgen`,
+              format: cfg.format ?? 'json',
+            })),
         }));
         // ONE harness, when the caller named one.
         if (args.harness) {
@@ -189,7 +207,11 @@ export function registerSetupTools(server) {
         const failed = issues.some((c) => c.status === 'FAIL');
         return {
           status: failed ? 'FAIL' : issues.length ? 'WARN' : 'OK',
+          // The denominator is the number of checks RUN — the summary used
+          // the filtered list's length, so it said "2/5 checks OK" while the
+          // payload carried three rows. The caller could not reconcile them.
           summary: `${checks.length - issues.length}/${checks.length} checks OK`,
+          checksTotal: checks.length,
           checks: issues,
           versions: {
             skill: ctx.skill?.version ?? null,
@@ -205,9 +227,16 @@ export function registerSetupTools(server) {
         }
         // The scope is honoured: removing only the global wiring leaves the
         // project's wiring in place, and vice versa.
+        const result = uninstallArchgenMcp(ctx.projectRoot, ctx.home, location, ctx.env);
+        // `written` is derived from what was ACTUALLY removed. It used to be
+        // hard-coded true, so an uninstall that removed nothing reported
+        // success.
+        const removed = result.removed ?? [];
         return {
-          written: true,
-          ...uninstallArchgenMcp(ctx.projectRoot, ctx.home, location, ctx.env),
+          written: removed.length > 0,
+          ...result,
+          removedCount: removed.length,
+          ...(removed.length === 0 ? { detail: 'nothing was removed — no archgen wiring was found' } : {}),
         };
       }
 
@@ -220,7 +249,13 @@ export function registerSetupTools(server) {
           approved,
           env: ctx.env,
         });
-        return res;
+        // The COUNTS, like bootstrap. It used to return the raw per-config
+        // rows — an unbounded collection with no total — for the very same
+        // operation bootstrap summarised.
+        return {
+          ...summarizeWiring(res),
+          planned: res.wired?.some((w) => w.status === 'planned') === true,
+        };
       }
 
       // bootstrap — wire archgen MCP AND ensure CodeGraph, in one report.
@@ -262,10 +297,14 @@ export function registerSetupTools(server) {
           : null;
       if (mcpReady && cgCheck?.alreadyConfigured === true) {
         const cgState = codegraphState({ registry, projectRoot: ctx.projectRoot, home: ctx.home, env: ctx.env, location });
+        // The fast path returns the SAME keys as the slow path. It used to
+        // return a third shape with no `ok` and no `mcp.detected`, so a
+        // client had to branch on which path answered.
         return {
           alreadyConfigured: true,
           compat,
           mcp: {
+            detected: mcpCheck.detected ?? [],
             wired: mcpCheck.wired.length,
             binary: { bin: mcpCheck.binary.bin, source: mcpCheck.binary.source },
           },
@@ -275,6 +314,7 @@ export function registerSetupTools(server) {
             indexed: cgState.indexed,
             wired: cgState.targets.filter((t) => t.wired).length,
           },
+          ok: true,
         };
       }
 
@@ -297,14 +337,18 @@ export function registerSetupTools(server) {
         env: ctx.env,
       });
       const mcpSummary = summarizeWiring(mcp);
+      // The codegraph report is SHAPED, exactly like archgen_codegraph's.
+      // It used to be passed through raw — 11 keys against the other tool's
+      // 7 — so one fact had two shapes depending on who asked.
+      const codegraphShaped = shapeReport(codegraph);
       return {
         compat,
         mcp: mcpSummary,
-        codegraph,
+        codegraph: codegraphShaped,
         // `ok` is the caller's branch point. A config that could not be
         // merged is still missing the server, so it must not look like
         // success just because CodeGraph succeeded.
-        ok: codegraph.ok !== false && !mcpSummary.failed && !mcpSummary.skipped,
+        ok: codegraphShaped.ok !== false && !mcpSummary.failed && !mcpSummary.skipped,
       };
     },
   });

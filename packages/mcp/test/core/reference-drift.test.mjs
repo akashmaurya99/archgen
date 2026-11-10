@@ -206,7 +206,17 @@ test('the templates agree with the standards on the test tree', () => {
   const tasks = readTemplate('tasks.yaml');
   if (!arch || !tasks) return;
   assert.doesNotMatch(arch, /colocated/i, 'architecture.yaml still teaches colocated tests');
-  assert.match(arch, /test_placement:[^\n]*tests\/unit/, 'architecture.yaml must place tests in the test tree');
+  // The common layout is named as an EXAMPLE of `test_root` — but the
+  // STRUCTURE is `<test-root>/<module>`, never a hardcoded `unit/` level.
+  // The floor mirrors the declared root; a path convention baked into the
+  // template is a convention the floor would then have to guess.
+  assert.match(arch, /test_root:[^\n]*tests\/unit/, 'architecture.yaml must show the common test root as the example');
+  assert.match(arch, /test_placement:[^\n]*<test-root>/, 'architecture.yaml must place tests under the declared test root');
+  assert.doesNotMatch(
+    arch,
+    /<test-root>\/unit\//,
+    'architecture.yaml must not hardcode a unit/ level — the host declares its test root',
+  );
   assert.doesNotMatch(
     tasks,
     /(^|["'\s])src\/[^\n]*(\.test\.|\.spec\.)/,
@@ -214,8 +224,13 @@ test('the templates agree with the standards on the test tree', () => {
   );
   assert.match(
     tasks,
-    /<test-root>\/unit\/<[^>]+>/,
-    'the task template must show the mirrored sibling test path',
+    /<test-root>\/<[^>]+>/,
+    'the task template must show the mirrored sibling test path under the declared test root',
+  );
+  assert.doesNotMatch(
+    tasks,
+    /<test-root>\/unit\//,
+    'the task template must not hardcode a unit/ level — the host declares its test root',
   );
 });
 

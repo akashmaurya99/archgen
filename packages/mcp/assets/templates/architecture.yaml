@@ -8,24 +8,29 @@ toolchain: # the host ecosystem — survey fills this before planning
   test: <test command>
   lint: <lint command>
   typecheck: <typecheck command, or "not applicable">
-  source_root: <source root>
-  test_root: <test root>
+  # The two ROOTS the floor mirrors between. source_root is where production
+  # code lives; test_root is the root of the tree that MIRRORS it (e.g.
+  # tests/unit). The floor mirrors <source-root>/x/y into <test-root>/x/y —
+  # it never guesses a prefix or a level, so both are spelled out here.
+  source_root: <source root>                          # e.g. src
+  test_root: <root of the mirrored test tree>         # e.g. tests/unit
 existing_docs: # host sources of truth; cite these instead of regenerating them
   - { path: "<path>", kind: "prd|architecture|adr|readme", status: "current|stale" }
 structure: # planned tree, defined BEFORE coding
+  # Every path here MUST be owned by a task — the floor checks it.
   - path: <source-root>/<module>/
     purpose: <one-line purpose>
-  - path: <test-root>/unit/<module>/
+  - path: <test-root>/<module>/
     purpose: unit tests — the test tree, a SIBLING of the source root, mirroring the source path
 naming_conventions: # every task step and file_ownership entry cites these
   file_naming: <host language/framework convention>
-  dir_layout: "<source-root>/<module>/...; shared code is separate; tests mirror the source path under <test-root>/unit/"
+  dir_layout: "<source-root>/<module>/...; shared code is separate; tests mirror the source path under <test-root>/"
   symbol_casing: <host language convention>
-  test_placement: tests/unit/<path under the source root>/<the language's test file> — the test tree is a SIBLING of the source tree, never inside it
+  test_placement: "the test tree is a SIBLING of the source tree, never inside it; <test-root>/<path under the source root>/<the language's test file>"
 modules: # one entry per module; repeat per module
   - name: <module>
     responsibility: <single purpose>
-    owns: ["<source-root>/<module>/**", "<test-root>/unit/<module>/**"]
+    owns: ["<source-root>/<module>/**", "<test-root>/<module>/**"]
     depends_on_modules: [] # DAG; drives task depends_on edges
     key_interfaces: # ONLY exports other modules may import
       - <InterfaceName> (<source-root>/<module>/<entry file>)

@@ -4,9 +4,16 @@ Sub-agent briefs and wave rules for the orchestrator (`SKILL.md`). Workers never
 
 ## §survey — brownfield codebase analysis brief
 
-Dispatch 1–2 survey sub-agents with `archgen_plan{action:'brief', kind:'survey'}` verbatim. Accept `.archgen/<slug>/codebase-map.md` only when all six sections are present and non-empty: `Structure`, `Modules`, `Conventions`, `Existing docs`, `Toolchain`, `Affected`.
+Dispatch 1–2 survey sub-agents with `archgen_plan{action:'brief', kind:'survey', tasksYaml, planDir, featureRequest}` verbatim. Accept `.archgen/<slug>/codebase-map.md` only when all six sections are present and non-empty:
 
-`Existing docs` inventories host PRDs, architecture docs, and ADRs (path + freshness) so the profile can return `reuse`. `Toolchain` records source/test roots, build/test/lint/typecheck commands, and naming/test conventions so the plan guesses nothing.
+1. **Structure** — top 2 directory levels, 1-line purpose per folder; name the source and test roots.
+2. **Modules** — table: `module | responsibility | key entry points`.
+3. **Conventions** — observed naming, error handling, state management, and where tests actually live.
+4. **Existing docs** — table: `document | path | what it decides | freshness`; include PRDs, architecture docs, ADRs, README/runbooks. Mark each `current` or `stale`.
+5. **Toolchain** — source root, test root, build/test/lint/typecheck commands, package manager, runtime versions, naming/test-placement conventions.
+6. **Affected** — files/modules impacted by the feature, citing exact evidence paths.
+
+`Existing docs` inventories host PRDs, architecture docs, and ADRs (path + freshness) so the profile can return `reuse`. `Toolchain` records source/test roots, build/test/lint/typecheck commands, and naming/test conventions so the plan guesses nothing — the source and test roots it records are exactly what `toolchain.source_root` / `toolchain.test_root` need, and the floor mirrors between them.
 
 ## §verifier — plan review brief
 
@@ -40,8 +47,8 @@ Pass `archgen_plan{action:'brief', kind:'verifier'}` verbatim (pre-rendered evid
 
 1. Reads the floor's result from the brief — it does NOT re-run it and does NOT re-derive ownership, matrix, requirement, or wave facts.
 2. Checks the maps for ALIGNMENT: does the acceptance a matrix row cites verify the stated case; does the acceptance citing a requirement verify that requirement; does the task DAG match the module DAG; does every source-owning task own its mirrored test path.
-3. Judges what no tool can: wave-boundary sanity, objectively verifiable acceptance, scope-appropriate edge-case coverage, `references/code-standards.md` plausibility, **scope & artifact necessity** (a consumer for every created artifact, a real host path for every reuse, a reason for every omission), and contract completeness (`functional`, `security & data protection`, `data integrity`, `state, lifecycle & recovery`, `resource limits & abuse`, `operational entrypoints`, `metric traceability`, `consistency`).
-4. Emits `VERDICT`, the full `COVERAGE:` table, and findings classified **BLOCKING** (contradicts an agreed requirement, an accepted decision, or a stated invariant), **NIT** (cosmetic), or **OBSERVATION** (a capability nobody asked for). A missing table is incomplete → treat as `ISSUES`.
+3. Judges what no tool can: wave-boundary sanity, objectively verifiable acceptance, scope-appropriate edge-case coverage, `references/code-standards.md` plausibility, **scope & artifact necessity** (a consumer for every created artifact, a real host path for every reuse, a reason for every omission), and contract completeness.
+4. Emits `VERDICT`, the full `COVERAGE:` table — **the nine dimensions listed in the verifier brief**, each `PASS` / `FAIL` / `N/A` with a one-line reason — and findings classified **BLOCKING** (contradicts an agreed requirement, an accepted decision, or a stated invariant), **NIT** (cosmetic), or **OBSERVATION** (a capability nobody asked for). A missing table is incomplete → treat as `ISSUES`.
 
 **The verifier does not invent requirements.** A missing capability that no PRD, decision, `answers.yaml` or code-standard asked for is an OBSERVATION — one line, never blocking, never a fix demand. Without this rule the gate keeps discovering new features and the plan never converges.
 
@@ -51,25 +58,49 @@ When `ISSUES` returns: group findings by file and by CODE, and apply every fix t
 
 ### The floor's codes — group fixes by code, not by sentence
 
-Every finding carries a stable code, so fixes can be batched and counted:
+Every finding carries a stable code, so fixes can be batched and counted. **This table is pinned by a drift test against `ISSUE_CODES` / `WARNING_CODES` in `packages/mcp/src/core/plan-audit.mjs` and `BASE_CODES` in `verifier.mjs`** — a code that exists but is not listed here (or listed but not existing) fails CI.
+
+**BLOCKING (issues):**
 
 | Code | Meaning |
 |---|---|
-| `PROFILE_NOT_RECORDED` | no profile was recorded — artifact necessity cannot be checked |
-| `PROFILE_CREATE_MISSING` / `PROFILE_OMIT_PRESENT` / `PROFILE_REUSE_MISSING` | the recorded decision and the files on disk disagree |
+| `PROFILE_CREATE_MISSING` | the profile says create, but no matching artifact is on disk |
+| `PROFILE_OMIT_PRESENT` | the profile says do not create it (omit/reuse), but the artifact exists |
+| `PROFILE_REUSE_MISSING` | the profile says reuse, but the cited host file does not exist |
 | `PROFILE_UNRECORDED` | an artifact exists with no recorded decision |
+| `PROFILE_DECISION_INVALID` | the recorded decision is unusable (unknown decision, or reuse with no host_path) |
 | `MIRROR_MISSING` | a source-owning task has no mirrored test path |
-| `MATRIX_UNKNOWN_TASK` / `MATRIX_INDEX_OUT_OF_RANGE` / `MATRIX_CLAIM_MISMATCH` / `MATRIX_DANGLING_CLAIM` | the edge-case matrix and the acceptances disagree |
+| `MATRIX_UNKNOWN_TASK` | a matrix row cites a task that does not exist |
+| `MATRIX_INDEX_OUT_OF_RANGE` | a matrix row cites an acceptance that does not exist |
+| `MATRIX_CLAIM_MISMATCH` | a matrix row and the acceptance it cites disagree |
+| `MATRIX_DANGLING_CLAIM` | an acceptance claims an edge row that does not exist |
+| `MATRIX_CITATION_UNRESOLVED` | a matrix row still carries the template placeholder instead of a real citation |
+| `MATRIX_CLAIMS_UNDECLARED` | the plan has edge-case rows but no acceptance declares which row it covers |
 | `REQ_UNCITED` / `REQ_UNKNOWN` | the PRD and the acceptances disagree |
-| `DECISION_MISSING` / `PATH_UNOWNED` / `WAVE_LABEL_DRIFT` / `WAVE_GROUP_SPANS` | the declared structure and the plan disagree |
-| `NO_ACCEPTANCE` / `EMPTY_OWNERSHIP` / `OWNERSHIP_OVERLAP` / `CYCLE` / `DANGLING_DEP` / `PLAN_TASK_COVERAGE` / `UNKNOWN_TASK_ID` | the task file itself is defective |
+| `DECISION_MISSING` | a declared decision id has no `decisions/` file |
+| `PATH_UNOWNED` | a declared path has no owning task |
+| `WAVE_LABEL_DRIFT` / `WAVE_GROUP_SPANS` | a wave label disagrees with the dependency graph |
+| `WAIVER_INVALID` | a waiver is missing the fields that make it an approval |
 
-Warnings carry their own codes (`CONFIG_NOT_ENFORCED`, `OWNERSHIP_CONTAINED`, `WAIVER_COUNT_MISMATCH`, `GATE_IDENTITY_MISSING`) and never block.
+The task file's own defects carry their own codes: `UNPARSEABLE`, `NO_TASKS`, `CYCLE`, `DANGLING_DEP`, `DUPLICATE_TASK_ID`, `NO_ACCEPTANCE`, `EMPTY_OWNERSHIP`, `OWNERSHIP_OVERLAP`, `PLAN_TASK_COVERAGE`, `UNKNOWN_TASK_ID`, `NO_PLAN_DIR`, `IO_ERROR`.
+
+**INFORMATIONAL (warnings — never block):**
+
+| Code | Meaning |
+|---|---|
+| `PROFILE_NOT_RECORDED` | no profile was recorded — artifact necessity could not be checked |
+| `CONFIG_NOT_ENFORCED` | a rule could not run (the plan does not declare what the rule needs) |
+| `OWNERSHIP_CONTAINED` | one task's paths contain another's |
+| `WAIVER_COUNT_MISMATCH` | the recorded waived count disagrees with the ledger |
+| `GATE_IDENTITY_MISSING` | the gate block records no verifier |
+
+**The counts are exact; the list is a sample.** `issueCodes` / `warningCodes` count EVERY finding by class; the list carries at most 40. Fix a class once — `MIRROR_MISSING x120` is one fix, not 120 — and walk the rest with `archgen_plan{action:'verify', offset:40}` (`collection:'warnings'` for the warnings).
 
 ### Waivers and gate metrics — the audit trail
 
-- **A waiver is a file, not a sentence.** When the user accepts a residual finding, write it to `.archgen/<slug>/waivers.yaml` (`scope`, `finding`, `reason`, `approved_by`, `approved_at`) BEFORE proceeding, and say so in the completion report. A waived finding is not a defect to fix and the verifier must not re-raise it unless it regressed.
-- **The gate measures itself, and it names its subject.** After the gate, record `plan_profile.gate` in `answers.yaml` (MEDIUM/LARGE) or the plan's `## Profile` (SMALL): `verifier` (who approved it), `rounds` used, findings by class, waived count, residual, and the ISO timestamp. The floor checks the recorded waived count against the ledger and warns when no verifier is recorded — an approval without a subject is not an approval.
+- **A waiver is a file, not a sentence.** When the user accepts a residual finding, write it to `.archgen/<slug>/waivers.yaml` **before** proceeding, and say so in the completion report. Every field is required — `id`, `scope`, `finding`, `reason`, `approved_by`, `approved_at` — and the floor **enforces** it: a waiver missing one is `WAIVER_INVALID` and suppresses nothing.
+- **The floor honours the waiver.** `scope` names what is approved: a CODE (`MIRROR_MISSING` — every finding of that class) or a SUBJECT (`T19#2`, `src/features/catalog/**` — that one instance). A covered finding stops being an issue, so the plan can reach `APPROVE`; the floor reports it separately as a **waived** finding, and the gate brief lists it. Do not re-raise a waived finding unless it regressed.
+- **The gate measures itself, and it names its subject.** After the gate, record `plan_profile.gate` in `answers.yaml` (MEDIUM/LARGE) or the plan's `## Profile` (SMALL). The canonical block — one shape, used everywhere — is in `§artifact-templates/gate-metrics`. The floor checks the recorded waived count against the ledger and warns when no verifier is recorded: an approval without a subject is not an approval.
 
 ### Gate protocol — ONE protocol, TWO stages, TWO rounds each
 
@@ -81,14 +112,14 @@ Both gate stages — the **verifier** (`§verifier`) and the **plan review** (`�
 
 **Round 2 — DELTA.** The agent re-checks ONLY (a) the Round 1 findings — fixed, still open, regressed — and (b) the artifacts the fix touched. It does not restate what is fixed. A finding it did not see in Round 1 must be marked `NEW` and must be BLOCKING-grade.
 
-**No Round 3 — ever, by default.** After Round 2:
+**No Round 3 — ever, by default.** The cap is **two rounds** (Round 1 exhaustive, Round 2 delta). After Round 2:
 
 | What is left | What happens |
 |---|---|
 | A **concrete** defect (a named artifact violating a named rule) | The orchestrator fixes it and the **floor** re-checks it. No agent pass needed — the floor proves it. |
 | A **judgement** call (a preference, a wording improvement, a capability nobody asked for) | It goes to the user as a decision: waive it, or accept the change. |
 | A **NEW** BLOCKING finding in Round 2 | Round 1 was not exhaustive or the fix was sloppy: fix it locally, re-run the floor, and report it in the completion summary. |
-| The user explicitly asks for another pass | Allowed ONCE, with a stated purpose ("check the N findings we just fixed") — never "one more look". Never on your own initiative. |
+| The user explicitly asks for another pass | **One** extra pass, with a stated purpose ("check the N findings we just fixed") — never "one more look". Never on your own initiative. The user's approval is the only thing that raises the cap, from 2 to 3. |
 
 Never cite token or cost numbers when reporting rounds. A waiver is written to `waivers.yaml` before proceeding.
 

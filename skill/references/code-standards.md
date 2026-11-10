@@ -1,8 +1,10 @@
-# Code standards — contractual, verifier-enforced
+# Code standards — contractual, reviewer-enforced
 
-Workers and planners must follow these rules. The verifier rejects plans or outputs that violate them.
+Workers and planners must follow these rules.
 
 **Precedence:** the host repository's toolchain, formatter, linter, and naming conventions come first. These invariants are the floor, never a replacement for the ecosystem's own standard.
+
+**Who enforces what:** the deterministic floor (`archgen_plan{action:'verify'}) proves the **tree layout** — the mirrored test tree, when `architecture.yaml` declares `toolchain.source_root` and `toolchain.test_root`. Everything else here (types, error style, LOC, naming) is the **reviewer's judgement**: a gate agent reads the plan and the diff against this file. Nothing below is machine-checked, and nothing below is machine-enforced.
 
 ## Types & boundaries
 
@@ -25,19 +27,19 @@ Workers and planners must follow these rules. The verifier rejects plans or outp
 
 ## Layout — source and tests are SEPARATE trees
 
-The test tree is a **sibling** of the source tree, never a child. Roots come from `architecture.yaml` `toolchain` (never assume `src/`):
+The test tree is a **sibling** of the source tree, never a child. Both roots come from `architecture.yaml` `toolchain` (never assume `src/`, `tests/` or any other prefix):
 
 ```
-<source-root>/<module>/...            # production code only
-<test-root>/unit/<mirrored-module>/... # mirrored unit tests
-<test-root>/integration/...            # cross-module tests
-<test-root>/e2e/...                    # end-to-end journeys
+<source-root>/<module>/...        # production code only
+<test-root>/<mirrored-module>/... # mirrored unit tests
+<test-root>/../integration/...    # cross-module tests — a different root, if the host has one
 ```
 
-- **No test tree inside the source tree** (for example, `tests/unit/…` is a sibling of `src/`, never `src/tests/`), and no test file beside the code it covers.
-- **The mirror:** preserve the path under the source root, replacing the source root with the test root: `src/features/catalog/api/<source file>` → `tests/unit/features/catalog/api/<test file>`. A monorepo package mirrors its own source.
+- **No test tree inside the source tree** (for example, a `tests/` directory is a sibling of `src/`, never `src/tests/`), and no test file beside the code it covers.
+- **The mirror:** preserve the path under the source root, replacing the source root with the test root. `src/features/catalog/api/<source file>` with `test_root: tests/unit` → `tests/unit/features/catalog/api/<test file>`. A monorepo package mirrors its own source.
+- **`test_root` is the root of the tree that MIRRORS the source tree** — `tests/unit` in the common layout, `tests` when unit tests sit directly under `tests`. The floor mirrors the declared root; it never guesses a level.
 - **The FILE NAME is the language's business.** This standard fixes the PLACE, never the name—use the host ecosystem's convention. Record it in `architecture.yaml` `naming_conventions.test_placement`.
-- **One exception:** a language whose runner only discovers tests inside the package directory keeps those files beside the code; integration and end-to-end tests still live in the test tree.
+- **One exception:** a language whose runner only discovers tests inside the package directory keeps those files beside the code; integration and end-to-end tests still live in the test tree. **This exception needs a waiver** — the floor cannot know it, so write it to `.archgen/<slug>/waivers.yaml` with the reason, and the floor will honour it.
 - **Ownership follows the tree:** a task owning source owns the mirrored test path, or a dedicated task owns the tests—some task must.
 
 Why: one directory holding both production and test code grows a second, undeclared structure and makes "where does this go?" a per-file judgment call.
@@ -58,5 +60,5 @@ Why: one directory holding both production and test code grows a second, undecla
 ## Verification
 
 - Every `tasks.yaml` acceptance list includes ≥1 objectively verifiable check (exit code or observable output).
-- The plan declares both trees; the verifier audits this file and returns `ISSUES` on violations.
+- The plan declares both trees; the floor proves the mirrored layout when the roots are declared, and a gate reviewer audits the rest of this file.
 - Workers receive this file's path in their contract and are strictly bound by it.

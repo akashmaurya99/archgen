@@ -135,6 +135,21 @@ export function buildPlanProfile(ladder, input = {}) {
     }
   }
 
+  // The TASK COUNT is evidence too. It used to be accepted by the tool
+  // schema and then ignored, so `profile{tasks: 200}` was byte-identical to
+  // `profile{}` — an argument that advertised a signal and dropped it.
+  const taskCount = Number.isInteger(input.tasks) && input.tasks > 0 ? input.tasks : null;
+  if (taskCount !== null) {
+    let taskAdd = 0;
+    for (const step of spec.taskWeights ?? []) {
+      if (taskCount >= step.min) taskAdd = step.add;
+    }
+    if (taskAdd) {
+      score += taskAdd;
+      rationale.push(`${taskCount} tasks +${taskAdd}`);
+    }
+  }
+
   const thresholds = spec.thresholds ?? { medium: 2, large: 5 };
   const bounded = Math.max(0, score);
   const scopeClass =
@@ -173,15 +188,22 @@ export function buildPlanProfile(ladder, input = {}) {
 
   const slug = input.slug ? String(input.slug) : null;
   const resolvePath = (p) => (slug ? p.replaceAll('<slug>', slug) : p);
-
   const artifacts = [];
   for (const rule of spec.artifactRules ?? []) {
     const artifact = {
       path: resolvePath(rule.path),
       purpose: rule.purpose ?? null,
+      // The FAMILY the path belongs to: the plan may name its files as it
+      // likes (a second plan, an ADR whose title became the filename), and
+      // the floor proves the decision against the family, not the literal
+      // path.
+      pattern: rule.pattern ?? null,
     };
 
-    // A host source of truth always wins over a generated copy.
+    // A host source of truth always wins over a generated copy. This is
+    // checked BEFORE the scope filter: the host document exists whether or
+    // not this plan would have written one, and the profile's job is to say
+    // "cite it, do not regenerate it".
     if (rule.reuseSignal && signals.includes(rule.reuseSignal)) {
       artifacts.push({
         ...artifact,
@@ -192,11 +214,21 @@ export function buildPlanProfile(ladder, input = {}) {
       continue;
     }
 
-    if (ruleMustCreate(rule) || ruleMatches(rule, { scope: scopeClass, intent, signals })) {
+    // A rule that does not apply to this scope class or this intent is NOT
+    // created — but it is still LISTED, with the reason. The list is the
+    // agent's record of what it considered and why it left out; a family
+    // that vanished from the list would be a family nobody decided about.
+    const inScope = !rule.scopeIn || rule.scopeIn.includes(scopeClass);
+    const inIntent = !rule.intentIn || rule.intentIn.includes(intent);
+    const triggered = hasSignalCondition(rule)
+      ? ruleMatches(rule, { scope: scopeClass, intent, signals })
+      : true;
+
+    if (inScope && inIntent && triggered) {
       artifacts.push({
         ...artifact,
         decision: 'create',
-        reason: ruleMustCreate(rule) ? (rule.purpose ?? 'required for every plan') : 'profile trigger is present',
+        reason: hasSignalCondition(rule) ? 'profile trigger is present' : (rule.purpose ?? 'required for every plan'),
       });
       continue;
     }
@@ -234,20 +266,42 @@ export function buildPlanProfile(ladder, input = {}) {
     escalateIf,
     artifacts,
     depth,
+    // The interview round cap for THIS intent, including Round 0. It used to
+    // be a per-scope-class field the tool never read, while the reference
+    // capped by intent — so the two disagreed and neither was authoritative.
+    interviewRoundCap: spec.interviewRoundCaps?.[intent] ?? 3,
     writes: false,
-    next: `archgen_plan{action:'scaffold',scope:'${scopeClass}',slug:'${slug ?? '<slug>'}'}`,
+    // The next call carries EVERY input that decided the artifact set. It
+    // used to carry only scope+slug, so following the tool's own hint
+    // produced a scaffold for a DIFFERENT profile — a different class, a
+    // different artifact set, and a floor that then reported the recorded
+    // profile as unsatisfied.
+    next: scaffoldCall(scopeClass, { intent, signals, modules: input.modules ?? null, tasks: input.tasks ?? null, slug }),
   };
 }
 
-/** A rule with no conditions is required for every profile. */
-function ruleMustCreate(rule) {
-  return (
-    !rule.scopeIn &&
-    !rule.intentIn &&
-    !rule.signalSome &&
-    !rule.signalAll &&
-    !rule.signalNone
-  );
+/**
+ * The exact scaffold call that serves THIS profile's create set.
+ *
+ * @param {string} scopeClass
+ * @param {{intent: string, signals: string[], modules: number|null, tasks: number|null, slug: string|null}} input
+ */
+function scaffoldCall(scopeClass, input) {
+  const parts = [
+    `archgen_plan{action:'scaffold'`,
+    `scope:'${scopeClass}'`,
+    `intent:'${input.intent}'`,
+    `signals:[${input.signals.map((s) => `'${s}'`).join(',')}]`,
+  ];
+  if (input.modules) parts.push(`modules:${input.modules}`);
+  if (input.tasks) parts.push(`tasks:${input.tasks}`);
+  parts.push(`slug:'${input.slug ?? '<slug>'}'`);
+  return `${parts.join(',')}}`;
+}
+
+/** A rule with a SIGNAL condition can be switched on and off by evidence. */
+function hasSignalCondition(rule) {
+  return Boolean(rule.signalSome || rule.signalAll || rule.signalNone);
 }
 
 /**

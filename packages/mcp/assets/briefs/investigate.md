@@ -5,7 +5,7 @@ SCOPE: Read-only analysis and reporting (unless the brief explicitly authorizes 
 DELIVERABLE — all four sections are MANDATORY:
 1. ROOT CAUSE: One sentence identifying the underlying defect (never merely the symptom).
 2. EVIDENCE: Exact file paths, line numbers, and reproduction steps proving the root cause.
-3. BLAST RADIUS: Affected tasks and artifacts computed via `archgen_plan { action: 'impact', tasksYaml: <tasks.yaml>, target: <id-or-path> }`.
+3. BLAST RADIUS: Affected tasks and artifacts, computed with `archgen_plan { action: 'impact', tasksYaml: <tasks.yaml>, target: TASK-ID }` — put the FAILING TASK's id (or an owned artifact path) in `TASK-ID`.
 4. REMEDIATION: Proposed fix tasks (new task IDs inheriting affected `file_ownership` globs) routed through normal Verifier, Review, and User gates.
 
 SIZING

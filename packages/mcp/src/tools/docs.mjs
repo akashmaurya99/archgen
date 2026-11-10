@@ -52,23 +52,53 @@ export function registerDocTools(server) {
           const digest = docIndex(slugDir, { mode: 'digest', file: args.file ?? null, projectRoot: ctx.projectRoot });
           return bounded('files', digest.data, args, `archgen_docs{action:'digest',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`, {
             files: (digest.data.files ?? []).length,
+            sectionsOmitted: digest.data.sectionsOmitted === true,
             more: `archgen_docs{action:'section',slugDir:'${slugDir}',section:'<the section you need>'}`,
           });
         }
         case 'validate': {
-          return docIndex(slugDir, { mode: 'validate', file: args.file ?? null, projectRoot: ctx.projectRoot });
+          // The broken references are a COLLECTION. They were returned whole
+          // (120 broken refs = 5,223 tokens in one answer) and the caller's
+          // limit was ignored, because this action never went through the
+          // bounded() path.
+          const report = docIndex(slugDir, { mode: 'validate', file: args.file ?? null, projectRoot: ctx.projectRoot });
+          const data = report.data;
+          const broken = project(data.broken ?? [], {
+            limit: args.limit,
+            offset: args.offset,
+            next: `archgen_docs{action:'validate',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`,
+          });
+          const warnings = project(data.warnings ?? [], {
+            limit: args.limit,
+            offset: args.offset,
+            next: `archgen_docs{action:'validate',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`,
+          });
+          return withMeta(
+            { ...data, broken: broken.items, warnings: warnings.items },
+            moreMeta({
+              total: broken.total,
+              returned: broken.returned,
+              next: broken.truncated ? broken.next : undefined,
+              available: { broken: broken.total, warnings: warnings.total, checked: Object.keys(data.checked ?? {}).length },
+            }),
+          );
         }
         case 'refs': {
           if (!args.token) throw invalidInput('refs requires a token', { action: args.action });
           const refs = docIndex(slugDir, { mode: 'refs', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
-          return bounded('matches', refs.data, args, `archgen_docs{action:'refs',slugDir:'${slugDir}',token:'${args.token}',limit:${bound},offset:${from + bound}}`, {
+          // The continuation keeps the FILE SCOPE. It used to drop it, so
+          // the "next call" was a different query and returned different
+          // matches.
+          const scope = args.file ? `,file:'${args.file}'` : '';
+          return bounded('matches', refs.data, args, `archgen_docs{action:'refs',slugDir:'${slugDir}',token:'${args.token}'${scope},limit:${bound},offset:${from + bound}}`, {
             matches: (refs.data.matches ?? []).length,
           });
         }
         case 'map': {
           if (!args.token) throw invalidInput('map requires a token', { action: args.action });
           const map = docIndex(slugDir, { mode: 'map', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
-          return bounded('sections', map.data, args, `archgen_docs{action:'map',slugDir:'${slugDir}',token:'${args.token}',limit:${bound},offset:${from + bound}}`, {
+          const scope = args.file ? `,file:'${args.file}'` : '';
+          return bounded('sections', map.data, args, `archgen_docs{action:'map',slugDir:'${slugDir}',token:'${args.token}'${scope},limit:${bound},offset:${from + bound}}`, {
             sections: (map.data.sections ?? []).length,
             matches: map.data.matchCount ?? undefined,
             more: `archgen_docs{action:'section',slugDir:'${slugDir}',section:'<the section you need>'}`,
@@ -76,13 +106,18 @@ export function registerDocTools(server) {
         }
         case 'section': {
           if (!args.section) throw invalidInput('section requires a section path', { action: args.action });
-          return docIndex(slugDir, {
+          const found = docIndex(slugDir, {
             mode: 'section',
             section: args.section,
             file: args.file ?? null,
             include: args.include ?? 'own',
             projectRoot: ctx.projectRoot,
           });
+          // UNWRAPPED. This action used to return the navigator's
+          // `{mode, data}` verbatim, so the section's text sat at
+          // `data.data.text` while every sibling action put its result at
+          // `data.text`.
+          return found.data;
         }
         default:
           throw invalidInput(`unknown action '${args.action}'`, { action: args.action });

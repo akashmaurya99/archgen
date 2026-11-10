@@ -81,6 +81,9 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   const templatesDir = opts.templatesDir ?? TEMPLATES_DIR;
 
   // The profile, when the caller knows the intent: it decides the set.
+  // The scaffold is called with the SAME inputs the profile was called with
+  // (the profile's own `next` spells them out), so the served set is the
+  // recorded profile's create set — never a second, drifting one.
   const profile = opts.intent
     ? buildPlanProfile(ladder, {
         intent: opts.intent,
@@ -101,11 +104,17 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
         required: a.decision === 'create',
         decision: a.decision,
         reason: a.reason,
+        pattern: a.pattern ?? null,
       }))
     : rules.map((r) => ({
         path: r.path.replaceAll('<slug>', slug),
         purpose: r.purpose ?? null,
         required: r.required,
+        decision: r.required ? 'create' : 'conditional',
+        reason: r.required
+          ? (r.purpose ?? 'required for every plan at this scope')
+          : 'the profile decides this one — it needs an intent and signals',
+        pattern: r.pattern ?? null,
       }));
 
   const createPaths = profile
@@ -144,7 +153,7 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   const wanted = profile ? artifacts.filter((a) => a.decision === 'create') : artifacts;
   const served = {};
   for (const a of wanted) {
-    const key = skeletonKeyFor(a.path);
+    const key = skeletonKeyForPath(a.path);
     if (key && skeletonBodies[key]) served[key] = skeletonBodies[key];
   }
 
@@ -159,6 +168,16 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   return {
     scopeClass: key,
     label: spec.label,
+    // WHICH SET THIS IS. 'profile' = exactly the recorded profile's create
+    // set. 'class' = the class's CANDIDATE set, because no intent was given
+    // and therefore no evidence exists to decide the conditional artifacts.
+    // The two used to be presented identically, so an agent could serve the
+    // candidate set and believe it had served the profile.
+    mode: profile ? 'profile' : 'class',
+    modeNote: profile
+      ? 'this is exactly the profile\'s create set — fill these and only these'
+      : 'no intent was given, so this is the class CANDIDATE set (conditional artifacts are marked optional). ' +
+        'Run archgen_plan{action:"profile"} with the same intent and signals, then scaffold again with them.',
     // THIS TOOL WRITES NOTHING. It returns the CONTENT of every file the
     // profile requires, and the caller writes them. An agent that assumes
     // otherwise gets "missing or not a directory" from every artifact tool
@@ -184,7 +203,6 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     },
     depthBudgets,
     intentDefaults: spec.intentDefaults ?? [],
-    roundCap: spec.roundCap ?? null,
     artifacts,
     planSections: spec.planSections ?? [],
     minEdgeCasesPerTask: spec.minEdgeCasesPerTask ?? 0,
@@ -207,8 +225,11 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
  * By SUFFIX, not by a table: the artifact path is the plan's name for the
  * file and the skeleton key is the template's name, and the plan's name
  * carries the slug (`plans/<slug>.md`) where the template's does not.
+ *
+ * EXPORTED: the tool resolves a caller's `file` argument through it, so the
+ * path the tool publishes and the path it accepts can never disagree.
  */
-function skeletonKeyFor(artifactPath) {
+export function skeletonKeyForPath(artifactPath) {
   const p = String(artifactPath);
   if (p.endsWith('/tasks.yaml')) return 'tasks.yaml';
   if (p.endsWith('/answers.yaml')) return 'answers.yaml';
@@ -217,6 +238,11 @@ function skeletonKeyFor(artifactPath) {
   if (/\/decisions\/[^/]+\.md$/.test(p)) return 'decisions/NNNN-title.md';
   if (p.endsWith('/docs/mermaid-snippets.md')) return 'docs/mermaid-snippets.md';
   if (/\/plans\/[^/]+\.md$/.test(p)) return 'plans/<slug>.md';
+  // A per-module diagram is authored FROM the diagram template — the
+  // template IS the mermaid source, and the module file holds the rendered
+  // diagram. Without this mapping a LARGE plan was told to write
+  // `docs/<module>.md` and served no skeleton for it at all.
+  if (/\/docs\/[^/]+\.md$/.test(p)) return 'docs/mermaid-snippets.md';
   return null;
 }
 
@@ -267,6 +293,16 @@ function renderPlanMd(scopeClass, spec, slug, generatedAt) {
         '    reason: ""',
         '    host_path: "" # for a reuse decision: the existing file it cites',
         'escalate_if: []',
+        'gate: # filled in after the gate; the floor reads it here',
+        '  verifier: "" # who approved it — an approval needs a subject',
+        '  rounds: 0',
+        '  findings:',
+        '    blocking: 0',
+        '    nit: 0',
+        '    observation: 0',
+        '  waived: 0',
+        '  residual: 0',
+        '  at: "" # ISO-8601 timestamp of the approval',
         '```',
         '',
       );

@@ -32,21 +32,23 @@ import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { buildGraph, computeWaves, globsMayOverlap } from './graph.mjs';
+import { loadAsset } from '../context.mjs';
 
 /** A requirement id: FR-<MODULE>-nn. */
 const FR_ID = /\bFR-[A-Z0-9]+(?:-[A-Z0-9]+)*\b/g;
 /** An edge-case row id: E1, E12. */
 const EDGE_ID = /^E\d+$/;
 /** A matrix citation: <task-id>#<acceptance index>. */
-const MATRIX_REF = /([A-Za-z0-9][A-Za-z0-9._-]*)#(\d+)/g;
+const MATRIX_REF = /([^\s|,]+)#(\d+)/g;
+/** A citation that is still a TEMPLATE PLACEHOLDER (`<ID>#1`, `<task-id>#1`). */
+const MATRIX_PLACEHOLDER = /[<>]/;
 /** What an acceptance claims to cover: "(covers E4, FR-API-01)". */
 const CLAIMS = /\bcovers\s+([A-Z][A-Z0-9-]*(?:\s*,\s*[A-Z][A-Z0-9-]*)*)/gi;
 
 /** Every code the floor can report. Stable: tests and CI depend on them. */
 export const ISSUE_CODES = {
-  PROFILE_NOT_RECORDED: 'the plan records no profile — artifact necessity cannot be checked',
   PROFILE_CREATE_MISSING: 'the profile says create, but the artifact is not on disk',
-  PROFILE_OMIT_PRESENT: 'the profile says omit, but the artifact exists',
+  PROFILE_OMIT_PRESENT: 'the profile says do not create it (omit/reuse), but the artifact exists',
   PROFILE_REUSE_MISSING: 'the profile says reuse, but the cited host file does not exist',
   PROFILE_UNRECORDED: 'an artifact exists that the profile does not record a decision for',
   PROFILE_DECISION_INVALID: 'the profile records a decision the floor cannot interpret',
@@ -55,16 +57,20 @@ export const ISSUE_CODES = {
   MATRIX_INDEX_OUT_OF_RANGE: 'a matrix row cites an acceptance that does not exist',
   MATRIX_CLAIM_MISMATCH: 'a matrix row and the acceptance it cites disagree',
   MATRIX_DANGLING_CLAIM: 'an acceptance claims an edge row that does not exist',
+  MATRIX_CITATION_UNRESOLVED: 'a matrix row still carries a template placeholder instead of a real citation',
+  MATRIX_CLAIMS_UNDECLARED: 'the plan has edge-case rows but no acceptance declares which row it covers',
   REQ_UNCITED: 'a PRD requirement is not cited by any acceptance',
   REQ_UNKNOWN: 'an acceptance cites a requirement the PRD does not define',
   DECISION_MISSING: 'a declared decision has no file',
   PATH_UNOWNED: 'a declared path has no owning task',
   WAVE_LABEL_DRIFT: 'a wave label disagrees with the dependency graph',
   WAVE_GROUP_SPANS: 'one parallel group spans several dependency waves',
+  WAIVER_INVALID: 'a waiver is missing the fields that make it an approval',
 };
 
 /** Every code the floor can warn about. */
 export const WARNING_CODES = {
+  PROFILE_NOT_RECORDED: 'the plan records no profile — artifact necessity cannot be checked',
   CONFIG_NOT_ENFORCED: 'a rule could not run because the plan does not declare what it needs',
   OWNERSHIP_CONTAINED: "one task's paths contain another's",
   WAIVER_COUNT_MISMATCH: 'the recorded waived count disagrees with the ledger',
@@ -87,7 +93,20 @@ export function auditPlan({ slugDir, tasks }) {
   const warnings = [];
   const maps = { requirements: [], edgeMatrix: [], ownership: [], modules: [], decisions: [] };
   if (!slugDir || !Array.isArray(tasks) || tasks.length === 0) {
-    return { issues, warnings, maps, waivers: [], profile: null, snapshot: null };
+    return {
+      issues,
+      warnings,
+      issuesTotal: 0,
+      warningsTotal: 0,
+      issueCodes: {},
+      warningCodes: {},
+      waivedFindings: [],
+      waivedCodes: {},
+      maps,
+      waivers: [],
+      profile: null,
+      snapshot: null,
+    };
   }
 
   const architecture = readYaml(join(slugDir, 'architecture.yaml'));
@@ -117,7 +136,6 @@ export function auditPlan({ slugDir, tasks }) {
   // The claim is the explicit link: "(covers E4)". It turns "does this
   // acceptance verify that edge case?" from a judgement into a join.
   const claims = new Map(); // `${taskId}#${index}` -> {edges:Set, reqs:Set}
-  let claimsUsed = false;
   for (const t of tasks) {
     const id = String(t?.id ?? '');
     (t?.acceptance ?? []).forEach((a, i) => {
@@ -129,7 +147,6 @@ export function auditPlan({ slugDir, tasks }) {
           const token = raw.trim().toUpperCase();
           if (EDGE_ID.test(token)) found.edges.add(token);
           else if (/^FR-[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(token)) found.reqs.add(token);
-          if (found.edges.size || found.reqs.size) claimsUsed = true;
         }
       }
       claims.set(key, found);
@@ -137,38 +154,78 @@ export function auditPlan({ slugDir, tasks }) {
   }
 
   // ── 1. the recorded profile was honoured ─────────────────────────────────
+  //
+  // A decision is recorded against a PATH, but a plan may legitimately name
+  // its files differently (a second plan, an ADR whose title became the
+  // filename, a per-module diagram). The floor therefore resolves every
+  // recorded path and every file on disk to a FAMILY — the rule's path
+  // pattern — and proves the decision against the family. Without that, a
+  // recorded "create decisions/NNNN-<title>.md" could never be satisfied by
+  // the real file "decisions/0001-store-engine.md", and every such plan
+  // reported PROFILE_CREATE_MISSING forever.
   const profile = readProfile(answers, planText);
+  const families = artifactFamilies();
   if (!profile) {
-    warnings.push(finding('PROFILE_NOT_RECORDED', ISSUE_CODES.PROFILE_NOT_RECORDED));
+    // The floor's principle: it reports what it can PROVE. A missing profile
+    // means artifact necessity CANNOT be checked — that is a warning, and
+    // the gate brief asks the reviewer to judge it. (An artifact that exists
+    // while a profile IS recorded is a different case: PROFILE_UNRECORDED,
+    // and that one blocks.)
+    warnings.push(finding('PROFILE_NOT_RECORDED', WARNING_CODES.PROFILE_NOT_RECORDED));
   } else {
     const projectRoot = projectRootOf(slugDir);
-    const decided = new Set();
+    const onDisk = listArtifacts(slugDir);
+    /** family -> the recorded decision for it. */
+    const decided = new Map();
     for (const a of profile.artifacts ?? []) {
       const path = String(a?.path ?? '').trim();
       const decision = String(a?.decision ?? '').trim().toLowerCase();
       if (!path) continue;
-      decided.add(normalizeArtifactPath(path));
+      const rel = normalizeArtifactPath(path);
+      const family = familyOf(rel, families);
+      // A family may be named more than once (two plan files, two ADRs); the
+      // FIRST decision wins, and the rest are checked against the same family.
+      if (!decided.has(family)) {
+        decided.set(family, {
+          path,
+          decision,
+          reason: String(a?.reason ?? '').trim(),
+          hostPath: String(a?.host_path ?? '').trim(),
+        });
+      }
       if (decision === 'create') {
-        if (!existsUnder(slugDir, path)) {
+        const present = onDisk.filter((f) => matchesFamily(family, f));
+        if (!present.length) {
           issues.push(
             finding(
               'PROFILE_CREATE_MISSING',
-              `the profile marks '${path}' as create, but it does not exist under the artifact space`,
+              `the profile marks '${path}' as create, but no file matching '${family}' exists under the artifact space`,
             ),
           );
         }
       } else if (decision === 'omit') {
-        if (existsUnder(slugDir, path)) {
+        const present = onDisk.filter((f) => matchesFamily(family, f));
+        if (present.length) {
           issues.push(
             finding(
               'PROFILE_OMIT_PRESENT',
-              `the profile marks '${path}' as omit, but the artifact exists — delete it or record the decision`,
+              `the profile marks '${path}' as omit, but '${present.join(', ')}' exists — delete it or record the decision`,
             ),
           );
         }
       } else if (decision === 'reuse') {
         const host = String(a?.host_path ?? '').trim();
-        if (host && !existsUnder(projectRoot, host)) {
+        if (!host) {
+          // A reuse decision without the host file it cites is a decision
+          // about nothing: the floor cannot check it, and the reader cannot
+          // find what the plan reused.
+          issues.push(
+            finding(
+              'PROFILE_DECISION_INVALID',
+              `'${path}' is marked reuse but records no host_path — name the existing repository file it cites`,
+            ),
+          );
+        } else if (!existsUnder(projectRoot, host)) {
           issues.push(
             finding(
               'PROFILE_REUSE_MISSING',
@@ -176,7 +233,20 @@ export function auditPlan({ slugDir, tasks }) {
             ),
           );
         }
-      } else if (decision) {
+        // A REUSE decision means "the host owns this fact — do not write a
+        // copy". A generated copy of a host document is the defect the
+        // artifact-necessity mechanism exists to prevent.
+        const present = onDisk.filter((f) => matchesFamily(family, f));
+        if (present.length) {
+          issues.push(
+            finding(
+              'PROFILE_OMIT_PRESENT',
+              `the profile marks '${path}' as reuse of '${host}', but '${present.join(', ')}' exists — ` +
+                'delete the copy and cite the host file',
+            ),
+          );
+        }
+      } else {
         issues.push(
           finding('PROFILE_DECISION_INVALID', `'${path}' has an unknown decision '${a.decision}'`),
         );
@@ -184,8 +254,9 @@ export function auditPlan({ slugDir, tasks }) {
     }
     // Every artifact on disk needs a decision: an artifact without a consumer
     // is the defect this whole mechanism exists to prevent.
-    for (const artifact of listArtifacts(slugDir)) {
-      if (!decided.has(artifact)) {
+    for (const artifact of onDisk) {
+      const family = familyOf(artifact, families) ?? artifact;
+      if (!decided.has(family)) {
         issues.push(
           finding(
             'PROFILE_UNRECORDED',
@@ -200,11 +271,18 @@ export function auditPlan({ slugDir, tasks }) {
   const roots = sourceAndTestRoots(architecture);
   if (!roots.enforced) {
     // FAIL LOUD: a rule that cannot run must say so, not quietly pass.
+    //
+    // It is a WARNING, not a block, and that is deliberate: the floor
+    // reports what it can PROVE. Without declared roots it cannot prove the
+    // mirrored-tree invariant — it does not know where the host keeps its
+    // tests — so the layout becomes the REVIEWER's judgement, named loudly
+    // instead of silently passing. The declared-path and decision-file rules
+    // do not need the roots, so they still run.
     warnings.push(
       finding(
         'CONFIG_NOT_ENFORCED',
         architecture
-          ? 'the mirrored-test-tree rule is NOT ENFORCED — declare toolchain.source_root and toolchain.test_root in architecture.yaml'
+          ? 'the mirrored-test-tree rule is NOT ENFORCED — architecture.yaml does not declare usable toolchain.source_root and toolchain.test_root'
           : 'no architecture.yaml — the mirrored-test-tree, declared-path and decision-file rules are NOT ENFORCED',
       ),
     );
@@ -212,21 +290,28 @@ export function auditPlan({ slugDir, tasks }) {
     for (const t of tasks) {
       const id = String(t?.id ?? '');
       for (const g of t?.file_ownership ?? []) {
-        if (!g.startsWith(`${roots.sourceRoot}/`)) continue;
-        const rest = g.slice(roots.sourceRoot.length + 1);
-        // The mirror is checked at DIRECTORY level: the test FILE NAME belongs
-        // to the ecosystem's own naming rule, the test PATH does not.
-        const dir = rest.split('/').slice(0, -1).join('/');
+        const glob = String(g);
+        if (glob !== roots.sourceRoot && !glob.startsWith(`${roots.sourceRoot}/`)) continue;
+        // THE MIRROR: the path under the source root, preserved, under the
+        // DECLARED test root. `src/features/catalog/api/x.ts` with
+        // `test_root: tests/unit` → `tests/unit/features/catalog/api/x.ts`.
+        //
+        // The test root is DECLARED, so no path convention is hardcoded: the
+        // floor never guesses a `tests/` prefix, a `unit/` level, or any
+        // other layout. The host owns its tree; the floor only checks that
+        // the mirror exists.
+        const under = glob === roots.sourceRoot ? '' : glob.slice(roots.sourceRoot.length + 1);
+        const dir = under.split('/').slice(0, -1).join('/');
         const mirroredDir = dir ? `${roots.testRoot}/${dir}` : roots.testRoot;
         const covered = tasks.some((o) =>
-          (o?.file_ownership ?? []).some((og) => globsMayOverlap(og, mirroredDir)),
+          (o?.file_ownership ?? []).some((og) => globsMayOverlap(og, `${mirroredDir}/**`)),
         );
         if (!covered) {
           issues.push(
             finding(
               'MIRROR_MISSING',
               `task '${id}' owns '${g}' but no task owns the mirrored test path '${mirroredDir}/**' ` +
-                '(code-standards: the test tree is a sibling and mirrors the source path)',
+                '(code-standards: the test tree is a sibling and mirrors the source path under the declared test_root)',
             ),
           );
         }
@@ -237,12 +322,26 @@ export function auditPlan({ slugDir, tasks }) {
   // ── 3. edge-case matrix traceability AND the explicit claim link ─────────
   const matrixRows = parseEdgeMatrix(planText);
   const definedEdges = new Set(matrixRows.map((r) => String(r.row).trim().toUpperCase()));
+  // Did ANY acceptance declare which edge row it covers? The convention is
+  // detected by use, and a plan that has rows but declares nothing has an
+  // UNBOUND matrix: the rows exist, but nothing proves they are verified.
+  const edgeClaimsUsed = [...claims.values()].some((c) => c.edges.size > 0);
   for (const row of matrixRows) {
+    const edgeId = String(row.row).trim().toUpperCase();
+    if (row.placeholder) {
+      issues.push(
+        finding(
+          'MATRIX_CITATION_UNRESOLVED',
+          `edge-case matrix row '${edgeId}' still cites the template placeholder '${row.task}#${row.index}' — ` +
+            'replace it with <task-id>#<acceptance index>',
+        ),
+      );
+      continue;
+    }
     const acc = acceptanceOf(row.task);
     const cited = acc[row.index - 1] ?? null;
     const key = `${row.task}#${row.index}`;
     const claimed = claims.get(key);
-    const edgeId = String(row.row).trim().toUpperCase();
     const claimOk = claimed ? claimed.edges.has(edgeId) : false;
     maps.edgeMatrix.push({
       row: edgeId,
@@ -264,7 +363,7 @@ export function auditPlan({ slugDir, tasks }) {
           `edge-case matrix row '${edgeId}' cites ${row.task}#${row.index}, but '${row.task}' has ${acc.length} acceptance criteria`,
         ),
       );
-    } else if (claimsUsed && !claimOk) {
+    } else if (edgeClaimsUsed && !claimOk) {
       // The explicit link: the acceptance the row points at does not claim the
       // row. Either the citation is wrong or the acceptance does not cover it.
       const claimedElsewhere = [...claims.entries()]
@@ -281,6 +380,18 @@ export function auditPlan({ slugDir, tasks }) {
         ),
       );
     }
+  }
+  // A matrix whose rows are never claimed is an UNBOUND matrix. The floor
+  // used to say nothing here, so the reference's promise ("the floor reports
+  // that the claims are not declared") was false and the gap was invisible.
+  if (matrixRows.length && !edgeClaimsUsed) {
+    issues.push(
+      finding(
+        'MATRIX_CLAIMS_UNDECLARED',
+        `the plan has ${matrixRows.length} edge-case row(s) but no acceptance declares which row it covers — ` +
+          'add "(covers E4)" to the acceptance each row cites, so the floor can bind the two sides',
+      ),
+    );
   }
   // An acceptance may not claim an edge row that does not exist.
   if (matrixRows.length) {
@@ -429,7 +540,55 @@ export function auditPlan({ slugDir, tasks }) {
   }
 
   // ── 9. the waiver ledger and the recorded gate ───────────────────────────
-  const recorded = answers?.plan_profile?.gate ?? answers?.gate ?? null;
+  //
+  // A WAIVER IS AN APPROVED DEVIATION. The references say so in three places
+  // ("a waived finding is not a defect to fix", "the verifier must not
+  // re-raise it"). The floor used to read the ledger and then ignore it: the
+  // finding stayed an issue, the verdict stayed ISSUES, and a plan could
+  // never be approved no matter what the user had signed off. The waiver now
+  // SUPPRESSES the findings it covers, and the suppressed list is reported so
+  // the deviation stays visible.
+  const waiverIssues = [];
+  const validWaivers = [];
+  for (const w of waivers) {
+    const missing = [];
+    if (!w.scope.length) missing.push('scope');
+    if (!w.finding.trim()) missing.push('finding');
+    if (!w.reason.trim()) missing.push('reason');
+    if (!w.approvedBy.trim()) missing.push('approved_by');
+    if (!w.approvedAt.trim()) missing.push('approved_at');
+    if (missing.length) {
+      waiverIssues.push(
+        finding(
+          'WAIVER_INVALID',
+          `waiver ${w.id || '(unnamed)'} is missing ${missing.join(', ')} — a waiver without a reason and an approver is not an approval`,
+        ),
+      );
+      continue;
+    }
+    validWaivers.push(w);
+  }
+
+  // Suppress the covered findings.
+  const waivedFindings = [];
+  const remaining = [];
+  for (const issue of issues) {
+    const w = validWaivers.find((v) => waiverCovers(v, issue));
+    if (w) {
+      waivedFindings.push({ waiver: w.id, finding: issue });
+      continue;
+    }
+    remaining.push(issue);
+  }
+  issues.length = 0;
+  issues.push(...remaining, ...waiverIssues);
+
+  // The gate record. THREE PLACES, ONE SHAPE: `answers.yaml` →
+  // `plan_profile.gate`, `answers.yaml` → `gate`, or the plan's own Profile
+  // fence (which is where a SMALL plan keeps it). The plan fence was never
+  // read, so a SMALL plan recorded its gate where the reference said to and
+  // the floor reported "no verifier" for it.
+  const recorded = answers?.plan_profile?.gate ?? answers?.gate ?? profile?.gate ?? null;
   if (recorded) {
     const waived = Number(recorded.waived ?? 0);
     if (Number.isFinite(waived) && waived !== waivers.length) {
@@ -473,6 +632,10 @@ export function auditPlan({ slugDir, tasks }) {
     warningsTotal: warnings.length,
     issueCodes: countCodes(issues),
     warningCodes: countCodes(warnings),
+    // The findings a waiver approved. They are NOT issues — but they are
+    // reported, so the deviation stays visible to the next reviewer.
+    waivedFindings,
+    waivedCodes: countCodes(waivedFindings.map((w) => w.finding)),
     maps,
     waivers,
     profile,
@@ -555,6 +718,94 @@ export function readPlanProfile(planText) {
 }
 
 /**
+ * The artifact FAMILIES a plan's files fall into.
+ *
+ * A family is the ladder rule's path PATTERN: `plans/*.md` is the family of
+ * every plan file, `decisions/*.md` the family of every decision record. The
+ * recorded decision is proved against the family, so a plan may name its
+ * files as it likes without the floor calling a satisfied decision missing.
+ *
+ * @returns {Array<{pattern: string, literals: number}>} most specific first
+ */
+let FAMILY_CACHE = null;
+function artifactFamilies() {
+  if (FAMILY_CACHE) return FAMILY_CACHE;
+  let rules = [];
+  try {
+    rules = loadAsset('depth-ladder.json')?.profile?.artifactRules ?? [];
+  } catch {
+    rules = [];
+  }
+  const seen = new Set();
+  const out = [];
+  for (const r of rules) {
+    const pattern = String(r?.pattern ?? deriveFamily(r?.path ?? '')).replace(/^\.\//, '');
+    if (!pattern || seen.has(pattern)) continue;
+    seen.add(pattern);
+    // Specificity: a literal pattern beats a wildcard one; among wildcards,
+    // the one with more literal segments wins.
+    const literals = pattern.split('/').filter((s) => !s.includes('*')).length;
+    out.push({ pattern, literals, wildcard: pattern.includes('*') });
+  }
+  out.sort((a, b) => {
+    if (a.wildcard !== b.wildcard) return a.wildcard ? 1 : -1;
+    if (a.literals !== b.literals) return b.literals - a.literals;
+    return b.pattern.length - a.pattern.length;
+  });
+  FAMILY_CACHE = out;
+  return out;
+}
+
+/** Derive a family pattern from a rule path when the rule carries none. */
+function deriveFamily(path) {
+  const p = normalizeArtifactPath(path);
+  return p.replaceAll('<slug>', '*').replaceAll('<module>', '*').replaceAll('<title>', '*');
+}
+
+/**
+ * The family a path belongs to (null when no rule claims it).
+ * @param {string} rel slug-relative path
+ * @param {Array<{pattern: string}>} families
+ */
+function familyOf(rel, families) {
+  const p = String(rel ?? '').replaceAll('\\', '/');
+  for (const f of families) {
+    if (matchesFamily(f.pattern, p)) return f.pattern;
+  }
+  return null;
+}
+
+/**
+ * Does a path match a family pattern?
+ *
+ * `*` matches ONE path segment; `**` matches zero or more. The patterns are
+ * the ladder's own, so this is a small, total glob — never a general one.
+ */
+function matchesFamily(pattern, path) {
+  const pat = String(pattern ?? '').replaceAll('\\', '/').split('/');
+  const seg = String(path ?? '').replaceAll('\\', '/').split('/');
+  const walk = (i, j) => {
+    if (i === pat.length) return j === seg.length;
+    const p = pat[i];
+    if (p === '**') {
+      for (let k = j; k <= seg.length; k++) {
+        if (walk(i + 1, k)) return true;
+      }
+      return false;
+    }
+    if (j >= seg.length) return false;
+    if (p.includes('*')) {
+      const re = new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '[^/]*')}$`);
+      if (!re.test(seg[j])) return false;
+    } else if (p !== seg[j]) {
+      return false;
+    }
+    return walk(i + 1, j + 1);
+  };
+  return walk(0, 0);
+}
+
+/**
  * The source and test roots — DECLARED, never guessed.
  *
  * The host repo owns its layout. If `architecture.yaml` does not declare the
@@ -615,6 +866,10 @@ export function parseEdgeMatrix(planText) {
         expected: header.idx > 1 ? cells[header.idx - 1] : '',
         task: m[1],
         index: Number(m[2]),
+        // A row that still carries the template's placeholder was never
+        // bound to an acceptance. It used to be invisible (the citation did
+        // not parse), so the row escaped every traceability check.
+        placeholder: MATRIX_PLACEHOLDER.test(m[1]),
       });
     }
   }
@@ -724,6 +979,41 @@ export function readWaivers(path) {
       approvedBy: String(w.approved_by ?? ''),
       approvedAt: String(w.approved_at ?? ''),
     }));
+}
+
+/**
+ * Does a waiver cover this finding?
+ *
+ * A waiver's `scope` names WHAT it covers, in one of two forms:
+ *
+ *   - a CODE (`MIRROR_MISSING`) — every finding of that class is approved;
+ *   - a SUBJECT (`T19#2`, `src/features/catalog/**`) — that one instance is.
+ *
+ * A subject is matched on token boundaries, so `T1` never swallows `T19`.
+ *
+ * @param {{scope: string[]}} waiver
+ * @param {string} issue the finding text (CODE: message)
+ */
+export function waiverCovers(waiver, issue) {
+  const text = String(issue ?? '');
+  const code = text.split(':')[0];
+  for (const raw of waiver?.scope ?? []) {
+    const s = String(raw ?? '').trim();
+    if (!s) continue;
+    if (s === code) return true;
+    // A path or a glob is matched literally — it is quoted in the finding.
+    if (s.includes('/') || s.includes('*')) {
+      if (text.includes(s)) return true;
+      continue;
+    }
+    if (s.includes('#')) {
+      if (text.includes(s)) return true;
+      continue;
+    }
+    const esc = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`(?<![A-Za-z0-9_.-])${esc}(?![A-Za-z0-9_.-])`).test(text)) return true;
+  }
+  return false;
 }
 
 /** The plan markdown of an artifact space (every plans/*.md, concatenated). */

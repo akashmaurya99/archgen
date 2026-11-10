@@ -11,7 +11,7 @@ Returns: project/global skill paths, MCP config path and top-level key, server e
 
 ## Platform detection
 
-First match wins: `.claude/` → `.cursor/` → `.windsurf/` → `.opencode` / `opencode.json` → `.github/copilot-instructions.md` → `~/.codex` → `.gemini/` → `.kiro/` → `.trae/`.
+`archgen_setup{action:'harness_info'}` is the **only** source of detection order and harness capabilities — `packages/mcp/assets/platform-capabilities.json` is the authority, and this file never restates it. A harness this server does not know is a normal situation, not an error: use the **Unknown platform** procedure below.
 
 ## Installed layout
 
@@ -28,11 +28,11 @@ Never hand-edit the registry table (`| Feature | Status | Updated |`); use `arch
 
 ## MCP configuration
 
-Query `archgen_setup{action:'harness_info'}` for exact schemas:
+`archgen_setup{action:'harness_info'}` is the **runtime** authority: it returns the exact config path, the URL field and the restart semantics for the harness you are on. This file documents the **key vocabulary** once, so you can read a config file by eye — `harness_info` confirms which one applies.
 
-- **Top-level keys vary:** `mcpServers` (Claude Code, Cursor, Windsurf, Gemini CLI, Antigravity, Kiro, Trae); `servers` (VS Code `.vscode/mcp.json`); `mcp.servers.<id>` (OpenCode—nested, never flat `mcp.<id>`); `context_servers` (Zed); `[mcp_servers.<id>]` (Codex TOML).
+- **Top-level keys:** `mcpServers` (Claude Code, Cursor, Windsurf, Gemini CLI, Antigravity, Kiro, Trae) · `servers` (VS Code `.vscode/mcp.json`) · `mcp.servers.<id>` (OpenCode — nested, never flat `mcp.<id>`) · `context_servers` (Zed) · `[mcp_servers.<id>]` (Codex TOML).
+- **Remote URL keys vary:** `url`, `serverUrl`, or `httpUrl` — check `harness_info`.
 - **VS Code reads two formats.** `.vscode/mcp.json` uses `servers`; the portable `mcp-config.json` uses `mcpServers` and lives at `$COPILOT_HOME/mcp-config.json` (or `~/.copilot/mcp-config.json`). `COPILOT_HOME` replaces the default. Global wiring uses the portable format so VS Code stable/Insiders, the Copilot CLI, and every workspace see one server.
-- **Remote URL keys vary:** `url`, `serverUrl`, or `httpUrl` (check `harness_info`).
 - **Automated wiring:** `archgen_setup{action:'install_mcp', approve:true}`—do not hand-edit.
 
 ## Sub-agent dispatch
@@ -58,11 +58,11 @@ Indexers parse **source symbols only** (functions, classes, imports)—never Mar
 CodeGraph (`@colbymchenry/codegraph`, MIT) keeps a local SQLite symbol graph in `.codegraph/` and serves it via MCP.
 
 ```
-archgen_codegraph { action: 'ensure' } # install CLI if missing + wire harnesses + index
+archgen_codegraph { action: 'ensure', approve: true } # install CLI if missing + wire harnesses + index
 archgen_codegraph { action: 'status' } # install, wiring, index state
 ```
 
 - **Index once:** built during bootstrap, kept live by the MCP file watcher—**never re-index manually**.
-- **Safe config writes:** non-bootstrap edits require `approve: true`, touch only detected harnesses (`packages/mcp/assets/harness-mcp.json`), never overwrite invalid JSON/JSONC, never upgrade a user-installed CLI.
-- **Telemetry:** CodeGraph enables anonymous machine-ID telemetry (`~/.codegraph/`) by default; disclose it accurately (never "100% offline/no telemetry") and pass `telemetry: 'off' | 'on'` only when requested.
-- **Step 0:** `.codegraph/` present → use it. Absent → `archgen_codegraph{action:'ensure'}` once per project (grep/glob fallback if declined).
+- **Safe config writes:** `approve: true` is required for every write — the CLI install, the harness config entries, and the telemetry setting. Without it the call returns the PLAN and writes nothing.
+- **Telemetry:** CodeGraph enables anonymous machine-ID telemetry (`~/.codegraph/`) by default; disclose it accurately (never "100% offline/no telemetry") and pass `telemetry: 'off' | 'on'` only when requested — and only alongside `approve: true`, because it is a machine-wide setting.
+- **Step 0:** `.codegraph/` present → use it. Absent → `archgen_codegraph{action:'ensure', approve:true}` once per project (grep/glob fallback if declined).

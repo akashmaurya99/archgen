@@ -73,21 +73,21 @@ test('the floor\'s findings are WALKABLE — the whole tail is reachable', () =>
 test('the coverage action\'s uncovered list is walkable', () => {
   const p = brokenPlan(120);
   try {
-    const first = planCoverage(p.tasksYaml, p.plansDir, { offset: 0 });
-    assert.equal(first.uncovered.length, MAX_FINDINGS);
-    const seen = new Set(first.uncovered);
-    let offset = first.uncovered.length;
+    const first = planCoverage(p.tasksYaml, p.plansDir, { collection: 'uncovered' });
+    assert.equal(first.tasks.uncovered.length, MAX_FINDINGS);
+    const seen = new Set(first.tasks.uncovered);
+    let offset = first.tasks.uncovered.length;
     let window = first;
-    while (window.uncovered.length && seen.size < window.uncoveredTotal) {
-      window = planCoverage(p.tasksYaml, p.plansDir, { offset });
-      assert.equal(window.uncoveredTotal, first.uncoveredTotal, 'the total never changes');
-      for (const id of window.uncovered) {
+    while (seen.size < window.tasks.uncoveredTotal) {
+      window = planCoverage(p.tasksYaml, p.plansDir, { collection: 'uncovered', offset });
+      assert.equal(window.tasks.uncoveredTotal, first.tasks.uncoveredTotal, 'the total never changes');
+      for (const id of window.tasks.uncovered) {
         assert.ok(!seen.has(id), 'an id was shown twice');
         seen.add(id);
       }
-      offset += window.uncovered.length;
+      offset += window.tasks.uncovered.length;
     }
-    assert.equal(seen.size, first.uncoveredTotal, 'every uncovered id is reachable');
+    assert.equal(seen.size, first.tasks.uncoveredTotal, 'every uncovered id is reachable');
   } finally {
     rmSync(p.root, { recursive: true, force: true });
   }

@@ -4,7 +4,11 @@ tasks:
   - id: TASK-01
     title: <outcome this task delivers>
     depends_on: []
-    file_ownership: ["<source-root>/<module>/**", "<test-root>/unit/<module>/**"] # repo-root-relative, disjoint per wave
+    # <source-root> and <test-root> are the DECLARED roots from
+    # architecture.yaml toolchain. test_root is the root of the tree that
+    # MIRRORS the source tree (e.g. tests/unit) — the floor mirrors the path
+    # under <source-root> into <test-root>, so the two must line up.
+    file_ownership: ["<source-root>/<module>/**", "<test-root>/<module>/**"] # repo-root-relative, disjoint per wave
     acceptance:
       - "<build command> exits 0"
       - "<observable behavior check> produces <expected output>"
@@ -13,17 +17,17 @@ tasks:
   - id: TASK-02
     title: <feature behavior>
     depends_on: [TASK-01]
-    file_ownership: ["<source-root>/<feature>/**", "<test-root>/unit/<feature>/**"]
+    file_ownership: ["<source-root>/<feature>/**", "<test-root>/<feature>/**"]
     acceptance:
       - "<test command> passes with <sample size or threshold>"
       - "<API/CLI behavior> returns <observable result>"
 
-  # Final integration
+  # Final integration — its own wave, so its parallel_group matches
   - id: TASK-03
     title: <integration outcome>
     depends_on: [TASK-02]
-    parallel_group: wave-final
-    file_ownership: ["<source-root>/<feature>/**", "<test-root>/integration/<feature>/**", "docs/<feature>.md"]
+    parallel_group: wave-3
+    file_ownership: ["<source-root>/<integration>/**", "<test-root>/integration/<feature>/**", "docs/<feature>.md"]
     artifacts: ["docs/<feature>.md"] # must be a subset of file_ownership
     acceptance:
       - "<integration command> completes <journey> against <test double or environment>"
@@ -32,10 +36,10 @@ tasks:
   - id: TASK-04
     title: <failure-sensitive operation with retry>
     depends_on: [TASK-03]
-    parallel_group: wave-final
+    parallel_group: wave-4
     file_ownership:
       - <source-root>/<feature>/<implementation file>            # per naming_conventions.dir_layout
-      - <test-root>/unit/<feature>/<mirrored test file>          # the mirrored test tree
+      - <test-root>/<feature>/<mirrored test file>               # the mirrored test tree
       - docs/<feature>-recovery.md
     artifacts: ["docs/<feature>-recovery.md"]
     acceptance:

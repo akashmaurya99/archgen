@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { ASSETS_DIR } from '../context.mjs';
 import { indexTopic, readTopic, searchTopic, listTopics, REF_TOPICS } from '../core/refs.mjs';
+import { invalidInput } from '../core/errors.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const ACTION_DESC = 'list|index|read|search';
@@ -47,14 +48,25 @@ export function registerRefTools(server) {
       const from = args.offset ?? 0;
 
       if (args.action === 'list') {
-        const p = project(listTopics(roots).topics, {
+        // `listTopics` returns an ARRAY. It used to be read as
+        // `listTopics(roots).topics` — undefined — so the whole reference
+        // discovery surface returned `[]` with ok:true and meta.total:0. The
+        // agent could not discover which protocol documents exist.
+        const all = listTopics(roots);
+        const p = project(all, {
           limit: args.limit,
           offset: args.offset,
           next: `archgen_refs{action:'list',limit:${bound},offset:${from + bound}}`,
         });
         return withMeta(
           { topics: p.items },
-          moreMeta({ total: p.total, returned: p.returned, next: p.next, available: { topics: p.total } }),
+          moreMeta({
+            total: p.total,
+            returned: p.returned,
+            next: p.next,
+            available: { topics: p.total },
+            more: `archgen_refs{action:'index',topic:'<the topic you need>'}`,
+          }),
         );
       }
 
@@ -63,7 +75,12 @@ export function registerRefTools(server) {
       }
 
       if (args.action === 'index') {
-        const indexed = indexTopic(args.topic, { ...roots, section: args.section ?? null });
+        // '*' means "the whole topic" for `read`; for `index` it means "the
+        // whole section list". Passing it through used to produce
+        // NOT_FOUND: no section '*' — the schema advertised it, the tool
+        // refused it.
+        const narrowed = args.section === '*' ? null : args.section ?? null;
+        const indexed = indexTopic(args.topic, { ...roots, section: narrowed });
         const p = project(indexed.sections, {
           limit: args.limit,
           offset: args.offset,

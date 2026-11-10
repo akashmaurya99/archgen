@@ -294,8 +294,11 @@ export function planGraph(input, opts = {}) {
     // bounded by the scope, not the graph.
     const nodeCount = uniqueTasks.length;
     if (nodeCount > MERMAID_WHOLE_MAX_NODES) {
+      // The hint must name a combination that WORKS. It used to suggest
+      // `module <name>`, which the tool refuses with mermaid — a dead end on
+      // the documented path.
       throw invalidInput(
-        `graph too large to render whole (${nodeCount} nodes) — scope it: node <id> | module <name>`,
+        `graph too large to render whole (${nodeCount} nodes) — scope it: node <id>`,
         { nodes: nodeCount, max: MERMAID_WHOLE_MAX_NODES },
       );
     }

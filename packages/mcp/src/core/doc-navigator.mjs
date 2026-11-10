@@ -35,6 +35,8 @@ import { cycle, invalidInput, notFound } from './errors.mjs';
 import { artifactSpaceMissing } from './guidance.mjs';
 
 // Overview emits at most this many files (sorted); above it, truncated:true.
+// The cap is a BACKSTOP for a caller that bypasses the tool's own paging —
+// the tool bounds the list itself, so a normal call reaches every file.
 export const OVERVIEW_MAX_FILES = 100;
 
 /**
@@ -48,8 +50,14 @@ export const OVERVIEW_MAX_FILES = 100;
  */
 export const DIGEST_SECTION_BUDGET = 80;
 
-/** A digest scoped to ONE file carries that file's whole outline. */
-export const SINGLE_FILE_SECTION_BUDGET = 400;
+/**
+ * A digest scoped to ONE file carries that file's whole outline.
+ *
+ * The budget bounds the artifact SET. It must never bound a document the
+ * caller explicitly asked about: 501 sections in one file returned 400 and
+ * the remaining 101 were unreachable by ANY call.
+ */
+export const SINGLE_FILE_SECTION_BUDGET = 100000;
 
 // Separator for composite map keys. NUL cannot occur in a path or a link
 // target, so it is collision-proof — plain concatenation is not ("a"+"bc" vs
@@ -489,11 +497,13 @@ export function docIndex(input, opts = {}) {
     // The section LIST is budgeted: 13 files x 20 sections rendered 11,775
     // tokens of outline — more than the plan it indexes. The COUNT per file is
     // always reported, so the agent knows the scale; the entries are the
-    // sample it can act on (and it can scope the digest to one file).
+    // sample it can act on.
+    //
+    // THE TAIL IS REACHABLE. A digest scoped to ONE file is that file's
+    // COMPLETE outline — the budget bounds the artifact SET, never a
+    // document the caller explicitly asked about. So the continuation is
+    // always the same call the caller can make: scope to the file.
     const { docs } = collectDocs();
-    // A digest SCOPED TO ONE FILE is that file's complete outline — the
-    // budget exists to bound the whole artifact set, not to hide a document
-    // the caller explicitly asked about.
     const budget = Number.isFinite(opts.sectionBudget)
       ? opts.sectionBudget
       : docs.length === 1
@@ -541,13 +551,26 @@ export function docIndex(input, opts = {}) {
         ...(take.length < all.length ? { truncated: all.length - take.length } : {}),
       };
     });
+    // The omissions are REAL omissions, not "the budget ran out". The old
+    // flag was `left <= 0`, so a set that exactly filled the budget reported
+    // omissions it did not have — and a set that did not fill it reported
+    // omissions it did not have either.
+    const omittedFiles = files.filter((f) => f.truncated > 0);
+    const sectionsOmitted = omittedFiles.length > 0;
     return {
       mode,
       data: {
         slug,
         totalFiles: files.length,
         files,
-        ...(left <= 0 ? { sectionsOmitted: true, hint: 'scope the digest to one file (file:) for its sections' } : {}),
+        ...(sectionsOmitted
+          ? {
+              sectionsOmitted: true,
+              omittedSections: omittedFiles.reduce((n, f) => n + f.truncated, 0),
+              // The EXACT continuation: the file's own digest is complete.
+              hint: `scope the digest to one file for its complete outline — e.g. archgen_docs{action:'digest',file:'${omittedFiles[0].path}'}`,
+            }
+          : {}),
       },
     };
   }
@@ -713,7 +736,12 @@ export function docIndex(input, opts = {}) {
           endLine: section.endLine,
           occurrences: matching.length,
           // Five excerpts per section: enough to judge the hit, not enough to
-          // smuggle the document back in.
+          // smuggle the document back in. The count of what was LEFT OUT is
+          // reported too — `occurrences: 20` next to five excerpts used to
+          // tell the caller twenty were available when five arrived, with
+          // no way to reach the rest.
+          excerptsReturned: Math.min(5, matching.length),
+          excerptsOmitted: Math.max(0, matching.length - 5),
           matches: matching.slice(0, 5),
         });
       }
@@ -726,8 +754,10 @@ export function docIndex(input, opts = {}) {
   }
 
   // Overview (scale guard): the deduped inventory is always computed in full
-  // and sorted, but only the FIRST 100 files are emitted — with
-  // `truncated:true` whenever anything was cut.
+  // and sorted. The 100-file cap used to live HERE, inside the core, so the
+  // tool's own limit/offset could never reach files 101+ — and the sibling
+  // `digest` action, which had no cap, could. The bound belongs to the TOOL,
+  // where the caller can page it; the core returns the whole inventory.
   const { docs, duplicatesSkipped } = collectDocs();
   // The overview is the FILE map. It used to carry every heading's raw TEXT —
   // which the agent could not act on (fetching needs a SLUG), so it paid for
@@ -740,7 +770,5 @@ export function docIndex(input, opts = {}) {
     sections: buildSections(doc).length,
     words: wordCount(doc.lines),
   }));
-  const truncated = allFiles.length > OVERVIEW_MAX_FILES;
-  const files = truncated ? allFiles.slice(0, OVERVIEW_MAX_FILES) : allFiles;
-  return { mode, data: { slug, files, totalFiles: allFiles.length, duplicatesSkipped, truncated } };
+  return { mode, data: { slug, files: allFiles, totalFiles: allFiles.length, duplicatesSkipped, truncated: false } };
 }
