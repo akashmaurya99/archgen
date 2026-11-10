@@ -203,6 +203,28 @@ The skill holds the **judgment** — policy, rules, when-to-use, authoring craft
 The MCP server holds the **deterministic output** — artifact sets, skeletons,
 dispatch briefs, assembled worker prompts, harness capability tables.
 
+The tools are also held to a **cost** contract, because a tool that answers
+more than the caller asked for is a tax on every round:
+
+- **A section is a section.** `archgen_docs{action:'section'}` returns the
+  section's OWN content and names its nested subsections (slug + title + line)
+  so the caller can drill down; `include:'all'` returns the subtree. It also
+  reports `lines` and `bytes`, so a caller that did not expect 2,000 lines can
+  see it. `file` + `section` extracts that section from that file — the shape
+  an agent naturally reaches for.
+- **One outline, not two.** `archgen_docs{action:'index'}` is the file map
+  (path, title, section count, words); `digest` is the outline with the slugs
+  the caller can fetch. The overview used to carry raw heading texts, which
+  were unusable without slugs, so it paid for an outline and then paid again
+  for the same outline.
+- **A map is a map.** `archgen_docs{action:'map'}` carries five short excerpts
+  per section, never the document.
+- **A brief is bounded.** The gate brief renders the floor's result, the maps
+  and a plan snapshot under a shared line budget — a ceiling, not a quota: a
+  small plan is never truncated, the budget is allocated by use with the
+  surplus flowing on, and anything left out is named with the section to read.
+  A clean 30-task brief is ~3,000 tokens; the unbounded one was 6,034.
+
 The five orchestrator-facing protocol documents moved INTO the MCP package
 (`packages/mcp/assets/references/`) and are served section-by-section by
 `archgen_refs`. They live there so they are always the same version as the

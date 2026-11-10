@@ -130,6 +130,51 @@ export function buildSections(doc) {
 }
 
 /**
+ * The nested subsections of a section (its direct children).
+ *
+ * A section OWNS everything up to the next same-or-shallower heading, so a
+ * `## Per-task sections` heading owns its 20 `### T1..T20` children. Fetching
+ * the parent therefore fetched the whole subtree — which is how one "pull the
+ * section" call delivered most of a plan.
+ *
+ * The children are what the caller needs to drill down instead: each one has
+ * a slug it can fetch on its own.
+ *
+ * @param {any} doc
+ * @param {object} section
+ * @returns {Array<{slug: string, title: string, level: number, line: number, endLine: number}>}
+ */
+export function sectionChildren(doc, section) {
+  const headings = doc?.allHeadings ?? [];
+  const built = buildSections(doc);
+  const out = [];
+  for (const h of headings) {
+    if (h.level <= section.level) continue;
+    if (h.line <= section.line || h.line > section.endLine) continue;
+    const child = built.find((s) => s.line === h.line && s.level === h.level);
+    if (child) {
+      out.push({ slug: child.slug, title: child.title, level: child.level, line: child.line, endLine: child.endLine });
+    }
+  }
+  return out;
+}
+
+/**
+ * The last line of a section's OWN content — before its first child heading.
+ *
+ * @param {any} doc
+ * @param {object} section
+ * @returns {number}
+ */
+export function sectionOwnEnd(doc, section) {
+  const headings = doc?.allHeadings ?? [];
+  for (const h of headings) {
+    if (h.level > section.level && h.line > section.line && h.line <= section.endLine) return h.line - 1;
+  }
+  return section.endLine;
+}
+
+/**
  * Resolve a section by slug, title, tolerant slug variant, or PREFIX.
  *
  * The PREFIX form matters: the skill's `§` markers use SHORT names

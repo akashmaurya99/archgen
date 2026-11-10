@@ -92,16 +92,18 @@ Navigates markdown artifacts under \`.archgen/<slug>/\`.
 | action | what it does | args |
 |---|---|---|
 | \`digest\` | compact section index per document—start here | slugDir? |
-| \`section\` | one section by bare slug, \`path\`, or \`path#anchor\` | section, slugDir? |
+| \`section\` | one section by bare slug, \`path\`, or \`path#anchor\` | section, slugDir?, include? |
 | \`map\` | sections mentioning a token | token, slugDir? |
 | \`refs\` | every line mentioning a token | token, slugDir? |
-| \`index\` | full overview with headings | slugDir? |
+| \`index\` | file map: path, title, section count | slugDir? |
 | \`validate\` | reference-integrity gate | slugDir? |
 
 **Gotchas**
 - A section resolves by exact slug, title, or unambiguous PREFIX (\`plan-depth\` → \`plan-depth-by-scope-class\`).
 - \`digest\` returns bare section slugs; \`section\` accepts one, a \`path\`, or a \`path#anchor\`. An ambiguous slug returns an \`ambiguous\` list, not a guess.
-- \`file\` scopes any action to ONE document; omit it to search the whole artifact set.
+- \`file\` + \`section\` extracts THAT section from that file; \`file\` alone scopes any action to ONE document.
+- A section returns its OWN text and NAMES its nested subsections (\`children\`) with their slugs; \`include:'all'\` returns the whole subtree. The response always carries \`lines\` and \`bytes\`.
+- \`index\` is the file map; \`digest\` is the outline (with the slugs you can fetch). Do not pay for both.
 - Anchors validate against real heading slugs—a renamed section is a broken anchor, not a silent pass.
 - \`map\` is section-level; \`refs\` is line-level. Use \`map\` to navigate, \`refs\` for exact lines.
 - \`validate\` reports each broken reference once, at its first occurrence.

@@ -41,7 +41,7 @@ You are the **ORCHESTRATOR**: profile the work, elicit only unresolved forks, wr
 
 Every result is `{ ok, data, error, meta }`. `ok:false` carries a typed `error.code` (`INVALID_INPUT`, `NOT_FOUND`, `CYCLE`, `OWNERSHIP_CONFLICT`, `CONFLICT`, `PERMISSION_DENIED`, `UNAVAILABLE`, `TIMEOUT`, `INTERNAL`)—handle it as data. `ok:true` means the call succeeded; inspect `data.valid` for plan health and `data.verdict` for gates.
 
-**Token discipline:** fetch sections, never whole files—`archgen_docs{action:'digest'}` → `{action:'section'}`, `archgen_refs{action:'index'}` → `{action:'read'}`, and load at most the sections the mode table names. Collections take `limit`/`offset` and narrow to one item (`taskId`, `skillId`, `file`+`section`, `harness`); `meta` names the next call—**fetch it, never the whole set.** Settle batches with `allSettled`. Never restate a loaded reference or artifact in chat.
+**Token discipline:** fetch sections, never whole files—`archgen_docs{action:'digest'}` → `{action:'section'}`, `archgen_refs{action:'index'}` → `{action:'read'}`, and load at most the sections the mode table names. A section returns its own text and names its nested subsections (`include:'all'` only for the whole subtree); `file` + `section` extracts that section from that file. Collections take `limit`/`offset` and narrow to one item (`taskId`, `skillId`, `file`+`section`, `harness`); `meta` names the next call—**fetch it, never the whole set.** Settle batches with `allSettled`. Never restate a loaded reference or artifact in chat.
 
 ## Loading a reference (§) — MANDATORY
 

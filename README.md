@@ -140,15 +140,15 @@ asking for approval.
 ## Token footprint
 
 Measured, not guessed. `npm run test:budget` reports it, and CI fails if the
-always-on footprint exceeds 11,800 tokens.
+always-on footprint exceeds 12,200 tokens.
 
 **Every session pays this much, and no more:**
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 6,443 |
+| `skill/SKILL.md` | 6,492 |
 | MCP tool catalog (9 tools) | 5,056 |
-| **Always-on total** | **11,499** — 35% of a 32k window |
+| **Always-on total** | **11,646** — 36% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
 references are 15,237 tokens *in total*, but a typical section is **243
@@ -158,14 +158,16 @@ tokens** — the agent loads the one it needs, never the file:
 | --- | ---: | --- |
 | A protocol reference | 15,237 | one section — **243 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
-| A dispatch brief | 3,886 | the one being dispatched |
+| A dispatch brief | 3,673 | the one being dispatched |
 | An artifact template | 2,596 | the one being scaffolded |
 
 Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
 and `archgen_skills` serve one section at a time, and a dispatch brief arrives
-with the evidence map, the dependency graph, the reference-integrity result and
-the mechanical floor already rendered — so the agent pulls what it needs and
-never re-reads a plan.
+with the evidence map, the dependency graph, the reference-integrity result, the
+mechanical floor and the traceability maps already rendered — so the agent pulls
+what it needs and never re-reads a plan. A section call returns the section's
+own text and names its nested subsections, so pulling one section never drags
+the document along with it.
 
 What makes that hold is **behaviour**, not shorter prompts: the deterministic
 floor proves the mechanical facts before an agent is dispatched, one exhaustive

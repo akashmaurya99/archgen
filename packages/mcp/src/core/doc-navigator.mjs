@@ -30,7 +30,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { buildGraph, GraphError } from './graph.mjs';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
-import { parseMarkdown, buildSections, findSection, anchorExists } from './docs.mjs';
+import { parseMarkdown, buildSections, findSection, anchorExists, sectionChildren, sectionOwnEnd } from './docs.mjs';
 import { cycle, invalidInput, notFound } from './errors.mjs';
 import { artifactSpaceMissing } from './guidance.mjs';
 
@@ -170,10 +170,49 @@ function walkFiles(slugDir, filter) {
 const wordCount = (lines) => lines.join(' ').split(/\s+/).filter(Boolean).length;
 
 /**
+ * The payload of ONE section.
+ *
+ * `include: 'own'` (the default) returns the section's OWN content — the
+ * heading and the lines up to its first child heading. `include: 'all'`
+ * returns the whole subtree.
+ *
+ * WHY: a section owns every nested subsection, so fetching `## Per-task
+ * sections` used to return all twenty task sections with it. The agent then
+ * pulled each task AGAIN, paying twice for the same plan. The default is now
+ * the section itself, and the nested children are NAMED (slug + title + line)
+ * so the caller pulls only the ones it needs.
+ *
+ * The size of what was returned is always reported (`lines`, `bytes`): a
+ * caller that did not expect 2,000 lines can see it.
+ */
+function sectionPayload(doc, section, { path, include = 'own' }) {
+  const children = sectionChildren(doc, section).map((c) => ({ slug: c.slug, title: c.title, line: c.line }));
+  const ownEnd = include === 'all' ? section.endLine : sectionOwnEnd(doc, section);
+  const text = doc.lines.slice(section.line - 1, ownEnd).join('\n');
+  const out = {
+    path,
+    anchor: section.slug,
+    title: section.title,
+    level: section.level,
+    line: section.line,
+    endLine: ownEnd,
+    text,
+    lines: text.split('\n').length,
+    bytes: text.length,
+    children,
+  };
+  if (ownEnd !== section.endLine) out.sectionEndLine = section.endLine;
+  if (children.length) {
+    out.next = `archgen_docs{action:'section',section:'<child slug>'} — ${children.length} nested subsection(s) were not included; include:'all' returns the whole subtree`;
+  }
+  return out;
+}
+
+/**
  * Query the markdown artifacts under a slug directory.
  *
  * @param {string} input slug directory (or a tasks.yaml inside one)
- * @param {{mode?: 'overview'|'refs'|'validate'|'stale'|'diagrams'|'digest'|'section'|'map', token?: string|null, section?: string|null, file?: string|null}} [opts]
+ * @param {{mode?: 'overview'|'refs'|'validate'|'stale'|'diagrams'|'digest'|'section'|'map', token?: string|null, section?: string|null, file?: string|null, include?: 'own'|'all'}} [opts]
  * @returns {{mode: string, data: unknown}}
  */
 export function docIndex(input, opts = {}) {
@@ -441,7 +480,9 @@ export function docIndex(input, opts = {}) {
         title: s.title,
         level: s.level,
         line: s.line,
-        endLine: s.endLine,
+        // The section's SIZE, not its end line: the caller needs to know
+        // whether pulling it is cheap, and one number answers that.
+        lines: s.endLine - s.line + 1,
       })),
     }));
     return { mode, data: { slug, totalFiles: files.length, files } };
@@ -464,17 +505,23 @@ export function docIndex(input, opts = {}) {
     // after a heading. The agent had to re-join `path` + '#' + `slug` by
     // hand, and nothing — not the digest, not the schema, not archgen_help —
     // said so.
-    const fileCandidates = [];
-    if (filePart) fileCandidates.push(join(repoRoot, filePart), join(slugDir, filePart));
-    if (fileScopeArg) fileCandidates.push(join(repoRoot, fileScopeArg), join(slugDir, fileScopeArg));
+    // The FILE may arrive in the ref (`section: "path#anchor"`) OR in the
+    // `file` argument (`file: "path", section: "anchor"`). The second shape
+    // is the natural one — and it used to return the WHOLE FILE, because a
+    // file hit with no `#anchor` meant "no section was named". The agent
+    // asked for one section and paid for the document.
+    const candidates = [];
+    if (filePart) candidates.push({ path: join(repoRoot, filePart), from: 'ref' }, { path: join(slugDir, filePart), from: 'ref' });
+    if (fileScopeArg) candidates.push({ path: join(repoRoot, fileScopeArg), from: 'scope' }, { path: join(slugDir, fileScopeArg), from: 'scope' });
 
-    const hit = fileCandidates.find((p) => {
+    const found = candidates.find((c) => {
       try {
-        return statSync(p).isFile();
+        return statSync(c.path).isFile();
       } catch {
         return false;
       }
     });
+    const hit = found?.path ?? null;
 
     if (hit) {
       let hitReal;
@@ -488,27 +535,23 @@ export function docIndex(input, opts = {}) {
       }
       const doc = parsedDocAt(hit);
       if (!doc) throw notFound(`cannot read section ${sectionRef} (unreadable)`, { section: sectionRef });
-      if (anchor) {
-        const section = findSection(doc, anchor);
+
+      // The section NAME: an explicit `#anchor`, or — when the FILE came from
+      // the `file` scope — the ref itself, which then names a heading.
+      const wanted = anchor ?? (found.from === 'scope' ? filePart : null);
+      if (wanted) {
+        const section = findSection(doc, wanted);
         if (!section) {
-          throw notFound(`section ${sectionRef}: no section '${anchor}' in ${filePart}`, {
+          throw notFound(`section ${sectionRef}: no section '${wanted}' in ${relFromRoot(hit)}`, {
             section: sectionRef,
             file: relFromRoot(hit),
             available: buildSections(doc).map((s) => s.slug),
           });
         }
-        return {
-          mode,
-          data: {
-            path: relFromRoot(hit),
-            anchor: section.slug,
-            line: section.line,
-            endLine: section.endLine,
-            text: section.body,
-          },
-        };
+        return { mode, data: sectionPayload(doc, section, { path: relFromRoot(hit), include: opts.include ?? 'own' }) };
       }
-      return { mode, data: { path: relFromRoot(hit), text: doc.lines.join('\n') } };
+      // No section was named: the caller asked for the document.
+      return { mode, data: { path: relFromRoot(hit), text: doc.lines.join('\n'), lines: doc.lines.length, bytes: doc.lines.join('\n').length } };
     }
 
     // No file matched: the ref is a SECTION SLUG (possibly with a '#anchor'
@@ -529,14 +572,7 @@ export function docIndex(input, opts = {}) {
       const { doc, section } = hits[0];
       return {
         mode,
-        data: {
-          path: relFromRoot(doc.abs),
-          anchor: section.slug,
-          title: section.title,
-          line: section.line,
-          endLine: section.endLine,
-          text: section.body,
-        },
+        data: sectionPayload(doc, section, { path: relFromRoot(doc.abs), include: opts.include ?? 'own' }),
       };
     }
 
@@ -601,7 +637,7 @@ export function docIndex(input, opts = {}) {
           const line = section.line + i;
           const owner = ownerOf(line);
           if (!owner || owner.slug !== section.slug) continue; // its deepest owner reports it
-          matching.push({ line, text: bodyLines[i].trim().slice(0, 200) });
+          matching.push({ line, text: bodyLines[i].trim().slice(0, 120) });
         }
         if (!matching.length) continue;
         hits.push({
@@ -612,7 +648,9 @@ export function docIndex(input, opts = {}) {
           line: section.line,
           endLine: section.endLine,
           occurrences: matching.length,
-          matches: matching.slice(0, 10),
+          // Five excerpts per section: enough to judge the hit, not enough to
+          // smuggle the document back in.
+          matches: matching.slice(0, 5),
         });
       }
     }
@@ -627,11 +665,16 @@ export function docIndex(input, opts = {}) {
   // and sorted, but only the FIRST 100 files are emitted — with
   // `truncated:true` whenever anything was cut.
   const { docs, duplicatesSkipped } = collectDocs();
+  // The overview is the FILE map. It used to carry every heading's raw TEXT —
+  // which the agent could not act on (fetching needs a SLUG), so it paid for
+  // an outline it could not use and then called `digest` for the same outline
+  // with slugs. One outline now: the overview counts the sections, `digest`
+  // lists them.
   const allFiles = docs.map((doc) => ({
     path: relFromRoot(doc.abs),
     title: doc.headings.find((h) => h.level === 1)?.text ?? basename(doc.rel),
-    headings: doc.headings,
-    wordCount: wordCount(doc.lines),
+    sections: buildSections(doc).length,
+    words: wordCount(doc.lines),
   }));
   const truncated = allFiles.length > OVERVIEW_MAX_FILES;
   const files = truncated ? allFiles.slice(0, OVERVIEW_MAX_FILES) : allFiles;

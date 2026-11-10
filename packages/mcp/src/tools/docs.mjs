@@ -17,6 +17,7 @@ const schema = z.object({
   token: z.string().optional().describe('Token to find (refs, map).'),
   section: z.string().optional().describe('Section slug, path, or path#anchor.'),
   file: z.string().optional().describe('Scope to one document.'),
+  include: z.enum(['own', 'all']).optional().describe("section: 'own' (default) = the section's own text; 'all' = its nested subsections too."),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -30,7 +31,8 @@ export function registerDocTools(server) {
     title: 'ArchGen docs',
     description:
       'Navigate an archgen plan\'s markdown by section — digest, section, map, refs, index, validate — ' +
-      'without loading whole files.',
+      'without loading whole files. A section returns its OWN content and names its nested subsections; ' +
+      'include:\'all\' returns the whole subtree.',
     inputSchema: schema,
     readOnly: true,
     idempotent: true,
@@ -74,7 +76,13 @@ export function registerDocTools(server) {
         }
         case 'section': {
           if (!args.section) throw invalidInput('section requires a section path', { action: args.action });
-          return docIndex(slugDir, { mode: 'section', section: args.section, file: args.file ?? null, projectRoot: ctx.projectRoot });
+          return docIndex(slugDir, {
+            mode: 'section',
+            section: args.section,
+            file: args.file ?? null,
+            include: args.include ?? 'own',
+            projectRoot: ctx.projectRoot,
+          });
         }
         default:
           throw invalidInput(`unknown action '${args.action}'`, { action: args.action });

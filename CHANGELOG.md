@@ -206,6 +206,51 @@ stored for audit", so it implements exactly the cases the plan claims.
 tasks, requirements, edge cases, and whether a profile was recorded — instead
 of a second report that knew nothing about traceability.
 
+### Fixed — a section call returned the whole file
+
+`archgen_docs{action:'section', file: <path>, section: <name>}` — the shape an
+agent reaches for naturally — **returned the entire document**: a file hit with
+no `#anchor` meant "no section was named", and the separate `section` argument
+was ignored. One "pull the section" call delivered most of a plan, and the
+agent then pulled the same task sections again.
+
+The section name and the file are now separate inputs: `file` + `section`
+extracts that section from that file.
+
+### Changed — a section is a section, and it says how big it is
+
+A section OWNS its nested subsections, so pulling `## Per-task sections`
+returned all twenty task sections with it. Now:
+
+- a section returns its **own** content (heading + text up to its first child);
+- it **names** its children (slug, title, line) so the caller drills down
+  instead of re-reading;
+- `include:'all'` returns the whole subtree when that is what the caller wants;
+- every response carries `lines` and `bytes`, so an unexpected 2,000 lines is
+  visible rather than discovered later.
+
+Measured on a 20-task plan: pulling `context` went from **2,801 tokens to
+220**; pulling `per-task-sections` with `include:'all'` is 1,684.
+
+### Fixed — the overview paid for an outline nobody could use
+
+`archgen_docs{action:'index'}` carried every heading's raw TEXT. Fetching needs
+a slug, so the caller paid for an outline it could not act on and then called
+`digest` for the same outline with slugs. The overview is now the file map
+(path, title, section count, words) — **1,147 → 348 tokens** — and `digest` is
+the single outline.
+
+### Changed — smaller, bounded outputs
+
+- The token map carries **five** excerpts per section, each ≤120 characters.
+- The gate brief's matrix map dropped the case text (it lives in the plan's
+  matrix section) and keeps the PAIRING — row → acceptance → claim — which is
+  the part the agent cannot cheaply re-derive.
+- The verifier brief's protocol was tightened without losing a rule.
+
+Measured on a 20-task, 60-edge-row plan: the verifier brief **6,941 → 4,990**
+tokens, the review brief **5,855 → 4,294**.
+
 ### Changed — the gate runs at most twice, and the verifier cannot invent requirements
 
 - **Round 1 is exhaustive; round 2 is a delta.** Round 2 re-checks only round
@@ -328,19 +373,19 @@ Measured, 0.1.3 → unreleased:
 
 | | 0.1.3 | Unreleased |
 |---|---:|---:|
-| `skill/SKILL.md` (always-on) | 6,252 | 6,443 |
+| `skill/SKILL.md` (always-on) | 6,252 | 6,492 |
 | MCP tool catalog (9 tools, always-on) | 4,695 | 5,056 |
-| **Always-on total** | **10,947** | **11,499** |
+| **Always-on total** | **10,947** | **11,646** |
 | Protocol references (on demand) | 12,931 | 15,237 |
 | Median reference section | 238 | 243 |
-| Dispatch briefs (on demand) | 2,416 | 3,886 |
+| Dispatch briefs (on demand) | 2,416 | 3,673 |
 | Artifact templates (on demand) | 2,347 | 2,596 |
 
 The catalog grew by the `profile` action, and the protocol references by the
 floor protocol, its invariants, the traceability rules and the code table; the
-always-on total stays under the CI ceiling, which moves **11,500 → 11,800**
-because the floor protocol and the waiver rule are part of the always-on
-contract. The gate still fails a regression beyond that.
+always-on total stays under the CI ceiling, which moves **11,500 → 12,200**
+because the floor protocol, the waiver rule and the section contract are part
+of the always-on contract. The gate still fails a regression beyond that.
 
 ## [0.1.3] - 2026-11-09
 

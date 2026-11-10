@@ -261,14 +261,16 @@ function renderAudit(audit) {
   if (rows.length) {
     blocks.push({
       key: 'edgeMatrix',
-      title: '#### Edge-case matrix map — row | case | cited | the acceptance | claims',
-      where: "the plan's edge-case matrix section",
+      title: '#### Edge-case matrix map — row | cited | the acceptance | claims',
+      where: "the plan's edge-case matrix section (it holds each row's expected behaviour)",
       lines: rows.map((r) => {
-        const text = r.acceptance ? String(r.acceptance).slice(0, 110) : 'NO SUCH ACCEPTANCE';
+        const text = r.acceptance ? String(r.acceptance).slice(0, 90) : 'NO SUCH ACCEPTANCE';
         const claimed = (r.claims ?? []).length ? r.claims.join(', ') : '—';
-        return `${r.row} | ${String(r.case).slice(0, 70)} | ${r.task}#${r.index} | ${text} | ${claimed}`;
+        return `${r.row} | ${r.task}#${r.index} | ${text} | ${claimed}`;
       }),
-      footer: 'The claim link is already checked. Judge the rest: does the cited acceptance verify the stated case?',
+      footer:
+        'The claim link is already checked. Judge the rest: does the cited acceptance verify the stated case? ' +
+        "The case text lives in the plan's matrix section — read it for any row you doubt.",
     });
   }
   if (reqs.length) {
@@ -277,8 +279,8 @@ function renderAudit(audit) {
       title: '#### Requirement map — id | what it asks for | cited by | the acceptance',
       where: 'docs/prd.md',
       lines: reqs.map((r) => {
-        const acc = r.acceptanceText ? String(r.acceptanceText).slice(0, 110) : 'NOT CITED';
-        return `${r.id} | ${String(r.text ?? '').slice(0, 90)} | ${r.covered ? r.citedBy.join(', ') : '—'} | ${acc}`;
+        const acc = r.acceptanceText ? String(r.acceptanceText).slice(0, 90) : 'NOT CITED';
+        return `${r.id} | ${String(r.text ?? '').slice(0, 70)} | ${r.covered ? r.citedBy.join(', ') : '—'} | ${acc}`;
       }),
       footer: 'Compare the two texts: does the acceptance verify the requirement it claims?',
     });
