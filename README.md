@@ -146,34 +146,34 @@ always-on footprint exceeds 11,800 tokens.
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 5,996 |
+| `skill/SKILL.md` | 6,443 |
 | MCP tool catalog (9 tools) | 5,056 |
-| **Always-on total** | **11,052** — 34% of a 32k window |
+| **Always-on total** | **11,499** — 35% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
-references are 11,829 tokens *in total*, but a typical section is **224
+references are 15,237 tokens *in total*, but a typical section is **243
 tokens** — the agent loads the one it needs, never the file:
 
 | On demand | In total | What is actually read |
 | --- | ---: | --- |
-| A protocol reference | 11,829 | one section — **224 tokens** |
+| A protocol reference | 15,237 | one section — **243 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
-| A dispatch brief | 2,921 | the one being dispatched |
-| An artifact template | 2,592 | the one being scaffolded |
+| A dispatch brief | 3,886 | the one being dispatched |
+| An artifact template | 2,596 | the one being scaffolded |
 
 Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
 and `archgen_skills` serve one section at a time, and a dispatch brief arrives
-with the evidence map, the dependency graph and the reference-integrity result
-already rendered — so the agent pulls what it needs and never re-reads a plan.
+with the evidence map, the dependency graph, the reference-integrity result and
+the mechanical floor already rendered — so the agent pulls what it needs and
+never re-reads a plan.
 
-What makes that hold is **behaviour**, not shorter prompts: one exhaustive
-verifier pass instead of a discovery loop, one agent per task instead of one
-per lookup, a worker contract that already carries the capability skill's
-rules, and a hard cap of three parallel sub-agents. Shrinking a prompt to
-save tokens costs a whole extra round — making the first answer complete
-does not.
-
-This release adds evidence-based scope profiling (`archgen_plan{action:'profile'}`), the deterministic floor that proves the plan's mechanical facts, and per-artifact create/reuse/omit decisions. The always-on surface stays under its 11,800-token gate: the catalog grew by the new action, and the floor protocol, the traceability claim and the waiver rule are part of the always-on contract.
+What makes that hold is **behaviour**, not shorter prompts: the deterministic
+floor proves the mechanical facts before an agent is dispatched, one exhaustive
+gate pass instead of a discovery loop, one agent per task instead of one per
+lookup, a worker contract that already carries the capability skill's rules and
+the edge cases it owes, and a hard cap of three parallel sub-agents. Shrinking
+a prompt to save tokens costs a whole extra round — making the first answer
+complete does not.
 
 ## Repository layout
 
