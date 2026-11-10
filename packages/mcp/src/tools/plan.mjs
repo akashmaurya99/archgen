@@ -33,6 +33,7 @@ const ACTION_DESC = 'validate|verify|graph|impact|coverage|profile|scaffold|brie
  */
 const COLLECTIONS = {
   verify: 'issues|warnings',
+  validate: 'errors|warnings',
   coverage: 'tasks|covered|uncovered|findings|requirements|edgeCases',
 };
 
@@ -62,6 +63,7 @@ const schema = z.object({
   round: z.number().int().positive().optional().describe('Investigation round (brief).'),
   collection: z
     .enum([
+      'errors',
       'issues',
       'warnings',
       'tasks',
@@ -72,7 +74,7 @@ const schema = z.object({
       'edgeCases',
     ])
     .optional()
-    .describe('Which collection `limit`/`offset` window (verify, coverage).'),
+    .describe('Which collection `limit`/`offset` window (validate, verify, coverage).'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -100,21 +102,24 @@ export function registerPlanTools(server) {
             planDir: args.planDir ? ctx.contain(args.planDir) : null,
             limit: args.limit,
             offset: args.offset,
+            // The errors and the warnings are SEPARATE collections with
+            // separate windows: a 200-task broken plan produced 400 errors
+            // and 200 warnings in one answer (16k tokens), with no way to
+            // fetch the rest.
+            collection: args.collection,
           });
-          // The errors and the warnings are SEPARATE collections with
-          // separate windows: a 200-task broken plan produced 400 errors and
-          // 200 warnings in one answer (16k tokens), with no way to fetch the
-          // rest.
           const errNext = nextCall('validate', { ...args, collection: 'errors' }, report.errorsOffset + report.errors.length);
           const warnNext = nextCall('validate', { ...args, collection: 'warnings' }, report.warningsOffset + report.warnings.length);
+          const errTruncated = report.errors.length < report.errorsTotal;
+          const warnTruncated = report.warnings.length < report.warningsTotal;
           return withMeta(
             report,
             moreMeta({
               total: report.errorsTotal,
               returned: report.errors.length,
               available: { errors: report.errorsTotal, warnings: report.warningsTotal, tasks: report.counts.tasks },
-              next: report.errors.length < report.errorsTotal ? errNext : undefined,
-              more: report.warnings.length < report.warningsTotal ? warnNext : undefined,
+              next: errTruncated ? errNext : warnTruncated ? warnNext : undefined,
+              more: errTruncated && warnTruncated ? warnNext : undefined,
             }),
           );
         }
@@ -134,20 +139,28 @@ export function registerPlanTools(server) {
           // warnings used to vanish with no pointer at all.
           const issueNext = nextCall('verify', { ...args, collection: 'issues' }, out.issuesOffset + out.issues.length);
           const warningNext = nextCall('verify', { ...args, collection: 'warnings' }, out.warningsOffset + out.warnings.length);
+          const issueTruncated = out.issues.length < out.issuesTotal;
+          const warningTruncated = out.warnings.length < out.warningsTotal;
+          // `next` names the FIRST truncated list — the selected one when it
+          // is truncated, otherwise the other. `more` names what is left.
           const next =
             collection === 'warnings'
-              ? out.warnings.length < out.warningsTotal
+              ? warningTruncated
                 ? warningNext
-                : undefined
-              : out.issues.length < out.issuesTotal
+                : issueTruncated
+                  ? issueNext
+                  : undefined
+              : issueTruncated
                 ? issueNext
-                : undefined;
+                : warningTruncated
+                  ? warningNext
+                  : undefined;
           const more =
             collection === 'warnings'
-              ? out.issues.length < out.issuesTotal
+              ? issueTruncated
                 ? issueNext
                 : undefined
-              : out.warnings.length < out.warningsTotal
+              : warningTruncated
                 ? warningNext
                 : undefined;
           return withMeta(
@@ -179,17 +192,18 @@ export function registerPlanTools(server) {
           });
           const call = (c, off) => nextCall('coverage', { ...args, collection: c }, off);
           const next = {
-            tasks: call('uncovered', covered.tasks.uncovered.length ? covered.tasks.offset + covered.tasks.uncovered.length : covered.tasks.offset),
-            covered: call('covered', covered.tasks.covered.length),
-            uncovered: call('uncovered', covered.tasks.uncovered.length),
+            tasks: call('tasks', covered.tasks.offset + covered.tasks.items.length),
+            covered: call('covered', covered.covered.offset + covered.covered.items.length),
+            uncovered: call('uncovered', covered.uncovered.offset + covered.uncovered.items.length),
             findings: call('findings', covered.findings.offset + covered.findings.items.length),
             requirements: call('requirements', covered.requirements.offset + covered.requirements.uncovered.length),
             edgeCases: call('edgeCases', covered.edgeCases.offset + covered.edgeCases.unlinked.length),
           };
           const truncated = (shown, total) => shown < total;
           const moreList = [];
-          if (truncated(covered.tasks.covered.length, covered.tasks.coveredTotal)) moreList.push(next.covered);
-          if (truncated(covered.tasks.uncovered.length, covered.tasks.uncoveredTotal)) moreList.push(next.uncovered);
+          if (truncated(covered.tasks.items.length, covered.tasks.total)) moreList.push(next.tasks);
+          if (truncated(covered.covered.items.length, covered.covered.total)) moreList.push(next.covered);
+          if (truncated(covered.uncovered.items.length, covered.uncovered.total)) moreList.push(next.uncovered);
           if (truncated(covered.findings.items.length, covered.findings.total)) moreList.push(next.findings);
           if (truncated(covered.requirements.uncovered.length, covered.requirements.uncoveredTotal)) moreList.push(next.requirements);
           if (truncated(covered.edgeCases.unlinked.length, covered.edgeCases.unlinkedTotal)) moreList.push(next.edgeCases);
@@ -214,17 +228,16 @@ export function registerPlanTools(server) {
               },
             },
             moreMeta({
-              total: covered.tasks.coveredTotal + covered.tasks.uncoveredTotal,
+              total: covered.tasks.total,
               returned:
-                covered.tasks.covered.length +
-                covered.tasks.uncovered.length +
+                covered.tasks.items.length +
                 covered.findings.items.length +
                 covered.requirements.uncovered.length +
                 covered.edgeCases.unlinked.length,
               next: moreList[0],
               more: moreList.length > 1 ? moreList.slice(1).join(' | ') : undefined,
               available: {
-                tasks: covered.tasks.coveredTotal + covered.tasks.uncoveredTotal,
+                tasks: covered.tasks.total,
                 covered: covered.tasks.coveredTotal,
                 uncovered: covered.tasks.uncoveredTotal,
                 findings: covered.findings.total,

@@ -245,7 +245,9 @@ export function planCoverage(file, planDir, opts = {}) {
     ({ data } = parseYaml(readFileSync(file, 'utf8'), { filename: file }));
   } catch (e) {
     return {
-      tasks: { covered: [], uncovered: [], coveredTotal: 0, uncoveredTotal: 0, offset: 0 },
+      tasks: { items: [], total: 0, coveredTotal: 0, uncoveredTotal: 0, offset: 0 },
+      covered: { items: [], total: 0, offset: 0 },
+      uncovered: { items: [], total: 0, offset: 0 },
       findings: { items: [`UNPARSEABLE: unparseable tasks.yaml: ${e.message}`], total: 1, offset: 0 },
       requirements: { total: 0, covered: 0, uncovered: [], uncoveredTotal: 0, offset: 0 },
       edgeCases: { total: 0, linked: 0, unlinked: [], unlinkedTotal: 0, offset: 0 },
@@ -256,16 +258,20 @@ export function planCoverage(file, planDir, opts = {}) {
   const { findings, referenced, mentionedInTasks } = checkPlanCoverage(planDir, tasks);
   const covered = [];
   const uncovered = [];
+  /** The whole task list, in task order, each entry tagged with its state. */
+  const all = [];
   for (const t of tasks) {
     const id = String(t?.id ?? '');
     if (!id) continue;
     const mentioned = referenced.has(id) || mentionedInTasks.has(id);
     (mentioned ? covered : uncovered).push(id);
+    all.push({ id, covered: mentioned });
   }
 
-  // The covered ids and the uncovered ids are SEPARATE windows, so a caller
-  // paging the uncovered list never receives a covered id and never has to
-  // guess which half of the payload it is looking at.
+  // EVERY COLLECTION HAS ITS OWN WINDOW AND ITS OWN CURSOR. The `tasks`
+  // collection used to have none — the offset was applied only to the two
+  // halves — so the DEFAULT window could not be paged at all.
+  const taskWindow = cap(all, limit, collection === 'tasks' ? offset : 0);
   const coveredWindow = cap(covered, limit, collection === 'covered' ? offset : 0);
   const uncoveredWindow = cap(uncovered, limit, collection === 'uncovered' ? offset : 0);
 
@@ -326,12 +332,14 @@ export function planCoverage(file, planDir, opts = {}) {
 
   return {
     tasks: {
-      covered: coveredWindow.shown,
-      uncovered: uncoveredWindow.shown,
-      coveredTotal: coveredWindow.total,
-      uncoveredTotal: uncoveredWindow.total,
-      offset,
+      items: taskWindow.shown,
+      total: taskWindow.total,
+      coveredTotal: covered.length,
+      uncoveredTotal: uncovered.length,
+      offset: taskWindow.offset,
     },
+    covered: { items: coveredWindow.shown, total: coveredWindow.total, offset: coveredWindow.offset },
+    uncovered: { items: uncoveredWindow.shown, total: uncoveredWindow.total, offset: uncoveredWindow.offset },
     findings: { items: findingsWindow.shown, total: findingsWindow.total, offset: findingsWindow.offset },
     requirements,
     edgeCases,

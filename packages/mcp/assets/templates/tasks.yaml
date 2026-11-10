@@ -33,13 +33,15 @@ tasks:
       - "<integration command> completes <journey> against <test double or environment>"
 
   # LARGE-scope task example (cites edge-row IDs; PRD FR-* IDs when a PRD exists)
+  # Its paths are DISJOINT from TASK-02's — a later task must never own a
+  # file inside another task's glob.
   - id: TASK-04
     title: <failure-sensitive operation with retry>
     depends_on: [TASK-03]
     parallel_group: wave-4
     file_ownership:
-      - <source-root>/<feature>/<implementation file>            # per naming_conventions.dir_layout
-      - <test-root>/<feature>/<mirrored test file>               # the mirrored test tree
+      - <source-root>/<recovery>/<implementation file>          # per naming_conventions.dir_layout
+      - <test-root>/<recovery>/<mirrored test file>             # the mirrored test tree
       - docs/<feature>-recovery.md
     artifacts: ["docs/<feature>-recovery.md"]
     acceptance:

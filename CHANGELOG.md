@@ -146,30 +146,35 @@ Every `§` section, brief and template was reconciled with the code:
 The floor's exact behaviour (waivers, families, the claim convention), the
 profile→scaffold round trip, the medium-confidence rule, the error semantics
 and the corrected call sites all live in the always-on kernel — where the
-agent reads them. The always-on total moves **12,690 tokens**, and the
+agent reads them. The always-on total moves **12,816 tokens**, and the
 documented CI ceiling moves with it **12,200 → 13,200**. The budget is still
 a hard gate: CI fails if the always-on footprint exceeds it.
 
 | | Tokens |
 |---|---:|
-| `skill/SKILL.md` (always-on) | 7,381 |
-| MCP tool catalog (9 tools, always-on) | 5,309 |
-| **Always-on total** | **12,690** |
-| Protocol references (on demand) | 17,075 |
+| `skill/SKILL.md` (always-on) | 7,500 |
+| MCP tool catalog (9 tools, always-on) | 5,316 |
+| **Always-on total** | **12,816** |
+| Protocol references (on demand) | 17,230 |
 | Median reference section | 271 |
 | Dispatch briefs (on demand) | 4,155 |
-| Artifact templates (on demand) | 2,703 |
+| Artifact templates (on demand) | 2,733 |
 
 ### Added — the tests that hold the rules in place
 
 - `floor-contract` — the floor's new contracts: a waiver suppresses, a family
   satisfies a create, an unbound matrix row is visible, the mirror uses the
-  declared root.
+  declared root, `answers.yaml` can satisfy its own recorded create.
 - `single-source-of-truth` — the code table, the gate block, the waiver
   shape, the nine dimensions and the profile→scaffold round trip are pinned
   to their owners.
 - `error-paths` — every action's failure path is driven and must return a
   typed error, never `INTERNAL`.
+- `skill-call-audit` — **every `archgen_*` call the skill names is checked
+  against the tool's schema**: the action must exist, every argument named
+  must exist, and every argument the tool requires must be named. Five calls
+  the tool rejected were found this way; the test is what stops the skill's
+  instructions from rotting silently.
 - `continuable` / `bounded-output` — every bound is walkable, and every count
   is exact.
 

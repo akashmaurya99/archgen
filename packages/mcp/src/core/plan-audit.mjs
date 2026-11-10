@@ -175,6 +175,18 @@ export function auditPlan({ slugDir, tasks }) {
   } else {
     const projectRoot = projectRootOf(slugDir);
     const onDisk = listArtifacts(slugDir);
+    /** The files that physically exist, for the create/omit/reuse checks. */
+    const presentIn = (family, recordedPath) => {
+      const byFamily = onDisk.filter((f) => matchesFamily(family, f));
+      if (byFamily.length) return byFamily;
+      // `answers.yaml` carries the profile itself, so it is exempt from the
+      // "needs a decision" list — but it still exists, and an `omit` or
+      // `reuse` decision about it must be honoured.
+      if (recordedPath && existsUnder(slugDir, recordedPath)) {
+        return [normalizeArtifactPath(recordedPath)];
+      }
+      return [];
+    };
     /** family -> the recorded decision for it. */
     const decided = new Map();
     for (const a of profile.artifacts ?? []) {
@@ -195,7 +207,12 @@ export function auditPlan({ slugDir, tasks }) {
       }
       if (decision === 'create') {
         const present = onDisk.filter((f) => matchesFamily(family, f));
-        if (!present.length) {
+        // The recorded path's OWN existence counts. `answers.yaml` is where
+        // the profile is RECORDED, so it is deliberately exempt from the
+        // "needs a decision" list — but it is still an artifact the profile
+        // marks `create`, and the create check has to see it. Without this
+        // a MEDIUM/LARGE plan could never satisfy its own profile.
+        if (!present.length && !existsUnder(slugDir, path)) {
           issues.push(
             finding(
               'PROFILE_CREATE_MISSING',
@@ -204,7 +221,7 @@ export function auditPlan({ slugDir, tasks }) {
           );
         }
       } else if (decision === 'omit') {
-        const present = onDisk.filter((f) => matchesFamily(family, f));
+        const present = presentIn(family, path);
         if (present.length) {
           issues.push(
             finding(
@@ -236,7 +253,7 @@ export function auditPlan({ slugDir, tasks }) {
         // A REUSE decision means "the host owns this fact — do not write a
         // copy". A generated copy of a host document is the defect the
         // artifact-necessity mechanism exists to prevent.
-        const present = onDisk.filter((f) => matchesFamily(family, f));
+        const present = presentIn(family, path);
         if (present.length) {
           issues.push(
             finding(
@@ -585,10 +602,13 @@ export function auditPlan({ slugDir, tasks }) {
 
   // The gate record. THREE PLACES, ONE SHAPE: `answers.yaml` →
   // `plan_profile.gate`, `answers.yaml` → `gate`, or the plan's own Profile
-  // fence (which is where a SMALL plan keeps it). The plan fence was never
-  // read, so a SMALL plan recorded its gate where the reference said to and
-  // the floor reported "no verifier" for it.
-  const recorded = answers?.plan_profile?.gate ?? answers?.gate ?? profile?.gate ?? null;
+  // fence (which is where a SMALL plan keeps it). The fence is read
+  // INDEPENDENTLY of `answers.yaml`: a plan may keep its artifacts in
+  // answers.yaml and its gate in the fence, and the floor has to find the
+  // gate wherever it was written.
+  const fenceProfile = readPlanProfile(planText);
+  const recorded =
+    answers?.plan_profile?.gate ?? answers?.gate ?? fenceProfile?.gate ?? profile?.gate ?? null;
   if (recorded) {
     const waived = Number(recorded.waived ?? 0);
     if (Number.isFinite(waived) && waived !== waivers.length) {
@@ -711,7 +731,12 @@ export function readPlanProfile(planText) {
   if (!fence) return null;
   try {
     const data = parseYaml(fence[1], { filename: 'plan-profile' }).data;
-    return data && Array.isArray(data.artifacts) ? data : null;
+    if (!data || typeof data !== 'object') return null;
+    // The fence counts as a profile record when it carries the artifact
+    // decisions OR a gate block. A fence holding only `gate:` used to be
+    // skipped entirely, so the gate was never checked at all.
+    if (Array.isArray(data.artifacts) || data.gate) return data;
+    return null;
   } catch {
     return null;
   }
@@ -1001,9 +1026,12 @@ export function waiverCovers(waiver, issue) {
     const s = String(raw ?? '').trim();
     if (!s) continue;
     if (s === code) return true;
-    // A path or a glob is matched literally — it is quoted in the finding.
+    // A glob scope is matched against the PATHS the finding quotes — a
+    // literal substring test only caught a finding that quoted the glob
+    // itself, never one that quoted the file inside it.
     if (s.includes('/') || s.includes('*')) {
       if (text.includes(s)) return true;
+      if (coversAnyPath(s, text)) return true;
       continue;
     }
     if (s.includes('#')) {
@@ -1014,6 +1042,21 @@ export function waiverCovers(waiver, issue) {
     if (new RegExp(`(?<![A-Za-z0-9_.-])${esc}(?![A-Za-z0-9_.-])`).test(text)) return true;
   }
   return false;
+}
+
+/**
+ * Does a glob scope cover any path the finding quotes?
+ *
+ * The finding quotes its paths in single quotes: `owns 'src/a/x.ts'`. The
+ * scope `src/a/**` must cover that path — and it did not, because the
+ * comparison was a literal substring test.
+ *
+ * @param {string} glob the waiver's scope
+ * @param {string} text the finding text
+ */
+function coversAnyPath(glob, text) {
+  const quoted = [...text.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  return quoted.some((path) => matchesFamily(glob, path));
 }
 
 /** The plan markdown of an artifact space (every plans/*.md, concatenated). */

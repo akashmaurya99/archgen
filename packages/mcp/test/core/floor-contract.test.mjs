@@ -330,7 +330,149 @@ test('a different declared test root is honoured too — the floor never guesses
   }
 });
 
-// ── 5. the gate block is read from the plan's own Profile fence ────────────
+// ── 6. the profile's own home is a real artifact ───────────────────────────
+
+test('a MEDIUM plan can satisfy its own recorded create of answers.yaml', () => {
+  // `answers.yaml` is where the profile is RECORDED, so it is exempt from
+  // the "needs a decision" list — but it is still an artifact the profile
+  // marks `create`. Exempting it from the list must not exempt it from
+  // EXISTING: otherwise a MEDIUM/LARGE plan can never satisfy its own
+  // profile and the floor can never approve it.
+  const f = fixture({
+    tasksYaml: true,
+    plans: { 'demo.md': '# Plan\n\nThe plan of record.\n' },
+    answers: [
+      'plan_profile:',
+      '  artifacts:',
+      '    - path: .archgen/demo/answers.yaml',
+      '      decision: create',
+      '      reason: captured requirements and the plan profile',
+      '    - path: .archgen/demo/plans/demo.md',
+      '      decision: create',
+      '      reason: the plan of record',
+      '    - path: .archgen/demo/tasks.yaml',
+      '      decision: create',
+      '      reason: the task contract',
+      '',
+    ].join('\n'),
+  });
+  try {
+    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(
+      !audit.issues.some((i) => i.startsWith('PROFILE_CREATE_MISSING')),
+      `the recorded create must be satisfiable: ${audit.issues.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('an answers.yaml marked omit is still caught when the file exists', () => {
+  const f = fixture({
+    tasksYaml: true,
+    plans: { 'demo.md': '# Plan\n\nThe plan of record.\n' },
+    answers: [
+      'plan_profile:',
+      '  artifacts:',
+      '    - path: .archgen/demo/answers.yaml',
+      '      decision: omit',
+      '      reason: a SMALL plan keeps the profile in the plan',
+      '',
+    ].join('\n'),
+  });
+  try {
+    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(
+      audit.issues.some((i) => i.startsWith('PROFILE_OMIT_PRESENT')),
+      `an omit decision about a file that exists must be caught: ${audit.issues.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+// ── 7. the gate block is found wherever it was written ─────────────────────
+
+test('the gate in the plan fence is read even when answers.yaml carries the profile', () => {
+  const plan = [
+    '# demo — plan',
+    '',
+    '## Profile',
+    '',
+    '```yaml',
+    'scope_class: SMALL',
+    'artifacts:',
+    '  - path: .archgen/demo/plans/demo.md',
+    '    decision: create',
+    '    reason: the plan of record',
+    'gate:',
+    '  verifier: ""',
+    '  rounds: 2',
+    '  waived: 0',
+    '```',
+    '',
+  ].join('\n');
+  const f = fixture({
+    plans: { 'demo.md': plan },
+    answers: [
+      'plan_profile:',
+      '  artifacts:',
+      '    - path: .archgen/demo/plans/demo.md',
+      '      decision: create',
+      '      reason: the plan of record',
+      '',
+    ].join('\n'),
+  });
+  try {
+    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(
+      audit.warnings.some((w) => w.startsWith('GATE_IDENTITY_MISSING')),
+      `the fence gate must be read: ${audit.warnings.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a Profile fence carrying ONLY a gate block is still a record', () => {
+  const plan = [
+    '# demo — plan',
+    '',
+    '## Profile',
+    '',
+    '```yaml',
+    'gate:',
+    '  verifier: ""',
+    '  rounds: 2',
+    '  waived: 0',
+    '```',
+    '',
+  ].join('\n');
+  const f = fixture({ plans: { 'demo.md': plan } });
+  try {
+    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(
+      audit.warnings.some((w) => w.startsWith('GATE_IDENTITY_MISSING')),
+      `a fence with only a gate must still be checked: ${audit.warnings.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+// ── 8. a waiver's glob covers the paths it names ───────────────────────────
+
+test('a waiver scoped to a GLOB covers the paths inside it', () => {
+  const issue = "MIRROR_MISSING: task 'T1' owns 'src/a/x.ts' but no task owns the mirrored test path";
+  assert.ok(
+    waiverCovers({ scope: ['src/a/**'] }, issue),
+    'a glob scope must cover the file it names, not only the glob text',
+  );
+  assert.ok(
+    !waiverCovers({ scope: ['src/b/**'] }, issue),
+    'a glob scope must not cover an unrelated path',
+  );
+});
 
 test('a SMALL plan records its gate in the plan Profile fence, and the floor reads it', () => {
   const plan = [

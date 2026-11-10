@@ -74,20 +74,42 @@ test('the coverage action\'s uncovered list is walkable', () => {
   const p = brokenPlan(120);
   try {
     const first = planCoverage(p.tasksYaml, p.plansDir, { collection: 'uncovered' });
-    assert.equal(first.tasks.uncovered.length, MAX_FINDINGS);
-    const seen = new Set(first.tasks.uncovered);
-    let offset = first.tasks.uncovered.length;
+    assert.equal(first.uncovered.items.length, MAX_FINDINGS);
+    const seen = new Set(first.uncovered.items);
+    let offset = first.uncovered.items.length;
     let window = first;
-    while (seen.size < window.tasks.uncoveredTotal) {
+    while (seen.size < window.uncovered.total) {
       window = planCoverage(p.tasksYaml, p.plansDir, { collection: 'uncovered', offset });
-      assert.equal(window.tasks.uncoveredTotal, first.tasks.uncoveredTotal, 'the total never changes');
-      for (const id of window.tasks.uncovered) {
+      assert.equal(window.uncovered.total, first.uncovered.total, 'the total never changes');
+      for (const id of window.uncovered.items) {
         assert.ok(!seen.has(id), 'an id was shown twice');
         seen.add(id);
       }
-      offset += window.tasks.uncovered.length;
+      offset += window.uncovered.items.length;
     }
-    assert.equal(seen.size, first.tasks.uncoveredTotal, 'every uncovered id is reachable');
+    assert.equal(seen.size, first.uncovered.total, 'every uncovered id is reachable');
+  } finally {
+    rmSync(p.root, { recursive: true, force: true });
+  }
+});
+
+test('the coverage action\'s TASK list is walkable too — the default collection has a cursor', () => {
+  const p = brokenPlan(120);
+  try {
+    const first = planCoverage(p.tasksYaml, p.plansDir, { collection: 'tasks', limit: 10 });
+    assert.equal(first.tasks.items.length, 10);
+    const seen = new Set(first.tasks.items.map((t) => t.id));
+    let offset = first.tasks.items.length;
+    while (seen.size < first.tasks.total) {
+      const window = planCoverage(p.tasksYaml, p.plansDir, { collection: 'tasks', limit: 10, offset });
+      assert.equal(window.tasks.total, first.tasks.total, 'the total never changes');
+      for (const t of window.tasks.items) {
+        assert.ok(!seen.has(t.id), 'a task was shown twice');
+        seen.add(t.id);
+      }
+      offset += window.tasks.items.length;
+    }
+    assert.equal(seen.size, first.tasks.total, 'every task is reachable');
   } finally {
     rmSync(p.root, { recursive: true, force: true });
   }

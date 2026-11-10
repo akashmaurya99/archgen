@@ -39,6 +39,10 @@ export function shapeReport(report, window = {}) {
   // A failed or blocked install explains itself in `detail`; dropping it
   // leaves the caller with "failed" and no next step.
   if (report.cli?.detail) out.cli.detail = report.cli.detail;
+  // The index state, flat. It is a fact a caller acts on ("is the project
+  // indexed?"), and it must be present on BOTH bootstrap paths — the two
+  // used to answer with different shapes for the same question.
+  out.indexed = report.index?.initialized === true || report.index?.indexed === true;
   if (report.index && report.index.action !== 'none') out.index = report.index;
   if (report.planned) out.planned = true;
   const native = report.wiring?.native ?? [];

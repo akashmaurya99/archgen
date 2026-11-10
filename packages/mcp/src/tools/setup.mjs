@@ -297,9 +297,17 @@ export function registerSetupTools(server) {
           : null;
       if (mcpReady && cgCheck?.alreadyConfigured === true) {
         const cgState = codegraphState({ registry, projectRoot: ctx.projectRoot, home: ctx.home, env: ctx.env, location });
-        // The fast path returns the SAME keys as the slow path. It used to
-        // return a third shape with no `ok` and no `mcp.detected`, so a
-        // client had to branch on which path answered.
+        // The fast path returns the SAME codegraph shape as the slow path. It
+        // used to return a third shape (installed/version/indexed/wired),
+        // so one fact had two forms depending on which path answered.
+        const codegraphFast = {
+          ok: true,
+          changed: false,
+          alreadyConfigured: true,
+          cli: { present: Boolean(cgState.cli), version: cgCheck.cli.version ?? cgState.cli?.version ?? null },
+          telemetry: { state: 'unknown', action: 'none' },
+          index: { action: cgState.indexed ? 'indexed' : 'not-indexed', initialized: cgState.indexed },
+        };
         return {
           alreadyConfigured: true,
           compat,
@@ -308,12 +316,7 @@ export function registerSetupTools(server) {
             wired: mcpCheck.wired.length,
             binary: { bin: mcpCheck.binary.bin, source: mcpCheck.binary.source },
           },
-          codegraph: {
-            installed: Boolean(cgState.cli),
-            version: cgCheck.cli.version ?? cgState.cli?.version ?? null,
-            indexed: cgState.indexed,
-            wired: cgState.targets.filter((t) => t.wired).length,
-          },
+          codegraph: shapeReport(codegraphFast),
           ok: true,
         };
       }

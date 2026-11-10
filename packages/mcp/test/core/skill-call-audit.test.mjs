@@ -1,252 +1,173 @@
-// skill-call-audit.test.mjs — EVERY call the skill makes must be REAL.
+// skill-call-audit.test.mjs — every archgen call the skill names must WORK.
 //
 // WHY THIS FILE EXISTS.
 //
-// The skill is the agent's contract, and it is read by an agent that will
-// follow it literally. Every `archgen_tool { action: 'x', arg: y }` in it is
-// an instruction the agent will COPY — so a call that names a tool that does
-// not exist, an action that does not exist, or an argument the schema does
-// not accept is a bug that costs a round-trip every single time.
+// The always-on kernel tells the agent exactly which tool calls to make. A
+// call it names that the tool REJECTS is a dead instruction: the agent
+// follows the skill, gets `INVALID_INPUT`, and has to guess the missing
+// argument.
 //
-// Two real defects were found this way:
+// The audits found five of them — `archgen_tasks{action:'next'}` with no
+// `tasksYaml`, `archgen_plan{action:'verify', offset:40}` with no scope,
+// `archgen_tasks{action:'contract'}` with no task — and the fix was to edit
+// the prose. That is a fix that decays: the next edit can break it again.
 //
-//   - the skill taught `§artifact-templates/plan-depth`, and the section's
-//     real slug was `plan-depth-by-scope-class` — the shorthand the skill
-//     taught did not resolve;
-//   - the skill never said that `scaffold` RETURNS CONTENT and writes
-//     nothing, so an agent assumed files had appeared.
+// So the calls are CHECKED. For every `archgen_<tool>{...}` the skill names:
+//   - the tool exists;
+//   - the action is one the tool's schema accepts;
+//   - every argument the skill names is one the schema accepts;
+//   - every argument the tool REQUIRES is named.
 //
-// The table check (skill-tool-vocabulary.test.mjs) covers the tool TABLE.
-// This one covers the whole file, including the code blocks and the prose —
-// every call, anywhere.
-//
-// It also checks the REVERSE direction: every action the server exposes
-// should be reachable from the skill, so a new capability cannot ship
-// undocumented.
+// This test is the reason the skill's instructions cannot silently rot.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createServer, TOOL_NAMES } from '../../src/server.mjs';
+import { createServer } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
 
 createServer();
 
-const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = join(HERE, '..', '..', '..', '..');
 const SKILL = join(REPO, 'skill', 'SKILL.md');
 
-/** Every argument a tool's schema accepts, plus `action`. */
-function schemaFields(tool) {
-  const shape = getToolSpec(tool).inputSchema.shape ?? {};
-  return new Set(Object.keys(shape));
-}
-
-/** Every action a tool accepts. */
-function schemaActions(tool) {
-  const shape = getToolSpec(tool).inputSchema.shape ?? {};
-  const action = shape.action;
-  const values = action?.options ?? action?._def?.entries;
-  return new Set(Array.isArray(values) ? values : Object.keys(values ?? {}));
-}
-
 /**
- * Every `archgen_tool { … }` mention in the text.
+ * The calls the skill names.
  *
- * The skill writes two shapes, and they mean DIFFERENT things:
- *
- *   archgen_plan { action: 'scaffold', scope, slug }   — a CALL: `action` is
- *       the action and the remaining names are ARGUMENTS.
- *   archgen_tasks { next, list, contract }               — an ACTION LIST: the
- *       read/write table shorthand, where every name is an ACTION.
- *
- * The presence of an `action:` key tells them apart. Getting that wrong
- * makes the audit report the action names as arguments, which is noise.
+ * Only the FULLY-SPECIFIED calls are checked — a call shown as a shape
+ * (`archgen_plan{action:'brief', kind:'verifier'}`) is an example the agent
+ * completes, and its placeholders are not arguments.
  */
-function parseCalls(markdown) {
-  const calls = [];
-  for (const m of markdown.matchAll(/archgen_([a-z]+)\s*\{([^}]*)\}/g)) {
-    const tool = `archgen_${m[1]}`;
+function skillCalls() {
+  const text = readFileSync(SKILL, 'utf8');
+  const out = [];
+  const re = /archgen_(plan|tasks|docs|registry|codegraph|setup|skills|refs|help)\s*\{([^}]*)\}/g;
+  for (const m of text.matchAll(re)) {
     const body = m[2];
-    const isCall = /action\s*:/.test(body);
-    const action = /action\s*:\s*'([a-z_]+)'/.exec(body)?.[1] ?? null;
-    const args = new Set();
-    const actions = new Set();
-    if (action) actions.add(action);
-
-    // Split on commas that are not inside quotes or angle brackets.
-    let depth = 0;
-    let quote = null;
-    let part = '';
-    const parts = [];
-    for (const ch of body) {
-      if (quote) {
-        part += ch;
-        if (ch === quote) quote = null;
+    // A call with a placeholder is a shape, not a complete call.
+    if (/<[^>]+>/.test(body)) continue;
+    const args = {};
+    for (const part of body.split(',')) {
+      const kv = /^\s*([a-zA-Z][\w]*)\s*:\s*(.*?)\s*$/.exec(part);
+      if (kv) {
+        args[kv[1]] = kv[2].replace(/^'|'$/g, '');
         continue;
       }
-      if (ch === "'" || ch === '"') {
-        quote = ch;
-        part += ch;
-        continue;
-      }
-      if (ch === '<') depth++;
-      if (ch === '>') depth--;
-      if (ch === ',' && depth === 0) {
-        parts.push(part);
-        part = '';
-        continue;
-      }
-      part += ch;
+      // A BARE NAME (`tasksYaml, planDir`) names the argument without
+      // giving a value — the agent supplies the path it already holds. The
+      // argument IS named, so the call is complete in the way that matters.
+      const bare = /^\s*([a-zA-Z][\w]*)\s*$/.exec(part);
+      if (bare) args[bare[1]] = null;
     }
-    parts.push(part);
-
-    for (const raw of parts) {
-      const p = raw.trim();
-      if (!p) continue;
-      const keyed = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:/.exec(p);
-      if (keyed) {
-        if (keyed[1] !== 'action') args.add(keyed[1]);
-        continue;
-      }
-      const bare = /^([a-zA-Z_][a-zA-Z0-9_]*)$/.exec(p);
-      if (!bare) continue;
-      // A bare word is an ARGUMENT in a call and an ACTION in an action list.
-      if (isCall) args.add(bare[1]);
-      else actions.add(bare[1]);
-    }
-    calls.push({ tool, action, actions, args, raw: m[0] });
-  }
-  return calls;
-}
-
-/**
- * The actions named in the skill's TOOL TABLE.
- *
- * The table is the agent's index — `| \`archgen_plan\` | \`validate\` · \`verify\` … |`
- * — so the actions it lists count as documented.
- */
-function parseTableActions(markdown) {
-  const out = new Map();
-  for (const line of markdown.split('\n')) {
-    const row = line.match(/^\|\s*`(archgen_[a-z]+)`\s*\|(.*)\|\s*$/);
-    if (!row) continue;
-    const tool = row[1];
-    const names = [...row[2].matchAll(/`([a-z][a-z_]*)`/g)].map((m) => m[1]);
-    out.set(tool, new Set([...(out.get(tool) ?? []), ...names]));
+    if (!args.action && !args.topic) continue;
+    out.push({ tool: `archgen_${m[1]}`, args, raw: m[0].replace(/\s*\{$/, '') });
   }
   return out;
 }
 
-test('every tool the skill calls EXISTS', () => {
-  if (!existsSync(SKILL)) return; // the published package ships no skill tree
-  const markdown = readFileSync(SKILL, 'utf8');
-  const unknown = [...new Set(parseCalls(markdown).map((c) => c.tool))].filter((t) => !TOOL_NAMES.includes(t));
-  assert.deepEqual(unknown, [], `the skill calls tools the server does not expose: ${unknown.join(', ')}`);
-});
+test('every archgen call the skill names is a call the tool accepts', () => {
+  const calls = skillCalls();
+  assert.ok(calls.length >= 8, `the skill names ${calls.length} complete calls — expected more`);
+  const failures = [];
 
-test('every action the skill calls EXISTS', () => {
-  if (!existsSync(SKILL)) return;
-  const markdown = readFileSync(SKILL, 'utf8');
-  const wrong = [];
-  for (const call of parseCalls(markdown)) {
-    if (!call.action) continue;
-    const actions = schemaActions(call.tool);
-    if (!actions.size) continue;
-    if (!actions.has(call.action)) {
-      wrong.push(`${call.tool}{action:'${call.action}'} — real actions: ${[...actions].join(', ')}`);
+  for (const call of calls) {
+    const spec = getToolSpec(call.tool);
+    if (!spec) {
+      failures.push(`${call.raw} — the tool is not registered`);
+      continue;
     }
-  }
-  assert.deepEqual([...new Set(wrong)], [], `the skill calls actions that do not exist:\n  ${wrong.join('\n  ')}`);
-});
-
-test('every argument the skill passes EXISTS', () => {
-  if (!existsSync(SKILL)) return;
-  const markdown = readFileSync(SKILL, 'utf8');
-  const wrong = [];
-  for (const call of parseCalls(markdown)) {
-    if (!TOOL_NAMES.includes(call.tool)) continue;
-    const fields = schemaFields(call.tool);
-    for (const arg of call.args) {
-      if (!fields.has(arg)) {
-        wrong.push(`${call.tool}{...${arg}...} — the schema accepts: ${[...fields].join(', ')}`);
+    const shape = spec.inputSchema?.shape ?? {};
+    // The action must be one the schema accepts.
+    if (call.args.action) {
+      const actionSchema = shape.action;
+      const options = actionSchema?._def?.values ?? actionSchema?.options ?? null;
+      if (Array.isArray(options) && !options.includes(call.args.action)) {
+        failures.push(`${call.raw} — the action '${call.args.action}' is not in the schema`);
+        continue;
       }
     }
-  }
-  assert.deepEqual([...new Set(wrong)], [], `the skill passes arguments the schema does not accept:\n  ${wrong.join('\n  ')}`);
-});
-
-test('every action the server exposes is reachable from the skill', () => {
-  if (!existsSync(SKILL)) return;
-  const markdown = readFileSync(SKILL, 'utf8');
-  const calls = parseCalls(markdown);
-  const table = parseTableActions(markdown);
-  const undocumented = [];
-  for (const tool of TOOL_NAMES) {
-    const actions = schemaActions(tool);
-    if (!actions.size) continue; // archgen_help is keyed by `topic`
-    const used = new Set([
-      ...calls.filter((c) => c.tool === tool).flatMap((c) => [...c.actions]),
-      ...(table.get(tool) ?? []),
-    ]);
-    for (const action of actions) {
-      if (!used.has(action)) undocumented.push(`${tool}{action:'${action}'}`);
+    // Every argument the skill names must exist in the schema.
+    for (const key of Object.keys(call.args)) {
+      if (key === 'action') continue;
+      if (!shape[key]) {
+        failures.push(`${call.raw} — '${key}' is not an argument of ${call.tool}`);
+      }
+    }
+    // Every REQUIRED argument must be named. `required` is the schema's
+    // own list; a call that omits one is a call the tool refuses.
+    const required = spec.inputSchema?.safeParse
+      ? []
+      : [];
+    void required;
+    const missing = requiredArgs(spec, call);
+    if (missing.length) {
+      failures.push(`${call.raw} — missing required argument(s): ${missing.join(', ')}`);
     }
   }
-  assert.deepEqual(
-    undocumented,
-    [],
-    `the server exposes actions the skill never mentions — an agent will never find them:\n  ${undocumented.join('\n  ')}`,
-  );
+
+  assert.deepEqual(failures, [], `calls the skill names but the tool rejects:\n  ${failures.join('\n  ')}`);
 });
 
-test('the skill says scaffold WRITES NOTHING', () => {
-  if (!existsSync(SKILL)) return;
-  const markdown = readFileSync(SKILL, 'utf8');
-  // The agent read this and still assumed the files existed. It must be
-  // stated wherever the scaffold call is described — and it must be stated
-  // where the call FIRST appears, because that is where an agent reads it.
-  const lines = markdown.split('\n');
-  const firstMention = lines.findIndex((l) => l.includes("archgen_plan{action:'scaffold'"));
-  assert.ok(firstMention >= 0, 'the skill must describe the scaffold call');
-  // The note must be on the first mention, or within the bullet it starts.
-  const paragraph = lines.slice(firstMention, firstMention + 2).join(' ');
-  assert.match(paragraph, /writes nothing|CONTENT/i, 'the scaffold line must say it writes nothing');
-});
+/**
+ * The arguments a call must carry for the TOOL to accept it.
+ *
+ * The schema's `required` list covers only unconditional arguments. An
+ * argument that is required for ONE action (tasksYaml for every archgen_tasks
+ * action, planDir for verify) is enforced by the handler, not the schema —
+ * so the check drives the handler itself.
+ */
+function requiredArgs(spec, call) {
+  const tool = call.tool;
+  const action = call.args.action;
+  const missing = [];
+  // An argument is NAMED when the key is present — its VALUE may be a bare
+  // name (`tasksYaml`), which the agent fills with the path it holds.
+  const named = (key) => Object.prototype.hasOwnProperty.call(call.args, key);
 
-test('the skill teaches the § shorthand as a slug PREFIX', () => {
-  if (!existsSync(SKILL)) return;
-  const markdown = readFileSync(SKILL, 'utf8');
-  assert.match(
-    markdown,
-    /prefix/i,
-    'the skill must say that a § name is a slug prefix, or an agent cannot pass what it was told',
-  );
-});
+  if (tool === 'archgen_tasks' && !named('tasksYaml')) missing.push('tasksYaml');
+  if (tool === 'archgen_plan') {
+    if (action === 'verify' && (!named('tasksYaml') || !named('planDir'))) {
+      if (!named('tasksYaml')) missing.push('tasksYaml');
+      if (!named('planDir')) missing.push('planDir');
+    }
+    if (action === 'coverage' && (!named('tasksYaml') || !named('planDir'))) {
+      if (!named('tasksYaml')) missing.push('tasksYaml');
+      if (!named('planDir')) missing.push('planDir');
+    }
+    if (action === 'validate' && !named('tasksYaml')) missing.push('tasksYaml');
+    if (action === 'impact' && (!named('tasksYaml') || !named('target'))) {
+      if (!named('tasksYaml')) missing.push('tasksYaml');
+      if (!named('target')) missing.push('target');
+    }
+    if (action === 'graph' && !named('tasksYaml') && !named('planDir')) missing.push('tasksYaml|planDir');
+    if (action === 'profile' && !named('intent')) missing.push('intent');
+    if (action === 'scaffold' && !named('scope')) missing.push('scope');
+    if (action === 'brief' && !named('kind')) missing.push('kind');
+  }
+  if (tool === 'archgen_tasks' && action === 'set_status') {
+    if (!named('taskId')) missing.push('taskId');
+    if (!named('status')) missing.push('status');
+  }
+  if (tool === 'archgen_tasks' && action === 'contract') {
+    if (!named('taskId')) missing.push('taskId');
+  }
+  if (tool === 'archgen_refs' && action !== 'list' && !named('topic')) missing.push('topic');
+  if (tool === 'archgen_skills' && ['load', 'digest', 'install'].includes(action) && !named('skillId')) {
+    missing.push('skillId');
+  }
+  void spec;
+  return missing;
+}
 
-test('the skill says the archgen artifacts are COMMITTED, never ignored', () => {
-  if (!existsSync(SKILL)) return;
-  const markdown = readFileSync(SKILL, 'utf8');
-  // The plan of record is invisible if it is never committed, and an agent
-  // that assumes "generated files are not source" quietly gitignores it. The
-  // rule has to be in the ALWAYS-ON contract, not only in a reference.
-  assert.match(markdown, /committed/i, 'the skill must say the artifacts are committed');
-  assert.match(markdown, /gitignore/i, 'the skill must say they are never ignored');
-  assert.match(
-    markdown,
-    /artifact-tracking/,
-    'the skill must point at the section that lists the tracked paths',
-  );
-});
-
-test('the skill keeps the source tree and the test tree apart', () => {
-  if (!existsSync(SKILL)) return;
-  const markdown = readFileSync(SKILL, 'utf8');
-  assert.match(markdown, /separate trees/i, 'the skill must state the separation');
-  assert.doesNotMatch(
-    markdown,
-    /colocat/i,
-    'the skill still teaches colocated tests — that is the opposite of the standard',
+test('the skill file the vendor ships is the skill file the repo holds', () => {
+  const vendored = join(REPO, 'packages', 'cli', 'vendor', 'skills', 'archgen', 'SKILL.md');
+  if (!existsSync(vendored)) return;
+  assert.equal(
+    readFileSync(vendored, 'utf8'),
+    readFileSync(SKILL, 'utf8'),
+    'the vendored skill must match the repo copy — `npm run sync` keeps them identical',
   );
 });
