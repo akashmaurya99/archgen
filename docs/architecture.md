@@ -224,6 +224,13 @@ more than the caller asked for is a tax on every round:
   small plan is never truncated, the budget is allocated by use with the
   surplus flowing on, and anything left out is named with the section to read.
   A clean 30-task brief is ~3,000 tokens; the unbounded one was 6,034.
+- **Every answer has a ceiling, and the ceiling never hides a count.** The
+  floor bounds its findings (40) but keeps the **per-class counts exact** — a
+  broken 120-task plan reports `MIRROR_MISSING x120` and the agent writes one
+  finding per class, not 120 lines. Coverage bounds the uncovered list and
+  keeps the total. The digest spends its section budget on a **fair share per
+  file**, so no file loses its navigation entirely, and always reports each
+  file's real section count.
 
 The five orchestrator-facing protocol documents moved INTO the MCP package
 (`packages/mcp/assets/references/`) and are served section-by-section by

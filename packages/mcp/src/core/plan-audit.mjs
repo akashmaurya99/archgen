@@ -247,6 +247,7 @@ export function auditPlan({ slugDir, tasks }) {
     maps.edgeMatrix.push({
       row: edgeId,
       case: row.case,
+      expected: row.expected ?? '',
       task: row.task,
       index: row.index,
       acceptance: cited,
@@ -465,7 +466,28 @@ export function auditPlan({ slugDir, tasks }) {
     });
   }
 
-  return { issues, warnings, maps, waivers, profile, snapshot: planSnapshot(tasks, maps, planText, prdText, architecture) };
+  return {
+    issues,
+    warnings,
+    issuesTotal: issues.length,
+    warningsTotal: warnings.length,
+    issueCodes: countCodes(issues),
+    warningCodes: countCodes(warnings),
+    maps,
+    waivers,
+    profile,
+    snapshot: planSnapshot(tasks, maps, planText, prdText, architecture),
+  };
+}
+
+/** Count findings by their stable code (the prefix before the colon). */
+function countCodes(list) {
+  const out = {};
+  for (const m of list) {
+    const code = String(m).split(':')[0];
+    out[code] = (out[code] ?? 0) + 1;
+  }
+  return out;
 }
 
 /**
@@ -586,6 +608,11 @@ export function parseEdgeMatrix(planText) {
       rows.push({
         row: cells[0] ?? '',
         case: cells.slice(1, header.idx).join(' · '),
+        // The EXPECTED BEHAVIOUR is what an acceptance has to verify — the
+        // last column before `Covered by`. It is separated from the input
+        // state because it is the judgement input: "does this acceptance
+        // deliver THIS?".
+        expected: header.idx > 1 ? cells[header.idx - 1] : '',
         task: m[1],
         index: Number(m[2]),
       });

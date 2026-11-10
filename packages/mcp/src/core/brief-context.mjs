@@ -65,12 +65,19 @@ export function buildBriefContext(kind, scope, ctx) {
   // needs and never re-reads the whole plan.
   try {
     if (existsSync(scope.slugDir)) {
-      const digest = docIndex(scope.slugDir, { mode: 'digest', projectRoot: ctx.projectRoot });
+      // The brief is the agent's navigation map, so it needs the outline — but
+      // bounded: the brief's own budget governs the whole message, and the
+      // agent is told what was left out.
+      const digest = docIndex(scope.slugDir, { mode: 'digest', sectionBudget: 120, projectRoot: ctx.projectRoot });
       const files = (digest.data.files ?? []).map((f) => ({
         path: f.path,
         sections: (f.sections ?? []).map((s) => ({ slug: s.slug, title: s.title })),
       }));
-      out.evidence = { files, fileCount: files.length };
+      out.evidence = {
+        files,
+        fileCount: files.length,
+        sectionsOmitted: digest.data.sectionsOmitted === true,
+      };
     }
   } catch {
     out.evidence = null; // a missing artifact space is not a brief failure
@@ -116,6 +123,10 @@ export function buildBriefContext(kind, scope, ctx) {
       out.audit = {
         issues: audit.issues,
         warnings: audit.warnings,
+        issuesTotal: audit.issuesTotal,
+        warningsTotal: audit.warningsTotal,
+        issueCodes: audit.issueCodes,
+        warningCodes: audit.warningCodes,
         maps: audit.maps,
         waivers: audit.waivers,
         profile: audit.profile,

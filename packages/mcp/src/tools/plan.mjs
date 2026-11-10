@@ -114,7 +114,7 @@ export function registerPlanTools(server) {
               total: p.total,
               returned: p.returned,
               next: p.next,
-              available: { tasks: p.total, uncovered: (covered.uncovered ?? []).length },
+              available: { tasks: p.total, uncovered: covered.uncoveredTotal ?? (covered.uncovered ?? []).length },
               more: `archgen_plan{action:'coverage',tasksYaml:'${file}',planDir:'${args.planDir}',taskId:'<one task>'}`,
             }),
           );

@@ -52,6 +52,21 @@ export function issueCode(message) {
   return 'PLAN_ISSUE';
 }
 
+/**
+ * The most findings one answer carries.
+ *
+ * A broken plan can produce one finding per task — 120 tasks, 120 findings,
+ * 7,000 tokens of prose in the orchestrator's context, for a list it will fix
+ * as ONE CLASS anyway ("every task is missing its mirrored test path").
+ *
+ * So the list is bounded and the COUNTS are the payload: `issueCodes` says how
+ * many of each class there are, `issuesTotal` says how many there were, and
+ * the next run of the floor shows the next batch. The verdict is computed
+ * from the FULL count, never from the capped list.
+ */
+export const MAX_FINDINGS = 40;
+export const MAX_WARNINGS = 20;
+
 /** Count findings by code. */
 function countByCode(list) {
   const out = {};
@@ -62,13 +77,23 @@ function countByCode(list) {
   return out;
 }
 
+/** Keep the first N, and report what was left. */
+function cap(list, max) {
+  return {
+    shown: list.slice(0, max),
+    total: list.length,
+    omitted: Math.max(0, list.length - max),
+  };
+}
+
 /**
  * Run the deterministic verifier gate.
  *
  * @param {string} file absolute path to tasks.yaml
  * @param {string} planDir absolute path to the plans directory
  * @returns {{verdict: 'APPROVE'|'ISSUES', issues: string[], warnings: string[],
- *            issueCodes: object, warningCodes: object}}
+ *            issueCodes: object, warningCodes: object, issuesTotal: number,
+ *            warningsTotal: number, omitted: {issues: number, warnings: number}}}
  */
 export function verifyPlan(file, planDir) {
   const issues = [];
@@ -84,6 +109,9 @@ export function verifyPlan(file, planDir) {
       warnings: [],
       issueCodes: { UNPARSEABLE: 1 },
       warningCodes: {},
+      issuesTotal: 1,
+      warningsTotal: 0,
+      omitted: { issues: 0, warnings: 0 },
     };
   }
   const tasks = data?.tasks;
@@ -135,12 +163,17 @@ export function verifyPlan(file, planDir) {
     }
   }
 
+  const cappedIssues = cap(issues, MAX_FINDINGS);
+  const cappedWarnings = cap(warnings, MAX_WARNINGS);
   return {
     verdict: issues.length ? 'ISSUES' : 'APPROVE',
-    issues,
-    warnings,
+    issues: cappedIssues.shown,
+    warnings: cappedWarnings.shown,
     issueCodes: countByCode(issues),
     warningCodes: countByCode(warnings),
+    issuesTotal: cappedIssues.total,
+    warningsTotal: cappedWarnings.total,
+    omitted: { issues: cappedIssues.omitted, warnings: cappedWarnings.omitted },
   };
 }
 
@@ -186,6 +219,10 @@ export function planCoverage(file, planDir) {
     const mentioned = referenced.has(id) || mentionedInTasks.has(id);
     (mentioned ? covered : uncovered).push(id);
   }
+  // The uncovered list is bounded too: 120 uncovered tasks is 120 ids the
+  // caller cannot act on one by one. The COUNT is the fact; the list is a
+  // sample.
+  const uncoveredShown = uncovered.slice(0, MAX_FINDINGS);
 
   let requirements = { total: 0, covered: 0, uncovered: [] };
   let edgeCases = { total: 0, linked: 0, unlinked: [] };
@@ -194,21 +231,38 @@ export function planCoverage(file, planDir) {
     const audit = auditPlan({ slugDir: dirname(planDir), tasks });
     profileRecorded = Boolean(audit.profile);
     const reqs = audit.maps.requirements ?? [];
+    const reqUncovered = reqs.filter((r) => !r.covered).map((r) => r.id);
     requirements = {
       total: reqs.length,
       covered: reqs.filter((r) => r.covered).length,
-      uncovered: reqs.filter((r) => !r.covered).map((r) => r.id),
+      uncovered: reqUncovered.slice(0, MAX_FINDINGS),
+      uncoveredTotal: reqUncovered.length,
     };
     const rows = audit.maps.edgeMatrix ?? [];
+    const unlinked = rows.filter((r) => !r.valid || !r.claimOk).map((r) => r.row);
     edgeCases = {
       total: rows.length,
       linked: rows.filter((r) => r.valid && r.claimOk).length,
-      unlinked: rows.filter((r) => !r.valid || !r.claimOk).map((r) => r.row),
+      unlinked: unlinked.slice(0, MAX_FINDINGS),
+      unlinkedTotal: unlinked.length,
     };
   } catch {
     // The coverage report must never crash: the audit's findings are the
     // verifier's business, not this action's.
   }
 
-  return { covered, uncovered, findings, requirements, edgeCases, profileRecorded };
+  // The findings list is bounded like the gate's: the COUNTS are the payload,
+  // the list is a sample.
+  const cappedFindings = cap(findings, MAX_FINDINGS);
+  return {
+    covered,
+    uncovered: uncoveredShown,
+    uncoveredTotal: uncovered.length,
+    findings: cappedFindings.shown,
+    findingsTotal: cappedFindings.total,
+    omitted: { findings: cappedFindings.omitted },
+    requirements,
+    edgeCases,
+    profileRecorded,
+  };
 }

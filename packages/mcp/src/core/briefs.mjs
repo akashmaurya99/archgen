@@ -134,6 +134,10 @@ export function renderBriefContext(ctx = {}) {
       out.push(`- ${f.path}`);
       for (const s of f.sections) out.push(`  - § ${s.slug} — ${s.title}`);
     }
+    if (ctx.evidence.sectionsOmitted) {
+      out.push('');
+      out.push('Some sections were left out of this index — fetch a file\'s own index with archgen_docs{action:\'digest\',file:...}');
+    }
     out.push('');
   }
 
@@ -173,6 +177,15 @@ export function renderBriefContext(ctx = {}) {
 
 /** How many rows of a map the brief carries before it truncates. */
 const MAP_ROW_CAP = 60;
+/**
+ * How many floor findings one brief lists.
+ *
+ * The COUNTS are complete; the list is a sample. A broken 120-task plan has
+ * 120 findings in maybe three classes — the agent reports the classes with
+ * their counts, and the orchestrator fixes the class.
+ */
+const FINDING_ROW_CAP = 40;
+
 /**
  * The TOTAL number of map lines a brief may carry.
  *
@@ -220,18 +233,29 @@ function renderAudit(audit) {
 
   out.push('### Mechanical floor — computed for you (do NOT re-derive)');
   out.push('');
-  out.push(`- blocking issues: ${issues.length}${summarizeCodes(issues)}`);
-  out.push(`- warnings: ${warnings.length}${summarizeCodes(warnings)}`);
-  if (issues.length) {
+  const issueTotal = audit.issuesTotal ?? issues.length;
+  const warningTotal = audit.warningsTotal ?? warnings.length;
+  const shownIssues = issues.slice(0, FINDING_ROW_CAP);
+  const shownWarnings = warnings.slice(0, FINDING_ROW_CAP);
+  out.push(`- blocking issues: ${issueTotal}${summarizeCodes(issues, audit.issueCodes)}`);
+  out.push(`- warnings: ${warningTotal}${summarizeCodes(warnings, audit.warningCodes)}`);
+  if (shownIssues.length) {
     out.push('');
     out.push('BLOCKING (report each once, with the fix):');
-    for (const i of issues) out.push(`- ${i}`);
+    for (const i of shownIssues) out.push(`- ${i}`);
+    const omitted = Math.max(0, issueTotal - shownIssues.length);
+    if (omitted > 0) {
+      out.push(
+        `- … ${omitted} more of the same classes — report them BY CLASS with the counts above, not one line each`,
+      );
+    }
   }
-  if (warnings.length) {
+  if (shownWarnings.length) {
     out.push('');
     out.push('WARNINGS (informational; they do NOT block approval):');
-    for (const w of warnings.slice(0, MAP_ROW_CAP)) out.push(`- ${w}`);
-    if (warnings.length > MAP_ROW_CAP) out.push(`- … ${warnings.length - MAP_ROW_CAP} more`);
+    for (const w of shownWarnings) out.push(`- ${w}`);
+    const omitted = Math.max(0, warningTotal - shownWarnings.length);
+    if (omitted > 0) out.push(`- … ${omitted} more`);
   }
   out.push('');
 
@@ -261,16 +285,17 @@ function renderAudit(audit) {
   if (rows.length) {
     blocks.push({
       key: 'edgeMatrix',
-      title: '#### Edge-case matrix map — row | cited | the acceptance | claims',
-      where: "the plan's edge-case matrix section (it holds each row's expected behaviour)",
+      title: '#### Edge-case matrix map — row | expected | cited | the acceptance | claims',
+      where: "the plan's edge-case matrix section (it holds each row's input state)",
       lines: rows.map((r) => {
         const text = r.acceptance ? String(r.acceptance).slice(0, 90) : 'NO SUCH ACCEPTANCE';
         const claimed = (r.claims ?? []).length ? r.claims.join(', ') : '—';
-        return `${r.row} | ${r.task}#${r.index} | ${text} | ${claimed}`;
+        const expected = String(r.expected ?? r.case ?? '').slice(0, 70);
+        return `${r.row} | ${expected} | ${r.task}#${r.index} | ${text} | ${claimed}`;
       }),
       footer:
-        'The claim link is already checked. Judge the rest: does the cited acceptance verify the stated case? ' +
-        "The case text lives in the plan's matrix section — read it for any row you doubt.",
+        'The claim link is already checked. Judge the rest: does the cited acceptance deliver the expected behaviour? ' +
+        "The input state lives in the plan's matrix section — read it for any row you doubt.",
     });
   }
   if (reqs.length) {
@@ -361,14 +386,25 @@ function renderAudit(audit) {
   return out;
 }
 
-/** " (3 codes: A x1, B x2)" — the counts the orchestrator groups fixes by. */
-function summarizeCodes(list) {
+/**
+ * " (MIRROR_MISSING x120, REQ_UNCITED x3)" — the counts the orchestrator
+ * groups fixes by.
+ *
+ * The counts come from the FLOOR's own tally (`issueCodes`), so they are
+ * complete even when the floor's list is a sample. That is the whole point:
+ * 120 identical findings are one fix, not 120 lines to read.
+ */
+function summarizeCodes(list, counts) {
+  const source = counts && Object.keys(counts).length ? counts : null;
+  if (source) {
+    const parts = Object.entries(source).map(([code, n]) => `${code} x${n}`);
+    return ` (${parts.join(', ')})`;
+  }
   if (!list.length) return '';
-  const counts = new Map();
+  const local = new Map();
   for (const m of list) {
     const code = String(m).split(':')[0];
-    counts.set(code, (counts.get(code) ?? 0) + 1);
+    local.set(code, (local.get(code) ?? 0) + 1);
   }
-  const parts = [...counts.entries()].map(([code, n]) => `${code} x${n}`);
-  return ` (${parts.join(', ')})`;
+  return ` (${[...local.entries()].map(([code, n]) => `${code} x${n}`).join(', ')})`;
 }

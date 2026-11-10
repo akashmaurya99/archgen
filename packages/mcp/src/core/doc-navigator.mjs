@@ -37,6 +37,17 @@ import { artifactSpaceMissing } from './guidance.mjs';
 // Overview emits at most this many files (sorted); above it, truncated:true.
 export const OVERVIEW_MAX_FILES = 100;
 
+/**
+ * How many section ENTRIES one digest page carries.
+ *
+ * The digest is the outline the agent navigates by. An outline that costs more
+ * than the plan it indexes is worse than no outline: 13 files x 20 sections
+ * rendered 11,775 tokens. The budget is a CEILING — the count per file is
+ * always reported, and the agent scopes the digest to one file when it needs
+ * that file's sections.
+ */
+export const DIGEST_SECTION_BUDGET = 80;
+
 // Separator for composite map keys. NUL cannot occur in a path or a link
 // target, so it is collision-proof — plain concatenation is not ("a"+"bc" vs
 // "ab"+"c").
@@ -471,21 +482,64 @@ export function docIndex(input, opts = {}) {
   if (mode === 'digest') {
     // Section index the agent reads instead of whole documents; fetch exactly
     // the sections it needs with the `section` action.
+    //
+    // The section LIST is budgeted: 13 files x 20 sections rendered 11,775
+    // tokens of outline — more than the plan it indexes. The COUNT per file is
+    // always reported, so the agent knows the scale; the entries are the
+    // sample it can act on (and it can scope the digest to one file).
     const { docs } = collectDocs();
-    const files = docs.map((doc) => ({
-      path: relFromRoot(doc.abs),
-      title: doc.headings.find((h) => h.level === 1)?.text ?? basename(doc.rel),
-      sections: buildSections(doc).map((s) => ({
-        slug: s.slug,
-        title: s.title,
-        level: s.level,
-        line: s.line,
-        // The section's SIZE, not its end line: the caller needs to know
-        // whether pulling it is cheap, and one number answers that.
-        lines: s.endLine - s.line + 1,
-      })),
-    }));
-    return { mode, data: { slug, totalFiles: files.length, files } };
+    const budget = Number.isFinite(opts.sectionBudget) ? opts.sectionBudget : DIGEST_SECTION_BUDGET;
+    let left = budget;
+    // FAIR SHARE FIRST. A budget spent in file order starves the last files of
+    // their outline — the agent then cannot navigate them at all. Every file
+    // keeps the head of its outline; the remainder is then shared round-robin.
+    const allSections = docs.map((doc) => buildSections(doc));
+    const share = Math.max(1, Math.floor(budget / Math.max(1, docs.length)));
+    const taken = allSections.map((all) => {
+      const t = all.slice(0, Math.min(all.length, share));
+      left -= t.length;
+      return t;
+    });
+    let moved = true;
+    while (left > 0 && moved) {
+      moved = false;
+      for (let i = 0; i < allSections.length && left > 0; i++) {
+        const all = allSections[i];
+        if (taken[i].length < all.length) {
+          taken[i].push(all[taken[i].length]);
+          left--;
+          moved = true;
+        }
+      }
+    }
+    const files = docs.map((doc, i) => {
+      const all = allSections[i];
+      const take = taken[i].sort((a, b) => a.line - b.line);
+      return {
+        path: relFromRoot(doc.abs),
+        title: doc.headings.find((h) => h.level === 1)?.text ?? basename(doc.rel),
+        sectionCount: all.length,
+        sections: take.map((s) => ({
+          slug: s.slug,
+          title: s.title,
+          level: s.level,
+          line: s.line,
+          // The section's SIZE, not its end line: the caller needs to know
+          // whether pulling it is cheap, and one number answers that.
+          lines: s.endLine - s.line + 1,
+        })),
+        ...(take.length < all.length ? { truncated: all.length - take.length } : {}),
+      };
+    });
+    return {
+      mode,
+      data: {
+        slug,
+        totalFiles: files.length,
+        files,
+        ...(left <= 0 ? { sectionsOmitted: true, hint: 'scope the digest to one file (file:) for its sections' } : {}),
+      },
+    };
   }
 
   if (mode === 'section') {

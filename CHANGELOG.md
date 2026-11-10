@@ -251,6 +251,45 @@ the single outline.
 Measured on a 20-task, 60-edge-row plan: the verifier brief **6,941 → 4,990**
 tokens, the review brief **5,855 → 4,294**.
 
+### Fixed — three outputs had no ceiling
+
+Measured against the worst case (120 tasks, each missing its mirrored test
+path; 13 files x 20 sections):
+
+| Action | Before | After |
+|---|---:|---:|
+| `archgen_plan{verify}` | 7,191 | **2,588** |
+| `archgen_plan{coverage}` | 7,109 | **2,666** |
+| `archgen_docs{digest}` | 11,775 | **4,136** |
+
+**The bound never loses what the agent needs:**
+
+- the floor's **counts per class stay exact** (`MIRROR_MISSING x120`), the
+  verdict is computed from the full set, and the list is a sample with the
+  remainder reported — so the agent reports *one line per class* ("every task
+  owns source without its mirrored test path") instead of 120 near-identical
+  lines, which is the fix the orchestrator actually needs;
+- the coverage report bounds the uncovered list and keeps the exact total;
+- the digest spends its budget on a **fair share per file** — every file keeps
+  the head of its outline, the remainder is shared round-robin, and the real
+  section count is always reported — so a budget can never starve a file's
+  navigation entirely (it was spent in file order before).
+
+### Changed — the judgement input got BETTER, not smaller
+
+The gate brief's matrix map now carries the row's **expected behaviour** next
+to the acceptance that claims it — the exact pair the agent has to compare —
+instead of the concatenated input+expected text. The input state stays one
+read away in the plan's matrix section.
+
+```
+E1 | returns an empty list without a call | T1#1 | the module 1 behaviour holds (covers E1) | E1
+```
+
+A broken 60-task brief: **4,227 tokens** with complete counts
+(`MIRROR_MISSING x60, MATRIX_DANGLING_CLAIM x59, REQ_UNCITED x1`) and a
+40-line sample plus "80 more of the same classes — report them BY CLASS".
+
 ### Changed — the gate runs at most twice, and the verifier cannot invent requirements
 
 - **Round 1 is exhaustive; round 2 is a delta.** Round 2 re-checks only round
