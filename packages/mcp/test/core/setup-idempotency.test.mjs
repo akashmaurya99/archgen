@@ -424,7 +424,11 @@ test('bootstrap on a fully wired project returns alreadyConfigured without an in
     assert.equal(envelope.data.alreadyConfigured, true);
     assert.equal(envelope.data.mcp.wired, 1);
     assert.equal(envelope.data.codegraph.indexed, true);
-    assert.equal(envelope.data.codegraph.wiring, undefined, 'the no-op must not carry the full CodeGraph report');
+    assert.equal(
+      envelope.data.codegraph.wiring.manual.length,
+      0,
+      'the no-op must not carry the per-config CodeGraph rows',
+    );
 
     const calls = existsSync(log) ? readFileSync(log, 'utf8') : '';
     assert.doesNotMatch(

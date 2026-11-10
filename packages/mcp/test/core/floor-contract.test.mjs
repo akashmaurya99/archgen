@@ -455,6 +455,18 @@ test('a Profile fence carrying ONLY a gate block is still a record', () => {
       audit.warnings.some((w) => w.startsWith('GATE_IDENTITY_MISSING')),
       `a fence with only a gate must still be checked: ${audit.warnings.join(' | ')}`,
     );
+    // A gate-only fence is NOT an artifact profile. Treating it as one gave
+    // an EMPTY decision set, and every artifact on disk then read as
+    // PROFILE_UNRECORDED — a plan that records no artifact profile at all
+    // would BLOCK the floor instead of warning about it.
+    assert.ok(
+      !audit.issues.some((i) => i.startsWith('PROFILE_UNRECORDED')),
+      `a gate-only fence must not turn every artifact into a defect: ${audit.issues.join(' | ')}`,
+    );
+    assert.ok(
+      audit.warnings.some((w) => w.startsWith('PROFILE_NOT_RECORDED')),
+      `the missing artifact profile must warn: ${audit.warnings.join(' | ')}`,
+    );
   } finally {
     f.cleanup();
   }

@@ -146,19 +146,47 @@ Every `§` section, brief and template was reconciled with the code:
 The floor's exact behaviour (waivers, families, the claim convention), the
 profile→scaffold round trip, the medium-confidence rule, the error semantics
 and the corrected call sites all live in the always-on kernel — where the
-agent reads them. The always-on total moves **12,816 tokens**, and the
+agent reads them. The always-on total moves **12,833 tokens**, and the
 documented CI ceiling moves with it **12,200 → 13,200**. The budget is still
 a hard gate: CI fails if the always-on footprint exceeds it.
 
 | | Tokens |
 |---|---:|
 | `skill/SKILL.md` (always-on) | 7,500 |
-| MCP tool catalog (9 tools, always-on) | 5,316 |
-| **Always-on total** | **12,816** |
+| MCP tool catalog (9 tools, always-on) | 5,333 |
+| **Always-on total** | **12,833** |
 | Protocol references (on demand) | 17,230 |
 | Median reference section | 271 |
 | Dispatch briefs (on demand) | 4,155 |
 | Artifact templates (on demand) | 2,733 |
+
+### Fixed — the final verification pass found seven more
+
+A second verification pass drove the real handlers against the fixed code and
+found seven defects in the previous commit — one of them a regression that
+flipped a SMALL plan from `APPROVE` to `ISSUES`:
+
+- **A gate-only `## Profile` fence blocked the floor.** The fence was read as
+  *the plan profile*, so the decision set was empty and every artifact on disk
+  read as `PROFILE_UNRECORDED` — a plan that records no artifact profile at
+  all blocked instead of warning. The fence's GATE is now read separately
+  from its artifact decisions.
+- **`coverage`'s continuation named the default collection**, so an agent
+  paging the uncovered list got the task list instead. The requested
+  collection is now first.
+- **`coverage`'s `meta.total`/`meta.returned` described the whole set** while
+  the answer carried one collection — `returned` could exceed `total`. Both
+  now describe the selected collection; the whole-set view stays in
+  `meta.available`.
+- **`scaffold{file}` served an `omit`-decided artifact as "write this"**, with
+  `skeleton: null`. It now refuses, with the reason.
+- **`bootstrap`'s outer payload had a key on one path only**
+  (`alreadyConfigured`), and the codegraph report's key set varied with what
+  happened to be detected. Both are fixed sets now.
+- **`impact`'s `meta.total` excluded the artifacts** its payload carried, and
+  it had no way to say which list the window walks. It now has a `collection`.
+- **`verify`'s published continuation advertised `limit: 50`** while the
+  effective limit was 40. The continuation now carries the effective limit.
 
 ### Added — the tests that hold the rules in place
 
@@ -175,6 +203,10 @@ a hard gate: CI fails if the always-on footprint exceeds it.
   must exist, and every argument the tool requires must be named. Five calls
   the tool rejected were found this way; the test is what stops the skill's
   instructions from rotting silently.
+- `tool-contract` — the promises the tool catalog makes: a continuation names
+  the collection that was asked for, `meta.total`/`meta.returned` describe
+  the answer, one shape per fact, and an `omit`-decided artifact is never
+  served as "write this".
 - `continuable` / `bounded-output` — every bound is walkable, and every count
   is exact.
 

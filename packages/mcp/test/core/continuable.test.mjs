@@ -162,3 +162,37 @@ test('a digest scoped to ONE file is complete', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a 501-section file is still COMPLETE when it is the one you asked for', () => {
+  const root = mkdtempSync(join(tmpdir(), 'archgen-cont-big-'));
+  try {
+    const slugDir = join(root, '.archgen', 'demo');
+    mkdirSync(join(slugDir, 'docs'), { recursive: true });
+    const sections = Array.from({ length: 501 }, (_, s) => `## Section ${s + 1}\n\ntext\n`).join('\n');
+    writeFileSync(join(slugDir, 'docs', 'huge.md'), `# Huge\n\n${sections}`, 'utf8');
+    const out = docIndex(slugDir, { mode: 'digest', file: 'docs/huge.md', projectRoot: root });
+    const file = out.data.files[0];
+    assert.equal(file.sectionCount, 502, 'the count is the whole outline');
+    assert.equal(file.sections.length, 502, 'NOTHING is cut from a file-scoped digest');
+    assert.equal(file.truncated, undefined, 'nothing was cut');
+    assert.equal(out.data.sectionsOmitted, undefined, 'nothing was omitted');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the file map reaches EVERY file — the old 100-file cap made 101+ unreachable', () => {
+  const root = mkdtempSync(join(tmpdir(), 'archgen-cont-files-'));
+  try {
+    const slugDir = join(root, '.archgen', 'demo');
+    mkdirSync(join(slugDir, 'docs'), { recursive: true });
+    for (let i = 0; i < 120; i++) {
+      writeFileSync(join(slugDir, 'docs', `doc-${String(i).padStart(3, '0')}.md`), `# Doc ${i}\n\ntext\n`, 'utf8');
+    }
+    const out = docIndex(slugDir, { mode: 'overview', projectRoot: root });
+    assert.equal(out.data.totalFiles, 120, 'the true count is reported');
+    assert.equal(out.data.files.length, 120, 'every file is reachable');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -147,8 +147,8 @@ always-on footprint exceeds 13,200 tokens.
 | | Tokens |
 | --- | ---: |
 | `skill/SKILL.md` | 7,500 |
-| MCP tool catalog (9 tools) | 5,316 |
-| **Always-on total** | **12,816** — 39% of a 32k window |
+| MCP tool catalog (9 tools) | 5,333 |
+| **Always-on total** | **12,833** — 39% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
 references are 17,230 tokens *in total*, but a typical section is **271

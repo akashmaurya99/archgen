@@ -345,6 +345,10 @@ export function registerSetupTools(server) {
       // 7 — so one fact had two shapes depending on who asked.
       const codegraphShaped = shapeReport(codegraph);
       return {
+        // The SAME outer keys on both paths. `alreadyConfigured` used to
+        // exist only on the fast path, so a client had to branch on which
+        // path answered.
+        alreadyConfigured: false,
         compat,
         mcp: mcpSummary,
         codegraph: codegraphShaped,

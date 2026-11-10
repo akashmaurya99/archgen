@@ -713,7 +713,14 @@ export function planSnapshot(tasks, maps, planText, prdText, architecture) {
 export function readProfile(answers, planText) {
   const fromAnswers = answers?.plan_profile ?? answers?.profile ?? null;
   if (fromAnswers && Array.isArray(fromAnswers.artifacts)) return fromAnswers;
-  return readPlanProfile(planText);
+  const fence = readPlanProfile(planText);
+  // A fence with NO artifact decisions is not an artifact profile. Returning
+  // it would make the decision set EMPTY, and every artifact on disk would
+  // then read as PROFILE_UNRECORDED — a plan that records no artifact
+  // profile at all would BLOCK the floor instead of warning about it.
+  // The fence's GATE is read separately, at the gate check.
+  if (fence && Array.isArray(fence.artifacts)) return fence;
+  return null;
 }
 
 /**

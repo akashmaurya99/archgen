@@ -44,21 +44,19 @@ export function shapeReport(report, window = {}) {
   // used to answer with different shapes for the same question.
   out.indexed = report.index?.initialized === true || report.index?.indexed === true;
   if (report.index && report.index.action !== 'none') out.index = report.index;
-  if (report.planned) out.planned = true;
+  // ALWAYS present, so the key set does not depend on which path answered.
+  out.planned = report.planned === true;
   const native = report.wiring?.native ?? [];
   const manual = project(report.wiring?.manual ?? [], window);
   const skipped = report.wiring?.skipped ?? [];
-  if (native.length || manual.items.length || skipped.length) {
-    out.wiring = {};
-    if (native.length) out.wiring.native = native;
-    if (manual.items.length || manual.total) {
-      out.wiring.manual = manual.items;
-      out.wiring.manualTotal = manual.total;
-    }
-    // The SKIPPED rows used to be dropped: a config that could not be merged
-    // looks like a config that was never there.
-    if (skipped.length) out.wiring.skipped = skipped;
-  }
+  // The wiring buckets are ALWAYS present, so the key set does not depend on
+  // which harness happened to be detected.
+  out.wiring = {
+    native,
+    manual: manual.items,
+    manualTotal: manual.total,
+    skipped,
+  };
   return out;
 }
 

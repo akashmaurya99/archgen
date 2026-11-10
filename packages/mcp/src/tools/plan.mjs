@@ -72,9 +72,12 @@ const schema = z.object({
       'findings',
       'requirements',
       'edgeCases',
+      'direct',
+      'transitive',
+      'artifacts',
     ])
     .optional()
-    .describe('Which collection `limit`/`offset` window (validate, verify, coverage).'),
+    .describe('Which collection `limit`/`offset` window (validate, verify, coverage, impact).'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -137,8 +140,8 @@ export function registerPlanTools(server) {
           // in the payload, so a caller that needs the tail can reach it.
           // The next call is emitted when EITHER list is truncated — the
           // warnings used to vanish with no pointer at all.
-          const issueNext = nextCall('verify', { ...args, collection: 'issues' }, out.issuesOffset + out.issues.length);
-          const warningNext = nextCall('verify', { ...args, collection: 'warnings' }, out.warningsOffset + out.warnings.length);
+          const issueNext = nextCall('verify', { ...args, collection: 'issues', limit: out.issues.length || args.limit }, out.issuesOffset + out.issues.length);
+          const warningNext = nextCall('verify', { ...args, collection: 'warnings', limit: out.warnings.length || args.limit }, out.warningsOffset + out.warnings.length);
           const issueTruncated = out.issues.length < out.issuesTotal;
           const warningTruncated = out.warnings.length < out.warningsTotal;
           // `next` names the FIRST truncated list — the selected one when it
@@ -200,13 +203,40 @@ export function registerPlanTools(server) {
             edgeCases: call('edgeCases', covered.edgeCases.offset + covered.edgeCases.unlinked.length),
           };
           const truncated = (shown, total) => shown < total;
+          // The REQUESTED collection comes first in the continuation list —
+          // `meta.next` is the call the agent is told to fetch, so it must
+          // continue the collection it asked about, not the default one.
+          const order = [
+            collection,
+            ...['tasks', 'covered', 'uncovered', 'findings', 'requirements', 'edgeCases'].filter(
+              (c) => c !== collection,
+            ),
+          ];
+          const shownOf = {
+            tasks: covered.tasks.items.length,
+            covered: covered.covered.items.length,
+            uncovered: covered.uncovered.items.length,
+            findings: covered.findings.items.length,
+            requirements: covered.requirements.uncovered.length,
+            edgeCases: covered.edgeCases.unlinked.length,
+          };
+          const totalOf = {
+            tasks: covered.tasks.total,
+            covered: covered.covered.total,
+            uncovered: covered.uncovered.total,
+            findings: covered.findings.total,
+            requirements: covered.requirements.uncoveredTotal,
+            edgeCases: covered.edgeCases.unlinkedTotal,
+          };
           const moreList = [];
-          if (truncated(covered.tasks.items.length, covered.tasks.total)) moreList.push(next.tasks);
-          if (truncated(covered.covered.items.length, covered.covered.total)) moreList.push(next.covered);
-          if (truncated(covered.uncovered.items.length, covered.uncovered.total)) moreList.push(next.uncovered);
-          if (truncated(covered.findings.items.length, covered.findings.total)) moreList.push(next.findings);
-          if (truncated(covered.requirements.uncovered.length, covered.requirements.uncoveredTotal)) moreList.push(next.requirements);
-          if (truncated(covered.edgeCases.unlinked.length, covered.edgeCases.unlinkedTotal)) moreList.push(next.edgeCases);
+          for (const c of order) {
+            if (truncated(shownOf[c], totalOf[c])) moreList.push(next[c]);
+          }
+          // `meta.total`/`meta.returned` describe the SELECTED collection.
+          // They described the whole set before, so `returned` could exceed
+          // `total` and neither number matched the answer.
+          const selectedTotal = totalOf[collection] ?? 0;
+          const selectedShown = shownOf[collection] ?? 0;
           return withMeta(
             {
               ...covered,
@@ -228,12 +258,8 @@ export function registerPlanTools(server) {
               },
             },
             moreMeta({
-              total: covered.tasks.total,
-              returned:
-                covered.tasks.items.length +
-                covered.findings.items.length +
-                covered.requirements.uncovered.length +
-                covered.edgeCases.unlinked.length,
+              total: selectedTotal,
+              returned: selectedShown,
               next: moreList[0],
               more: moreList.length > 1 ? moreList.slice(1).join(' | ') : undefined,
               available: {
@@ -254,11 +280,19 @@ export function registerPlanTools(server) {
           // The payload is WINDOWED. It used to carry every impacted id while
           // the meta reported a limit of 3 — and the "next" call returned the
           // very same payload, so the limit was a lie.
-          const direct = project(blast.direct ?? [], { limit: args.limit, offset: args.offset });
-          const transitive = project(blast.transitive ?? [], { limit: args.limit, offset: args.offset });
-          const artifacts = project(blast.artifacts ?? [], { limit: args.limit, offset: args.offset });
+          //
+          // Each list has its OWN cursor: `collection` says which one the
+          // window walks, so an agent paging the artifacts is not silently
+          // paging the task ids too.
+          const collection = args.collection ?? 'direct';
+          const window = { limit: args.limit, offset: args.offset };
+          const direct = project(blast.direct ?? [], { ...window, offset: collection === 'direct' ? args.offset : 0 });
+          const transitive = project(blast.transitive ?? [], { ...window, offset: collection === 'transitive' ? args.offset : 0 });
+          const artifacts = project(blast.artifacts ?? [], { ...window, offset: collection === 'artifacts' ? args.offset : 0 });
           const nextOffset = (args.offset ?? 0) + (args.limit ?? 50);
-          const next = `archgen_plan{action:'impact',tasksYaml:'${file}',target:'${args.target}',limit:${args.limit ?? 50},offset:${nextOffset}}`;
+          const next = `archgen_plan{action:'impact',tasksYaml:'${file}',target:'${args.target}',collection:'${collection}',limit:${args.limit ?? 50},offset:${nextOffset}}`;
+          const shownOf = { direct: direct.returned, transitive: transitive.returned, artifacts: artifacts.returned };
+          const totalOf = { direct: direct.total, transitive: transitive.total, artifacts: artifacts.total };
           return withMeta(
             {
               target: args.target,
@@ -270,9 +304,12 @@ export function registerPlanTools(server) {
               artifactsTotal: artifacts.total,
             },
             moreMeta({
-              total: direct.total + transitive.total,
+              // The total covers EVERY list the payload carries — a `returned`
+              // larger than the `total` is impossible to reconcile.
+              total: direct.total + transitive.total + artifacts.total,
               returned: direct.returned + transitive.returned + artifacts.returned,
-              next: direct.truncated || transitive.truncated || artifacts.truncated ? next : undefined,
+              next:
+                direct.truncated || transitive.truncated || artifacts.truncated ? next : undefined,
               available: {
                 direct: direct.total,
                 transitive: transitive.total,
@@ -342,6 +379,17 @@ export function registerPlanTools(server) {
                 skeletons: Object.keys(built.skeletons ?? {}),
               });
             }
+            // An artifact the profile marks OMIT (or, in class mode,
+            // conditional) must not be served as "write this" — there is no
+            // skeleton for it, and writing it is the defect the profile
+            // exists to prevent. The one-file call said "write this" with
+            // `skeleton: null`, and the floor then reported the copy.
+            if (artifact && artifact.decision && artifact.decision !== 'create') {
+              throw invalidInput(
+                `the profile marks '${artifact.path}' as ${artifact.decision} — do not write it (${artifact.reason ?? 'no reason recorded'})`,
+                { action, file: wanted, decision: artifact.decision, reason: artifact.reason ?? null },
+              );
+            }
             // ONLY the file. The old payload kept the whole scaffold and
             // replaced the skeletons map, so a "one file" call still carried
             // ~1,900 tokens of profile, artifacts, notes and budgets.
@@ -353,7 +401,7 @@ export function registerPlanTools(server) {
               one: {
                 path: artifact?.path ?? wanted,
                 skeletonKey: key ?? null,
-                decision: artifact?.decision ?? null,
+                decision: artifact?.decision ?? 'create',
                 purpose: artifact?.purpose ?? null,
                 reason: artifact?.reason ?? null,
                 required: artifact?.required ?? null,
