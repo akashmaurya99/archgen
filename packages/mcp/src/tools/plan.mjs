@@ -75,12 +75,21 @@ export function registerPlanTools(server) {
         case 'verify': {
           const file = requireTasksYaml(args, ctx);
           if (!args.planDir) throw invalidInput('verify requires planDir', { action });
-          return verifyPlan(file, ctx.contain(args.planDir));
+          const planDirArg = ctx.contain(args.planDir);
+          const out = verifyPlan(file, planDirArg, { offset: args.offset ?? 0 });
+          // The findings list is bounded AND walkable: the exact next call is
+          // in the payload, so a caller that needs the tail can reach it.
+          const nextOffset = (out.issuesOffset ?? 0) + out.issues.length;
+          const next =
+            out.omitted.issues > 0
+              ? `archgen_plan{action:'verify',tasksYaml:'${file}',planDir:'${args.planDir}',offset:${nextOffset}}`
+              : undefined;
+          return withMeta(out, moreMeta({ total: out.issuesTotal, returned: out.issues.length, next }));
         }
         case 'coverage': {
           const file = requireTasksYaml(args, ctx);
           if (!args.planDir) throw invalidInput('coverage requires planDir', { action });
-          const covered = planCoverage(file, ctx.contain(args.planDir));
+          const covered = planCoverage(file, ctx.contain(args.planDir), { offset: args.offset ?? 0 });
           // ONE task, when the caller named one.
           if (args.taskId) {
             const isCovered = (covered.covered ?? []).includes(args.taskId);
@@ -115,7 +124,12 @@ export function registerPlanTools(server) {
               returned: p.returned,
               next: p.next,
               available: { tasks: p.total, uncovered: covered.uncoveredTotal ?? (covered.uncovered ?? []).length },
-              more: `archgen_plan{action:'coverage',tasksYaml:'${file}',planDir:'${args.planDir}',taskId:'<one task>'}`,
+              // The uncovered list is walkable too — the next call reaches the
+              // tail of BOTH the task list and the uncovered list.
+              more:
+                covered.uncoveredTotal > (covered.uncovered ?? []).length
+                  ? `archgen_plan{action:'coverage',tasksYaml:'${file}',planDir:'${args.planDir}',offset:${(covered.uncoveredOffset ?? 0) + (covered.uncovered ?? []).length}}`
+                  : `archgen_plan{action:'coverage',tasksYaml:'${file}',planDir:'${args.planDir}',taskId:'<one task>'}`,
             }),
           );
         }

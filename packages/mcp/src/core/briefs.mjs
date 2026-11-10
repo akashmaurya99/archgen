@@ -246,7 +246,10 @@ function renderAudit(audit) {
     const omitted = Math.max(0, issueTotal - shownIssues.length);
     if (omitted > 0) {
       out.push(
-        `- … ${omitted} more of the same classes — report them BY CLASS with the counts above, not one line each`,
+        `- … ${omitted} more of the same classes — report them BY CLASS with the counts above, not one line each` +
+          (ctx.scope?.tasksYaml
+            ? ` (the instances are reachable: archgen_plan{action:'verify',offset:${shownIssues.length}})`
+            : ''),
       );
     }
   }

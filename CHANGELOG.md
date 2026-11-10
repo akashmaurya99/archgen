@@ -275,6 +275,27 @@ path; 13 files x 20 sections):
   section count is always reported — so a budget can never starve a file's
   navigation entirely (it was spent in file order before).
 
+### Fixed — a bound that hid the tail
+
+The floor's findings were capped at 40 with **no way to reach the rest**: the
+agent could see that there were 120 and never see findings 41–120. A bound
+that hides the tail without a way to reach it is not a bound — it is a loss,
+and the agent ends up fixing a class it cannot enumerate.
+
+Every bounded output is now **continuable**, and the rule is tested:
+
+- `archgen_plan{action:'verify'}` takes `offset` and names the next call in
+  `meta.next` — the findings list is a window, not a truncation;
+- `archgen_plan{action:'coverage'}` walks its uncovered list the same way;
+- a digest scoped to **one file** is that file's complete outline (the budget
+  exists to bound the artifact set, not to hide a document the caller asked
+  about);
+- the gate brief names the continuation when it shows a sample of the floor's
+  findings.
+
+A test walks the findings to the end and asserts: every finding is reachable,
+none is shown twice, and the totals and per-class counts never change.
+
 ### Changed — the judgement input got BETTER, not smaller
 
 The gate brief's matrix map now carries the row's **expected behaviour** next

@@ -77,12 +77,21 @@ function countByCode(list) {
   return out;
 }
 
-/** Keep the first N, and report what was left. */
-function cap(list, max) {
+/**
+ * Keep a WINDOW of the list, and report what is outside it.
+ *
+ * The window is CONTINUABLE: the caller passes `offset` to walk the rest.
+ * A bound that hides the tail without a way to reach it is not a bound — it
+ * is a loss, and the agent would have to fix a class it cannot enumerate.
+ */
+function cap(list, max, offset = 0) {
+  const start = Math.max(0, Math.min(offset, list.length));
+  const shown = list.slice(start, start + max);
   return {
-    shown: list.slice(0, max),
+    shown,
     total: list.length,
-    omitted: Math.max(0, list.length - max),
+    offset: start,
+    omitted: Math.max(0, list.length - (start + shown.length)),
   };
 }
 
@@ -91,11 +100,12 @@ function cap(list, max) {
  *
  * @param {string} file absolute path to tasks.yaml
  * @param {string} planDir absolute path to the plans directory
+ * @param {{offset?: number}} [opts] `offset` walks the findings list
  * @returns {{verdict: 'APPROVE'|'ISSUES', issues: string[], warnings: string[],
  *            issueCodes: object, warningCodes: object, issuesTotal: number,
  *            warningsTotal: number, omitted: {issues: number, warnings: number}}}
  */
-export function verifyPlan(file, planDir) {
+export function verifyPlan(file, planDir, opts = {}) {
   const issues = [];
   const warnings = [];
 
@@ -163,8 +173,9 @@ export function verifyPlan(file, planDir) {
     }
   }
 
-  const cappedIssues = cap(issues, MAX_FINDINGS);
-  const cappedWarnings = cap(warnings, MAX_WARNINGS);
+  const offset = Number.isInteger(opts.offset) ? opts.offset : 0;
+  const cappedIssues = cap(issues, MAX_FINDINGS, offset);
+  const cappedWarnings = cap(warnings, MAX_WARNINGS, offset);
   return {
     verdict: issues.length ? 'ISSUES' : 'APPROVE',
     issues: cappedIssues.shown,
@@ -173,6 +184,8 @@ export function verifyPlan(file, planDir) {
     warningCodes: countByCode(warnings),
     issuesTotal: cappedIssues.total,
     warningsTotal: cappedWarnings.total,
+    issuesOffset: cappedIssues.offset,
+    warningsOffset: cappedWarnings.offset,
     omitted: { issues: cappedIssues.omitted, warnings: cappedWarnings.omitted },
   };
 }
@@ -195,7 +208,7 @@ function withCode(message) {
  * @returns {{covered: string[], uncovered: string[], findings: string[],
  *            requirements: object, edgeCases: object, profileRecorded: boolean}}
  */
-export function planCoverage(file, planDir) {
+export function planCoverage(file, planDir, opts = {}) {
   let data;
   try {
     ({ data } = parseYaml(readFileSync(file, 'utf8'), { filename: file }));
@@ -219,10 +232,12 @@ export function planCoverage(file, planDir) {
     const mentioned = referenced.has(id) || mentionedInTasks.has(id);
     (mentioned ? covered : uncovered).push(id);
   }
-  // The uncovered list is bounded too: 120 uncovered tasks is 120 ids the
-  // caller cannot act on one by one. The COUNT is the fact; the list is a
-  // sample.
-  const uncoveredShown = uncovered.slice(0, MAX_FINDINGS);
+  // The uncovered list is bounded too — and CONTINUABLE: `offset` walks it.
+  // 120 uncovered tasks is 120 ids the caller cannot act on one by one, but it
+  // CAN reach them all.
+  const offset = Number.isInteger(opts.offset) ? opts.offset : 0;
+  const uncoveredStart = Math.max(0, Math.min(offset, uncovered.length));
+  const uncoveredShown = uncovered.slice(uncoveredStart, uncoveredStart + MAX_FINDINGS);
 
   let requirements = { total: 0, covered: 0, uncovered: [] };
   let edgeCases = { total: 0, linked: 0, unlinked: [] };
@@ -251,15 +266,16 @@ export function planCoverage(file, planDir) {
     // verifier's business, not this action's.
   }
 
-  // The findings list is bounded like the gate's: the COUNTS are the payload,
-  // the list is a sample.
-  const cappedFindings = cap(findings, MAX_FINDINGS);
+  // The findings list is bounded like the gate's, and walkable with `offset`.
+  const cappedFindings = cap(findings, MAX_FINDINGS, offset);
   return {
     covered,
     uncovered: uncoveredShown,
     uncoveredTotal: uncovered.length,
+    uncoveredOffset: uncoveredStart,
     findings: cappedFindings.shown,
     findingsTotal: cappedFindings.total,
+    findingsOffset: cappedFindings.offset,
     omitted: { findings: cappedFindings.omitted },
     requirements,
     edgeCases,

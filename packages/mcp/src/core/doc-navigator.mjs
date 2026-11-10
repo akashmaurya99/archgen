@@ -48,6 +48,9 @@ export const OVERVIEW_MAX_FILES = 100;
  */
 export const DIGEST_SECTION_BUDGET = 80;
 
+/** A digest scoped to ONE file carries that file's whole outline. */
+export const SINGLE_FILE_SECTION_BUDGET = 400;
+
 // Separator for composite map keys. NUL cannot occur in a path or a link
 // target, so it is collision-proof — plain concatenation is not ("a"+"bc" vs
 // "ab"+"c").
@@ -488,7 +491,14 @@ export function docIndex(input, opts = {}) {
     // always reported, so the agent knows the scale; the entries are the
     // sample it can act on (and it can scope the digest to one file).
     const { docs } = collectDocs();
-    const budget = Number.isFinite(opts.sectionBudget) ? opts.sectionBudget : DIGEST_SECTION_BUDGET;
+    // A digest SCOPED TO ONE FILE is that file's complete outline — the
+    // budget exists to bound the whole artifact set, not to hide a document
+    // the caller explicitly asked about.
+    const budget = Number.isFinite(opts.sectionBudget)
+      ? opts.sectionBudget
+      : docs.length === 1
+        ? SINGLE_FILE_SECTION_BUDGET
+        : DIGEST_SECTION_BUDGET;
     let left = budget;
     // FAIR SHARE FIRST. A budget spent in file order starves the last files of
     // their outline — the agent then cannot navigate them at all. Every file
