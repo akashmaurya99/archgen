@@ -226,6 +226,47 @@ of a second report that knew nothing about traceability.
   (checkpoint/resume, rate limiting, retention policies) and the plan never
   converged.
 
+### Fixed — the review stage had its own three-pass loop
+
+The verifier stage was capped at two rounds; the **review stage kept its own
+three-pass protocol**. Two stages with different loops are two stages that
+drift, and the third pass is where an agent starts wanting new features.
+
+There is now **ONE gate protocol, TWO stages, TWO rounds each** (the review
+stage runs it verbatim):
+
+- **Round 1 is exhaustive** — every area, every finding, one pass. Holding a
+  finding back to see what a fix does is a defect in Round 1.
+- **The fix pass is one pass per file AND per code**, then the floor re-checks
+  it. If the floor reports your own code again, the *class* was not fixed.
+- **Round 2 is a delta** — the Round 1 findings and the artifacts the fix
+  touched; nothing else.
+- **No round 3, ever, by default.** What remains is either a concrete defect
+  (the orchestrator fixes it and the floor proves it) or a judgement call (the
+  user's decision). A third pass needs an explicit user request with a stated
+  purpose — never "one more look".
+
+### Changed — a finding blocks only when it names the rule it violates
+
+The endless "target 0 or negative" → "target 0, negative, or non-finite"
+churn was a classification failure: nothing told the agent what makes a
+finding blocking. Now a BLOCKING finding must name **the artifact, the rule
+it violates** (a PRD requirement, an accepted decision, a recorded profile
+decision, a code standard, or another task's contract) **and the change that
+satisfies it**. A finding that cannot name the violated rule is a NIT
+(cosmetic — one line, no rewrite, no round) or an OBSERVATION (a capability
+nobody asked for).
+
+### Changed — session reuse, bounded
+
+The dispatch ledger reuses a worker's session for a follow-up fix — that part
+is right (context continuity). Three rules now bound it: **gate agents never
+reuse a session** (independence), **a changed contract invalidates the
+session** (its earlier work rests on a stale acceptance), and **the session is
+an optimisation, never the record** (the contract and the git history are).
+The old wording — reuse for "re-verification" — was the hole: a gate that
+continues the session of the agent it judges is not a gate.
+
 ### Changed — artifacts have a consumer, and the host repository wins
 
 - **Necessity over completeness.** Every candidate artifact answers: who reads
@@ -287,12 +328,12 @@ Measured, 0.1.3 → unreleased:
 
 | | 0.1.3 | Unreleased |
 |---|---:|---:|
-| `skill/SKILL.md` (always-on) | 6,252 | 6,375 |
+| `skill/SKILL.md` (always-on) | 6,252 | 6,443 |
 | MCP tool catalog (9 tools, always-on) | 4,695 | 5,056 |
-| **Always-on total** | **10,947** | **11,431** |
-| Protocol references (on demand) | 12,931 | 14,298 |
+| **Always-on total** | **10,947** | **11,499** |
+| Protocol references (on demand) | 12,931 | 15,237 |
 | Median reference section | 238 | 243 |
-| Dispatch briefs (on demand) | 2,416 | 3,497 |
+| Dispatch briefs (on demand) | 2,416 | 3,886 |
 | Artifact templates (on demand) | 2,347 | 2,596 |
 
 The catalog grew by the `profile` action, and the protocol references by the

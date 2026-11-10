@@ -71,12 +71,40 @@ Warnings carry their own codes (`CONFIG_NOT_ENFORCED`, `OWNERSHIP_CONTAINED`, `W
 - **A waiver is a file, not a sentence.** When the user accepts a residual finding, write it to `.archgen/<slug>/waivers.yaml` (`scope`, `finding`, `reason`, `approved_by`, `approved_at`) BEFORE proceeding, and say so in the completion report. A waived finding is not a defect to fix and the verifier must not re-raise it unless it regressed.
 - **The gate measures itself, and it names its subject.** After the gate, record `plan_profile.gate` in `answers.yaml` (MEDIUM/LARGE) or the plan's `## Profile` (SMALL): `verifier` (who approved it), `rounds` used, findings by class, waived count, residual, and the ISO timestamp. The floor checks the recorded waived count against the ledger and warns when no verifier is recorded — an approval without a subject is not an approval.
 
-### Gate protocol — TWO rounds, then the user
+### Gate protocol — ONE protocol, TWO stages, TWO rounds each
 
-1. **Round 1:** dispatch the verifier on the clean floor. `APPROVE` → `§plan-review`. `ISSUES` → batch-fix every BLOCKING finding → re-run the floor until `APPROVE` → Round 2.
-2. **Round 2 — DELTA:** the verifier re-checks ONLY the Round 1 findings (fixed / still open / regressed) and the floor. It does not restate what is fixed. A finding it did not see in Round 1 must be marked `NEW` and must be BLOCKING-grade.
-3. **There is no Round 3.** If Round 2 still reports open BLOCKING findings, fix what is safe, then present the outstanding findings verbatim and ask: *"These N findings remain after two rounds. 1. Waive them and proceed (recommended) 2. Keep the plan open for another look."* Never run a third pass on your own initiative, and never cite token/cost numbers when reporting rounds. A waiver chosen here is written to `waivers.yaml` first.
-4. **No `APPROVE` on record:** quote every outstanding finding and obtain an **explicit user waiver** before `§plan-review`.
+Both gate stages — the **verifier** (`§verifier`) and the **plan review** (`§plan-review`) — run the SAME protocol. They differ in what they judge and in their sizing, never in how many rounds they get. A stage with a different loop is a stage that drifts.
+
+**Round 1 — EXHAUSTIVE.** The agent sees the whole plan and reports every finding of its class in one pass, area by area, with a coverage table. Holding a finding back to see what a fix does is a defect in Round 1.
+
+**The fix pass — ONE pass, per file, per code.** Apply every BLOCKING finding to that file in a single edit, then re-run the floor. If the floor reports a NEW finding of the SAME code, the CLASS was not fixed — fix the class, not the instance. A fix pass that ends with the floor still reporting your own code means the fix was incomplete.
+
+**Round 2 — DELTA.** The agent re-checks ONLY (a) the Round 1 findings — fixed, still open, regressed — and (b) the artifacts the fix touched. It does not restate what is fixed. A finding it did not see in Round 1 must be marked `NEW` and must be BLOCKING-grade.
+
+**No Round 3 — ever, by default.** After Round 2:
+
+| What is left | What happens |
+|---|---|
+| A **concrete** defect (a named artifact violating a named rule) | The orchestrator fixes it and the **floor** re-checks it. No agent pass needed — the floor proves it. |
+| A **judgement** call (a preference, a wording improvement, a capability nobody asked for) | It goes to the user as a decision: waive it, or accept the change. |
+| A **NEW** BLOCKING finding in Round 2 | Round 1 was not exhaustive or the fix was sloppy: fix it locally, re-run the floor, and report it in the completion summary. |
+| The user explicitly asks for another pass | Allowed ONCE, with a stated purpose ("check the N findings we just fixed") — never "one more look". Never on your own initiative. |
+
+Never cite token or cost numbers when reporting rounds. A waiver is written to `waivers.yaml` before proceeding.
+
+### The BLOCKING test — what a finding must name to block
+
+A finding blocks ONLY when it names all three:
+
+1. **the artifact** — file and section;
+2. **the rule it violates** — a PRD requirement, an accepted decision, a recorded profile decision, a code standard, or the contract of another task;
+3. **the change that satisfies it** — what the fix is.
+
+A finding that cannot name the violated rule is **not a defect of this plan**: it is a NIT (cosmetic) or an OBSERVATION (a capability nobody asked for). Neither blocks, neither demands a rewrite, and neither starts another round. "This could be phrased more precisely" is a NIT — state it once, in one line, and move on.
+
+### Gate sessions are NEVER reused
+
+The dispatch ledger (§dispatch) reuses a worker's session for a follow-up. **Gate agents always get a fresh session** — a gate that continues the session of the agent whose work it is judging is not a gate, it is a second opinion from the same mind. Independence is the whole point of the review stage.
 
 ### The floor in CI
 
@@ -90,13 +118,13 @@ Exit 3 when the verdict is ISSUES, 0 when it is APPROVE. Warnings never fail the
 
 ## §plan-review — post-plan review stage
 
-Run AFTER verifier `APPROVE`, BEFORE the User Gate. Use `archgen_plan{action:'brief', kind:'review'}` verbatim; reviewers are read-only and make zero `archgen_*` calls.
+Run AFTER the verifier stage reaches `APPROVE` (or an explicit user waiver), BEFORE the User Gate. Use `archgen_plan{action:'brief', kind:'review'}` verbatim; reviewers are read-only and make zero `archgen_*` calls — everything they need is rendered into the brief.
 
-**Sizing:** SMALL → main-agent self-review; MEDIUM → main-agent review against the profile; LARGE → one independent top-tier reviewer (a 2nd only when context forces `plans/` vs `docs/`, never by concern).
+**Sizing:** SMALL → main-agent self-review; MEDIUM → main-agent review against the profile; LARGE → one independent top-tier reviewer (a 2nd only when context forces `plans/` vs `docs/`, never by concern). A reviewer NEVER continues a worker's session — it is a fresh session, always.
 
 **Review areas (all 5, every run):** `edge cases per module` · `task ordering & parallelization` · `cross-module contracts` · `scope fit & minimalism` (unneeded artifacts, unneeded tasks, duplicated host docs, missing omit reasons) · `documentation completeness` (every task has a plan section).
 
-Pass 1 zero findings → done; findings → batch-fix, re-run `validate` + verifier → Pass 2. Remaining findings at Pass 2 → ask once: *"Run one more targeted pass on the N open findings? 1. One more pass (recommended) 2. Waive findings and proceed."* Pass 3 is final; remaining findings need an explicit user waiver. The orchestrator applies fixes; reviewers never edit.
+**It runs the shared gate protocol** (§verifier): Round 1 exhaustive → one fix pass per file → the floor re-checks → Round 2 is a delta → no third pass. What remains after Round 2 is a user decision, not another round. The reviewer's BLOCKING findings are exactly the ones that name the artifact, the violated rule, and the fix — "this task seems unnecessary" is only BLOCKING when it names the requirement it serves (or the absence of one) and what should replace it. The orchestrator applies the fixes; reviewers never edit.
 
 ## §investigate — root-cause protocol
 
@@ -120,7 +148,15 @@ Dispatch via the platform's native sub-agent mechanism (`archgen_setup{action:'h
 
 ### Session reuse and parallel dispatch
 
-Maintain a **dispatch ledger** (`dispatchKey → session` from `contract`). Continue the same agent for follow-ups, fixes, and re-verification in files it already touched—never re-dispatch for the same context.
+Maintain a **dispatch ledger** (`dispatchKey → session` from `contract`). A follow-up **fix or clarification** in the files that agent already touched CONTINUES its session — it holds the decisions, the dead ends and the constraints, and a fresh agent would re-derive all of it.
+
+Three rules keep that reuse from becoming a liability:
+
+1. **Gates never reuse a session.** A verifier or reviewer that continues the session of the agent whose work it judges is not independent. Gate agents always start a **fresh session** — the ledger is for workers.
+2. **A changed contract invalidates the session.** If the task's acceptance, ownership or scope changed (an UPDATE, a re-profile, a rewritten acceptance), the agent's earlier work rests on a stale contract: re-prime it with the new contract or start a fresh session. Do not let it "finish what it was doing".
+3. **The session is an optimisation, never the record.** The durable facts are the contract in `tasks.yaml` and the git history; a session transcript is neither portable nor auditable. Never let the agent treat "I remember deciding this" as evidence.
+
+Also: a session that has been compacted, evicted or resumed across a harness change is no longer trustworthy context — start fresh with the contract.
 
 **HARD CAP: 3 live parallel sub-agents.** Batch larger waves. Before parallel dispatch, verify:
 1. **Same wave only:** tasks from the current `archgen_tasks{action:'next'}`.

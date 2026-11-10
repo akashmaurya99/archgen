@@ -85,10 +85,14 @@ scales with the profile; the deterministic floor runs for every scope:
    create/reuse/omit decisions, the wave summary (`archgen_tasks{action:'next'}`),
    and the ownership map, and asks "Approve to start work?"
 
-**The gate runs at most twice.** Round 1 is exhaustive; round 2 is a delta
-re-check of round 1's findings. There is no round 3 — whatever remains is
-escalated to the user with the outstanding list. That cap, plus the floor
-before the agent, is what turned a four-round review into one.
+**The gate runs at most twice — in BOTH stages.** The verifier and the plan
+review run the SAME protocol (the review stage used to keep its own three-pass
+loop, which is how the two stages drifted): round 1 is exhaustive, the fix
+pass is one pass per file and per code with the floor re-checking it, round 2
+is a delta re-check, and there is no round 3. What is left after round 2 is a
+user decision, not another round. A finding blocks only when it names the
+artifact, the rule it violates, and the fix — "this could be phrased more
+precisely" is a NIT and never starts a round.
 
 A gate pass is ONE holistic agent over the WHOLE plan — never one agent per
 dimension or per concern. Cross-issue reasoning catches contradictions a
@@ -135,7 +139,7 @@ exists, and every artifact on disk has a decision.
 - **One worker per task.** Workers receive: task id + title, acceptance criteria verbatim, their `file_ownership` globs ("edit NOTHING outside these"), the code-standards reference, the **normative rules of every matched capability skill**, the pre-located doc sections, the CodeGraph directive when the project is indexed, and the done/failed status command. Workers never talk to each other; coordination happens only through `tasks.yaml` state.
 - **Disjoint globs per wave.** Two same-wave tasks may not overlap on file ownership — enforced by the resolver and rejected by the verifier.
 - **Dispatch discipline.** A sub-agent is a WORK unit, not a lookup: status, wave frontier, plan health, graph and registry are always one orchestrator tool call, never a sub-agent. **At most 3 parallel sub-agents at a time** — a larger wave runs in batches of three. Parallel sets must have disjoint read AND write footprints; gate agents never run while a wave is in flight.
-- **Session reuse.** A follow-up that needs an agent's context — a fix in files it touched, a clarification, a re-check of its own output — CONTINUES that agent's session. The contract returns a `dispatchKey` so the orchestrator's ledger is keyed by the tool's own value.
+- **Session reuse.** A follow-up **fix or clarification** in files that agent already touched CONTINUES its session — it holds the decisions and the dead ends, and a fresh agent would re-derive them. Three rules keep that reuse safe: **gate agents never reuse a session** (a verifier that continues the session of the agent it judges is not independent); **a changed contract invalidates the session** (re-prime it or start fresh — its earlier work rests on a stale acceptance); and **the session is an optimisation, never the record** — the durable facts are the contract in `tasks.yaml` and the git history.
 - **Dispatch tiers** (`archgen_refs` → `orchestration.md`): Tier 1 uses native sub-agents where the harness is strong (Claude Code background agents with worktree isolation; Cursor background subagents; Antigravity `invoke_subagent`; Codex flattened plans; Gemini hub-and-spoke for read-only waves). Tier 2 is a universal bash fallback spawning parallel workers over headless CLIs (`claude -p`, `opencode run`, `codex exec`, `gemini`, `agy`), with git-worktree isolation when ownership borders are tight.
 - **Failure policy:** worker failure marks the task `failed` — never auto-retried. Downstream tasks stay blocked via `blockedByFailure`. The user sees the failed id, log path, and a proposed fix task; fix tasks get fresh ids and inherit the failed task's ownership.
 

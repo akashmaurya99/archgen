@@ -59,6 +59,49 @@ test('the orchestration protocol puts the floor first and caps the rounds', () =
   assert.match(text, /delta/i, 'round 2 must be a delta re-check');
 });
 
+test('BOTH gate stages run the SAME protocol — the review stage has no third pass', () => {
+  const text = read(ORCH);
+  if (!text) return;
+  // The review stage used to keep its own 3-pass loop while the verifier was
+  // capped at 2. Two stages with different loops are two stages that drift.
+  assert.match(text, /ONE protocol, TWO stages, TWO rounds each/i);
+  assert.match(
+    text,
+    /It runs the shared gate protocol/,
+    'the review stage must run the shared protocol',
+  );
+  assert.doesNotMatch(text, /Pass 3 is final/, 'the old three-pass review loop must be gone');
+});
+
+test('a BLOCKING finding must name the artifact, the violated rule, and the fix', () => {
+  for (const [label, path] of [['verifier', VERIFIER], ['review', REVIEW]]) {
+    const text = read(path);
+    if (!text) continue;
+    assert.match(text, /the artifact/i, `${label}: the rule must name the artifact`);
+    assert.match(text, /the rule it violates/i, `${label}: the rule must name the violated rule`);
+    assert.match(text, /the change that satisfies it/i, `${label}: the rule must name the fix`);
+    assert.match(
+      text,
+      /could also mention|NIT/i,
+      `${label}: the wording-preference case must be classified`,
+    );
+  }
+});
+
+test('the fix pass is one pass per file, and the floor re-checks it', () => {
+  const text = read(ORCH);
+  if (!text) return;
+  assert.match(text, /ONE pass, per file, per code/i);
+  assert.match(text, /the CLASS was not fixed/i, 'a repeated code means the class was not fixed');
+});
+
+test('gate agents never reuse a worker session', () => {
+  const text = read(ORCH);
+  if (!text) return;
+  assert.match(text, /Gates never reuse a session/i, 'independence requires a fresh gate session');
+  assert.match(text, /changed contract invalidates the session/i);
+});
+
 test('the verifier brief classifies findings and forbids inventing requirements', () => {
   const text = read(VERIFIER);
   if (!text) return;
@@ -78,4 +121,6 @@ test('the review brief classifies findings too', () => {
   assert.match(text, /NIT/);
   assert.match(text, /OBSERVATION/);
   assert.match(text, /scope fit & minimalism/i);
+  assert.match(text, /Round 2 is a DELTA/i);
+  assert.match(text, /no Round 3/i);
 });

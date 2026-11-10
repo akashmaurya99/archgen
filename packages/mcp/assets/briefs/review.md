@@ -19,7 +19,13 @@ FINDINGS:   (present when VERDICT: ISSUES)
 
 EXAMINE ALL 5 AREAS EVERY RUN: `edge cases per module` · `task ordering & parallelization` (waves vs real `depends_on` edges) · `cross-module contracts` (interfaces, paths, `naming_conventions`) · `scope fit & minimalism` (unneeded artifacts, unneeded tasks, duplicated host docs, missing omit/reuse reasons) · `documentation completeness` (every task has a plan section).
 
-CLASSIFY every finding: **BLOCKING** (the plan contradicts the recorded profile, an agreed requirement, or a stated invariant), **NIT** (cosmetic — never blocks, never triggers another round), or **OBSERVATION** (a capability nobody asked for — never blocks; one line, no fix demand). DO NOT invent requirements: you audit the plan against what was agreed.
+CLASSIFY every finding: **BLOCKING**, **NIT** (cosmetic — never blocks, never triggers another round), or **OBSERVATION** (a capability nobody asked for — never blocks; one line, no fix demand).
+
+A finding is BLOCKING only when it names ALL THREE:
+1. the artifact (file and section),
+2. the rule it violates — a PRD requirement, an accepted decision, a recorded profile decision, a code standard, or another task's contract,
+3. the change that satisfies it.
+A finding that cannot name the violated rule is a NIT or an OBSERVATION. "This could be phrased more precisely" is a NIT: state it once, in one line, and move on. DO NOT invent requirements: you audit the plan against what was agreed.
 
 MANDATORY COVERAGE TABLE: Must appear in every report (even on `APPROVE`). Mark every area `PASS`, `FAIL`, or `N/A` with a 1-line reason. Omitting the table or any row makes the report INCOMPLETE.
 
@@ -30,5 +36,8 @@ SIZING & CONTEXT
 - Use the pre-rendered dependency graph and doc-validation results in the `CONTEXT` block below—make zero `archgen_*` tool calls.
 
 BOUNDS
-- A user "more review" approval grants EXACTLY ONE additional pass. The stage exits only on zero findings or an explicit user waiver.
+- **Round 1 is exhaustive:** report every finding of every area in one pass, area by area. Holding a finding back to see what a fix does is a defect in Round 1.
+- **Round 2 is a DELTA:** re-check only the Round 1 findings (fixed / still open / regressed) and the artifacts the fix touched. Do not restate what is fixed. Anything new must be marked `NEW` and must meet the BLOCKING test.
+- **There is no Round 3.** After Round 2 the residual is the orchestrator's to fix (and the floor to re-check) or the user's to decide.
+- A user "more review" approval grants EXACTLY ONE additional pass, with a stated purpose. The stage exits only on zero findings or an explicit user waiver.
 - The ORCHESTRATOR applies all fixes and re-runs `validate` + Verifier Gate; reviewers never edit files.

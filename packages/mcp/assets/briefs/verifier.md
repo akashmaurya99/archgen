@@ -30,6 +30,8 @@ CLASSIFICATION — every finding carries exactly one class:
 - **NIT** — cosmetic only (wording, spacing, punctuation, ordering). NEVER blocks and NEVER justifies another round. Report at most five, in one line each.
 - **OBSERVATION** — a capability you believe the system should have but that no agreed requirement asked for (extra resilience, extra monitoring, a new policy). NEVER blocks; it is a suggestion to the user, not a defect to fix. Put these in one "OBSERVATIONS" list, one line each.
 
+A finding is BLOCKING only when it names ALL THREE: the artifact (file and section), the rule it violates (a PRD requirement, an accepted decision, a recorded profile decision, a code standard, or another task's contract), and the change that satisfies it. A finding that cannot name the violated rule is a NIT or an OBSERVATION. "This acceptance could also mention the non-finite case" is a NIT unless a requirement or a matrix row demands it — state it once, in one line, and move on.
+
 A WAIVED finding (the brief lists them) is not a defect: do not re-raise it unless it regressed.
 
 DO NOT INVENT REQUIREMENTS: you audit the plan against what was agreed (PRD, `answers.yaml`, decisions, code-standards, the recorded profile). You do not propose new features, controls, or policies. A missing capability is an OBSERVATION.
