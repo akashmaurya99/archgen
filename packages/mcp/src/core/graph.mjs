@@ -153,7 +153,7 @@ export function findOwnershipConflict(wave) {
 }
 
 /** Conservative may-intersect test for two ownership globs. */
-function globsMayOverlap(a, b) {
+export function globsMayOverlap(a, b) {
   if (a === b) return true;
   // Deepen the check only when a recursive '**' is involved; plain literal
   // globs keep the cheap equality rule above.

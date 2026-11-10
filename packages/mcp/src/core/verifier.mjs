@@ -8,19 +8,22 @@
 // A gate reports findings, it never crashes: exotic inputs surface as an
 // ISSUES verdict, not a raw stack trace.
 import { readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { buildGraph, findCycle, computeWaves, findOwnershipConflict, GraphError } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
+import { auditPlan } from './plan-audit.mjs';
 
 /**
  * Run the deterministic verifier gate.
  *
  * @param {string} file absolute path to tasks.yaml
  * @param {string} planDir absolute path to the plans directory
- * @returns {{verdict: 'APPROVE'|'ISSUES', issues: string[]}}
+ * @returns {{verdict: 'APPROVE'|'ISSUES', issues: string[], warnings: string[]}}
  */
 export function verifyPlan(file, planDir) {
   const issues = [];
+  const warnings = [];
 
   let data;
   try {
@@ -62,13 +65,20 @@ export function verifyPlan(file, planDir) {
       }
 
       issues.push(...checkPlanCoverage(planDir, tasks).findings);
+
+      // The mechanical floor: the checks a gate agent would otherwise make by
+      // hand, every round. They are computed HERE so the agent is left with
+      // the judgment it is actually for.
+      const audit = auditPlan({ slugDir: dirname(planDir), tasks });
+      issues.push(...audit.issues);
+      warnings.push(...audit.warnings);
     } catch (e) {
       if (e instanceof GraphError) issues.push(e.message);
       else issues.push(`internal check failure: ${e?.message ?? String(e)}`);
     }
   }
 
-  return { verdict: issues.length ? 'ISSUES' : 'APPROVE', issues };
+  return { verdict: issues.length ? 'ISSUES' : 'APPROVE', issues, warnings };
 }
 
 /**

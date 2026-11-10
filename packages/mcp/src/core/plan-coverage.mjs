@@ -54,11 +54,59 @@ export function checkPlanCoverage(planDir, tasks) {
     }
   }
   // Inverse: plan mentions ids like TASK-xx not present in tasks.yaml.
+  //
+  // THE PREFIX RULE. A bare `UPPER-123` token is NOT automatically a task
+  // id. `SHA-256`, `HTTP-404`, `UTF-8`, `ISO-8601`, `RFC-2119` and
+  // `CVE-2021-44228` are technical constants that look exactly like one —
+  // and the gate used to fail a plan because it mentioned a hash algorithm.
+  //
+  // A token is a task reference when its prefix is a prefix this plan's own
+  // task ids use (tasks `TASK-01..09` -> `TASK-10` is dangling), when it is a
+  // generic task prefix (`TASK-`, `T-`, `STEP-`, …), or when it appears in an
+  // explicit task context ("task TASK-10", "depends_on: [TASK-10]").
+  // Requirement ids (`FR-<MODULE>-nn`) and technical constants are never
+  // task references, whatever the context.
+  const knownPrefixes = new Set();
+  for (const id of taskIds) {
+    const m = /^([A-Za-z][A-Za-z0-9]*)-[0-9]+$/.exec(String(id ?? ''));
+    if (m) knownPrefixes.add(m[1].toUpperCase());
+  }
+  const contextual = new Set();
+  for (const m of planText.matchAll(
+    /(?:task|Task|TASK|depends_on|acceptance|wave|verifier|reviewer|owner)\s*[:=]?\s*\[?\s*([A-Z][A-Z0-9]+-[0-9]+)\b/g,
+  )) {
+    contextual.add(m[1]);
+  }
   for (const m of planText.matchAll(/\b[A-Z][A-Z0-9]+-[0-9]+\b/g)) {
-    if (!taskIds.has(m[0])) findings.push(`plan references unknown task id '${m[0]}' (not in tasks.yaml)`);
+    if (taskIds.has(m[0])) continue;
+    const prefix = m[0].split('-')[0].toUpperCase();
+    if (REQUIREMENT_PREFIXES.has(prefix)) continue;
+    if (TECHNICAL_PREFIXES.has(prefix)) continue;
+    if (!knownPrefixes.has(prefix) && !TASK_PREFIXES.has(prefix) && !contextual.has(m[0])) continue;
+    findings.push(`plan references unknown task id '${m[0]}' (not in tasks.yaml)`);
   }
   return { findings, referenced, mentionedInTasks };
 }
+
+/** Prefixes that mark a REQUIREMENT id, never a task id. */
+const REQUIREMENT_PREFIXES = new Set(['FR', 'REQ', 'NFR']);
+
+/** Prefixes that mark a TECHNICAL constant, never a task id. */
+const TECHNICAL_PREFIXES = new Set([
+  'SHA', 'MD5', 'HMAC', 'AES', 'RSA', 'ECDSA', 'CRC', 'UUID', 'ULID',
+  'HTTP', 'HTTPS', 'TLS', 'SSL', 'DNS', 'TCP', 'UDP', 'IP', 'WS', 'WSS', 'GRPC',
+  'UTF', 'ASCII', 'ISO', 'RFC', 'IETF', 'W3C', 'ECMA', 'IEEE', 'ANSI', 'POSIX',
+  'GNU', 'MIT', 'BSD', 'GPL', 'AGPL', 'LGPL', 'MPL', 'APACHE',
+  'JSON', 'XML', 'YAML', 'HTML', 'CSS', 'SQL', 'CSV', 'MIME',
+  'CPU', 'GPU', 'TPU', 'RAM', 'SSD', 'HDD', 'OS', 'VM', 'K8S',
+  'GPT', 'LLM', 'ONNX', 'PDF', 'PNG', 'JPEG', 'GIF', 'SVG', 'WEBP', 'ZIP',
+]);
+
+/** Prefixes that are generic TASK references even when this plan uses none. */
+const TASK_PREFIXES = new Set([
+  'TASK', 'T', 'STEP', 'ISSUE', 'BUG', 'CHORE', 'EPIC', 'WORK', 'JOB', 'ITEM',
+  'PATCH', 'SPIKE', 'TODO', 'FIX',
+]);
 
 /** Does any task reference `id` in its artifacts / acceptance text? */
 function mentions(task, id) {

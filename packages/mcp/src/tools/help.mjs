@@ -23,7 +23,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 | action | what it does | args |
 |---|---|---|
 | \`validate\` | schema, cycles, dangling refs, ownership, acceptance | tasksYaml, planDir? |
-| \`verify\` | deterministic verifier gate → APPROVE or ISSUES | tasksYaml, planDir |
+| \`verify\` | the deterministic floor → APPROVE or ISSUES (+ warnings) | tasksYaml, planDir |
 | \`coverage\` | tasks covered vs missing in the plans | tasksYaml, planDir |
 | \`profile\` | evidence-based scope + per-artifact create/reuse/omit decisions | intent, signals?, modules?, tasks?, slug? |
 | \`scaffold\` | artifact set + skeletons for a scope class | scope, slug?, file? |
@@ -40,6 +40,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 **Gotchas**
 - \`status\` only affects mermaid; \`module\` cannot combine with \`node\` or mermaid.
 - Whole-graph mermaid is refused above 250 nodes—scope with \`node\` or \`module\`.
+- \`verify\` IS the mechanical floor: ownership overlap, the mirrored test tree, matrix citations, PRD requirement coverage, decision files, declared paths, wave labels. Run it to APPROVE BEFORE dispatching a gate agent; the gate brief then carries the floor's result and the maps, so the agent judges instead of re-deriving. \`issues\` block; \`warnings\` (e.g. one task's glob containing another's) do not.
 - \`scaffold\` returns each file's CONTENT and **writes nothing**—you write under \`.archgen/<slug>/\`. The profile decides which artifacts are create/reuse/omit; required files must exist and every omission needs a recorded reason.
 - \`brief\` kinds: verifier | review | survey | investigate. It derives the slug from \`tasksYaml\` when omitted; every path is ABSOLUTE (works from any cwd). Verifier/review briefs render the graph, reference-integrity result, and evidence map, so the sub-agent needs no tool call.
 - Verifier/reviewer return \`VERDICT:\` + a COVERAGE table (every dimension PASS / FAIL / N/A); findings without it are INCOMPLETE.

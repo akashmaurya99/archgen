@@ -34,6 +34,58 @@ archgen_plan { action: 'profile', intent: 'BROWNFIELD-FEATURE',
 starts at the profile. The decision is recorded in the plan's `## Profile`
 section (SMALL) or `answers.yaml` `plan_profile:` (MEDIUM/LARGE).
 
+### Added — the mechanical floor: the gate agent no longer does arithmetic
+
+The gate agent was proving facts by hand, every round: that a source-owning
+task owns the mirrored test path, that an edge-case matrix row points at an
+acceptance that exists, that every PRD requirement is cited, that a declared
+decision file is on disk, that a declared path has an owner, that a wave label
+matches the DAG. Each pass surfaced one more category of the same checks —
+which is why one review became four.
+
+`archgen_plan{action:'verify'}` now computes them, and it runs **before** any
+gate agent is dispatched:
+
+- **Mirrored test tree** — a task owning source under `toolchain.source_root`
+  owns the mirrored path under `toolchain.test_root` (the test FILE name is
+  the language's choice; the PATH is not).
+- **Matrix citations resolve** — every `Covered by` cell names a task and an
+  acceptance index that exists.
+- **Requirements are cited** — every `FR-<MODULE>-nn` in the PRD is cited by an
+  acceptance, and every FR id an acceptance cites exists in the PRD.
+- **Declared things exist and are owned** — every `structure:` path and module
+  `owns[]` glob has a task that owns it; every `decisions[].id` has its file.
+- **Wave labels match the DAG** — `parallel_group: wave-N` equals the task's
+  computed wave, and one group never spans two waves.
+- **Ownership containment** — one task's glob containing another's is a
+  *warning* (a later wave can overwrite the earlier task's files), never a
+  block.
+
+The gate brief now carries the floor's result and four rendered maps —
+requirement map, edge-case matrix map (row → the acceptance text it cites),
+ownership map, module DAG — so the agent checks ALIGNMENT instead of
+re-deriving facts, and reads the sections it needs instead of whole files.
+
+### Changed — the gate runs at most twice, and the verifier cannot invent requirements
+
+- **Round 1 is exhaustive; round 2 is a delta.** Round 2 re-checks only round
+  1's findings (fixed / open / regressed) and the floor. It does not restate
+  what is fixed, and a finding it did not see must be marked `NEW` and be
+  blocking-grade.
+- **There is no round 3.** What remains after two rounds is escalated to the
+  user with the outstanding list. The protocol no longer allows an unbounded
+  number of user-approved rounds.
+- **Every finding is classified** — `BLOCKING` (contradicts an agreed
+  requirement, an accepted decision, or a stated invariant), `NIT` (cosmetic:
+  wording, spacing, punctuation — never blocks, never triggers a round), or
+  `OBSERVATION` (a capability nobody asked for — never blocks, never a fix
+  demand).
+- **The verifier may not invent requirements.** It audits the plan against the
+  PRD, `answers.yaml`, the decisions, the code standards and the recorded
+  profile. Without this rule the gate kept discovering new features
+  (checkpoint/resume, rate limiting, retention policies) and the plan never
+  converged.
+
 ### Changed — artifacts have a consumer, and the host repository wins
 
 - **Necessity over completeness.** Every candidate artifact answers: who reads
@@ -65,6 +117,17 @@ neutral placeholders instead of a TypeScript/Next.js/Prisma example.
 
 ### Fixed
 
+- **A hash algorithm could fail the gate.** The plan↔task check read any
+  `UPPER-123` token as a task id, so `SHA-256`, `HTTP-404`, `UTF-8`,
+  `ISO-8601` and `CVE-2021-44228` were reported as *unknown task ids* and a
+  plan mentioning a digest could never pass. A token is now a task reference
+  only when its prefix is one this plan's task ids use, a generic task prefix
+  (`TASK-`, `T-`, `STEP-`, …), or an explicit task context — requirement ids
+  and technical constants never are.
+- **A search hit could hide the word that matched.** `archgen_refs{search}`
+  truncated a long line from the START, so the excerpt it returned sometimes
+  did not contain the token at all. The excerpt is now a window around the
+  match.
 - **Two provenance headers per artifact.** The canonical templates carried their
   own `schema_version`/`generator`/`generated_at` header AND `scaffold`
   prepended one, so every served `tasks.yaml` and `architecture.yaml` opened
@@ -84,17 +147,18 @@ Measured, 0.1.3 → unreleased:
 
 | | 0.1.3 | Unreleased |
 |---|---:|---:|
-| `skill/SKILL.md` (always-on) | 6,252 | 5,996 |
+| `skill/SKILL.md` (always-on) | 6,252 | 6,241 |
 | MCP tool catalog (9 tools, always-on) | 4,695 | 5,056 |
-| **Always-on total** | **10,947** | **11,052** |
-| Protocol references (on demand) | 12,931 | 11,829 |
-| Median reference section | 238 | 224 |
-| Dispatch briefs (on demand) | 2,416 | 2,921 |
+| **Always-on total** | **10,947** | **11,297** |
+| Protocol references (on demand) | 12,931 | 12,647 |
+| Median reference section | 238 | 243 |
+| Dispatch briefs (on demand) | 2,416 | 3,289 |
 | Artifact templates (on demand) | 2,347 | 2,592 |
 
-The catalog grew by the new action; `SKILL.md` and the five protocol references
-shrank. The always-on total stays under the **11,500** CI ceiling, so the gate
-still fails a regression instead of reaching a user.
+The catalog grew by the `profile` action, and the protocol references by the
+floor protocol and its invariants; the always-on total stays under the
+**11,500** CI ceiling, so the gate still fails a regression instead of reaching
+a user.
 
 ## [0.1.3] - 2026-11-09
 

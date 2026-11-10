@@ -164,5 +164,102 @@ export function renderBriefContext(ctx = {}) {
     out.push('');
   }
 
+  if (ctx.audit) {
+    out.push(...renderAudit(ctx.audit));
+  }
+
   return out.join('\n');
+}
+
+/** How many rows of a map the brief carries before it truncates. */
+const MAP_ROW_CAP = 60;
+
+/**
+ * Render the mechanical floor and the maps a gate agent reads instead of
+ * re-deriving them.
+ *
+ * The maps exist because the agent used to spend a whole round proving that a
+ * matrix row points at an acceptance that exists, that every requirement is
+ * cited, and that each task owns what it claims. Those are facts; the facts
+ * are rendered here, so the agent spends its pass on judgment.
+ */
+function renderAudit(audit) {
+  const out = [];
+  const maps = audit.maps ?? {};
+  const issues = audit.issues ?? [];
+  const warnings = audit.warnings ?? [];
+
+  out.push('### Mechanical floor — computed for you (do NOT re-derive)');
+  out.push('');
+  out.push(`- blocking issues: ${issues.length}`);
+  out.push(`- warnings: ${warnings.length}`);
+  if (issues.length) {
+    out.push('');
+    out.push('BLOCKING (each one is a defect; report it once, with the fix):');
+    for (const i of issues) out.push(`- ${i}`);
+  }
+  if (warnings.length) {
+    out.push('');
+    out.push('WARNINGS (informational; they do NOT block approval):');
+    for (const w of warnings.slice(0, MAP_ROW_CAP)) out.push(`- ${w}`);
+    if (warnings.length > MAP_ROW_CAP) out.push(`- … ${warnings.length - MAP_ROW_CAP} more`);
+  }
+  out.push('');
+
+  const reqs = maps.requirements ?? [];
+  if (reqs.length) {
+    out.push('#### Requirement map — every PRD requirement and the acceptance that cites it');
+    out.push('');
+    out.push('| requirement | cited by |');
+    out.push('|---|---|');
+    for (const r of reqs.slice(0, MAP_ROW_CAP)) {
+      out.push(`| ${r.id} | ${r.covered ? r.citedBy.join(', ') : 'NOT CITED — no acceptance claims it'} |`);
+    }
+    if (reqs.length > MAP_ROW_CAP) out.push(`| … ${reqs.length - MAP_ROW_CAP} more | |`);
+    out.push('');
+  }
+
+  const rows = maps.edgeMatrix ?? [];
+  if (rows.length) {
+    out.push('#### Edge-case matrix map — each row and the acceptance text it cites');
+    out.push('');
+    out.push('| row | case | cited | the acceptance it points at |');
+    out.push('|---|---|---|---|');
+    for (const r of rows.slice(0, MAP_ROW_CAP)) {
+      const text = r.acceptance ? r.acceptance.slice(0, 160) : 'NO SUCH ACCEPTANCE';
+      out.push(`| ${r.row} | ${String(r.case).slice(0, 80)} | ${r.task}#${r.index} | ${text} |`);
+    }
+    if (rows.length > MAP_ROW_CAP) out.push(`| … ${rows.length - MAP_ROW_CAP} more | | | |`);
+    out.push('');
+    out.push('Judge each row: does the cited acceptance actually verify the stated case?');
+    out.push('');
+  }
+
+  const own = maps.ownership ?? [];
+  if (own.length) {
+    out.push('#### Ownership map — task → the paths it owns (and its wave)');
+    out.push('');
+    out.push('| task | wave | paths |');
+    out.push('|---|---|---|');
+    for (const o of own.slice(0, MAP_ROW_CAP)) {
+      out.push(`| ${o.id} | ${o.wave ?? '?'} | ${o.globs.join(', ')} |`);
+    }
+    if (own.length > MAP_ROW_CAP) out.push(`| … ${own.length - MAP_ROW_CAP} more | | |`);
+    out.push('');
+  }
+
+  const mods = maps.modules ?? [];
+  if (mods.length) {
+    out.push('#### Module DAG — module → depends_on_modules → the tasks that own it');
+    out.push('');
+    out.push('| module | depends_on_modules | owning tasks |');
+    out.push('|---|---|---|');
+    for (const m of mods.slice(0, MAP_ROW_CAP)) {
+      out.push(`| ${m.name} | ${m.dependsOn.join(', ') || '—'} | ${m.ownedBy.join(', ') || 'NONE'} |`);
+    }
+    if (mods.length > MAP_ROW_CAP) out.push(`| … ${mods.length - MAP_ROW_CAP} more | | |`);
+    out.push('');
+  }
+
+  return out;
 }

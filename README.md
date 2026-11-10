@@ -119,16 +119,20 @@ Open your project in any supported agent and talk naturally.
 
 Nothing is written until three gates pass, in order, and never skipped — even
 for a SMALL scope. Gate depth scales with the profile, while the deterministic
-floor always runs. The **verifier gate** runs `archgen_plan{action:'verify'}`
-(cycles, dangling refs, ownership, acceptance, coverage) and then judges what
-the tools cannot — including **scope & artifact necessity**: every artifact has
-a consumer, every reuse names a real host path, every omission has a recorded
-reason. SMALL is audited by the main agent, MEDIUM by one verifier sub-agent,
-LARGE by one top-tier verifier; each returns a verdict plus a coverage table
-marking every dimension `PASS` / `FAIL` / `N/A`, so one pass is exhaustive
-instead of a discovery loop. The **plan review** then checks scope fit and
-minimalism, and the **user gate** presents the create/reuse/omit artifact list,
-the wave summary and the ownership map before asking for approval.
+floor always runs. **The floor comes first**: `archgen_plan{action:'verify'}`
+is driven to `APPROVE` by the orchestrator — ownership overlap, the mirrored
+test tree, matrix citations, PRD requirement coverage, decision files, declared
+paths, wave labels — before any gate agent is dispatched, so the agent never
+spends a round on arithmetic. The **verifier gate** then judges what the tools
+cannot, from rendered maps: every artifact has a consumer, every reuse names a
+real host path, every omission has a recorded reason, every matrix row cites an
+acceptance that verifies it. Findings are **BLOCKING**, **NIT** (cosmetic) or
+**OBSERVATION** (a capability nobody asked for) — the verifier may not invent
+requirements. The gate runs **at most two rounds**: round 1 exhaustive, round 2
+a delta re-check, and what remains escalates to the user. The **plan review**
+then checks scope fit and minimalism, and the **user gate** presents the
+create/reuse/omit artifact list, the wave summary and the ownership map before
+asking for approval.
 
 ## Token footprint
 

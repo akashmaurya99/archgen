@@ -1,27 +1,32 @@
 TASK: Verify the archgen plan in `<slug dir>` before execution.
 SCOPE: Read-only. NEVER edit files; report verdict, coverage table, and findings only.
+PLAN: tasks `<tasks.yaml>` · plans `<plans dir>` · artifacts `<slug dir>`
 
-STEP 1 — RUN DETERMINISTIC CHECKS FIRST (both must pass):
-1. `archgen_plan { action: 'verify', tasksYaml: <tasks.yaml>, planDir: <plans dir> }` → must return `verdict: 'APPROVE'` (validates DAG, dangling refs, wave ownership disjointness, acceptance presence, and bidirectional plan↔task coverage).
-2. `archgen_docs { action: 'validate', slugDir: <slug dir> }` (if markdown artifacts exist) → must return `valid: true` (zero broken links or heading anchors).
+ROUND 1 — EXHAUSTIVE, ONE PASS. ROUND 2 — DELTA ONLY (see ROUNDS below).
 
-STEP 2 — AUDIT JUDGMENT & CONTRACT COMPLETENESS:
-- Wave boundaries match true dependencies without artificial serialization.
-- Acceptance criteria are objectively verifiable (runnable command or observable output).
-- Edge-case coverage satisfies the profile's depth budget (`SMALL` / `MEDIUM` / `LARGE`).
-- Planned structure and naming obey `references/code-standards.md` — including the separate source and test trees: no test tree inside the source tree, and every task that owns source owns the mirrored test path.
-- The repository does not hide archgen artifacts: no `.gitignore` rule covers `.archgen/`, `.agents/skills/archgen`, `.claude/skills/archgen`, `AGENTS.md` or `CLAUDE.md`.
-- **SCOPE & ARTIFACT NECESSITY:** the plan records a profile (`## Profile` or `answers.yaml plan_profile:`); every created artifact is marked `create` and has a consumer; every `reuse` names a real host path; every `omit` records a reason; no omitted PRD, architecture file, ADR, or diagram was created; no host PRD/architecture/ADR was duplicated; no task lacks a requirement.
-- **CONTRACT-COMPLETENESS SWEEP** (evaluate every dimension; mark `N/A` only when the system genuinely lacks that surface):
-  1. `functional coverage`: Every requirement maps to a task + objective acceptance check.
-  2. `security & data protection`: Authn/authz flows, session/credential lifecycle, CSRF/replay defense, encryption/privacy boundaries, boundary input validation.
-  3. `data integrity`: Schemas, foreign keys/relations, validation rules, migrations & backward compatibility.
-  4. `state, lifecycle & recovery`: Checkpointing/resume, idempotency, cleanup/TTL, rollback/compensation for stateful or multi-step flows.
-  5. `resource limits & abuse`: Quotas, rate limiting, data retention/deletion, unauthenticated abuse controls.
-  6. `operational entrypoints`: Build, test, deploy, and bootstrap entrypoints are each owned by a task.
-  7. `metric traceability`: Every PRD success metric maps to a task acceptance check with a reproducible command, sample size, or data source.
-  8. `consistency`: Zero contradictions across PRD, `architecture.yaml`, `plans/*.md`, and `tasks.yaml`.
-  9. `scope & artifact necessity`: The profile is recorded and every artifact/reuse/omit decision is justified and respected.
+STEP 1 — THE MECHANICAL FLOOR IS ALREADY COMPUTED FOR YOU
+The CONTEXT block carries a "Mechanical floor" section: the deterministic checks (ownership overlap, mirrored test tree, matrix citations, requirement coverage, decision files, declared paths, wave labels) with their results. It was produced by `archgen_plan { action: 'verify' }` before you were dispatched, and the reference-integrity result beside it by `archgen_docs { action: 'validate' }`. Do NOT re-derive those facts and do NOT re-run the archgen tool suite for them. Report every BLOCKING issue the floor lists — it is already proven, so it needs no argument.
+
+STEP 2 — JUDGMENT: DOES THE PLAN DELIVER WHAT WAS AGREED?
+Read ONLY the sections named in EVIDENCE. Use the rendered maps; they carry the facts:
+- **Requirement map** — every PRD requirement and the acceptance that cites it. Check the acceptance actually verifies that requirement, not a neighbouring one.
+- **Edge-case matrix map** — every matrix row and the acceptance text it cites. Check the cited acceptance verifies the stated case.
+- **Ownership map** — each task's paths and its wave. Check a source-owning task owns its mirrored test path and that one task never claims another's files.
+- **Module DAG** — module dependencies and the tasks that own each module. Check the task DAG and the module DAG agree.
+Then judge:
+- Are the acceptance criteria objectively verifiable by a worker?
+- Do the waves match real dependencies, with no artificial serialization?
+- Does the plan contradict the PRD, `answers.yaml`, the decisions, or `references/code-standards.md`?
+- **SCOPE & ARTIFACT NECESSITY:** the recorded profile exists; every created artifact has a consumer and a trigger; every reuse names a real host path; every omission records a reason; no omitted artifact was created; no host document was duplicated; no task lacks a requirement.
+- **Code standards:** the source and test trees are separate — no test tree inside the source tree, and every source-owning task owns the mirrored test path.
+- **Artifact tracking:** the repository does not hide archgen artifacts — no `.gitignore` rule covers `.archgen/`, `.agents/skills/archgen`, `.claude/skills/archgen`, `AGENTS.md` or `CLAUDE.md`.
+
+CLASSIFICATION — every finding carries exactly one class:
+- **BLOCKING** — the plan contradicts an agreed requirement, an accepted decision, or a stated invariant; or a required artifact, task, or acceptance is missing. Blocks approval.
+- **NIT** — cosmetic only (wording, spacing, punctuation, ordering). NEVER blocks and NEVER justifies another round. Report at most five, in one line each.
+- **OBSERVATION** — a capability you believe the system should have but that no agreed requirement asked for (extra resilience, extra monitoring, a new policy). NEVER blocks; it is a suggestion to the user, not a defect to fix. Put these in one "OBSERVATIONS" list, one line each.
+
+DO NOT INVENT REQUIREMENTS: you audit the plan against what was agreed (PRD, `answers.yaml`, decisions, code-standards, the recorded profile). You do not propose new features, controls, or policies. A missing capability is an OBSERVATION.
 
 DELIVERABLE — ONE message in this exact format:
 
@@ -30,18 +35,25 @@ VERDICT: APPROVE | ISSUES
 COVERAGE:
 | dimension | status | reason |
 | --- | --- | --- |
-| functional coverage | PASS | all FR IDs map to tasks with runnable checks |
+| functional coverage | PASS | every FR id maps to an acceptance that verifies it |
 | security & data protection | N/A | internal CLI with no auth or sensitive data |
 | state, lifecycle & recovery | FAIL | TASK-07 mutates state without rollback or idempotency |
-| scope & artifact necessity | PASS | profile recorded; PRD omitted for an internal change with the reason cited |
+| scope & artifact necessity | PASS | profile recorded; PRD omitted for an internal change, reason cited |
 | ... every one of the 9 dimensions, PASS / FAIL / N/A, 1-line reason ... |
 FINDINGS:   (present when VERDICT: ISSUES)
-1. tasks.yaml § SCAFFOLD — acceptance #2 has no observable check — worker cannot verify completion — replace with "the project build command exits 0"
-2. plans/demo.md § Risks — config-drift risk has no owning task — mitigation never built — assign mitigation to TASK-01
-3. .archgen/demo/docs/prd.md — created although the profile says omit (internal tool) — unneeded artifact and duplicated host PRD — delete it and cite docs/product/prd.md in the Profile
+1. [BLOCKING] tasks.yaml § SCAFFOLD — acceptance #2 has no observable check — worker cannot verify completion — replace with "the project build command exits 0"
+2. [NIT] plans/demo.md § Risks — heading capitalisation — one word
+OBSERVATIONS:   (optional, never blocking)
+- a retention policy for the audit table would reduce unbounded growth
 ```
 
+ROUNDS — THE GATE RUNS AT MOST TWICE
+- **Round 1:** exhaustive. Report every defect you can find in this pass. The orchestrator fixes them in one batch.
+- **Round 2:** DELTA. Re-check ONLY (a) the findings from Round 1 — fixed, still open, or regressed — and (b) the mechanical floor. Do NOT restate a Round 1 finding that is fixed. A finding not seen in Round 1 must be marked `NEW` and must be BLOCKING-grade to be reported.
+- **There is no Round 3.** If Round 2 still reports open findings, the orchestrator escalates them to the user with the outstanding list. Never run a third pass on your own initiative.
+
 RULES
-- **MANDATORY COVERAGE TABLE:** Every report (even `APPROVE`) must include all 9 dimensions marked `PASS`, `FAIL`, or `N/A` with a 1-line reason. Missing rows = INCOMPLETE report (treated as `ISSUES`).
-- **Top-tier holistic agent:** Run on the strongest reasoning model available (never a quick/explore/cheap tier) as ONE holistic agent across the entire plan.
-- **Exhaustive single pass:** Report EVERY defect found in this pass with exact `file § section — defect — impact — fix`. Never hold findings back for a later round.
+- **MANDATORY COVERAGE TABLE:** every report (even `APPROVE`) includes all 9 dimensions marked `PASS`, `FAIL`, or `N/A` with a one-line reason. Missing rows = INCOMPLETE (treated as `ISSUES`).
+- **VERDICT:** `APPROVE` only when no BLOCKING finding remains. NITs and OBSERVATIONS never block.
+- **Top-tier holistic agent:** run on the strongest reasoning model available (never a quick/explore/cheap tier) as ONE agent over the entire plan.
+- **Exhaustive single pass:** report EVERY defect found in this pass with exact `file § section — defect — impact — fix`. Never hold findings back for a later round.

@@ -208,7 +208,17 @@ export function searchTopic(topic, token, opts) {
       const line = section.line + i;
       const owner = ownerOf(line);
       if (!owner || owner.slug !== section.slug) continue; // its deepest owner reports it
-      matches.push({ line, text: bodyLines[i].trim().slice(0, 200) });
+      // The excerpt must CONTAIN the token: truncating from the start produced
+      // hits whose text did not show the word that matched, which is useless to
+      // the agent reading the result.
+      const raw = bodyLines[i].trim();
+      let text = raw;
+      if (raw.length > 200) {
+        const at = Math.max(0, raw.search(re));
+        const start = Math.max(0, at - 80);
+        text = `${start > 0 ? '…' : ''}${raw.slice(start, start + 200)}${start + 200 < raw.length ? '…' : ''}`;
+      }
+      matches.push({ line, text });
     }
     if (matches.length) {
       hits.push({

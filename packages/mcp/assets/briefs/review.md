@@ -19,6 +19,8 @@ FINDINGS:   (present when VERDICT: ISSUES)
 
 EXAMINE ALL 5 AREAS EVERY RUN: `edge cases per module` · `task ordering & parallelization` (waves vs real `depends_on` edges) · `cross-module contracts` (interfaces, paths, `naming_conventions`) · `scope fit & minimalism` (unneeded artifacts, unneeded tasks, duplicated host docs, missing omit/reuse reasons) · `documentation completeness` (every task has a plan section).
 
+CLASSIFY every finding: **BLOCKING** (the plan contradicts the recorded profile, an agreed requirement, or a stated invariant), **NIT** (cosmetic — never blocks, never triggers another round), or **OBSERVATION** (a capability nobody asked for — never blocks; one line, no fix demand). DO NOT invent requirements: you audit the plan against what was agreed.
+
 MANDATORY COVERAGE TABLE: Must appear in every report (even on `APPROVE`). Mark every area `PASS`, `FAIL`, or `N/A` with a 1-line reason. Omitting the table or any row makes the report INCOMPLETE.
 
 SIZING & CONTEXT

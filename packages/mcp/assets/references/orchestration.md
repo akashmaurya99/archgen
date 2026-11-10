@@ -10,15 +10,25 @@ Dispatch 1–2 survey sub-agents with `archgen_plan{action:'brief', kind:'survey
 
 ## §verifier — plan review brief
 
-Dispatch AFTER artifacts exist and `archgen_plan{action:'validate'}` returns `data.valid:true`. Deterministic `verify` runs for EVERY scope, including SMALL.
+### The floor comes FIRST — the gate agent never sees a mechanical defect
+
+Before a gate agent is dispatched, the ORCHESTRATOR drives the deterministic floor to `APPROVE`:
+
+```
+archgen_plan { action: 'verify', tasksYaml: <tasks.yaml>, planDir: <plans dir> }
+```
+
+That call is the mechanical truth: cycles, dangling refs, same-wave ownership overlap, plan↔task coverage, the mirrored test tree, matrix citations that resolve, PRD requirements that are cited, decision files that exist, declared paths that have an owner, and wave labels that match the DAG. **Fix every issue it reports and re-run until it returns `APPROVE`** — that is a loop the orchestrator runs locally, at zero agent cost.
+
+Only then dispatch the gate agent. Its brief carries the floor's result and the maps (requirement map, edge-case matrix map, ownership map, module DAG), so the agent spends its pass on judgment instead of re-deriving arithmetic. Dispatching a gate agent onto a failing floor is what turned one review into four.
 
 ### Gate sizing — proportional, never skipped
 
-| Scope | Deterministic verify | Judgment verifier | Plan review | User gate |
+| Scope | Deterministic floor | Judgment verifier | Plan review | User gate |
 |---|---|---|---|---|
-| SMALL | MAIN agent | MAIN agent audits the same dimensions | MAIN agent | required |
-| MEDIUM | verifier sub-agent | 1 strong mid/high-tier agent | MAIN agent | required |
-| LARGE | verifier sub-agent | 1 top-tier agent | 1 independent top-tier reviewer | required |
+| SMALL | MAIN agent, local loop | MAIN agent audits the same dimensions | MAIN agent | required |
+| MEDIUM | MAIN agent, local loop | 1 strong mid/high-tier agent | MAIN agent | required |
+| LARGE | MAIN agent, local loop | 1 top-tier agent | 1 independent top-tier reviewer | required |
 
 - **ONE agent, the WHOLE plan, ONE pass.** Never split verification by concern; split only by artifact volume when context forces it (`plans/` vs `docs/`).
 - **Exhaustive single pass.** Return a complete `COVERAGE:` table (`PASS` / `FAIL` / `N/A` per dimension) so every issue surfaces in Round 1.
@@ -26,29 +36,25 @@ Dispatch AFTER artifacts exist and `archgen_plan{action:'validate'}` returns `da
 
 ### Verification pass
 
-Pass `archgen_plan{action:'brief', kind:'verifier'}` verbatim (pre-rendered evidence map, graph, doc-validation status). The verifier:
+Pass `archgen_plan{action:'brief', kind:'verifier'}` verbatim (pre-rendered evidence map, graph, doc-validation status, mechanical floor, and the four maps). The verifier:
 
-1. Runs `archgen_plan{action:'verify', tasksYaml, planDir}` → `APPROVE` (cycles, dangling refs, wave ownership, acceptance, bidirectional plan↔task coverage).
-2. Runs `archgen_docs{action:'validate', slugDir}` (if markdown exists) → `valid:true`.
-3. Audits judgment dimensions across `plans/` and `tasks.yaml`:
-   - Wave boundaries match real dependencies (no artificial serialization).
-   - Acceptance criteria are objectively verifiable.
-   - Edge-case coverage matches the profile's depth budget.
-   - `references/code-standards.md` compliance, including separate source/test trees.
-   - **Scope & artifact necessity:** the profile exists and is recorded; every created artifact has a consumer and a trigger; every `reuse` names a real host path; every `omit` records a reason; no omitted artifact was created; no host document was duplicated; no task lacks a requirement.
-   - Contract completeness: `functional`, `security & data protection`, `data integrity`, `state, lifecycle & recovery`, `resource limits & abuse`, `operational entrypoints`, `metric traceability`, `consistency`.
-4. Emits `VERDICT`, the full `COVERAGE:` table, and findings (`file § section — defect — impact — fix`). A missing table is incomplete → treat as `ISSUES`.
+1. Reads the floor's result from the brief — it does NOT re-run it and does NOT re-derive ownership, matrix, requirement, or wave facts.
+2. Checks the maps for ALIGNMENT: does the acceptance a matrix row cites verify the stated case; does the acceptance citing a requirement verify that requirement; does the task DAG match the module DAG; does every source-owning task own its mirrored test path.
+3. Judges what no tool can: wave-boundary sanity, objectively verifiable acceptance, scope-appropriate edge-case coverage, `references/code-standards.md` plausibility, **scope & artifact necessity** (a consumer for every created artifact, a real host path for every reuse, a reason for every omission), and contract completeness (`functional`, `security & data protection`, `data integrity`, `state, lifecycle & recovery`, `resource limits & abuse`, `operational entrypoints`, `metric traceability`, `consistency`).
+4. Emits `VERDICT`, the full `COVERAGE:` table, and findings classified **BLOCKING** (contradicts an agreed requirement, an accepted decision, or a stated invariant), **NIT** (cosmetic), or **OBSERVATION** (a capability nobody asked for). A missing table is incomplete → treat as `ISSUES`.
 
-### Gate protocol — 2 automatic rounds, then ask the user
+**The verifier does not invent requirements.** A missing capability that no PRD, decision, `answers.yaml` or code-standard asked for is an OBSERVATION — one line, never blocking, never a fix demand. Without this rule the gate keeps discovering new features and the plan never converges.
 
-Never weaken checks. Efficiency comes from exhaustive coverage, the 2-round cap, batching fixes per file, and never re-applying a failed edit.
+### Fix discipline — batch per file, one pass
 
-When `ISSUES` returns: group findings by file and apply all fixes in one pass; if Round N repeats Round N-1, re-read the file and make a structural fix; if you disagree, surface the finding verbatim to the user rather than silently overriding it.
+When `ISSUES` returns: group findings by file and apply every fix to that file in ONE pass. NITs are not fixed and never justify another round. If you disagree with a finding, surface it verbatim to the user rather than silently overriding it.
 
-1. **Round 1:** verifier → `APPROVE` → `§plan-review`; `ISSUES` → batch-fix → Round 2.
-2. **Round 2:** `APPROVE` → ask recommendation-first whether to run once more (recommended: no, proceed); `ISSUES` → batch-fix → ask *"Run the verifier once more to confirm fixes? 1. Yes, one more pass (recommended) 2. Waive remaining findings and proceed."*
-3. **Round 3+:** each user approval runs exactly one pass.
-4. **No `APPROVE` on record:** quote every outstanding finding and obtain an **explicit user waiver** before `§plan-review`. Never cite token/cost numbers when reporting rounds.
+### Gate protocol — TWO rounds, then the user
+
+1. **Round 1:** dispatch the verifier on the clean floor. `APPROVE` → `§plan-review`. `ISSUES` → batch-fix every BLOCKING finding → re-run the floor until `APPROVE` → Round 2.
+2. **Round 2 — DELTA:** the verifier re-checks ONLY the Round 1 findings (fixed / still open / regressed) and the floor. It does not restate what is fixed. A finding it did not see in Round 1 must be marked `NEW` and must be BLOCKING-grade.
+3. **There is no Round 3.** If Round 2 still reports open BLOCKING findings, fix what is safe, then present the outstanding findings verbatim and ask: *"These N findings remain after two rounds. 1. Waive them and proceed (recommended) 2. Keep the plan open for another look."* Never run a third pass on your own initiative, and never cite token/cost numbers when reporting rounds.
+4. **No `APPROVE` on record:** quote every outstanding finding and obtain an **explicit user waiver** before `§plan-review`.
 
 ## §plan-review — post-plan review stage
 

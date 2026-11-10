@@ -49,9 +49,36 @@ The same principle runs through the installer: it asserts containment
 No task executes until the gates pass, in order — never skipped. Gate **depth**
 scales with the profile; the deterministic floor runs for every scope:
 
-1. **Verifier gate.** `archgen_plan{action:'verify'}` always runs the deterministic floor (cycles, dangling refs, same-wave ownership overlap, missing acceptance criteria, plan↔task coverage). Judgment scales: SMALL is audited by the main agent; MEDIUM by one strong verifier sub-agent; LARGE by one top-tier verifier. The verifier judges wave-boundary sanity, objectively verifiable acceptance criteria, edge-case coverage against the profile budget, code-standards plausibility, and **scope & artifact necessity** (no artifact without a consumer, no duplicated host document, every reuse/omit recorded). It returns a verdict **plus a coverage table** — every dimension marked `PASS` / `FAIL` / `N/A` — so one exhaustive pass replaces a discovery loop.
-2. **Plan review.** Zero findings, or an explicit user waiver. SMALL/MEDIUM are reviewed by the main agent against the profile; LARGE gets one independent reviewer. Review areas include `scope fit & minimalism`; the loop is capped at three passes.
-3. **User gate.** The orchestrator presents the artifact list with create/reuse/omit decisions, the wave summary (`archgen_tasks{action:'next'}`), and the ownership map, and asks "Approve to start work?"
+1. **The floor, first.** `archgen_plan{action:'verify'}` is the deterministic
+   truth and it runs BEFORE any gate agent is dispatched: cycles, dangling
+   refs, same-wave ownership overlap, plan↔task coverage, the **mirrored test
+   tree**, **matrix citations that resolve**, **PRD requirements that are
+   cited**, **decision files that exist**, **declared paths that have an
+   owner**, and **wave labels that match the DAG**. The orchestrator fixes
+   every issue it reports and re-runs until `APPROVE` — a local loop, at zero
+   agent cost. A gate agent that never sees a mechanical defect can spend its
+   pass on judgment.
+2. **Verifier gate.** Judgment scales: SMALL is audited by the main agent;
+   MEDIUM by one strong verifier sub-agent; LARGE by one top-tier verifier.
+   The brief carries the floor's result and four rendered maps — requirement
+   map, edge-case matrix map, ownership map, module DAG — so the agent checks
+   ALIGNMENT (does the acceptance a matrix row cites verify the stated case?)
+   instead of re-deriving facts. Findings are classified **BLOCKING**,
+   **NIT** (cosmetic, never blocks), or **OBSERVATION** (a capability nobody
+   asked for, never blocks). The verifier may not invent requirements: a
+   missing capability that no PRD, decision or `answers.yaml` asked for is an
+   observation, not a defect.
+3. **Plan review.** Zero findings, or an explicit user waiver. SMALL/MEDIUM are
+   reviewed by the main agent against the profile; LARGE gets one independent
+   reviewer. Review areas include `scope fit & minimalism`.
+4. **User gate.** The orchestrator presents the artifact list with
+   create/reuse/omit decisions, the wave summary (`archgen_tasks{action:'next'}`),
+   and the ownership map, and asks "Approve to start work?"
+
+**The gate runs at most twice.** Round 1 is exhaustive; round 2 is a delta
+re-check of round 1's findings. There is no round 3 — whatever remains is
+escalated to the user with the outstanding list. That cap, plus the floor
+before the agent, is what turned a four-round review into one.
 
 A gate pass is ONE holistic agent over the WHOLE plan — never one agent per
 dimension or per concern. Cross-issue reasoning catches contradictions a

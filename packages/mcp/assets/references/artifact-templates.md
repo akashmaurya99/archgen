@@ -67,6 +67,18 @@ Artifacts are executed by sub-agents with zero conversation history. Enforce str
 6. **GitHub-exact anchors:** lowercase, strip punctuation except `-` and `_`, and convert every whitespace character to `-` without collapsing runs (`## TASK-02 — Auth API` → `#task-02--auth-api`).
 7. **Verifier-compatible IDs:** `verify` rejects unknown `UPPERCASE-NN` tokens in `plans/*.md`. Define `FR-<MODULE>-nn` in `docs/prd.md`, cite them in `tasks.yaml` acceptance, link via anchors inside plans, and keep every task ID present in `plans/*.md`.
 
+## Mechanical invariants — proven by the floor, so make them true the first time
+
+`archgen_plan{action:'verify'}` computes these. They are not style; each one is a fact the gate agent would otherwise have to prove by hand, every round. Author them correctly the first time:
+
+1. **Mirrored test tree:** a task that owns source under `toolchain.source_root` also owns the mirrored path under `toolchain.test_root` (the test FILE NAME is the language's choice; the PATH is not). Fill `toolchain.source_root` / `toolchain.test_root` in `architecture.yaml` — without them the floor cannot check it.
+2. **Disjoint ownership:** no two tasks' globs overlap, and no glob CONTAINS another task's glob (a later wave can overwrite the earlier task's files).
+3. **Matrix citations resolve:** every edge-case row's `Covered by` cell names a task and an acceptance index that exists — and the acceptance it names must verify the stated case.
+4. **Requirements are cited:** every `FR-<MODULE>-nn` defined in `docs/prd.md` is cited by at least one acceptance; every FR id an acceptance cites exists in the PRD.
+5. **Declared things exist and are owned:** every path in `architecture.yaml` `structure:` and every module `owns[]` glob has a task that owns it; every `decisions[].id` has its `decisions/NNNN-*.md` file.
+6. **Wave labels match the DAG:** a `parallel_group` labeled `wave-N` must equal the task's computed wave, and every task in one group shares a wave.
+7. **Acceptance is runnable:** an acceptance a worker cannot run (live credentials, an unwritten script, an undefined fixture) is a defect — mark it manual and record the artifact, or make it runnable.
+
 ## Structural correctness — verifier-enforced authoring rules
 
 - **Topological waves:** wave / `parallel_group` labels match the `depends_on` order (`archgen_plan{action:'graph', format:'mermaid'}`). Dependents never precede or share a wave with prerequisites.

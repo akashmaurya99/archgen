@@ -12,10 +12,12 @@
 // and the graph call failed on every plan, so the reviewer ran without it.
 // Rendering it once, into the brief, removes the extra calls AND the
 // dependency.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { docIndex } from './doc-navigator.mjs';
 import { planGraph } from './plan-grapher.mjs';
+import { auditPlan } from './plan-audit.mjs';
+import { parseYaml } from './yaml.mjs';
 
 /**
  * The archgen calls each brief kind is ALLOWED to make.
@@ -55,6 +57,7 @@ export function buildBriefContext(kind, scope, ctx) {
     evidence: null,
     graph: null,
     docsValidation: null,
+    audit: null,
   };
 
   // The evidence map: every markdown artifact under the slug, with its
@@ -100,6 +103,20 @@ export function buildBriefContext(kind, scope, ctx) {
     }
   } catch {
     out.docsValidation = null;
+  }
+
+  // The mechanical floor — the checks a gate agent used to make by hand,
+  // every round. Rendered here, the agent reads them instead of re-deriving
+  // them (and missing some).
+  try {
+    if (existsSync(scope.tasksYaml)) {
+      const { data } = parseYaml(readFileSync(scope.tasksYaml, 'utf8'), { filename: scope.tasksYaml });
+      const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+      const audit = auditPlan({ slugDir: scope.slugDir, tasks });
+      out.audit = { issues: audit.issues, warnings: audit.warnings, maps: audit.maps };
+    }
+  } catch {
+    out.audit = null; // an unreadable plan is the verifier's finding, not a brief failure
   }
 
   return out;
