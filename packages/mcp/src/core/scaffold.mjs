@@ -196,6 +196,14 @@ plan_profile:
       decision: create | reuse | omit
       reason: ""
   escalate_if: []
+  gate: # recorded after the gate; the floor compares it with waivers.yaml
+    rounds: 0
+    findings:
+      blocking: 0
+      nit: 0
+      observation: 0
+    waived: 0
+    residual: 0
 problem: ""
 success_criteria:
   - text: ""

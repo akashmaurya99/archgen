@@ -133,6 +133,14 @@ plan_profile:                    # record every profile decision
       decision: omit
       reason: internal tool; no product personas
   escalate_if: [data-migration]
+  gate:                          # filled in after the gate
+    rounds: 0
+    findings:
+      blocking: 0
+      nit: 0
+      observation: 0
+    waived: 0
+    residual: 0
 problem: one-line problem statement
 success_criteria:
   - text: measurable outcome

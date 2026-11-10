@@ -38,6 +38,7 @@ Options:
   --yes             approve MCP-config writes
   --json            machine-readable output
   --tool <name>     list a tool's schema
+  --fail-on <p>:<v> exit 3 when the tool result matches (e.g. verdict:ISSUES) — a build gate
   --list            list every tool
   --catalog         print the injected tool catalog (name + description + JSON schema)
 
@@ -52,6 +53,7 @@ export function parseArgs(argv) {
     command: 'serve',
     tool: null,
     args: null,
+    failOn: null,
     project: null,
     location: 'both',
     yes: false,
@@ -74,6 +76,7 @@ export function parseArgs(argv) {
     else if (a === '--list') opts.list = true;
     else if (a === '--catalog') opts.catalog = true;
     else if (a === '--tool') opts.tool = rest[++i];
+    else if (a === '--fail-on') opts.failOn = rest[++i];
     else if (a === '--help' || a === '-h') opts.command = 'help';
     else if (!a.startsWith('-')) {
       if (opts.tool === null && opts.command === 'exec') opts.tool = a;
@@ -90,6 +93,41 @@ export function parseArgs(argv) {
  * @param {{stdout?: (s: string) => void, stderr?: (s: string) => void}} [io]
  * @returns {Promise<number>} the process exit code
  */
+/**
+ * Does a tool result match a `--fail-on <path>:<value>` rule?
+ *
+ * The path is resolved inside `data` (dotted; a leading `data.` is accepted
+ * and ignored). The value is compared as a string, so `verdict:ISSUES` matches
+ * a plan whose verdict is ISSUES — which is what turns the deterministic floor
+ * into a CI gate.
+ *
+ * @param {any} data the envelope's `data`
+ * @param {string} rule `<path>:<value>`
+ * @returns {boolean}
+ */
+export function failOnMatches(data, rule) {
+  const raw = String(rule ?? '');
+  const at = raw.lastIndexOf(':');
+  if (at <= 0) return false;
+  const path = raw.slice(0, at).trim();
+  const value = raw.slice(at + 1).trim();
+  if (!path) return false;
+  const resolve = (p) => {
+    let current = data;
+    for (const key of p.split('.').filter(Boolean)) {
+      if (current === null || typeof current !== 'object') return undefined;
+      current = current[key];
+    }
+    return current;
+  };
+  // The path is resolved inside `data`; a leading `data.` is accepted as an
+  // alias for the envelope root when the payload has no such key.
+  let found = resolve(path);
+  if ((found === undefined || found === null) && path.startsWith('data.')) found = resolve(path.slice(5));
+  if (found === undefined || found === null) return false;
+  return String(found) === value;
+}
+
 export async function runCli(argv, io = {}) {
   const out = io.stdout ?? ((s) => process.stdout.write(s + '\n'));
   const err = io.stderr ?? ((s) => process.stderr.write(s + '\n'));
@@ -158,7 +196,21 @@ export async function runCli(argv, io = {}) {
     }
     const envelope = await guard(spec.handler, ctx, check.data);
     out(JSON.stringify(envelope, null, 2));
-    return envelope.ok ? 0 : 1;
+    if (!envelope.ok) return 1;
+    // `--fail-on <path>:<value>` turns a tool result into a BUILD GATE.
+    //
+    // WHY: the deterministic floor was only ever reachable from an agent
+    // session. A CI job needs the same answer as an exit code:
+    //   archgen-mcp exec archgen_plan '{"action":"verify",...}' --fail-on verdict:ISSUES
+    // The path is resolved inside `data`; the value is compared as a string.
+    if (opts.failOn) {
+      const hit = failOnMatches(envelope.data, opts.failOn);
+      if (hit) {
+        err(`archgen-mcp exec: --fail-on ${opts.failOn} matched — the gate is not green`);
+        return 3;
+      }
+    }
+    return 0;
   }
 
   const registry = loadAsset('harness-mcp.json');

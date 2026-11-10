@@ -39,7 +39,7 @@ tasks:
       - docs/<feature>-recovery.md
     artifacts: ["docs/<feature>-recovery.md"]
     acceptance:
-      - "duplicate submission performs the operation once (E1)"
-      - "<dependency> 5xx retries <n> times, then returns <structured error> (E2)"
-      - "<invalid input> returns <error shape> matching ../architecture.yaml api_contracts.<module>.error_shape (FR-<MODULE>-02)"
-      - "<locale/format case> produces <expected representation> (E3)"
+      - "duplicate submission performs the operation once (covers E1)"
+      - "<dependency> 5xx retries <n> times, then returns <structured error> (covers E2)"
+      - "<invalid input> returns <error shape> matching ../architecture.yaml api_contracts.<module>.error_shape (covers FR-<MODULE>-02)"
+      - "<locale/format case> produces <expected representation> (covers E3)"

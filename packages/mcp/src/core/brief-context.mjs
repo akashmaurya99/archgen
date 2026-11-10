@@ -113,7 +113,7 @@ export function buildBriefContext(kind, scope, ctx) {
       const { data } = parseYaml(readFileSync(scope.tasksYaml, 'utf8'), { filename: scope.tasksYaml });
       const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
       const audit = auditPlan({ slugDir: scope.slugDir, tasks });
-      out.audit = { issues: audit.issues, warnings: audit.warnings, maps: audit.maps };
+      out.audit = { issues: audit.issues, warnings: audit.warnings, maps: audit.maps, waivers: audit.waivers };
     }
   } catch {
     out.audit = null; // an unreadable plan is the verifier's finding, not a brief failure

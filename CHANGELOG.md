@@ -66,6 +66,62 @@ requirement map, edge-case matrix map (row → the acceptance text it cites),
 ownership map, module DAG — so the agent checks ALIGNMENT instead of
 re-deriving facts, and reads the sections it needs instead of whole files.
 
+### Added — traceability claims: the link is written down, so the floor can join it
+
+The gate kept reporting the same class of finding by eye — a matrix row
+pointing at the acceptance that does *not* verify it ("E4 cites T9#1, but T9#1
+is the probe-correctness check"). That is a join, not a judgement, so the join
+moved into the data:
+
+```yaml
+acceptance:
+  - "the probe result is persisted with its evidence payload (covers E4)"
+```
+
+- The floor now checks the **mutual link**: the matrix row cites `T9#1`, and
+  `T9#1` claims `E4`. A row pointing at an acceptance that does not claim it
+  is an issue — with the acceptance that *does* claim it named in the message.
+- An acceptance claiming an edge row that does not exist is an issue too.
+- `(covers FR-<MODULE>-nn)` counts as a requirement citation, and the
+  requirement map now shows the requirement text **next to** the acceptance
+  text, so the remaining judgement is a two-line comparison.
+- The convention is **detected, not imposed**: until a plan declares claims,
+  nothing is enforced; once one acceptance claims an edge id, every row is
+  checked. Ids are artifact ids — never code names, never language-specific.
+
+### Added — the waiver ledger and the gate's own metrics
+
+- **A waiver is a file, not a sentence.** `.archgen/<slug>/waivers.yaml`
+  records `scope`, `finding`, `reason`, `approved_by` and `approved_at`. The
+  floor reports the ledger's size, the gate brief lists every waiver (a
+  waived finding is not a defect to fix), and the orchestrator must write the
+  ledger before proceeding past a residual finding.
+- **The gate measures itself.** `answers.yaml` → `plan_profile.gate` records
+  rounds used, findings by class, waived count and residual; the floor checks
+  that the recorded waived count matches the ledger.
+
+### Added — the floor as a build gate
+
+`archgen-mcp exec` gained `--fail-on <path>:<value>`, so the deterministic
+floor is reachable from CI:
+
+```bash
+npx archgen-mcp exec archgen_plan '{"action":"verify","tasksYaml":".archgen/<slug>/tasks.yaml","planDir":".archgen/<slug>/plans"}' --fail-on verdict:ISSUES
+```
+
+Exit `3` on a match, `0` otherwise. Warnings never fail the build — a gate that
+cries wolf gets bypassed. The recipe is in [`docs/ci.md`](docs/ci.md).
+
+### Changed — the floor fails loud instead of guessing
+
+The mirrored-test-tree rule used to infer the source and test roots from the
+most common path prefix when `architecture.yaml` did not declare them — a
+guess that is wrong for half the ecosystems, and a wrong guess that silently
+skips a check is worse than no check. The roots are now **declared or the rule
+is off, loudly**: `"the mirrored-test-tree rule is NOT ENFORCED — declare
+toolchain.source_root and toolchain.test_root"`. A language-neutrality test
+pins it: the audit core may not contain a default path prefix at all.
+
 ### Changed — the gate runs at most twice, and the verifier cannot invent requirements
 
 - **Round 1 is exhaustive; round 2 is a delta.** Round 2 re-checks only round
@@ -147,18 +203,19 @@ Measured, 0.1.3 → unreleased:
 
 | | 0.1.3 | Unreleased |
 |---|---:|---:|
-| `skill/SKILL.md` (always-on) | 6,252 | 6,241 |
+| `skill/SKILL.md` (always-on) | 6,252 | 6,298 |
 | MCP tool catalog (9 tools, always-on) | 4,695 | 5,056 |
-| **Always-on total** | **10,947** | **11,297** |
-| Protocol references (on demand) | 12,931 | 12,647 |
+| **Always-on total** | **10,947** | **11,354** |
+| Protocol references (on demand) | 12,931 | 13,633 |
 | Median reference section | 238 | 243 |
-| Dispatch briefs (on demand) | 2,416 | 3,289 |
+| Dispatch briefs (on demand) | 2,416 | 3,337 |
 | Artifact templates (on demand) | 2,347 | 2,592 |
 
 The catalog grew by the `profile` action, and the protocol references by the
-floor protocol and its invariants; the always-on total stays under the
-**11,500** CI ceiling, so the gate still fails a regression instead of reaching
-a user.
+floor protocol, its invariants and the traceability rules; the always-on total
+stays under the CI ceiling, which moves **11,500 → 11,800** because the floor
+protocol and the waiver rule are part of the always-on contract. The gate
+still fails a regression beyond that.
 
 ## [0.1.3] - 2026-11-09
 

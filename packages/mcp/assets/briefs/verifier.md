@@ -10,7 +10,7 @@ The CONTEXT block carries a "Mechanical floor" section: the deterministic checks
 STEP 2 — JUDGMENT: DOES THE PLAN DELIVER WHAT WAS AGREED?
 Read ONLY the sections named in EVIDENCE. Use the rendered maps; they carry the facts:
 - **Requirement map** — every PRD requirement and the acceptance that cites it. Check the acceptance actually verifies that requirement, not a neighbouring one.
-- **Edge-case matrix map** — every matrix row and the acceptance text it cites. Check the cited acceptance verifies the stated case.
+- **Edge-case matrix map** — every matrix row, the acceptance text it cites, and the edge ids that acceptance claims. The claim link is already checked by the floor; judge whether the acceptance MEANS the stated case.
 - **Ownership map** — each task's paths and its wave. Check a source-owning task owns its mirrored test path and that one task never claims another's files.
 - **Module DAG** — module dependencies and the tasks that own each module. Check the task DAG and the module DAG agree.
 Then judge:
@@ -25,6 +25,8 @@ CLASSIFICATION — every finding carries exactly one class:
 - **BLOCKING** — the plan contradicts an agreed requirement, an accepted decision, or a stated invariant; or a required artifact, task, or acceptance is missing. Blocks approval.
 - **NIT** — cosmetic only (wording, spacing, punctuation, ordering). NEVER blocks and NEVER justifies another round. Report at most five, in one line each.
 - **OBSERVATION** — a capability you believe the system should have but that no agreed requirement asked for (extra resilience, extra monitoring, a new policy). NEVER blocks; it is a suggestion to the user, not a defect to fix. Put these in one "OBSERVATIONS" list, one line each.
+
+A WAIVED finding (the brief lists them) is not a defect: do not re-raise it unless it regressed.
 
 DO NOT INVENT REQUIREMENTS: you audit the plan against what was agreed (PRD, `answers.yaml`, decisions, code-standards, the recorded profile). You do not propose new features, controls, or policies. A missing capability is an OBSERVATION.
 

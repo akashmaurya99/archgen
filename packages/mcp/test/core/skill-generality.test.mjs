@@ -82,3 +82,40 @@ test('the survey records the host toolchain and existing docs', () => {
   assert.match(text, /source root/i);
   assert.match(text, /test root/i);
 });
+
+// ── the guardrail extends to the protocol documents and the core ───────────
+//
+// "Language-neutral" is a promise; a test is what keeps it one. The protocol
+// documents and the MCP core must not name a language, a framework, a package
+// manager or a path shape — the host repo declares those, archgen reads them.
+
+test('the protocol references and briefs prescribe no language or toolchain', () => {
+  const dir = join(REPO, 'packages', 'mcp', 'assets', 'references');
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    const text = read(join(dir, name));
+    if (!text) continue;
+    for (const pattern of FORBIDDEN) {
+      assert.doesNotMatch(text, pattern, `references/${name} makes '${pattern}' normative`);
+    }
+  }
+  const briefs = join(REPO, 'packages', 'mcp', 'assets', 'briefs');
+  for (const name of readdirSync(briefs)) {
+    const text = read(join(briefs, name));
+    if (!text) continue;
+    for (const pattern of FORBIDDEN) {
+      assert.doesNotMatch(text, pattern, `briefs/${name} makes '${pattern}' normative`);
+    }
+  }
+});
+
+test('the audit core guesses no layout — it reads the declared roots', () => {
+  const text = read(join(REPO, 'packages', 'mcp', 'src', 'core', 'plan-audit.mjs'));
+  if (!text) return;
+  // A default path prefix would silently enforce the wrong rule for half the
+  // ecosystems. The roots come from architecture.yaml or the rule stays off.
+  assert.doesNotMatch(text, /'src\/'|"src\/"/, 'the audit must not default to a source prefix');
+  assert.doesNotMatch(text, /'tests\//, 'the audit must not default to a test prefix');
+  assert.match(text, /source_root/, 'the audit must read the declared source root');
+  assert.match(text, /test_root/, 'the audit must read the declared test root');
+});

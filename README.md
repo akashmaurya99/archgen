@@ -137,7 +137,7 @@ asking for approval.
 ## Token footprint
 
 Measured, not guessed. `npm run test:budget` reports it, and CI fails if the
-always-on footprint exceeds 11,500 tokens.
+always-on footprint exceeds 11,800 tokens.
 
 **Every session pays this much, and no more:**
 
@@ -170,7 +170,7 @@ rules, and a hard cap of three parallel sub-agents. Shrinking a prompt to
 save tokens costs a whole extra round — making the first answer complete
 does not.
 
-This release adds evidence-based scope profiling (`archgen_plan{action:'profile'}`) and per-artifact create/reuse/omit decisions without expanding the always-on surface beyond its 11,500-token gate. The catalog grew by the new action; `SKILL.md` and the five protocol references shrank.
+This release adds evidence-based scope profiling (`archgen_plan{action:'profile'}`), the deterministic floor that proves the plan's mechanical facts, and per-artifact create/reuse/omit decisions. The always-on surface stays under its 11,800-token gate: the catalog grew by the new action, and the floor protocol, the traceability claim and the waiver rule are part of the always-on contract.
 
 ## Repository layout
 
@@ -226,6 +226,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 | Doc | Contents |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Dual-mode design, gates, wave mechanics, platform detection |
+| [docs/ci.md](docs/ci.md) | The plan gate as a build gate — `archgen-mcp exec … --fail-on verdict:ISSUES` |
 | [docs/agent-setup-prompt.md](docs/agent-setup-prompt.md) | Copy-paste prompt: install archgen and verify it |
 | [docs/releasing.md](docs/releasing.md) | Cutting CLI + MCP server releases |
 | [skill/SKILL.md](skill/SKILL.md) | The full skill contract the agents execute |

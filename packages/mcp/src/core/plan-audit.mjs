@@ -13,10 +13,18 @@
 // So the floor computes them, and the agent is left with the judgment it is
 // actually for: does this plan deliver what the user agreed to?
 //
-// The rule that keeps the floor honest: it reports only what it can PROVE from
-// the artifacts. Anything it cannot prove is a warning (informational), never
-// a blocking issue. A floor that cries wolf gets bypassed, and a bypassed
-// floor is worse than no floor.
+// THE RULES THAT KEEP THE FLOOR HONEST:
+//
+//   1. It reports only what it can PROVE from the artifacts. Anything it
+//      cannot prove is a warning (informational), never a blocking issue.
+//   2. It NEVER guesses a convention. If the host repo does not declare its
+//      source/test roots, the rule that needs them is reported as NOT
+//      ENFORCED — loudly — instead of silently weakening.
+//   3. It never assumes a language, a framework, a package manager or a path
+//      shape. The host repo declares those; this file only reads them.
+//
+// It is also language-neutral BY CONSTRUCTION: the ids it joins are artifact
+// ids (edge rows, requirement ids, task ids), never code-level names.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml } from './yaml.mjs';
@@ -24,25 +32,30 @@ import { buildGraph, computeWaves, globsMayOverlap } from './graph.mjs';
 
 /** A requirement id: FR-<MODULE>-nn. */
 const FR_ID = /\bFR-[A-Z0-9]+(?:-[A-Z0-9]+)*\b/g;
+/** An edge-case row id: E1, E12. */
+const EDGE_ID = /^E\d+$/;
 /** A matrix citation: <task-id>#<acceptance index>. */
 const MATRIX_REF = /([A-Za-z0-9][A-Za-z0-9._-]*)#(\d+)/g;
+/** What an acceptance claims to cover: "(covers E4, FR-API-01)". */
+const CLAIMS = /\bcovers\s+([A-Z][A-Z0-9-]*(?:\s*,\s*[A-Z][A-Z0-9-]*)*)/gi;
 
 /**
  * Audit one plan's artifacts.
  *
  * @param {{slugDir: string, tasks: any[]}} input
- * @returns {{issues: string[], warnings: string[], maps: object}}
+ * @returns {{issues: string[], warnings: string[], maps: object, waivers: object[]}}
  */
 export function auditPlan({ slugDir, tasks }) {
   const issues = [];
   const warnings = [];
   const maps = { requirements: [], edgeMatrix: [], ownership: [], modules: [], decisions: [] };
-  if (!slugDir || !Array.isArray(tasks) || tasks.length === 0) return { issues, warnings, maps };
+  if (!slugDir || !Array.isArray(tasks) || tasks.length === 0) return { issues, warnings, maps, waivers: [] };
 
   const architecture = readYaml(join(slugDir, 'architecture.yaml'));
   const prdText = readText(join(slugDir, 'docs', 'prd.md'));
   const planText = readPlans(join(slugDir, 'plans'));
   const decisionFiles = listFiles(join(slugDir, 'decisions'));
+  const waivers = readWaivers(join(slugDir, 'waivers.yaml'));
 
   const byId = new Map(tasks.map((t) => [String(t?.id ?? ''), t]));
   const acceptanceOf = (id) => (byId.get(id)?.acceptance ?? []).map(String);
@@ -60,68 +73,146 @@ export function auditPlan({ slugDir, tasks }) {
     // simply has no wave numbers to compare labels against.
   }
 
-  // ── 1. the mirrored test tree ────────────────────────────────────────────
-  const roots = sourceAndTestRoots(architecture, tasks);
+  // ── what each acceptance CLAIMS to cover ─────────────────────────────────
+  // The claim is the explicit link: "(covers E4)". It turns "does this
+  // acceptance verify that edge case?" from a judgement into a join.
+  const claims = new Map(); // `${taskId}#${index}` -> {edges:Set, reqs:Set}
+  let claimsUsed = false;
   for (const t of tasks) {
     const id = String(t?.id ?? '');
-    for (const g of t?.file_ownership ?? []) {
-      if (!roots.sourceRoot || !g.startsWith(`${roots.sourceRoot}/`)) continue;
-      const rest = g.slice(roots.sourceRoot.length + 1);
-      // The mirror is checked at DIRECTORY level: the test FILE NAME belongs
-      // to the language (`foo.ts` -> `foo_test.py` is legitimate), the test
-      // PATH does not.
-      const dir = rest.split('/').slice(0, -1).join('/');
-      const mirroredDir = dir ? `${roots.testRoot}/${dir}` : roots.testRoot;
-      const covered = tasks.some((o) =>
-        (o?.file_ownership ?? []).some((og) => globsMayOverlap(og, mirroredDir)),
-      );
-      if (!covered) {
-        const msg =
-          `task '${id}' owns '${g}' but no task owns the mirrored test path '${mirroredDir}/**' ` +
-          '(code-standards: the test tree is a sibling and mirrors the source path)';
-        (roots.confidence === 'explicit' ? issues : warnings).push(msg);
+    (t?.acceptance ?? []).forEach((a, i) => {
+      const text = String(a);
+      const key = `${id}#${i + 1}`;
+      const found = { edges: new Set(), reqs: new Set() };
+      for (const m of text.matchAll(CLAIMS)) {
+        for (const raw of m[1].split(',')) {
+          const token = raw.trim().toUpperCase();
+          if (EDGE_ID.test(token)) found.edges.add(token);
+          else if (/^FR-[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(token)) found.reqs.add(token);
+          if (found.edges.size || found.reqs.size) claimsUsed = true;
+        }
+      }
+      claims.set(key, found);
+    });
+  }
+
+  // ── 1. the mirrored test tree ────────────────────────────────────────────
+  const roots = sourceAndTestRoots(architecture);
+  if (!roots.enforced) {
+    // FAIL LOUD: a rule that cannot run must say so, not quietly pass.
+    warnings.push(
+      architecture
+        ? 'the mirrored-test-tree rule is NOT ENFORCED — declare toolchain.source_root and toolchain.test_root in architecture.yaml'
+        : 'no architecture.yaml — the mirrored-test-tree, declared-path and decision-file rules are NOT ENFORCED',
+    );
+  } else {
+    for (const t of tasks) {
+      const id = String(t?.id ?? '');
+      for (const g of t?.file_ownership ?? []) {
+        if (!g.startsWith(`${roots.sourceRoot}/`)) continue;
+        const rest = g.slice(roots.sourceRoot.length + 1);
+        // The mirror is checked at DIRECTORY level: the test FILE NAME belongs
+        // to the ecosystem's own naming rule, the test PATH does not.
+        const dir = rest.split('/').slice(0, -1).join('/');
+        const mirroredDir = dir ? `${roots.testRoot}/${dir}` : roots.testRoot;
+        const covered = tasks.some((o) =>
+          (o?.file_ownership ?? []).some((og) => globsMayOverlap(og, mirroredDir)),
+        );
+        if (!covered) {
+          issues.push(
+            `task '${id}' owns '${g}' but no task owns the mirrored test path '${mirroredDir}/**' ` +
+              '(code-standards: the test tree is a sibling and mirrors the source path)',
+          );
+        }
       }
     }
   }
 
-  // ── 2. edge-case matrix traceability ─────────────────────────────────────
-  for (const row of parseEdgeMatrix(planText)) {
+  // ── 2. edge-case matrix traceability AND the explicit claim link ─────────
+  const matrixRows = parseEdgeMatrix(planText);
+  const definedEdges = new Set(matrixRows.map((r) => String(r.row).trim().toUpperCase()));
+  for (const row of matrixRows) {
     const acc = acceptanceOf(row.task);
     const cited = acc[row.index - 1] ?? null;
+    const key = `${row.task}#${row.index}`;
+    const claimed = claims.get(key);
+    const edgeId = String(row.row).trim().toUpperCase();
+    const claimOk = claimed ? claimed.edges.has(edgeId) : false;
     maps.edgeMatrix.push({
-      row: row.row,
+      row: edgeId,
       case: row.case,
       task: row.task,
       index: row.index,
       acceptance: cited,
+      claims: claimed ? [...claimed.edges] : [],
       valid: Boolean(cited),
+      claimOk,
     });
     if (!byId.has(row.task)) {
-      issues.push(`edge-case matrix row '${row.row}' cites unknown task '${row.task}'`);
+      issues.push(`edge-case matrix row '${edgeId}' cites unknown task '${row.task}'`);
     } else if (!cited) {
       issues.push(
-        `edge-case matrix row '${row.row}' cites ${row.task}#${row.index}, but '${row.task}' has ${acc.length} acceptance criteria`,
+        `edge-case matrix row '${edgeId}' cites ${row.task}#${row.index}, but '${row.task}' has ${acc.length} acceptance criteria`,
       );
+    } else if (claimsUsed && !claimOk) {
+      // The explicit link: the acceptance the row points at does not claim the
+      // row. Either the citation is wrong or the acceptance does not cover it.
+      const claimedElsewhere = [...claims.entries()]
+        .filter(([, c]) => c.edges.has(edgeId))
+        .map(([k]) => k);
+      const detail = claimedElsewhere.length
+        ? `the acceptance that claims it is ${claimedElsewhere.join(', ')}`
+        : 'no acceptance claims it';
+      issues.push(
+        `edge-case matrix row '${edgeId}' cites ${row.task}#${row.index}, but that acceptance does not claim '${edgeId}' — ${detail}. ` +
+          'Fix the citation or add "(covers ' + edgeId + ')" to the acceptance.',
+      );
+    }
+  }
+  // An acceptance may not claim an edge row that does not exist.
+  if (matrixRows.length) {
+    for (const [key, c] of claims) {
+      for (const edge of c.edges) {
+        if (!definedEdges.has(edge)) {
+          issues.push(`acceptance ${key} claims edge case '${edge}' but no matrix row defines it`);
+        }
+      }
     }
   }
 
   // ── 3. requirement coverage ──────────────────────────────────────────────
   if (prdText) {
-    const defined = new Set();
-    for (const m of prdText.matchAll(/^\s*[-*]?\s*(FR-[A-Z0-9]+(?:-[A-Z0-9]+)*)\s*[:—]/gm)) defined.add(m[1]);
+    const defined = new Map();
+    for (const m of prdText.matchAll(/^\s*[-*]?\s*(FR-[A-Z0-9]+(?:-[A-Z0-9]+)*)\s*[:—]\s*(.*)$/gm)) {
+      defined.set(m[1], m[2].trim());
+    }
     const cited = new Map();
     for (const t of tasks) {
       const id = String(t?.id ?? '');
       (t?.acceptance ?? []).forEach((a, i) => {
-        for (const m of String(a).matchAll(FR_ID)) {
-          if (!cited.has(m[0])) cited.set(m[0], []);
-          cited.get(m[0]).push(`${id}#${i + 1}`);
+        const text = String(a);
+        const ids = new Set([...text.matchAll(FR_ID)].map((m) => m[0]));
+        for (const m of text.matchAll(CLAIMS)) {
+          for (const raw of m[1].split(',')) {
+            const token = raw.trim().toUpperCase();
+            if (/^FR-[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(token)) ids.add(token);
+          }
+        }
+        for (const fr of ids) {
+          if (!cited.has(fr)) cited.set(fr, []);
+          cited.get(fr).push({ ref: `${id}#${i + 1}`, text });
         }
       });
     }
-    for (const id of defined) {
+    for (const [id, text] of defined) {
       const where = cited.get(id) ?? [];
-      maps.requirements.push({ id, citedBy: where, covered: where.length > 0 });
+      maps.requirements.push({
+        id,
+        text,
+        citedBy: where.map((w) => w.ref),
+        acceptanceText: where[0]?.text ?? null,
+        covered: where.length > 0,
+      });
       if (!where.length) {
         issues.push(`requirement '${id}' is defined in docs/prd.md but no task acceptance cites it`);
       }
@@ -129,7 +220,7 @@ export function auditPlan({ slugDir, tasks }) {
     for (const [id, where] of cited) {
       if (!defined.has(id)) {
         issues.push(
-          `task acceptance cites requirement '${id}' (${where.join(', ')}) which is not defined in docs/prd.md`,
+          `task acceptance cites requirement '${id}' (${where.map((w) => w.ref).join(', ')}) which is not defined in docs/prd.md`,
         );
       }
     }
@@ -209,6 +300,18 @@ export function auditPlan({ slugDir, tasks }) {
     }
   }
 
+  // ── 8. the waiver ledger and the recorded gate metrics ───────────────────
+  const answers = readYaml(join(slugDir, 'answers.yaml'));
+  const recorded = answers?.plan_profile?.gate ?? answers?.gate ?? null;
+  if (recorded) {
+    const waived = Number(recorded.waived ?? 0);
+    if (Number.isFinite(waived) && waived !== waivers.length) {
+      warnings.push(
+        `the plan records ${waived} waived finding(s) but waivers.yaml lists ${waivers.length} — keep the ledger and the record in step`,
+      );
+    }
+  }
+
   // ── maps the gate agent reads instead of re-deriving ─────────────────────
   for (const t of tasks) {
     const id = String(t?.id ?? '');
@@ -228,46 +331,29 @@ export function auditPlan({ slugDir, tasks }) {
     });
   }
 
-  return { issues, warnings, maps };
+  return { issues, warnings, maps, waivers };
 }
 
 /**
- * The source and test roots, and how sure we are about them.
+ * The source and test roots — DECLARED, never guessed.
  *
- * `explicit` — architecture.yaml's toolchain block names both. A missing
- * mirror is then a blocking issue.
- * `derived` — inferred from the ownership globs and the test-placement
- * convention. A missing mirror is a warning: the inference can be wrong, and
- * a wrong block is worse than a late catch.
+ * The host repo owns its layout. If `architecture.yaml` does not declare the
+ * roots, the mirrored-tree rule cannot run: it is reported as NOT ENFORCED
+ * rather than guessed from a path prefix (a guess would be wrong for half the
+ * ecosystems, and a wrong guess that silently skips a check is worse than no
+ * check).
+ *
+ * @returns {{enforced: boolean, sourceRoot: string|null, testRoot: string|null}}
  */
-export function sourceAndTestRoots(architecture, tasks) {
+export function sourceAndTestRoots(architecture) {
   const tool = architecture?.toolchain ?? {};
   const src = typeof tool.source_root === 'string' ? tool.source_root.trim() : '';
   const tst = typeof tool.test_root === 'string' ? tool.test_root.trim() : '';
-  const usable = (v) => v && !v.startsWith('<') && !v.includes('<');
+  const usable = (v) => Boolean(v) && !v.startsWith('<') && !v.includes('<');
   if (usable(src) && usable(tst)) {
-    return { sourceRoot: src.replace(/\/+$/, ''), testRoot: tst.replace(/\/+$/, ''), confidence: 'explicit' };
+    return { enforced: true, sourceRoot: src.replace(/\/+$/, ''), testRoot: tst.replace(/\/+$/, '') };
   }
-
-  // The test-placement convention names the test root: "tests/unit/<path>".
-  const placement = String(architecture?.naming_conventions?.test_placement ?? '');
-  const m = /((?:[\w.-]+\/)+[\w.-]+)\/<[^>]*>/.exec(placement);
-  const testRoot = m ? m[1].replace(/\/+$/, '') : '';
-  if (!testRoot) return { sourceRoot: null, testRoot: null, confidence: 'none' };
-
-  // The source root is the most common leading segment of owned paths that is
-  // not the test root and not a docs folder.
-  const counts = new Map();
-  for (const t of tasks ?? []) {
-    for (const g of t?.file_ownership ?? []) {
-      const seg = String(g).split('/')[0];
-      if (!seg || seg === testRoot.split('/')[0] || seg === 'docs') continue;
-      counts.set(seg, (counts.get(seg) ?? 0) + 1);
-    }
-  }
-  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const sourceRoot = ranked.length === 1 || (ranked.length > 1 && ranked[0][1] > ranked[1][1]) ? ranked[0][0] : null;
-  return { sourceRoot, testRoot, confidence: sourceRoot ? 'derived' : 'none' };
+  return { enforced: false, sourceRoot: null, testRoot: null };
 }
 
 /**
@@ -275,8 +361,9 @@ export function sourceAndTestRoots(architecture, tasks) {
  *
  * A matrix is a markdown table with a `Covered by` column; each body row's
  * citations are `<task-id>#<index>`. The returned rows are the raw claims —
- * the audit checks that each citation RESOLVES, and the map lets the gate
- * agent judge whether it MEANS what the row says.
+ * the audit checks that each citation RESOLVES and that the acceptance it
+ * points at CLAIMS the row, and the map lets the gate agent judge whether it
+ * MEANS what the row says.
  */
 export function parseEdgeMatrix(planText) {
   const rows = [];
@@ -344,6 +431,28 @@ function readYaml(path) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The waiver ledger: the approved deviations, with who and why.
+ *
+ * A waived finding is an AUDIT EVENT, not a conversation. The file is the
+ * record; the floor reports its size, and the gate brief shows it so the next
+ * reviewer knows the deviation exists.
+ */
+export function readWaivers(path) {
+  const data = readYaml(path);
+  const list = Array.isArray(data?.waivers) ? data.waivers : [];
+  return list
+    .filter((w) => w && typeof w === 'object')
+    .map((w) => ({
+      id: String(w.id ?? ''),
+      scope: Array.isArray(w.scope) ? w.scope.map(String) : [],
+      finding: String(w.finding ?? ''),
+      reason: String(w.reason ?? ''),
+      approvedBy: String(w.approved_by ?? ''),
+      approvedAt: String(w.approved_at ?? ''),
+    }));
 }
 
 function readPlans(dir) {

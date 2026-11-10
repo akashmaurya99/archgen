@@ -208,30 +208,52 @@ function renderAudit(audit) {
 
   const reqs = maps.requirements ?? [];
   if (reqs.length) {
-    out.push('#### Requirement map — every PRD requirement and the acceptance that cites it');
+    out.push('#### Requirement map — every PRD requirement, and the acceptance that cites it');
     out.push('');
-    out.push('| requirement | cited by |');
-    out.push('|---|---|');
+    out.push('| requirement | what it asks for | cited by | the acceptance it points at |');
+    out.push('|---|---|---|---|');
     for (const r of reqs.slice(0, MAP_ROW_CAP)) {
-      out.push(`| ${r.id} | ${r.covered ? r.citedBy.join(', ') : 'NOT CITED — no acceptance claims it'} |`);
+      const acc = r.acceptanceText ? r.acceptanceText.slice(0, 140) : 'NOT CITED — no acceptance claims it';
+      out.push(
+        `| ${r.id} | ${String(r.text ?? '').slice(0, 110)} | ${r.covered ? r.citedBy.join(', ') : '—'} | ${acc} |`,
+      );
     }
-    if (reqs.length > MAP_ROW_CAP) out.push(`| … ${reqs.length - MAP_ROW_CAP} more | |`);
+    if (reqs.length > MAP_ROW_CAP) out.push(`| … ${reqs.length - MAP_ROW_CAP} more | | | |`);
+    out.push('');
+    out.push('Compare the two texts: does the acceptance verify the requirement it claims?');
     out.push('');
   }
 
   const rows = maps.edgeMatrix ?? [];
   if (rows.length) {
-    out.push('#### Edge-case matrix map — each row and the acceptance text it cites');
+    out.push('#### Edge-case matrix map — each row and the acceptance it cites');
     out.push('');
-    out.push('| row | case | cited | the acceptance it points at |');
-    out.push('|---|---|---|---|');
+    out.push('| row | case | cited | the acceptance it points at | claims |');
+    out.push('|---|---|---|---|---|');
     for (const r of rows.slice(0, MAP_ROW_CAP)) {
-      const text = r.acceptance ? r.acceptance.slice(0, 160) : 'NO SUCH ACCEPTANCE';
-      out.push(`| ${r.row} | ${String(r.case).slice(0, 80)} | ${r.task}#${r.index} | ${text} |`);
+      const text = r.acceptance ? r.acceptance.slice(0, 140) : 'NO SUCH ACCEPTANCE';
+      const claimed = (r.claims ?? []).length ? r.claims.join(', ') : '—';
+      out.push(`| ${r.row} | ${String(r.case).slice(0, 80)} | ${r.task}#${r.index} | ${text} | ${claimed} |`);
     }
-    if (rows.length > MAP_ROW_CAP) out.push(`| … ${rows.length - MAP_ROW_CAP} more | | | |`);
+    if (rows.length > MAP_ROW_CAP) out.push(`| … ${rows.length - MAP_ROW_CAP} more | | | | |`);
     out.push('');
-    out.push('Judge each row: does the cited acceptance actually verify the stated case?');
+    out.push('The `claims` column is the explicit link the floor already checked. Judge the rest: does the cited acceptance actually verify the stated case?');
+    out.push('');
+  }
+
+  const waivers = audit.waivers ?? [];
+  if (waivers.length) {
+    out.push('#### Waived findings — approved deviations, not defects to fix');
+    out.push('');
+    for (const w of waivers) {
+      out.push(
+        `- ${w.id || 'waiver'} — ${w.scope.join(', ') || 'unscoped'} — ${w.finding}` +
+          `${w.reason ? ` — reason: ${w.reason}` : ''}` +
+          `${w.approvedBy ? ` — approved by ${w.approvedBy}${w.approvedAt ? ` on ${w.approvedAt}` : ''}` : ''}`,
+      );
+    }
+    out.push('');
+    out.push('A waived finding is NOT a defect: do not re-raise it unless it regressed.');
     out.push('');
   }
 

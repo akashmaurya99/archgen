@@ -59,7 +59,7 @@ Plan-length ceilings: SMALL ≤60 lines, MEDIUM ≤180, LARGE ≤400. Task ceili
 
 Artifacts are executed by sub-agents with zero conversation history. Enforce strictly:
 
-1. **Full repo-root-relative paths:** every task step, `file_ownership` glob, artifact, and verification command uses the complete path (`src/features/catalog/api/routes.ts`), sourced from `architecture.yaml` (`structure:`/`owns[]`) or surveyed code. Never bare filenames.
+1. **Full repo-root-relative paths:** every task step, `file_ownership` glob, artifact, and verification command uses the complete path (for example `src/features/catalog/api/<route file>`), sourced from `architecture.yaml` (`structure:`/`owns[]`) or surveyed code. Never bare filenames.
 2. **Traceable naming:** every file, symbol, table, and env var cites its governing `naming_conventions` key. Add a missing key before citing it.
 3. **Zero chat dependency:** `.archgen/<slug>/` must be 100% self-contained. Unwritten facts do not exist.
 4. **Forbidden phrases:** never `"as discussed"`, `"the usual pattern"`, `"same as before"`, or `"see chat"`. Cite artifact paths/keys instead.
@@ -79,6 +79,52 @@ Artifacts are executed by sub-agents with zero conversation history. Enforce str
 6. **Wave labels match the DAG:** a `parallel_group` labeled `wave-N` must equal the task's computed wave, and every task in one group shares a wave.
 7. **Acceptance is runnable:** an acceptance a worker cannot run (live credentials, an unwritten script, an undefined fixture) is a defect — mark it manual and record the artifact, or make it runnable.
 
+### Traceability claims — the link, written down
+
+An acceptance that verifies an edge case or a requirement **says so**:
+
+```
+- "the probe result is persisted with its evidence payload (covers E4)"
+- "the api returns the list the caller asked for (covers FR-API-01)"
+```
+
+The floor then joins the two sides instead of asking a model to infer them: the matrix row `E4` cites `T9#1`, and `T9#1` claims `E4`. A row pointing at an acceptance that does not claim it is an issue, and an acceptance claiming a row that does not exist is an issue. Ids are artifact ids (`E4`, `FR-API-01`) — never code names, never language-specific.
+
+Claims are optional per plan, but the convention is detected: as soon as one acceptance claims an edge id, the mutual link is enforced for every row. Until then the floor reports that the claims are not declared, so the gap is visible.
+
+### Waivers — approved deviations, recorded
+
+A waived finding is an audit event, not a conversation. Write it to `.archgen/<slug>/waivers.yaml` **before** proceeding past it:
+
+```yaml
+waivers:
+  - id: W1
+    scope: ["T19#2", "T19#3"]
+    finding: "the live-mode acceptances need live credentials"
+    reason: "the live gate runs on the operator machine; the checklist is the artifact"
+    approved_by: user
+    approved_at: 2026-11-10
+```
+
+`scope`, `finding`, `reason`, `approved_by` and `approved_at` are required — a waiver without a reason is not a waiver. The floor reports the ledger's size, the gate brief shows it, and a waived finding is not a defect to fix (unless it regressed).
+
+### Gate metrics — the gate measures itself
+
+After the gate, record what it cost in the plan Profile (`answers.yaml` → `plan_profile.gate`, or the plan's `## Profile`):
+
+```yaml
+gate:
+  rounds: 2
+  findings:
+    blocking: 12
+    nit: 3
+    observation: 2
+  waived: 1
+  residual: 0
+```
+
+`waived` must match `waivers.yaml`. These numbers are how you prove the process improved instead of assuming it.
+
 ## Structural correctness — verifier-enforced authoring rules
 
 - **Topological waves:** wave / `parallel_group` labels match the `depends_on` order (`archgen_plan{action:'graph', format:'mermaid'}`). Dependents never precede or share a wave with prerequisites.
@@ -90,7 +136,7 @@ Artifacts are executed by sub-agents with zero conversation history. Enforce str
 
 ## Agent workspace & artifact location — the two-tier rule
 
-- **INSIDE `.archgen/<slug>/`:** `tasks.yaml`, `plans/`, `architecture.yaml`, `answers.yaml`, `codebase-map.md`, `docs/prd.md`, `decisions/NNNN-title.md`, and `.agent/`:
+- **INSIDE `.archgen/<slug>/`:** `tasks.yaml`, `plans/`, `architecture.yaml`, `answers.yaml`, `codebase-map.md`, `docs/prd.md`, `decisions/NNNN-title.md`, `waivers.yaml` (the approved-deviation ledger), and `.agent/`:
   - `.agent/decisions/NNNN-<slug>.md` — runtime implementation decisions.
   - `.agent/learnings.md` — append-only discovered repo conventions.
   - `.agent/notes/<task-id-or-topic>.md` — working notes.

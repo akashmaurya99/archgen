@@ -49,12 +49,27 @@ Pass `archgen_plan{action:'brief', kind:'verifier'}` verbatim (pre-rendered evid
 
 When `ISSUES` returns: group findings by file and apply every fix to that file in ONE pass. NITs are not fixed and never justify another round. If you disagree with a finding, surface it verbatim to the user rather than silently overriding it.
 
+### Waivers and gate metrics — the audit trail
+
+- **A waiver is a file, not a sentence.** When the user accepts a residual finding, write it to `.archgen/<slug>/waivers.yaml` (`scope`, `finding`, `reason`, `approved_by`, `approved_at`) BEFORE proceeding, and say so in the completion report. A waived finding is not a defect to fix and the verifier must not re-raise it unless it regressed.
+- **The gate measures itself.** After the gate, record `plan_profile.gate` in `answers.yaml` (MEDIUM/LARGE) or the plan's `## Profile` (SMALL): rounds used, findings by class, waived count, residual. The floor compares the recorded waived count with the ledger.
+
 ### Gate protocol — TWO rounds, then the user
 
 1. **Round 1:** dispatch the verifier on the clean floor. `APPROVE` → `§plan-review`. `ISSUES` → batch-fix every BLOCKING finding → re-run the floor until `APPROVE` → Round 2.
 2. **Round 2 — DELTA:** the verifier re-checks ONLY the Round 1 findings (fixed / still open / regressed) and the floor. It does not restate what is fixed. A finding it did not see in Round 1 must be marked `NEW` and must be BLOCKING-grade.
-3. **There is no Round 3.** If Round 2 still reports open BLOCKING findings, fix what is safe, then present the outstanding findings verbatim and ask: *"These N findings remain after two rounds. 1. Waive them and proceed (recommended) 2. Keep the plan open for another look."* Never run a third pass on your own initiative, and never cite token/cost numbers when reporting rounds.
+3. **There is no Round 3.** If Round 2 still reports open BLOCKING findings, fix what is safe, then present the outstanding findings verbatim and ask: *"These N findings remain after two rounds. 1. Waive them and proceed (recommended) 2. Keep the plan open for another look."* Never run a third pass on your own initiative, and never cite token/cost numbers when reporting rounds. A waiver chosen here is written to `waivers.yaml` first.
 4. **No `APPROVE` on record:** quote every outstanding finding and obtain an **explicit user waiver** before `§plan-review`.
+
+### The floor in CI
+
+The deterministic floor is a build gate, not only an agent step:
+
+```bash
+npx archgen-mcp exec archgen_plan '{"action":"verify","tasksYaml":".archgen/<slug>/tasks.yaml","planDir":".archgen/<slug>/plans"}' --fail-on verdict:ISSUES
+```
+
+Exit 3 when the verdict is ISSUES, 0 when it is APPROVE. Warnings never fail the build — that is what keeps the gate from being bypassed.
 
 ## §plan-review — post-plan review stage
 
