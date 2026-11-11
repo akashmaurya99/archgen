@@ -295,12 +295,29 @@ export function registerTaskTools(server) {
           // ONE wave, when the caller named a task: "which wave is this in?"
           if (args.taskId) {
             const index = resolved.waves.findIndex((w) => w.some((t) => t.id === args.taskId));
+            // The wave resolver EXCLUDES done tasks, so a completed task is
+            // in no wave. The lookup therefore runs against the TASK SET —
+            // reporting "no task 'X'" for a task that exists was a false
+            // claim about the plan.
             if (index < 0) {
-              throw invalidInput(`no task '${args.taskId}' in ${args.tasksYaml}`, {
-                action,
+              const all = listTasks(ctx.contain(args.tasksYaml), {});
+              const one = (all.tasks ?? []).find((t) => t.id === args.taskId);
+              if (!one) {
+                throw invalidInput(`no task '${args.taskId}' in ${args.tasksYaml}`, {
+                  action,
+                  taskId: args.taskId,
+                  available: resolved.waves.flat().map((t) => t.id),
+                });
+              }
+              return {
                 taskId: args.taskId,
-                available: resolved.waves.flat().map((t) => t.id),
-              });
+                waveIndex: null,
+                waveCount: resolved.waves.length,
+                wave: [],
+                task: one,
+                note: `task '${args.taskId}' is ${one.status} — it is in no active wave`,
+                blockedByFailure: resolved.blockedByFailure,
+              };
             }
             // The wave index is 1-BASED, like the snapshot's. It used to be
             // the 0-based array index, so `next{taskId:'T02'}.waveIndex` was

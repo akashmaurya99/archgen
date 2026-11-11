@@ -245,12 +245,12 @@ export function planCoverage(file, planDir, opts = {}) {
     ({ data } = parseYaml(readFileSync(file, 'utf8'), { filename: file }));
   } catch (e) {
     return {
-      tasks: { items: [], total: 0, coveredTotal: 0, uncoveredTotal: 0, offset: 0 },
-      covered: { items: [], total: 0, offset: 0 },
-      uncovered: { items: [], total: 0, offset: 0 },
-      findings: { items: [`UNPARSEABLE: unparseable tasks.yaml: ${e.message}`], total: 1, offset: 0 },
-      requirements: { total: 0, covered: 0, uncovered: [], uncoveredTotal: 0, offset: 0 },
-      edgeCases: { total: 0, linked: 0, unlinked: [], unlinkedTotal: 0, offset: 0 },
+      tasks: { items: [], total: 0, coveredTotal: 0, uncoveredTotal: 0, omitted: 0, offset: 0 },
+      covered: { items: [], total: 0, omitted: 0, offset: 0 },
+      uncovered: { items: [], total: 0, omitted: 0, offset: 0 },
+      findings: { items: [`UNPARSEABLE: unparseable tasks.yaml: ${e.message}`], total: 1, omitted: 0, offset: 0 },
+      requirements: { total: 0, covered: 0, uncovered: [], uncoveredTotal: 0, omitted: 0, offset: 0 },
+      edgeCases: { total: 0, linked: 0, unlinked: [], unlinkedTotal: 0, omitted: 0, offset: 0 },
       profileRecorded: false,
     };
   }
@@ -274,6 +274,7 @@ export function planCoverage(file, planDir, opts = {}) {
   const taskWindow = cap(all, limit, collection === 'tasks' ? offset : 0);
   const coveredWindow = cap(covered, limit, collection === 'covered' ? offset : 0);
   const uncoveredWindow = cap(uncovered, limit, collection === 'uncovered' ? offset : 0);
+  const findingsWindow = cap(findings, limit, collection === 'findings' ? offset : 0);
 
   let requirements = { total: 0, covered: 0, uncovered: [], uncoveredTotal: 0, offset: 0 };
   let edgeCases = { total: 0, linked: 0, unlinked: [], unlinkedTotal: 0, offset: 0 };
@@ -289,6 +290,7 @@ export function planCoverage(file, planDir, opts = {}) {
       covered: reqs.filter((r) => r.covered).length,
       uncovered: reqWindow.shown,
       uncoveredTotal: reqWindow.total,
+      omitted: reqWindow.omitted,
       offset: reqWindow.offset,
     };
     const rows = audit.maps.edgeMatrix ?? [];
@@ -299,14 +301,13 @@ export function planCoverage(file, planDir, opts = {}) {
       linked: rows.filter((r) => r.valid && r.claimOk).length,
       unlinked: edgeWindow.shown,
       unlinkedTotal: edgeWindow.total,
+      omitted: edgeWindow.omitted,
       offset: edgeWindow.offset,
     };
   } catch {
     // The coverage report must never crash: the audit's findings are the
     // verifier's business, not this action's.
   }
-
-  const findingsWindow = cap(findings, limit, collection === 'findings' ? offset : 0);
 
   // ONE TASK. The caller named a task, so the answer is about THAT task —
   // its coverage verdict and the findings that mention it. It used to
@@ -322,11 +323,16 @@ export function planCoverage(file, planDir, opts = {}) {
         available: [...covered, ...uncovered],
       });
     }
+    // The findings must be ABOUT this task. A substring test matched
+    // `T10`'s finding when the caller asked about `T1` — the answer was
+    // about a task nobody asked about.
+    const about = new RegExp(`(?<![A-Za-z0-9_.-])${wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_.-])`);
+    const mine = findings.filter((f) => about.test(String(f)));
     return {
       taskId: wanted,
       covered: isCovered,
-      findings: findings.filter((f) => String(f).includes(wanted)),
-      findingsTotal: findings.filter((f) => String(f).includes(wanted)).length,
+      findings: mine,
+      findingsTotal: mine.length,
     };
   }
 
@@ -336,11 +342,27 @@ export function planCoverage(file, planDir, opts = {}) {
       total: taskWindow.total,
       coveredTotal: covered.length,
       uncoveredTotal: uncovered.length,
+      omitted: taskWindow.omitted,
       offset: taskWindow.offset,
     },
-    covered: { items: coveredWindow.shown, total: coveredWindow.total, offset: coveredWindow.offset },
-    uncovered: { items: uncoveredWindow.shown, total: uncoveredWindow.total, offset: uncoveredWindow.offset },
-    findings: { items: findingsWindow.shown, total: findingsWindow.total, offset: findingsWindow.offset },
+    covered: {
+      items: coveredWindow.shown,
+      total: coveredWindow.total,
+      omitted: coveredWindow.omitted,
+      offset: coveredWindow.offset,
+    },
+    uncovered: {
+      items: uncoveredWindow.shown,
+      total: uncoveredWindow.total,
+      omitted: uncoveredWindow.omitted,
+      offset: uncoveredWindow.offset,
+    },
+    findings: {
+      items: findingsWindow.shown,
+      total: findingsWindow.total,
+      omitted: findingsWindow.omitted,
+      offset: findingsWindow.offset,
+    },
     requirements,
     edgeCases,
     profileRecorded,

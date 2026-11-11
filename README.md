@@ -140,23 +140,23 @@ asking for approval.
 ## Token footprint
 
 Measured, not guessed. `npm run test:budget` reports it, and CI fails if the
-always-on footprint exceeds 13,200 tokens.
+always-on footprint exceeds 13,600 tokens.
 
 **Every session pays this much, and no more:**
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 7,500 |
-| MCP tool catalog (9 tools) | 5,333 |
-| **Always-on total** | **12,833** — 39% of a 32k window |
+| `skill/SKILL.md` | 7,566 |
+| MCP tool catalog (9 tools) | 5,404 |
+| **Always-on total** | **12,970** — 40% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
-references are 17,230 tokens *in total*, but a typical section is **271
+references are 17,424 tokens *in total*, but a typical section is **271
 tokens** — the agent loads the one it needs, never the file:
 
 | On demand | In total | What is actually read |
 | --- | ---: | --- |
-| A protocol reference | 17,230 | one section — **271 tokens** |
+| A protocol reference | 17,424 | one section — **271 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
 | A dispatch brief | 4,155 | the one being dispatched |
 | An artifact template | 2,733 | the one being scaffolded |

@@ -134,7 +134,9 @@ waivers:
     approved_at: 2026-11-10
 ```
 
-Every field is required — the floor enforces it, and a waiver missing one is `WAIVER_INVALID` and suppresses nothing. **A covered finding stops being an issue**: the plan can reach `APPROVE`, the floor reports the finding separately as a waived one, and the gate brief lists it. A waived finding is not a defect to fix (unless it regressed).
+Every field is required — the floor enforces it, and a waiver missing one is `WAIVER_INVALID` and suppresses nothing. A `scope` entry names the finding it approves: a **code** (`MIRROR_MISSING` — the whole class), a **task id** (`T19`), an **acceptance** (`T19#2`) or a **path glob** (`src/features/catalog/**`). It is matched against the paths and ids the finding names — never against the prose between them — so a waiver cannot approve an unrelated finding by sharing a word with it.
+
+**A covered finding stops being an issue**: the plan can reach `APPROVE`, the floor reports the finding separately as a waived one, and the gate brief lists it. A waived finding is not a defect to fix (unless it regressed).
 
 ### Gate metrics — the gate measures itself
 

@@ -141,21 +141,82 @@ Every `§` section, brief and template was reconciled with the code:
 - `platforms.md` and `mcp-and-skills.md` no longer restate the MCP key
   vocabulary in two different ways.
 
+### Fixed — the third verification pass found sixteen more
+
+A third verification pass drove the real handlers against the fixed code and
+found sixteen defects — three of them HIGH, all in the machinery the previous
+commits had just added:
+
+- **EVERY CONTINUATION LOOED FOREVER AT THE TAIL.** The truncation test
+  compared the **page** length with the **total**, which is true at the tail
+  as well — so the published continuation pointed at the *same* offset and an
+  agent that followed it spun on an empty page forever. The core already
+  computed what is *left* after the window (`omitted`); every caller now uses
+  it.
+- **A CHAIN THAT JUMPED BETWEEN COLLECTIONS.** `meta.next` continued whichever
+  collection happened to be truncated, so an agent paging the uncovered list
+  was handed the task list — and the offset repeated. `meta.next` now
+  continues **the collection the caller asked for**; `meta.more` names the
+  others.
+- **A MISMATCHED `collection` ANSWERED WITH A SILENT ZERO.**
+  `coverage{collection:'issues'}` is schema-legal and returned
+  `total: 0, returned: 0` while the payload carried twenty tasks. Each
+  action now validates the collection against its own set and refuses a
+  mismatch with `INVALID_INPUT`.
+- **`impact`'s CONTINUATION COULD NEVER REACH THE `transitive`/`artifacts`
+  TAILS** — the offset walked only the selected list, and the published
+  continuation always named the selected list. Each list now has its own
+  continuation, and the ones that are still truncated are named in
+  `meta.more`.
+- **A WAIVER SUBJECT SUPPRESSED UNRELATED FINDINGS.** A scope of `test`
+  matched the *prose* "mirrored **test** path", and `T19#2` matched
+  `T19#20`. A scope is now matched against the **subjects** a finding names —
+  the quoted paths and the task#acceptance refs — never against the prose
+  between them.
+- **`coverage{taskId}` RETURNED OTHER TASKS' FINDINGS.** The filter was a
+  substring test, so `T1` matched `T10`'s finding.
+- **`docs{validate}`'s WARNINGS TAIL WAS UNREACHABLE** — the two lists shared
+  one cursor — and its continuation dropped the `file` scope. Both lists have
+  their own window and cursor now.
+- **A SIBLING ARTIFACT SATISFIED A DIFFERENT FAMILY'S DECISION.**
+  `docs/prd.md` and `docs/<module>.md` are different families whose patterns
+  overlap, so a PRD satisfied the module-diagram family's `create` (a missing
+  diagram passed) and blocked a plan that had correctly omitted one. The
+  presence checks now compare the family *assignment*.
+- **A YAML FENCE IN A LATER SECTION BECAME THE PLAN PROFILE.** The fence
+  search scanned the rest of the document, so an appendix's block was adopted
+  and the floor blocked on a record it had invented. The fence must now be
+  inside the Profile section.
+- **A RECORDED PATH COULD ESCAPE THE ARTIFACT SPACE.** `../outside.md`
+  resolved to a sibling of the slug directory. Recorded paths are contained
+  before they are used.
+- **`tasks{next, taskId}` REPORTED "no task" FOR A COMPLETED TASK** — the
+  wave resolver excludes done tasks, so the lookup found nothing. It now
+  looks the id up in the task set and reports that the task is done.
+- **`harness_info` STILL RETURNED TWO SHAPES** — the named-harness branch
+  short-circuited before the unified envelope. One shape now.
+- **`bootstrap`'s CODEGRAPH KEY SET STILL DIFFERED** from
+  `archgen_codegraph`'s, and `index` was emitted only on some paths. Both are
+  fixed sets now.
+
 ### Changed — the always-on ceiling moves, because the guidance did
 
 The floor's exact behaviour (waivers, families, the claim convention), the
 profile→scaffold round trip, the medium-confidence rule, the error semantics
 and the corrected call sites all live in the always-on kernel — where the
-agent reads them. The always-on total moves **12,833 tokens**, and the
-documented CI ceiling moves with it **12,200 → 13,200**. The budget is still
-a hard gate: CI fails if the always-on footprint exceeds it.
+agent reads them. The always-on total moves **12,970 tokens**, and the
+documented CI ceiling moves with it **12,200 → 13,600**. The budget is still
+a hard gate: CI fails if the always-on footprint exceeds it. The ceiling
+keeps the same ~5% margin over the measured total that it has always had —
+the token estimator is ±10%, so a tighter margin would let the gate fail on
+noise.
 
 | | Tokens |
 |---|---:|
-| `skill/SKILL.md` (always-on) | 7,500 |
-| MCP tool catalog (9 tools, always-on) | 5,333 |
-| **Always-on total** | **12,833** |
-| Protocol references (on demand) | 17,230 |
+| `skill/SKILL.md` (always-on) | 7,566 |
+| MCP tool catalog (9 tools, always-on) | 5,404 |
+| **Always-on total** | **12,970** |
+| Protocol references (on demand) | 17,424 |
 | Median reference section | 271 |
 | Dispatch briefs (on demand) | 4,155 |
 | Artifact templates (on demand) | 2,733 |
@@ -208,7 +269,8 @@ flipped a SMALL plan from `APPROVE` to `ISSUES`:
   the answer, one shape per fact, and an `omit`-decided artifact is never
   served as "write this".
 - `continuable` / `bounded-output` — every bound is walkable, and every count
-  is exact.
+  is exact. The continuation chain is walked to the end and asserted to
+  **terminate**: it never repeats an offset and never advances backwards.
 
 ### Added — `archgen_plan{action:'profile'}` — the scope classifier
 

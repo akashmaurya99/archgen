@@ -74,31 +74,40 @@ export function registerSetupTools(server) {
 
       if (args.action === 'harness_info') {
         const caps = loadAsset('platform-capabilities.json');
-        if (args.harness) return platformCapabilities(caps, args.harness);
-        // ONE SHAPE, always. The answer used to be the capability row when a
-        // harness was named, the detection block when it was not, and a third
-        // block when detection threw — so a client had to branch on the
-        // RESPONSE to know what it got.
+        // ONE SHAPE, always. The answer used to be the capability row when
+        // a harness was named, the detection block when it was not, and a
+        // third block when detection threw — so a client had to branch on
+        // the RESPONSE to know what it got.
+        const base = {
+          harness: args.harness ?? null,
+          detected: null,
+          primary: null,
+          capabilities: null,
+          harnesses: Object.entries(caps.harnesses ?? {}).map(([id, h]) => ({ id, label: h.label })),
+          universal: caps.universal ?? null,
+          // ALWAYS present, so the key set does not depend on which branch
+          // answered.
+          reason: null,
+          nextStep: null,
+        };
+        if (args.harness) {
+          // The named harness's row goes INSIDE the envelope, not instead
+          // of it.
+          return { ...base, harness: args.harness, capabilities: platformCapabilities(caps, args.harness) };
+        }
         try {
           const detected = detectHarness(caps, { projectRoot: ctx.projectRoot, home: ctx.home });
           return {
-            harness: detected.primary ?? null,
+            ...base,
             detected: detected.detected ?? [],
             primary: detected.primary ?? null,
             capabilities: detected.capabilities ?? null,
-            harnesses: Object.entries(caps.harnesses ?? {}).map(([id, h]) => ({ id, label: h.label })),
-            universal: caps.universal ?? null,
           };
         } catch (e) {
           return {
-            harness: null,
-            detected: null,
-            primary: null,
-            capabilities: null,
+            ...base,
             reason: e instanceof Error ? e.message : String(e),
             nextStep: 'Unknown platform: web-search the official MCP + skills docs, propose findings, get user approval.',
-            harnesses: Object.entries(caps.harnesses ?? {}).map(([id, h]) => ({ id, label: h.label })),
-            universal: caps.universal ?? null,
           };
         }
       }

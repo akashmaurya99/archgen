@@ -30,12 +30,19 @@ import { join } from 'node:path';
 
 import { auditPlan, waiverCovers } from '../../src/core/plan-audit.mjs';
 
-function fixture({ architecture = null, prd = null, plans = {}, waivers = null, answers = null, decisions = {}, tasksYaml = false } = {}) {
+function fixture({ architecture = null, prd = null, plans = {}, waivers = null, answers = null, decisions = {}, tasksYaml = false, docs = {}, outside = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'archgen-floor-'));
   const slugDir = join(root, 'demo');
   mkdirSync(join(slugDir, 'plans'), { recursive: true });
   if (architecture) writeFileSync(join(slugDir, 'architecture.yaml'), architecture, 'utf8');
   if (tasksYaml) writeFileSync(join(slugDir, 'tasks.yaml'), 'tasks: []\n', 'utf8');
+  if (Object.keys(docs).length) {
+    mkdirSync(join(slugDir, 'docs'), { recursive: true });
+    for (const [name, text] of Object.entries(docs)) {
+      writeFileSync(join(slugDir, 'docs', name), text, 'utf8');
+    }
+  }
+  if (outside) writeFileSync(join(root, 'outside.md'), '# Outside\n\ntext\n', 'utf8');
   if (prd) {
     mkdirSync(join(slugDir, 'docs'), { recursive: true });
     writeFileSync(join(slugDir, 'docs', 'prd.md'), prd, 'utf8');
@@ -484,6 +491,139 @@ test('a waiver scoped to a GLOB covers the paths inside it', () => {
     !waiverCovers({ scope: ['src/b/**'] }, issue),
     'a glob scope must not cover an unrelated path',
   );
+});
+
+test('a waiver scoped to a WORD in the prose does NOT suppress the finding', () => {
+  // The finding's PROSE said "mirrored test path". A scope of "test" (or
+  // "path") matched that prose and approved an unrelated defect.
+  const issue = "MIRROR_MISSING: task 'T1' owns 'src/core/**' but no task owns the mirrored test path 'tests/unit/core/**'";
+  assert.ok(!waiverCovers({ scope: ['test'] }, issue), 'a word in the prose is not a subject');
+  assert.ok(!waiverCovers({ scope: ['path'] }, issue), 'a word in the prose is not a subject');
+  assert.ok(!waiverCovers({ scope: ['src'] }, issue), 'a directory fragment is not the subject');
+  // The ACTUAL subject — the quoted path and the task id — still matches.
+  assert.ok(waiverCovers({ scope: ['T1'] }, issue), 'the task id is a subject');
+  assert.ok(waiverCovers({ scope: ['src/core/**'] }, issue), 'the quoted path is a subject');
+});
+
+test('a waiver scoped to one acceptance does not cover a LONGER one', () => {
+  const issue = "MATRIX_CLAIM_MISMATCH: edge-case matrix row 'E4' cites T9#20, but that acceptance does not claim 'E4'";
+  assert.ok(waiverCovers({ scope: ['T9#20'] }, issue), 'the exact acceptance matches');
+  assert.ok(!waiverCovers({ scope: ['T9#2'] }, issue), 'T9#2 must not cover T9#20');
+});
+
+// ── 9. the family a file belongs to ────────────────────────────────────────
+
+test('a sibling artifact does not satisfy a DIFFERENT family\'s decision', () => {
+  // `docs/prd.md` and `docs/<module>.md` are different families whose
+  // PATTERNS overlap. Matching the pattern let a PRD satisfy the
+  // module-diagram family's `create` — so a missing diagram passed.
+  const f = fixture({
+    plans: { 'demo.md': '# Plan\n\ntext\n' },
+    docs: { 'prd.md': '# PRD\n\ntext\n' },
+    answers: [
+      'plan_profile:',
+      '  artifacts:',
+      '    - path: .archgen/demo/docs/<module>.md',
+      '      decision: create',
+      '      reason: a topology diagram per module',
+      '',
+    ].join('\n'),
+  });
+  try {
+    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(
+      audit.issues.some((i) => i.startsWith('PROFILE_CREATE_MISSING')),
+      `the missing module diagram must be reported: ${audit.issues.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('an artifact recorded omit is not flagged because a SIBLING family exists', () => {
+  const f = fixture({
+    plans: { 'demo.md': '# Plan\n\ntext\n' },
+    docs: { 'prd.md': '# PRD\n\ntext\n' },
+    answers: [
+      'plan_profile:',
+      '  artifacts:',
+      '    - path: .archgen/demo/docs/<module>.md',
+      '      decision: omit',
+      '      reason: no non-obvious topology',
+      '',
+    ].join('\n'),
+  });
+  try {
+    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(
+      !audit.issues.some((i) => i.startsWith('PROFILE_OMIT_PRESENT')),
+      `a PRD must not block a plan that omitted the module diagram: ${audit.issues.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+// ── 10. the Profile fence is read from ITS OWN section ─────────────────────
+
+test('a YAML fence in a LATER section is not the plan profile', () => {
+  const plan = [
+    '# demo — plan',
+    '',
+    '## Profile',
+    '',
+    'Prose only — the record is in answers.yaml.',
+    '',
+    '## Appendix',
+    '',
+    '```yaml',
+    'artifacts:',
+    '  - path: .archgen/demo/docs/prd.md',
+    '    decision: omit',
+    '    reason: not in this plan',
+    '```',
+    '',
+  ].join('\n');
+  const f = fixture({ plans: { 'demo.md': plan } });
+  try {
+    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(
+      !audit.issues.some((i) => i.startsWith('PROFILE_OMIT_PRESENT')),
+      `the appendix block must not become the plan profile: ${audit.issues.join(' | ')}`,
+    );
+    assert.ok(
+      audit.warnings.some((w) => w.startsWith('PROFILE_NOT_RECORDED')),
+      `the missing profile must warn: ${audit.warnings.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+// ── 11. a recorded path may not escape the artifact space ──────────────────
+
+test('a recorded path that escapes the artifact space satisfies nothing', () => {
+  const f = fixture({
+    plans: { 'demo.md': '# Plan\n\ntext\n' },
+    outside: true,
+    answers: [
+      'plan_profile:',
+      '  artifacts:',
+      '    - path: .archgen/demo/../outside.md',
+      '      decision: create',
+      '      reason: a file outside the artifact space',
+      '',
+    ].join('\n'),
+  });
+  try {
+    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(
+      audit.issues.some((i) => i.startsWith('PROFILE_CREATE_MISSING')),
+      `a path outside the artifact space must not satisfy a create: ${audit.issues.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
 });
 
 test('a SMALL plan records its gate in the plan Profile fence, and the floor reads it', () => {

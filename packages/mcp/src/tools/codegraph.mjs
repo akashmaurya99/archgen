@@ -31,10 +31,13 @@ export function shapeReport(report, window = {}) {
     cli: {
       present: report.cli?.present === true,
       version: report.cli?.version ?? null,
+      action: report.cli?.action ?? 'none',
     },
     telemetry: report.telemetry ?? { state: 'unknown', action: 'none' },
+    // The detected harnesses, ALWAYS present — the key set must not depend
+    // on which path answered.
+    detected: report.detected ?? [],
   };
-  if (report.cli?.action) out.cli.action = report.cli.action;
   if (report.cli?.bin) out.cli.bin = report.cli.bin;
   // A failed or blocked install explains itself in `detail`; dropping it
   // leaves the caller with "failed" and no next step.
@@ -43,7 +46,8 @@ export function shapeReport(report, window = {}) {
   // indexed?"), and it must be present on BOTH bootstrap paths — the two
   // used to answer with different shapes for the same question.
   out.indexed = report.index?.initialized === true || report.index?.indexed === true;
-  if (report.index && report.index.action !== 'none') out.index = report.index;
+  // The index block, ALWAYS present — one shape per fact.
+  out.index = report.index ?? { action: 'none', initialized: false };
   // ALWAYS present, so the key set does not depend on which path answered.
   out.planned = report.planned === true;
   const native = report.wiring?.native ?? [];
@@ -102,20 +106,20 @@ export function registerCodegraphTools(server) {
       // The wiring lists grow with the number of detected harnesses, so they
       // are bounded — and the agent is told what else it could fetch.
       const window = { limit: args.limit, offset: args.offset };
-      const p = project(report.detected ?? [], {
-        ...window,
-        // The next slice belongs to the action that produced this slice.
-        next: `archgen_codegraph{action:'${args.action}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
-      });
       const shaped = shapeReport(report, window);
+      // The detected harnesses are a collection too.
+      shaped.detected = project(report.detected ?? [], {
+        ...window,
+        next: `archgen_codegraph{action:'${args.action}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+      }).items;
       const manualTotal = shaped.wiring?.manualTotal ?? 0;
       return withMeta(
-        { ...shaped, detected: p.items },
+        shaped,
         moreMeta({
-          total: p.total,
-          returned: p.returned,
-          next: p.next,
-          available: { harnesses: p.total, wiringManual: manualTotal },
+          total: shaped.detected.length,
+          returned: shaped.detected.length,
+          next: undefined,
+          available: { harnesses: shaped.detected.length, wiringManual: manualTotal },
         }),
       );
     },

@@ -174,12 +174,117 @@ test('bootstrap and archgen_codegraph answer with the SAME codegraph key set', a
   const setupKeys = Object.keys(setup.data.codegraph ?? {}).sort();
   const cgKeys = Object.keys(cg.data ?? {}).sort();
   // The bootstrap's report is SHAPED by the same function, so the keys are
-  // the same set. (`detected` is added by the codegraph tool only.)
+  // the same set — one shape per fact.
   assert.deepEqual(
     setupKeys,
-    cgKeys.filter((k) => k !== 'detected'),
+    cgKeys,
     `the codegraph report must have ONE shape:\n  setup: ${setupKeys.join(',')}\n  codegraph: ${cgKeys.join(',')}`,
   );
+});
+
+test('coverage{taskId} returns findings about THAT task only', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'archgen-tid-'));
+  try {
+    const slugDir = join(root, '.archgen', 'demo');
+    mkdirSync(join(slugDir, 'plans'), { recursive: true });
+    const tasks = Array.from(
+      { length: 10 },
+      (_, i) =>
+        `  - id: T${i + 1}\n    title: module ${i + 1}\n    depends_on: []\n    file_ownership: ["src/m${i + 1}/**"]\n    acceptance:\n      - "the module ${i + 1} behaviour holds"`,
+    ).join('\n');
+    writeFileSync(join(slugDir, 'tasks.yaml'), `tasks:\n${tasks}\n`, 'utf8');
+    // The plan mentions only T1 — so every other task is uncovered, and the
+    // findings name them one by one.
+    writeFileSync(join(slugDir, 'plans', 'demo.md'), '# Plan\n\nT1 does it.\n', 'utf8');
+    const local = new Context({
+      projectRoot: root,
+      anchorRoot: root,
+      home: join(root, '.home'),
+      env: { PATH: '/nonexistent-archgen-test-path' },
+    });
+    const envelope = await guard(getToolSpec('archgen_plan').handler, local, {
+      action: 'coverage',
+      tasksYaml: join(slugDir, 'tasks.yaml'),
+      planDir: join(slugDir, 'plans'),
+      taskId: 'T1',
+    });
+    assert.ok(envelope.ok, envelope.error?.message);
+    for (const finding of envelope.data.findings ?? []) {
+      // A substring test matched T10's finding when the caller asked about
+      // T1 — the answer was about a task nobody asked about.
+      assert.ok(
+        /(?<![A-Za-z0-9_.-])T1(?![A-Za-z0-9_.-])/.test(finding),
+        `the finding must be about T1 only: ${finding}`,
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tasks{next, taskId} does not claim a DONE task does not exist', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'archgen-done-'));
+  try {
+    const slugDir = join(root, '.archgen', 'demo');
+    mkdirSync(slugDir, { recursive: true });
+    writeFileSync(
+      join(slugDir, 'tasks.yaml'),
+      [
+        'tasks:',
+        '  - id: A',
+        '    title: already finished',
+        '    depends_on: []',
+        '    status: done',
+        '    file_ownership: ["src/a/**"]',
+        '    acceptance:',
+        '      - "it works"',
+        '  - id: B',
+        '    title: still to do',
+        '    depends_on: []',
+        '    file_ownership: ["src/b/**"]',
+        '    acceptance:',
+        '      - "it works"',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const local = new Context({
+      projectRoot: root,
+      anchorRoot: root,
+      home: join(root, '.home'),
+      env: { PATH: '/nonexistent-archgen-test-path' },
+    });
+    const envelope = await guard(getToolSpec('archgen_tasks').handler, local, {
+      action: 'next',
+      tasksYaml: join(slugDir, 'tasks.yaml'),
+      taskId: 'A',
+    });
+    assert.ok(envelope.ok, 'a done task exists — the tool must not claim otherwise');
+    assert.equal(envelope.data.taskId, 'A');
+    assert.match(envelope.data.note ?? '', /done/, 'the answer must say the task is done');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('harness_info answers with ONE shape, named or not', async () => {
+  const withHarness = await call('archgen_setup', { action: 'harness_info', harness: 'claude' });
+  const without = await call('archgen_setup', { action: 'harness_info' });
+  assert.ok(withHarness.ok, withHarness.error?.message);
+  assert.ok(without.ok, without.error?.message);
+  const a = Object.keys(withHarness.data).sort();
+  const b = Object.keys(without.data).sort();
+  assert.deepEqual(a, b, `harness_info must have ONE shape:\n  named: ${a.join(',')}\n  detected: ${b.join(',')}`);
+  // The named harness's capabilities ride INSIDE the envelope.
+  assert.ok(withHarness.data.capabilities, 'the named harness must carry its capabilities');
+  assert.equal(withHarness.data.harness, 'claude');
+});
+
+test('a collection the action does not have is a typed error — in docs too', async () => {
+  const envelope = await call('archgen_docs', { action: 'validate', collection: 'issues' });
+  assert.ok(!envelope.ok, 'a mismatched collection must be refused');
+  assert.equal(envelope.error?.code, 'INVALID_INPUT');
+  assert.match(envelope.error?.message ?? '', /not a collection of 'validate'/);
 });
 
 test('the outer bootstrap payload has the same keys on both paths', async () => {

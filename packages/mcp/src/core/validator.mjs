@@ -132,6 +132,12 @@ export function validateTasksYaml(file, opts = {}) {
     warningsTotal: warnWindow.total,
     errorsOffset: errWindow.offset,
     warningsOffset: warnWindow.offset,
+    // How much is LEFT — offset-aware. The tool used to compare the page
+    // length with the total, which is true at the tail too, so it published
+    // a continuation pointing at the SAME offset: an agent following it
+    // spun on an empty page forever.
+    errorsOmitted: Math.max(0, errWindow.total - (errWindow.offset + errWindow.items.length)),
+    warningsOmitted: Math.max(0, warnWindow.total - (warnWindow.offset + warnWindow.items.length)),
     counts: { tasks: tasks.length, errors: errWindow.total, warnings: warnWindow.total },
   };
 }

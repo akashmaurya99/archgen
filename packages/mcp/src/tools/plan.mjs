@@ -32,10 +32,35 @@ const ACTION_DESC = 'validate|verify|graph|impact|coverage|profile|scaffold|brie
  * called "covered" were the tail of the uncovered list).
  */
 const COLLECTIONS = {
-  verify: 'issues|warnings',
-  validate: 'errors|warnings',
-  coverage: 'tasks|covered|uncovered|findings|requirements|edgeCases',
+  validate: ['errors', 'warnings'],
+  verify: ['issues', 'warnings'],
+  coverage: ['tasks', 'covered', 'uncovered', 'findings', 'requirements', 'edgeCases'],
+  impact: ['direct', 'transitive', 'artifacts'],
 };
+
+/**
+ * The collection a caller named, validated against the action's own set.
+ *
+ * The `collection` enum is SHARED by four actions, so a caller could name a
+ * collection the action does not have — `coverage{collection:'issues'}`
+ * answered with a silent zero while the payload carried twenty tasks. A
+ * mismatch is a typed error, never a silent fallback.
+ *
+ * @param {string} action
+ * @param {string|undefined} collection
+ * @param {string} fallback the action's default collection
+ */
+function resolveCollection(action, collection, fallback) {
+  const allowed = COLLECTIONS[action] ?? [];
+  if (collection === undefined || collection === null) return fallback;
+  if (!allowed.includes(collection)) {
+    throw invalidInput(
+      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|')})`,
+      { action, collection, allowed },
+    );
+  }
+  return collection;
+}
 
 const schema = z.object({
   action: z.enum(['validate', 'verify', 'graph', 'impact', 'coverage', 'profile', 'scaffold', 'brief']).describe(ACTION_DESC),
@@ -101,6 +126,7 @@ export function registerPlanTools(server) {
       switch (action) {
         case 'validate': {
           const file = requireTasksYaml(args, ctx);
+          const collection = resolveCollection('validate', args.collection, 'errors');
           const report = validateTasksYaml(file, {
             planDir: args.planDir ? ctx.contain(args.planDir) : null,
             limit: args.limit,
@@ -109,20 +135,38 @@ export function registerPlanTools(server) {
             // separate windows: a 200-task broken plan produced 400 errors
             // and 200 warnings in one answer (16k tokens), with no way to
             // fetch the rest.
-            collection: args.collection,
+            collection,
           });
-          const errNext = nextCall('validate', { ...args, collection: 'errors' }, report.errorsOffset + report.errors.length);
-          const warnNext = nextCall('validate', { ...args, collection: 'warnings' }, report.warningsOffset + report.warnings.length);
-          const errTruncated = report.errors.length < report.errorsTotal;
-          const warnTruncated = report.warnings.length < report.warningsTotal;
+          const errNext = nextCall('validate', { ...args, collection: 'errors', limit: args.limit }, report.errorsOffset + report.errors.length);
+          const warnNext = nextCall('validate', { ...args, collection: 'warnings', limit: args.limit }, report.warningsOffset + report.warnings.length);
+          // The truncation test is OFFSET-AWARE. Comparing the page length
+          // with the total is true at the tail too, so the continuation
+          // pointed at the SAME offset and an agent following it spun
+          // forever on an empty page.
+          const errTruncated = report.errorsOmitted > 0;
+          const warnTruncated = report.warningsOmitted > 0;
           return withMeta(
             report,
             moreMeta({
-              total: report.errorsTotal,
-              returned: report.errors.length,
+              total: collection === 'warnings' ? report.warningsTotal : report.errorsTotal,
+              returned: collection === 'warnings' ? report.warnings.length : report.errors.length,
               available: { errors: report.errorsTotal, warnings: report.warningsTotal, tasks: report.counts.tasks },
-              next: errTruncated ? errNext : warnTruncated ? warnNext : undefined,
-              more: errTruncated && warnTruncated ? warnNext : undefined,
+              next:
+                collection === 'warnings'
+                  ? warnTruncated
+                    ? warnNext
+                    : undefined
+                  : errTruncated
+                    ? errNext
+                    : undefined,
+              more:
+                collection === 'warnings'
+                  ? errTruncated
+                    ? errNext
+                    : undefined
+                  : warnTruncated
+                    ? warnNext
+                    : undefined,
             }),
           );
         }
@@ -130,7 +174,7 @@ export function registerPlanTools(server) {
           const file = requireTasksYaml(args, ctx);
           if (!args.planDir) throw invalidInput('verify requires planDir', { action });
           const planDirArg = ctx.contain(args.planDir);
-          const collection = args.collection === 'warnings' ? 'warnings' : 'issues';
+          const collection = resolveCollection('verify', args.collection, 'issues');
           const out = verifyPlan(file, planDirArg, {
             offset: args.offset ?? 0,
             limit: args.limit,
@@ -140,32 +184,22 @@ export function registerPlanTools(server) {
           // in the payload, so a caller that needs the tail can reach it.
           // The next call is emitted when EITHER list is truncated — the
           // warnings used to vanish with no pointer at all.
-          const issueNext = nextCall('verify', { ...args, collection: 'issues', limit: out.issues.length || args.limit }, out.issuesOffset + out.issues.length);
-          const warningNext = nextCall('verify', { ...args, collection: 'warnings', limit: out.warnings.length || args.limit }, out.warningsOffset + out.warnings.length);
-          const issueTruncated = out.issues.length < out.issuesTotal;
-          const warningTruncated = out.warnings.length < out.warningsTotal;
-          // `next` names the FIRST truncated list — the selected one when it
-          // is truncated, otherwise the other. `more` names what is left.
+          const effective = out.issues.length || out.warnings.length || args.limit || 40;
+          const issueNext = nextCall('verify', { ...args, collection: 'issues', limit: effective }, out.issuesOffset + out.issues.length);
+          const warningNext = nextCall('verify', { ...args, collection: 'warnings', limit: effective }, out.warningsOffset + out.warnings.length);
+          // OFFSET-AWARE: `omitted` is what is LEFT after this window. The
+          // old test (`page.length < total`) was true at the tail as well,
+          // so the continuation pointed at the same offset forever.
+          const issueTruncated = out.omitted.issues > 0;
+          const warningTruncated = out.omitted.warnings > 0;
+          // `meta.next` CONTINUES THE COLLECTION THE CALLER ASKED FOR; the
+          // other list's continuation is named in `meta.more`. A chain that
+          // jumped between the two repeated an offset and handed the agent a
+          // different query than the one it was paging.
           const next =
-            collection === 'warnings'
-              ? warningTruncated
-                ? warningNext
-                : issueTruncated
-                  ? issueNext
-                  : undefined
-              : issueTruncated
-                ? issueNext
-                : warningTruncated
-                  ? warningNext
-                  : undefined;
+            collection === 'warnings' ? (warningTruncated ? warningNext : undefined) : issueTruncated ? issueNext : undefined;
           const more =
-            collection === 'warnings'
-              ? issueTruncated
-                ? issueNext
-                : undefined
-              : warningTruncated
-                ? warningNext
-                : undefined;
+            collection === 'warnings' ? (issueTruncated ? issueNext : undefined) : warningTruncated ? warningNext : undefined;
           return withMeta(
             out,
             moreMeta({
@@ -181,7 +215,7 @@ export function registerPlanTools(server) {
           const file = requireTasksYaml(args, ctx);
           if (!args.planDir) throw invalidInput('coverage requires planDir', { action });
           const planDirArg = ctx.contain(args.planDir);
-          const collection = args.collection ?? 'tasks';
+          const collection = resolveCollection('coverage', args.collection, 'tasks');
           // ONE task, when the caller named one: the answer is about THAT
           // task, not about the plan.
           if (args.taskId) {
@@ -228,10 +262,27 @@ export function registerPlanTools(server) {
             requirements: covered.requirements.uncoveredTotal,
             edgeCases: covered.edgeCases.unlinkedTotal,
           };
+          // OFFSET-AWARE: `omitted` is what is LEFT after this window. The
+          // old test (`page.length < total`) was true at the tail as well,
+          // so the continuation pointed at the same offset forever.
+          const omittedOf = {
+            tasks: covered.tasks.omitted,
+            covered: covered.covered.omitted,
+            uncovered: covered.uncovered.omitted,
+            findings: covered.findings.omitted,
+            requirements: covered.requirements.omitted,
+            edgeCases: covered.edgeCases.omitted,
+          };
           const moreList = [];
           for (const c of order) {
-            if (truncated(shownOf[c], totalOf[c])) moreList.push(next[c]);
+            if (c !== collection && omittedOf[c] > 0) moreList.push(next[c]);
           }
+          // `meta.next` CONTINUES THE COLLECTION THE CALLER ASKED FOR. The
+          // other collections' continuations are named in `meta.more` — a
+          // chain that jumped between collections repeated an offset and
+          // handed the agent a different query than the one it was paging.
+          const selectedNext = omittedOf[collection] > 0 ? next[collection] : undefined;
+          void truncated;
           // `meta.total`/`meta.returned` describe the SELECTED collection.
           // They described the whole set before, so `returned` could exceed
           // `total` and neither number matched the answer.
@@ -260,8 +311,8 @@ export function registerPlanTools(server) {
             moreMeta({
               total: selectedTotal,
               returned: selectedShown,
-              next: moreList[0],
-              more: moreList.length > 1 ? moreList.slice(1).join(' | ') : undefined,
+              next: selectedNext,
+              more: moreList.length ? moreList.join(' | ') : undefined,
               available: {
                 tasks: covered.tasks.total,
                 covered: covered.tasks.coveredTotal,
@@ -284,15 +335,42 @@ export function registerPlanTools(server) {
           // Each list has its OWN cursor: `collection` says which one the
           // window walks, so an agent paging the artifacts is not silently
           // paging the task ids too.
-          const collection = args.collection ?? 'direct';
-          const window = { limit: args.limit, offset: args.offset };
+          const collection = resolveCollection('impact', args.collection, 'direct');
+          const window = { limit: args.limit };
           const direct = project(blast.direct ?? [], { ...window, offset: collection === 'direct' ? args.offset : 0 });
           const transitive = project(blast.transitive ?? [], { ...window, offset: collection === 'transitive' ? args.offset : 0 });
           const artifacts = project(blast.artifacts ?? [], { ...window, offset: collection === 'artifacts' ? args.offset : 0 });
-          const nextOffset = (args.offset ?? 0) + (args.limit ?? 50);
-          const next = `archgen_plan{action:'impact',tasksYaml:'${file}',target:'${args.target}',collection:'${collection}',limit:${args.limit ?? 50},offset:${nextOffset}}`;
-          const shownOf = { direct: direct.returned, transitive: transitive.returned, artifacts: artifacts.returned };
-          const totalOf = { direct: direct.total, transitive: transitive.total, artifacts: artifacts.total };
+          // ONE CONTINUATION PER LIST. The offset walks only the selected
+          // list, so a continuation that always named the selected list
+          // could never reach the other two — the agent had to guess the
+          // collection name the tool never mentioned.
+          const cont = (c, off) =>
+            `archgen_plan{action:'impact',tasksYaml:'${file}',target:'${args.target}',collection:'${c}',limit:${args.limit ?? 50},offset:${off}}`;
+          const nextOf = {
+            direct: cont('direct', direct.offset + direct.items.length),
+            transitive: cont('transitive', transitive.offset + transitive.items.length),
+            artifacts: cont('artifacts', artifacts.offset + artifacts.items.length),
+          };
+          const omittedOf = {
+            direct: Math.max(0, direct.total - (direct.offset + direct.items.length)),
+            transitive: Math.max(0, transitive.total - (transitive.offset + transitive.items.length)),
+            artifacts: Math.max(0, artifacts.total - (artifacts.offset + artifacts.items.length)),
+          };
+          const order = [
+            collection,
+            ...['direct', 'transitive', 'artifacts'].filter((c) => c !== collection),
+          ];
+          const moreList = [];
+          for (const c of order) {
+            if (c !== collection && omittedOf[c] > 0) moreList.push(nextOf[c]);
+          }
+          // `meta.next` CONTINUES THE COLLECTION THE CALLER ASKED FOR; the
+          // others are named in `meta.more`.
+          const selectedNext = omittedOf[collection] > 0 ? nextOf[collection] : undefined;
+          const selectedTotal =
+            collection === 'direct' ? direct.total : collection === 'transitive' ? transitive.total : artifacts.total;
+          const selectedShown =
+            collection === 'direct' ? direct.returned : collection === 'transitive' ? transitive.returned : artifacts.returned;
           return withMeta(
             {
               target: args.target,
@@ -307,9 +385,9 @@ export function registerPlanTools(server) {
               // The total covers EVERY list the payload carries — a `returned`
               // larger than the `total` is impossible to reconcile.
               total: direct.total + transitive.total + artifacts.total,
-              returned: direct.returned + transitive.returned + artifacts.returned,
-              next:
-                direct.truncated || transitive.truncated || artifacts.truncated ? next : undefined,
+              returned: selectedShown,
+              next: selectedNext,
+              more: moreList.length ? moreList.join(' | ') : undefined,
               available: {
                 direct: direct.total,
                 transitive: transitive.total,

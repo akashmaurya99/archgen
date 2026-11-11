@@ -146,6 +146,77 @@ test('the tool names the next call for a truncated answer', async () => {
   }
 });
 
+test('a continuation NEVER points at the same offset — the tail terminates', async () => {
+  // THE LOOPING DEFECT. The truncation test compared the PAGE length with
+  // the TOTAL, which is true at the tail as well — so the published
+  // continuation pointed at the SAME offset, and an agent that followed it
+  // spun on an empty page forever.
+  const p = brokenPlan(60);
+  try {
+    const ctx = new Context({
+      projectRoot: p.root,
+      anchorRoot: p.root,
+      home: p.root,
+      env: { PATH: '/nonexistent' },
+    });
+    const spec = getToolSpec('archgen_plan');
+    for (const action of ['verify', 'coverage']) {
+      const args = {
+        action,
+        tasksYaml: p.tasksYaml,
+        planDir: p.plansDir,
+        limit: 10,
+      };
+      // Walk to the end and make sure the chain STOPS.
+      let offset = 0;
+      const seen = new Set();
+      for (let i = 0; i < 40; i++) {
+        const envelope = await guard(spec.handler, ctx, { ...args, offset });
+        assert.ok(envelope.ok, envelope.error?.message);
+        const next = envelope.meta?.next;
+        if (!next) break;
+        const at = Number(/offset:(\d+)/.exec(next)?.[1] ?? -1);
+        assert.ok(at >= 0, `${action}: the continuation must carry an offset: ${next}`);
+        assert.ok(!seen.has(at), `${action}: the continuation REPEATED offset ${at} — it loops forever`);
+        seen.add(at);
+        assert.ok(at > offset, `${action}: the continuation must ADVANCE (offset ${offset} -> ${at})`);
+        offset = at;
+      }
+      assert.ok(
+        seen.size < 40,
+        `${action}: the continuation chain must terminate, not run forever`,
+      );
+    }
+  } finally {
+    rmSync(p.root, { recursive: true, force: true });
+  }
+});
+
+test('a collection the action does not have is a typed error, not a silent zero', async () => {
+  const p = brokenPlan(20);
+  try {
+    const ctx = new Context({
+      projectRoot: p.root,
+      anchorRoot: p.root,
+      home: p.root,
+      env: { PATH: '/nonexistent' },
+    });
+    const spec = getToolSpec('archgen_plan');
+    // `issues` is a verify collection, not a coverage one.
+    const envelope = await guard(spec.handler, ctx, {
+      action: 'coverage',
+      tasksYaml: p.tasksYaml,
+      planDir: p.plansDir,
+      collection: 'issues',
+    });
+    assert.ok(!envelope.ok, 'a mismatched collection must be refused');
+    assert.equal(envelope.error?.code, 'INVALID_INPUT');
+    assert.match(envelope.error?.message ?? '', /not a collection of 'coverage'/);
+  } finally {
+    rmSync(p.root, { recursive: true, force: true });
+  }
+});
+
 test('a digest scoped to ONE file is complete', () => {
   const root = mkdtempSync(join(tmpdir(), 'archgen-cont-digest-'));
   try {

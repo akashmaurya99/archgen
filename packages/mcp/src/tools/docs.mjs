@@ -11,6 +11,15 @@ import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const ACTION_DESC = 'index|digest|section|refs|map|validate';
 
+/** The collections each action pages. A mismatch is a typed error. */
+const COLLECTIONS = {
+  index: ['files'],
+  digest: ['files'],
+  refs: ['matches'],
+  map: ['sections'],
+  validate: ['broken', 'warnings'],
+};
+
 const schema = z.object({
   action: z.enum(['index', 'digest', 'section', 'refs', 'map', 'validate']).describe(ACTION_DESC),
   slugDir: z.string().optional().describe('Absolute .archgen/<slug>/ dir; defaults to the active slug.'),
@@ -18,10 +27,33 @@ const schema = z.object({
   section: z.string().optional().describe('Section slug, path, or path#anchor.'),
   file: z.string().optional().describe('Scope to one document.'),
   include: z.enum(['own', 'all']).optional().describe("section: 'own' (default) = the section's own text; 'all' = its nested subsections too."),
+  collection: z
+    .enum(['files', 'matches', 'sections', 'broken', 'warnings'])
+    .optional()
+    .describe('Which collection `limit`/`offset` window (validate).'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
 });
+
+/**
+ * The collection a caller named, validated against the action's own set.
+ *
+ * @param {string} action
+ * @param {string|undefined} collection
+ * @param {string} fallback
+ */
+function resolveCollection(action, collection, fallback) {
+  const allowed = COLLECTIONS[action] ?? [];
+  if (collection === undefined || collection === null) return fallback;
+  if (!allowed.includes(collection)) {
+    throw invalidInput(
+      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|')})`,
+      { action, collection, allowed },
+    );
+  }
+  return collection;
+}
 
 /**
  * @param {import('@modelcontextprotocol/server').McpServer} server
@@ -57,29 +89,55 @@ export function registerDocTools(server) {
           });
         }
         case 'validate': {
-          // The broken references are a COLLECTION. They were returned whole
-          // (120 broken refs = 5,223 tokens in one answer) and the caller's
-          // limit was ignored, because this action never went through the
-          // bounded() path.
+          // The broken references and the warnings are SEPARATE collections,
+          // each with its OWN window and cursor. They used to share one
+          // offset over two lists, so the warnings tail was unreachable, and
+          // the continuation was published only when the BROKEN list was
+          // truncated.
+          const collection = resolveCollection('validate', args.collection, 'broken');
           const report = docIndex(slugDir, { mode: 'validate', file: args.file ?? null, projectRoot: ctx.projectRoot });
           const data = report.data;
+          const scope = args.file ? `,file:'${args.file}'` : '';
+          const cont = (c, off) =>
+            `archgen_docs{action:'validate',slugDir:'${slugDir}'${scope},collection:'${c}',limit:${bound},offset:${off}}`;
           const broken = project(data.broken ?? [], {
             limit: args.limit,
-            offset: args.offset,
-            next: `archgen_docs{action:'validate',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`,
+            offset: collection === 'broken' ? args.offset : 0,
           });
           const warnings = project(data.warnings ?? [], {
             limit: args.limit,
-            offset: args.offset,
-            next: `archgen_docs{action:'validate',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`,
+            offset: collection === 'warnings' ? args.offset : 0,
           });
+          const brokenOmitted = Math.max(0, broken.total - (broken.offset + broken.items.length));
+          const warnOmitted = Math.max(0, warnings.total - (warnings.offset + warnings.items.length));
+          const order = [collection, ...['broken', 'warnings'].filter((c) => c !== collection)];
+          const moreList = [];
+          for (const c of order) {
+            if (c !== collection) {
+              const omitted = c === 'broken' ? brokenOmitted : warnOmitted;
+              if (omitted > 0) {
+                moreList.push(cont(c, (c === 'broken' ? broken : warnings).offset + (c === 'broken' ? broken : warnings).items.length));
+              }
+            }
+          }
+          // `meta.next` CONTINUES THE COLLECTION THE CALLER ASKED FOR.
+          const selectedNext =
+            (collection === 'broken' ? brokenOmitted : warnOmitted) > 0
+              ? cont(
+                  collection,
+                  (collection === 'broken' ? broken : warnings).offset +
+                    (collection === 'broken' ? broken : warnings).items.length,
+                )
+              : undefined;
+          const selected = collection === 'warnings' ? warnings : broken;
           return withMeta(
             { ...data, broken: broken.items, warnings: warnings.items },
             moreMeta({
-              total: broken.total,
-              returned: broken.returned,
-              next: broken.truncated ? broken.next : undefined,
-              available: { broken: broken.total, warnings: warnings.total, checked: Object.keys(data.checked ?? {}).length },
+              total: selected.total,
+              returned: selected.items.length,
+              next: selectedNext,
+              more: moreList.length ? moreList.join(' | ') : undefined,
+              available: { broken: broken.total, warnings: warnings.total },
             }),
           );
         }

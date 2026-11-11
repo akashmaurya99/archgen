@@ -29,7 +29,7 @@
 // (edge rows, requirement ids, task ids), never code-level names.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { buildGraph, computeWaves, globsMayOverlap } from './graph.mjs';
 import { loadAsset } from '../context.mjs';
@@ -177,7 +177,12 @@ export function auditPlan({ slugDir, tasks }) {
     const onDisk = listArtifacts(slugDir);
     /** The files that physically exist, for the create/omit/reuse checks. */
     const presentIn = (family, recordedPath) => {
-      const byFamily = onDisk.filter((f) => matchesFamily(family, f));
+      // The family ASSIGNMENT, not the pattern match. `docs/prd.md` and
+      // `docs/<module>.md` are different families that OVERLAP as patterns:
+      // matching the pattern let a PRD satisfy the module-diagram family's
+      // decision, so a missing diagram passed and a present PRD blocked a
+      // plan that said omit.
+      const byFamily = onDisk.filter((f) => familyOf(f, families) === family);
       if (byFamily.length) return byFamily;
       // `answers.yaml` carries the profile itself, so it is exempt from the
       // "needs a decision" list — but it still exists, and an `omit` or
@@ -206,7 +211,7 @@ export function auditPlan({ slugDir, tasks }) {
         });
       }
       if (decision === 'create') {
-        const present = onDisk.filter((f) => matchesFamily(family, f));
+        const present = presentIn(family, path);
         // The recorded path's OWN existence counts. `answers.yaml` is where
         // the profile is RECORDED, so it is deliberately exempt from the
         // "needs a decision" list — but it is still an artifact the profile
@@ -216,7 +221,7 @@ export function auditPlan({ slugDir, tasks }) {
           issues.push(
             finding(
               'PROFILE_CREATE_MISSING',
-              `the profile marks '${path}' as create, but no file matching '${family}' exists under the artifact space`,
+              `the profile marks '${path}' as create, but no file matching '${family ?? path}' exists under the artifact space`,
             ),
           );
         }
@@ -731,10 +736,16 @@ export function readProfile(answers, planText) {
  */
 export function readPlanProfile(planText) {
   const text = String(planText ?? '');
-  const heading = /#{1,4}[^\n]*profile[^\n]*\n/i.exec(text);
+  const heading = /^(#{1,4})[^\n]*profile[^\n]*$/im.exec(text);
   if (!heading) return null;
-  const rest = text.slice(heading.index + heading[0].length);
-  const fence = /```ya?ml\s*\n([\s\S]*?)```/i.exec(rest);
+  const level = heading[1].length;
+  // The fence must be INSIDE the Profile section. Scanning the rest of the
+  // document for the first ```yaml block adopted an APPENDIX's block as the
+  // plan's profile — and the floor then blocked on a record it invented.
+  const after = text.slice(heading.index + heading[0].length);
+  const nextHeading = new RegExp(`^#{1,${level}}\\s`, 'm').exec(after);
+  const section = nextHeading ? after.slice(0, nextHeading.index) : after;
+  const fence = /```ya?ml\s*\n([\s\S]*?)```/i.exec(section);
   if (!fence) return null;
   try {
     const data = parseYaml(fence[1], { filename: 'plan-profile' }).data;
@@ -941,12 +952,22 @@ function normalizeArtifactPath(path) {
   return p;
 }
 
-/** Does a recorded path exist under a base directory? */
+/**
+ * Does a recorded path exist under a base directory?
+ *
+ * The path is CONTAINED first. A recorded `../outside.md` used to resolve
+ * to a sibling of the slug dir — outside the artifact space, where a
+ * `create` decision could be "satisfied" by a file the plan does not own.
+ */
 function existsUnder(base, path) {
   const rel = normalizeArtifactPath(path);
   if (!rel) return false;
   try {
-    return existsSync(join(base, rel));
+    const root = resolve(base);
+    const target = resolve(root, rel);
+    // The target must be INSIDE the base directory.
+    if (target !== root && !target.startsWith(root + sep)) return false;
+    return existsSync(target);
   } catch {
     return false;
   }
@@ -1033,37 +1054,47 @@ export function waiverCovers(waiver, issue) {
     const s = String(raw ?? '').trim();
     if (!s) continue;
     if (s === code) return true;
-    // A glob scope is matched against the PATHS the finding quotes — a
-    // literal substring test only caught a finding that quoted the glob
-    // itself, never one that quoted the file inside it.
-    if (s.includes('/') || s.includes('*')) {
-      if (text.includes(s)) return true;
-      if (coversAnyPath(s, text)) return true;
-      continue;
-    }
+    // A SUBJECT covers ONE instance — so it is matched against the
+    // finding's SUBJECTS (the quoted paths and the task#acceptance refs),
+    // never against its prose. Matching the prose meant a scope of "test"
+    // suppressed a MIRROR_MISSING, because the message said "mirrored test
+    // path" — and a scope of "T19#2" suppressed a finding about "T19#20".
+    const subjects = findingSubjects(text);
     if (s.includes('#')) {
-      if (text.includes(s)) return true;
+      if (subjects.some((subject) => subject === s)) return true;
       continue;
     }
-    const esc = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`(?<![A-Za-z0-9_.-])${esc}(?![A-Za-z0-9_.-])`).test(text)) return true;
+    if (s.includes('/') || s.includes('*')) {
+      if (subjects.some((subject) => matchesFamily(s, subject))) return true;
+      continue;
+    }
+    // A BARE TOKEN names a TASK or an ID — not a fragment of a path. It
+    // matches a subject that is itself a bare token and equals it: `T1`
+    // matches the quoted 'T1'. `src` and `core` match nothing, because a
+    // waiver must name the thing it approves, not a piece of a path.
+    if (subjects.some((subject) => subject === s)) return true;
   }
   return false;
 }
 
 /**
- * Does a glob scope cover any path the finding quotes?
+ * The SUBJECTS a finding names — the things a waiver can scope.
  *
- * The finding quotes its paths in single quotes: `owns 'src/a/x.ts'`. The
- * scope `src/a/**` must cover that path — and it did not, because the
- * comparison was a literal substring test.
+ *   - the paths it quotes:  owns 'src/core/**'
+ *   - the task#acceptance refs it cites:  cites T9#1
  *
- * @param {string} glob the waiver's scope
+ * The prose between them is NOT a subject: a waiver scoped to a word that
+ * happens to appear in a sentence must not approve the finding.
+ *
  * @param {string} text the finding text
+ * @returns {string[]}
  */
-function coversAnyPath(glob, text) {
-  const quoted = [...text.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-  return quoted.some((path) => matchesFamily(glob, path));
+export function findingSubjects(text) {
+  const quoted = [...String(text).matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  const refs = [...String(text).matchAll(/(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9._-]*#\d+)(?![0-9])/g)].map(
+    (m) => m[1],
+  );
+  return [...new Set([...quoted, ...refs])];
 }
 
 /** The plan markdown of an artifact space (every plans/*.md, concatenated). */
