@@ -95,14 +95,17 @@ test('a same-wave ownership overlap is OWNERSHIP_CONFLICT', () => {
   );
 });
 
-test('an unparseable file is INVALID_INPUT, never a raw stack', () => {
+test('an unparseable file is a finding, never a raw stack', () => {
   // A TAB-indented mapping is illegal YAML (tabs may not be used for
   // indentation) — the same input the repo's yaml-corpus calls malformed-tab.
+  // The file is broken, not the CALL: it comes back as a finding the agent
+  // can act on, with the line to fix.
   const p = writeTasks('bad.yaml', 'good: 1\n\tbad_indent: 2\n');
-  assert.throws(
-    () => validateTasksYaml(p),
-    (e) => e instanceof ArchgenError && e.code === 'INVALID_INPUT',
-  );
+  const result = validateTasksYaml(p);
+  assert.equal(result.valid, false);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].code, 'UNPARSEABLE');
+  assert.doesNotThrow(() => validateTasksYaml(p));
 });
 
 // ── validator ───────────────────────────────────────────────────────────────
@@ -138,7 +141,8 @@ test('validate treats an unknown key as a warning, not an error', () => {
   const result = validateTasksYaml(p);
   assert.equal(result.valid, true);
   assert.equal(result.warnings.length, 1);
-  assert.match(result.warnings[0], /unknown key/);
+  assert.equal(result.warnings[0].code, 'TASK_FIELD_UNKNOWN');
+  assert.match(result.warnings[0].message, /unknown key/);
 });
 
 // ── status mutator: atomicity, line endings, comments, force gate ───────────

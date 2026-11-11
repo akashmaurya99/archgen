@@ -127,6 +127,20 @@ export function computeWaves(byId, prerequisites) {
   return { waves, blockedByFailure: [...blockedByFailure].sort() };
 }
 
+/**
+ * The owned paths of a task.
+ *
+ * A `file_ownership` that is not a LIST is a defect the validator reports.
+ * Reading it as one anyway walked the STRING's characters, so a one-glob plan
+ * produced a self-conflict on '*' and every downstream count was wrong.
+ *
+ * @param {any} task
+ * @returns {string[]}
+ */
+export function ownedPaths(task) {
+  return Array.isArray(task?.file_ownership) ? task.file_ownership : [];
+}
+
 /** First ownership conflict inside a single wave, or null.
  * Two rules, both conservative:
  *  1. Literal equality — two tasks must never claim the SAME glob string.
@@ -140,7 +154,10 @@ export function findOwnershipConflict(wave) {
   const seen = new Map();
   const claimed = [];
   for (const t of wave) {
-    for (const g of t.file_ownership ?? []) {
+    // A file_ownership that is not a LIST is a defect the validator reports.
+    // Iterating it anyway walked the STRING's characters, and the floor then
+    // reported a self-conflict on a one-character glob.
+    for (const g of ownedPaths(t)) {
       if (seen.has(g)) return { glob: g, a: seen.get(g), b: t.id };
       for (const prev of claimed) {
         if (globsMayOverlap(prev.glob, g)) return { glob: g, a: prev.id, b: t.id };

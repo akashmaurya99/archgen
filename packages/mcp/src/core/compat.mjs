@@ -22,6 +22,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { invalidInput } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /** Parse a semver-ish version into comparable parts. */
 export function parseVersion(v) {
@@ -42,7 +44,10 @@ export function compareVersions(a, b) {
   const x = parseVersion(a);
   const y = parseVersion(b);
   if (!x || !y) {
-    throw invalidInput(`cannot compare versions: '${a}' and '${b}' are not both versions`, { a, b });
+    throw invalidInput(
+      `cannot compare versions: '${a}' and '${b}' are not both versions`,
+      { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the skill and the server must agree on a version." }), a, b },
+    );
   }
   for (const k of ['major', 'minor', 'patch']) {
     if (x[k] !== y[k]) return x[k] < y[k] ? -1 : 1;
@@ -64,7 +69,10 @@ export function satisfies(version, spec) {
   const raw = String(spec ?? '').trim();
   if (!raw) return true; // no requirement declared
   const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)/.exec(raw);
-  if (!m) throw invalidInput(`unparseable version requirement '${spec}'`, { requirement: spec });
+  if (!m) throw invalidInput(
+    `unparseable version requirement '${spec}'`,
+    { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the skill declares the server version it needs." }), requirement: spec },
+  );
   const op = m[1] ?? '=';
   const want = { major: +m[2], minor: +m[3], patch: +m[4] };
   const have = parseVersion(version);

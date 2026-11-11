@@ -146,7 +146,9 @@ tamper_json="$(mcp_exec archgen_plan "{\"action\":\"validate\",\"tasksYaml\":\"$
 # The CALL succeeds (the tool ran); the VERDICT is invalid. Assert on data.valid.
 printf '%s' "$tamper_json" | grep -q '"valid": false' \
   || fail "the validator accepted corrupted tasks.yaml (status cancelled): $tamper_json"
-printf '%s' "$tamper_json" | grep -q "invalid status 'cancelled'" \
+printf '%s' "$tamper_json" | grep -q '"code": "TASK_STATUS_INVALID"' \
+  || fail "validate did not report the status defect: $tamper_json"
+printf '%s' "$tamper_json" | grep -q "'cancelled'" \
   || fail "validate error text unexpected: $tamper_json"
 rm -f "$DOT/tasks-tamper.yaml"
 pass "tamper test: corrupted copy rejected with named enum error"

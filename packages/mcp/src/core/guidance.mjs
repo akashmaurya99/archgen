@@ -10,7 +10,7 @@
 // the vocabulary, and did it again for the next section.
 //
 // So every archgen failure is ONE line that carries the cause, the fix, and
-// the exact next call:
+// the exact next step:
 //
 //   <cause> — <the fix in a clause>. Next: <the call, ready to paste>
 //
@@ -22,6 +22,7 @@
 // `hint()` adds machine-readable next-step fields to the error DETAILS, so a
 // client can act on them without parsing prose.
 import { invalidInput, notFound } from './errors.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * Compose a ONE-LINE teaching message.
@@ -37,6 +38,10 @@ export function teach(cause, fix, action) {
 
 /**
  * Machine-readable next-step fields, attached to an error's details.
+ *
+ * `action` is the next step: the exact call to make when there is one, and
+ * the instruction to follow when there is not (a file to repair by hand, a
+ * value to supply). `reason` says why that step clears the failure.
  *
  * @param {{action?: string, reason?: string, alternatives?: string[], available?: unknown[]}} spec
  * @returns {Record<string, unknown>}
@@ -67,9 +72,9 @@ export function artifactSpaceMissing(slug, slugDir) {
     teach(
       `no artifact space at ${slugDir}`,
       'scaffold returns file CONTENT and writes nothing, so write it first',
-      "archgen_plan{action:'scaffold',scope:'LARGE',slug:'<slug>'}",
+      toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>' }),
     ),
-    hint({ action: "archgen_plan{action:'scaffold',scope:'LARGE',slug:'<slug>'}", reason: 'scaffold returns content; you write it.' }),
+    hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>' }), reason: 'scaffold returns content; you write it.' }),
   );
 }
 
@@ -85,9 +90,9 @@ export function noSuchSection(topic, section, available) {
     teach(
       `no section '${section}' in '${topic}'`,
       'a prefix of the slug works too, if unambiguous',
-      `archgen_refs{action:'index',topic:'${topic}'}`,
+      toolCall('archgen_refs', { action: 'index', topic }),
     ),
-    hint({ action: `archgen_refs{action:'index',topic:'${topic}'}`, reason: 'the index lists every exact slug.', available }),
+    hint({ action: toolCall('archgen_refs', { action: 'index', topic }), reason: 'the index lists every exact slug.', available }),
   );
 }
 
@@ -101,9 +106,9 @@ export function skillNotInstalled(slug) {
     teach(
       `the capability skill '${slug}' is not installed`,
       'install it before dispatching the worker',
-      `archgen_skills{action:'install',skillId:'${slug}',approve:true}`,
+      toolCall('archgen_skills', { action: 'install', skillId: slug, approve: true }),
     ),
-    hint({ action: `archgen_skills{action:'install',skillId:'${slug}',approve:true}`, reason: 'a required skill must be on disk before dispatch.' }),
+    hint({ action: toolCall('archgen_skills', { action: 'install', skillId: slug, approve: true }), reason: 'a required skill must be on disk before dispatch.' }),
   );
 }
 
@@ -118,9 +123,9 @@ export function noSuchTask(taskId, available) {
     teach(
       `no task '${taskId}' in the plan`,
       'task ids are case-sensitive',
-      "archgen_tasks{action:'list',tasksYaml:'<tasks.yaml>'}",
+      toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }),
     ),
-    hint({ action: "archgen_tasks{action:'list',tasksYaml:'<tasks.yaml>'}", reason: 'the list carries every task id.', available }),
+    hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: 'the list carries every task id.', available }),
   );
 }
 

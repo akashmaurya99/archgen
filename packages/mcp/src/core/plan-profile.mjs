@@ -18,6 +18,8 @@
 // The rules live in assets/depth-ladder.json (`profile`), so the data and the
 // behavior cannot drift: a drift test pins the two together.
 import { invalidInput } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /** The four intents the classifier accepts. */
 export const INTENTS = [
@@ -92,24 +94,29 @@ function omitReason(rule, scope, intent) {
  */
 export function buildPlanProfile(ladder, input = {}) {
   const spec = ladder?.profile;
-  if (!spec) throw invalidInput('depth-ladder.json has no profile rules', { asset: 'depth-ladder.json' });
+  if (!spec) throw invalidInput(
+    'depth-ladder.json has no profile rules',
+    { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: 'depth-ladder.json' },
+  );
 
   const intent = String(input.intent ?? '').toUpperCase();
   if (!INTENTS.includes(intent)) {
-    throw invalidInput(`unknown intent '${input.intent}' (allowed: ${INTENTS.join('|')})`, {
-      intent: input.intent,
-      allowed: INTENTS,
-    });
+    throw invalidInput(
+      `unknown intent '${input.intent}' (allowed: ${INTENTS.join('|')})`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'profile', intent: 'GREENFIELD-SYSTEM', slug: '<slug>' }), reason: "the four intents are the scope classes the profile starts from." }), intent: input.intent,
+      allowed: INTENTS, },
+    );
   }
 
   const signals = unique((Array.isArray(input.signals) ? input.signals : []).map((s) => String(s).toLowerCase()));
   const known = new Set(spec.signals ?? SCOPE_SIGNALS);
   const unknown = signals.filter((s) => !known.has(s));
   if (unknown.length) {
-    throw invalidInput(`unknown scope signal(s): ${unknown.join(', ')}`, {
-      signals: unknown,
-      allowed: [...known],
-    });
+    throw invalidInput(
+      `unknown scope signal(s): ${unknown.join(', ')}`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'profile', signals: ['new-module'], slug: '<slug>' }), reason: "the profile names every signal it accepts." }), signals: unknown,
+      allowed: [...known], },
+    );
   }
 
   const base = spec.intentBase?.[intent] ?? 0;

@@ -67,6 +67,28 @@ test('two updates in a row both survive', () => {
   assert.equal(data.tasks[1].status, 'running');
 });
 
+test('a criterion containing ": " survives the rewrite', () => {
+  // The writer emitted the criterion as a block item the reader then took for
+  // a mapping, so the file it wrote could not be parsed back — and a plan in
+  // that state could never be marked running or done.
+  writeFileSync(
+    file,
+    'tasks:\n  - id: T-1\n    status: pending\n    acceptance: ["Test: returns 200"]\n',
+  );
+  const r = setTaskStatus(file, 'T-1', 'done');
+  assert.equal(r.to, 'done');
+  const { data } = parseYaml(readFileSync(file, 'utf8'), { filename: file });
+  assert.deepEqual(data.tasks[0].acceptance, ['Test: returns 200']);
+});
+
+test('a list on the first key survives the rewrite', () => {
+  writeFileSync(file, 'tasks:\n  - acceptance: ["a", "b"]\n    id: T-1\n    status: pending\n');
+  setTaskStatus(file, 'T-1', 'done');
+  const { data } = parseYaml(readFileSync(file, 'utf8'), { filename: file });
+  assert.deepEqual(data.tasks[0].acceptance, ['a', 'b']);
+  assert.equal(data.tasks[0].status, 'done');
+});
+
 test('the lock is released after the update', () => {
   writeFileSync(file, TWO_TASKS);
   setTaskStatus(file, 'T-1', 'done');

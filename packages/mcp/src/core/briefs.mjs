@@ -7,6 +7,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { invalidInput, notFound } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 export const BRIEF_KINDS = ['verifier', 'review', 'survey', 'investigate'];
 
@@ -20,7 +22,10 @@ export const BRIEF_KINDS = ['verifier', 'review', 'survey', 'investigate'];
 export function loadBrief(briefsDir, kind, vars = {}) {
   const key = String(kind ?? '').toLowerCase();
   if (!BRIEF_KINDS.includes(key)) {
-    throw invalidInput(`unknown brief '${kind}' (allowed: ${BRIEF_KINDS.join('|')})`, { kind });
+    throw invalidInput(
+      `unknown brief '${kind}' (allowed: ${BRIEF_KINDS.join('|')})`,
+      { ...hint({ action: toolCall('archgen_help', { topic: 'plan' }), reason: "the brief kinds are listed there." }), kind },
+    );
   }
   const path = join(briefsDir, `${key}.md`);
   let text;

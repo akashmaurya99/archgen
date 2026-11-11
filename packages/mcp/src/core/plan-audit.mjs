@@ -31,7 +31,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, sep } from 'node:path';
 import { parseYaml } from './yaml.mjs';
-import { buildGraph, computeWaves, globsMayOverlap } from './graph.mjs';
+import { buildGraph, computeWaves, globsMayOverlap, ownedPaths } from './graph.mjs';
+import { WARNING_CODES } from './codes.mjs';
 import { loadAsset } from '../context.mjs';
 
 /** A requirement id: FR-<MODULE>-nn. */
@@ -45,37 +46,6 @@ const MATRIX_PLACEHOLDER = /[<>]/;
 /** What an acceptance claims to cover: "(covers E4, FR-API-01)". */
 const CLAIMS = /\bcovers\s+([A-Z][A-Z0-9-]*(?:\s*,\s*[A-Z][A-Z0-9-]*)*)/gi;
 
-/** Every code the floor can report. Stable: tests and CI depend on them. */
-export const ISSUE_CODES = {
-  PROFILE_CREATE_MISSING: 'the profile says create, but the artifact is not on disk',
-  PROFILE_OMIT_PRESENT: 'the profile says do not create it (omit/reuse), but the artifact exists',
-  PROFILE_REUSE_MISSING: 'the profile says reuse, but the cited host file does not exist',
-  PROFILE_UNRECORDED: 'an artifact exists that the profile does not record a decision for',
-  PROFILE_DECISION_INVALID: 'the profile records a decision the floor cannot interpret',
-  MIRROR_MISSING: 'a source-owning task has no mirrored test path',
-  MATRIX_UNKNOWN_TASK: 'a matrix row cites a task that does not exist',
-  MATRIX_INDEX_OUT_OF_RANGE: 'a matrix row cites an acceptance that does not exist',
-  MATRIX_CLAIM_MISMATCH: 'a matrix row and the acceptance it cites disagree',
-  MATRIX_DANGLING_CLAIM: 'an acceptance claims an edge row that does not exist',
-  MATRIX_CITATION_UNRESOLVED: 'a matrix row still carries a template placeholder instead of a real citation',
-  MATRIX_CLAIMS_UNDECLARED: 'the plan has edge-case rows but no acceptance declares which row it covers',
-  REQ_UNCITED: 'a PRD requirement is not cited by any acceptance',
-  REQ_UNKNOWN: 'an acceptance cites a requirement the PRD does not define',
-  DECISION_MISSING: 'a declared decision has no file',
-  PATH_UNOWNED: 'a declared path has no owning task',
-  WAVE_LABEL_DRIFT: 'a wave label disagrees with the dependency graph',
-  WAVE_GROUP_SPANS: 'one parallel group spans several dependency waves',
-  WAIVER_INVALID: 'a waiver is missing the fields that make it an approval',
-};
-
-/** Every code the floor can warn about. */
-export const WARNING_CODES = {
-  PROFILE_NOT_RECORDED: 'the plan records no profile — artifact necessity cannot be checked',
-  CONFIG_NOT_ENFORCED: 'a rule could not run because the plan does not declare what it needs',
-  OWNERSHIP_CONTAINED: "one task's paths contain another's",
-  WAIVER_COUNT_MISMATCH: 'the recorded waived count disagrees with the ledger',
-  GATE_IDENTITY_MISSING: 'the gate block records no verifier',
-};
 
 /** Format one finding with its stable code. */
 function finding(code, message) {
@@ -109,12 +79,28 @@ export function auditPlan({ slugDir, tasks }) {
     };
   }
 
-  const architecture = readYaml(join(slugDir, 'architecture.yaml'));
+  const architectureFile = readYaml(join(slugDir, 'architecture.yaml'));
+  const architecture = architectureFile.data;
   const prdText = readText(join(slugDir, 'docs', 'prd.md'));
   const planText = readPlans(join(slugDir, 'plans'));
   const decisionFiles = listFiles(join(slugDir, 'decisions'));
   const waivers = readWaivers(join(slugDir, 'waivers.yaml'));
-  const answers = readYaml(join(slugDir, 'answers.yaml'));
+  const answersFile = readYaml(join(slugDir, 'answers.yaml'));
+  const answers = answersFile.data;
+
+  // A file that is present and unparseable is a DEFECT, not an absence. The
+  // floor's whole purpose is to catch broken plans; reporting a syntax error
+  // as "not there" hid the defect and sent the agent after the wrong fix.
+  if (architectureFile.error) {
+    warnings.push(
+      finding('CONFIG_UNPARSEABLE', `architecture.yaml does not parse: ${architectureFile.error}`),
+    );
+  }
+  if (answersFile.error) {
+    warnings.push(
+      finding('PROFILE_UNPARSEABLE', `answers.yaml does not parse: ${answersFile.error}`),
+    );
+  }
 
   const byId = new Map(tasks.map((t) => [String(t?.id ?? ''), t]));
   const acceptanceOf = (id) => (byId.get(id)?.acceptance ?? []).map(String);
@@ -299,18 +285,26 @@ export function auditPlan({ slugDir, tasks }) {
     // tests — so the layout becomes the REVIEWER's judgement, named loudly
     // instead of silently passing. The declared-path and decision-file rules
     // do not need the roots, so they still run.
-    warnings.push(
-      finding(
-        'CONFIG_NOT_ENFORCED',
-        architecture
-          ? 'the mirrored-test-tree rule is NOT ENFORCED — architecture.yaml does not declare usable toolchain.source_root and toolchain.test_root'
-          : 'no architecture.yaml — the mirrored-test-tree, declared-path and decision-file rules are NOT ENFORCED',
-      ),
-    );
+    //
+    // A file that is PRESENT and unparseable is a different case: the roots
+    // are missing because the file is broken, not because it was never
+    // written. CONFIG_UNPARSEABLE already says that — repeating it as "no
+    // architecture.yaml" sent the agent to declare roots instead of fixing
+    // the syntax error.
+    if (!architectureFile.error) {
+      warnings.push(
+        finding(
+          'CONFIG_NOT_ENFORCED',
+          architecture
+            ? 'the mirrored-test-tree rule is NOT ENFORCED — architecture.yaml does not declare usable toolchain.source_root and toolchain.test_root'
+            : 'no architecture.yaml — the mirrored-test-tree, declared-path and decision-file rules are NOT ENFORCED',
+        ),
+      );
+    }
   } else {
     for (const t of tasks) {
       const id = String(t?.id ?? '');
-      for (const raw of t?.file_ownership ?? []) {
+      for (const raw of ownedPaths(t)) {
         const glob = normalizeGlob(raw);
         if (glob !== roots.sourceRoot && !glob.startsWith(`${roots.sourceRoot}/`)) continue;
         // THE MIRROR: the path under the source root, preserved, under the
@@ -325,7 +319,7 @@ export function auditPlan({ slugDir, tasks }) {
         const dir = under.split('/').slice(0, -1).join('/');
         const mirroredDir = dir ? `${roots.testRoot}/${dir}` : roots.testRoot;
         const covered = tasks.some((o) =>
-          (o?.file_ownership ?? []).some((og) => globsMayOverlap(normalizeGlob(og), `${mirroredDir}/**`)),
+          ownedPaths(o).some((og) => globsMayOverlap(normalizeGlob(og), `${mirroredDir}/**`)),
         );
         if (!covered) {
           issues.push(
@@ -497,7 +491,7 @@ export function auditPlan({ slugDir, tasks }) {
     for (const o of mod?.owns ?? []) if (typeof o === 'string' && !o.includes('<')) declared.push(o);
   }
   for (const p of declared) {
-    const covered = tasks.some((t) => (t?.file_ownership ?? []).some((g) => globsMayOverlap(g, p)));
+    const covered = tasks.some((t) => ownedPaths(t).some((g) => globsMayOverlap(g, p)));
     if (!covered) issues.push(finding('PATH_UNOWNED', `architecture.yaml declares '${p}' but no task owns it`));
   }
 
@@ -538,8 +532,8 @@ export function auditPlan({ slugDir, tasks }) {
       const a = tasks[i];
       const b = tasks[j];
       if (waveOf.get(String(a?.id)) === waveOf.get(String(b?.id))) continue; // same wave is already an error
-      for (const g1 of a?.file_ownership ?? []) {
-        for (const g2 of b?.file_ownership ?? []) {
+      for (const g1 of ownedPaths(a)) {
+        for (const g2 of ownedPaths(b)) {
           if (containsGlob(g1, g2)) {
             warnings.push(
               finding(
@@ -615,7 +609,13 @@ export function auditPlan({ slugDir, tasks }) {
   // INDEPENDENTLY of `answers.yaml`: a plan may keep its artifacts in
   // answers.yaml and its gate in the fence, and the floor has to find the
   // gate wherever it was written.
-  const fenceProfile = readPlanProfile(planText);
+  const fenceRead = readPlanProfile(planText);
+  if (fenceRead.error) {
+    warnings.push(
+      finding('PROFILE_UNPARSEABLE', `the plan's Profile fence does not parse: ${fenceRead.error}`),
+    );
+  }
+  const fenceProfile = fenceRead.data;
   const recorded =
     answers?.plan_profile?.gate ?? answers?.gate ?? fenceProfile?.gate ?? profile?.gate ?? null;
   if (recorded) {
@@ -638,14 +638,14 @@ export function auditPlan({ slugDir, tasks }) {
   // ── maps the gate agent reads instead of re-deriving ─────────────────────
   for (const t of tasks) {
     const id = String(t?.id ?? '');
-    const globs = t?.file_ownership ?? [];
+    const globs = ownedPaths(t);
     maps.ownership.push({ id, globs, wave: waveOf.get(id) ?? null });
   }
   for (const mod of architecture?.modules ?? []) {
     const name = String(mod?.name ?? '');
     const owns = (mod?.owns ?? []).filter((o) => typeof o === 'string');
     const ownedBy = tasks
-      .filter((t) => (t?.file_ownership ?? []).some((g) => owns.some((o) => globsMayOverlap(g, o))))
+      .filter((t) => ownedPaths(t).some((g) => owns.some((o) => globsMayOverlap(g, o))))
       .map((t) => String(t.id));
     maps.modules.push({
       name,
@@ -722,7 +722,7 @@ export function planSnapshot(tasks, maps, planText, prdText, architecture) {
 export function readProfile(answers, planText) {
   const fromAnswers = answers?.plan_profile ?? answers?.profile ?? null;
   if (fromAnswers && Array.isArray(fromAnswers.artifacts)) return fromAnswers;
-  const fence = readPlanProfile(planText);
+  const fence = readPlanProfile(planText).data;
   // A fence with NO artifact decisions is not an artifact profile. Returning
   // it would make the decision set EMPTY, and every artifact on disk would
   // then read as PROFILE_UNRECORDED — a plan that records no artifact
@@ -736,12 +736,14 @@ export function readProfile(answers, planText) {
  * The Profile section's fenced YAML block — the SMALL plan's record.
  *
  * @param {string} planText
- * @returns {{artifacts: Array<object>}|null}
+ * @returns {{data: {artifacts: Array<object>}|null, error: string|null}}
+ *   `error` is set when the fence is present and does not parse — an absent
+ *   fence is not an error.
  */
 export function readPlanProfile(planText) {
   const text = String(planText ?? '');
   const heading = /^(#{1,4})[^\n]*profile[^\n]*$/im.exec(text);
-  if (!heading) return null;
+  if (!heading) return { data: null, error: null };
   const level = heading[1].length;
   // The fence must be INSIDE the Profile section. Scanning the rest of the
   // document for the first ```yaml block adopted an APPENDIX's block as the
@@ -750,17 +752,17 @@ export function readPlanProfile(planText) {
   const nextHeading = new RegExp(`^#{1,${level}}\\s`, 'm').exec(after);
   const section = nextHeading ? after.slice(0, nextHeading.index) : after;
   const fence = /```ya?ml\s*\n([\s\S]*?)```/i.exec(section);
-  if (!fence) return null;
+  if (!fence) return { data: null, error: null };
   try {
     const data = parseYaml(fence[1], { filename: 'plan-profile' }).data;
-    if (!data || typeof data !== 'object') return null;
+    if (!data || typeof data !== 'object') return { data: null, error: null };
     // The fence counts as a profile record when it carries the artifact
     // decisions OR a gate block. A fence holding only `gate:` used to be
     // skipped entirely, so the gate was never checked at all.
-    if (Array.isArray(data.artifacts) || data.gate) return data;
-    return null;
-  } catch {
-    return null;
+    if (Array.isArray(data.artifacts) || data.gate) return { data, error: null };
+    return { data: null, error: null };
+  } catch (e) {
+    return { data: null, error: String(e?.message ?? e) };
   }
 }
 
@@ -1037,13 +1039,26 @@ function readText(path) {
   }
 }
 
+/**
+ * Read a YAML artifact of the plan.
+ *
+ * A file that EXISTS and does not parse is a different fact from a file that
+ * is absent. The floor used to swallow the parse error and report the file
+ * as missing — so a broken `architecture.yaml` was announced as "no
+ * architecture.yaml", and the agent was told to declare roots when the real
+ * defect was a syntax error in a file it had already written.
+ *
+ * @param {string} path
+ * @returns {{data: any, error: string|null}} `error` is set only when the
+ *   file is present and unparseable.
+ */
 function readYaml(path) {
   const text = readText(path);
-  if (!text) return null;
+  if (!text) return { data: null, error: null };
   try {
-    return parseYaml(text, { filename: path }).data;
-  } catch {
-    return null;
+    return { data: parseYaml(text, { filename: path }).data, error: null };
+  } catch (e) {
+    return { data: null, error: String(e?.message ?? e) };
   }
 }
 
@@ -1055,7 +1070,7 @@ function readYaml(path) {
  * reviewer knows the deviation exists.
  */
 export function readWaivers(path) {
-  const data = readYaml(path);
+  const data = readYaml(path).data;
   const list = Array.isArray(data?.waivers) ? data.waivers : [];
   return list
     .filter((w) => w && typeof w === 'object')

@@ -21,6 +21,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { detectHarnesses, wireServer, recordWiring, configHasServer, configTargetFor } from './harness-wiring.mjs';
 import { invalidInput } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 export const CODEGRAPH_PACKAGE = '@colbymchenry/codegraph';
 
@@ -592,7 +594,10 @@ export async function manageCodegraph(opts) {
 /** Validate the location argument. */
 export function assertLocation(location) {
   if (!['global', 'project', 'both'].includes(location)) {
-    throw invalidInput(`location must be global|project|both`, { location });
+    throw invalidInput(
+      `location must be global|project|both`,
+      { ...hint({ action: toolCall('archgen_codegraph', { action: 'status', location: 'project' }), reason: "location chooses which CodeGraph install to read." }), location },
+    );
   }
   return location;
 }

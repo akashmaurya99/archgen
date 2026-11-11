@@ -11,6 +11,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { invalidInput } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 import { writeFileAtomic } from './fs-safety.mjs';
 
 export const START_MARKER = '<!-- archgen:features:start -->';
@@ -108,20 +110,30 @@ export function updateRegistry(projectRoot, opts = {}) {
   const status = opts.status ?? null;
 
   if ((slug === null) !== (status === null)) {
-    throw invalidInput('slug and status must be passed together', { slug, status });
+    throw invalidInput(
+      'slug and status must be passed together',
+      { ...hint({ action: toolCall('archgen_registry', { action: 'update', slug: '<slug>', status: 'planned' }), reason: "the slug and its status are updated together." }), slug, status },
+    );
   }
   if (status !== null && !DISPLAY_STATUSES.includes(status)) {
-    throw invalidInput(`invalid status '${status}' (allowed: ${DISPLAY_STATUSES.join('|')})`, { status });
+    throw invalidInput(
+      `invalid status '${status}' (allowed: ${DISPLAY_STATUSES.join('|')})`,
+      { ...hint({ action: toolCall('archgen_registry', { action: 'update', slug: '<slug>', status: 'planned' }), reason: "the registry carries one of the four display statuses." }), status },
+    );
   }
   if (slug !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug)) {
-    throw invalidInput(`invalid slug '${slug}' (start alphanumeric; then letters, digits, '.', '_', '-')`, { slug });
+    throw invalidInput(
+      `invalid slug '${slug}' (start alphanumeric; then letters, digits, '.', '_', '-')`,
+      { ...hint({ action: toolCall('archgen_registry', { action: 'update', slug: '<slug>', status: 'planned' }), reason: "a slug names a directory on disk." }), slug },
+    );
   }
 
   const archgenDir = join(projectRoot, '.archgen');
   if (!existsSync(archgenDir)) {
-    throw invalidInput(`no .archgen/ directory under ${projectRoot} — nothing to register (generate a plan first)`, {
-      projectRoot,
-    });
+    throw invalidInput(
+      `no .archgen/ directory under ${projectRoot} — nothing to register (generate a plan first)`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'profile', intent: 'GREENFIELD-SYSTEM', slug: '<slug>' }), reason: "the registry is derived from a generated plan." }), projectRoot, },
+    );
   }
 
   const rows = scanFeatures(projectRoot);
@@ -175,9 +187,10 @@ export function updateRegistry(projectRoot, opts = {}) {
     const si = raw.indexOf(START_MARKER);
     const ei = raw.indexOf(END_MARKER, si + START_MARKER.length);
     if (ei === -1) {
-      throw invalidInput(`${agentsPath}: found ${START_MARKER} but no ${END_MARKER} — repair the markers by hand`, {
-        file: agentsPath,
-      });
+      throw invalidInput(
+        `${agentsPath}: found ${START_MARKER} but no ${END_MARKER} — repair the markers by hand`,
+        { ...hint({ action: "repair the AGENTS.md markers by hand", reason: "the markers delimit the table the server rewrites." }), file: agentsPath, },
+      );
     }
     banner = `updated features registry in ${agentsPath}`;
     const eol = raw.includes('\r\n') ? '\r\n' : '\n';

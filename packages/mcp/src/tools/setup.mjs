@@ -10,7 +10,9 @@ import { detectHarnesses } from '../core/harness-wiring.mjs';
 import { platformCapabilities, detectHarness } from '../core/platform-caps.mjs';
 import { checkCapability } from '../core/compat.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
+import { hint } from '../core/guidance.mjs';
 
 const ACTION_DESC = 'doctor|bootstrap|install_mcp|uninstall_mcp|harnesses|harness_info';
 
@@ -161,11 +163,12 @@ export function registerSetupTools(server) {
         if (args.harness) {
           const one = rows.find((r) => r.id === args.harness);
           if (!one) {
-            throw invalidInput(`unknown harness '${args.harness}'`, {
-              action: args.action,
+            throw invalidInput(
+              `unknown harness '${args.harness}'`,
+              { ...hint({ action: toolCall('archgen_setup', { action: 'harnesses' }), reason: "the harness registry lists every harness." }), action: args.action,
               harness: args.harness,
-              available: rows.map((r) => r.id),
-            });
+              available: rows.map((r) => r.id), },
+            );
           }
           return {
             location,
@@ -179,7 +182,7 @@ export function registerSetupTools(server) {
           // The continuation keeps the LOCATION filter. It used to drop it,
           // so the cursor re-introduced the very bug the filter fixed: the
           // next page listed the GLOBAL config path the caller had excluded.
-          next: `archgen_setup{action:'harnesses',location:'${location}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+          next: toolCall('archgen_setup', { action: 'harnesses', location, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
         });
         return withMeta(
           {
@@ -194,7 +197,7 @@ export function registerSetupTools(server) {
             returned: p.returned,
             next: p.next,
             available: { harnesses: p.total },
-            more: `archgen_setup{action:'harnesses',harness:'<one harness>'}`,
+            more: toolCall('archgen_setup', { action: 'harnesses', harness: '<one harness>' }),
           }),
         );
       }

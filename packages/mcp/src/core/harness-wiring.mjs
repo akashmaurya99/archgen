@@ -23,6 +23,8 @@ import { join, resolve, sep } from 'node:path';
 import { assertNotSymlink, assertWithinRoot, withFileLock, writeFileAtomic } from './fs-safety.mjs';
 import { mergeEntry, parseJsonc, removeEntry } from './jsonc-config.mjs';
 import { invalidInput } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * The Copilot home: `$COPILOT_HOME`, or `~/.copilot`.
@@ -193,9 +195,7 @@ export function buildEntry(entries, npxEntries, entryKey, binPath, fallbackComma
     // bug, not a user error. Say so plainly instead of crashing with a
     // SyntaxError from JSON.parse(undefined).
     throw invalidInput(
-      `unknown MCP entry shape '${entryKey}' — the harness registry and the writer disagree`,
-      { entryKey, available: Object.keys(entries ?? {}) },
-    );
+      `unknown MCP entry shape '${entryKey}' — the harness registry and the writer disagree`, { ...hint({ action: toolCall('archgen_setup', { action: 'harnesses' }), reason: "the harness registry lists every harness the server can wire." }), entryKey, available: Object.keys(entries ?? {}) });
   }
 
   const entry = structuredClone(source);

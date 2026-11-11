@@ -84,7 +84,9 @@ Every finding carries a stable code, so fixes can be batched and counted. **This
 | `WAVE_LABEL_DRIFT` / `WAVE_GROUP_SPANS` | a wave label disagrees with the dependency graph |
 | `WAIVER_INVALID` | a waiver is missing the fields that make it an approval |
 
-The task file's own defects carry their own codes: `UNPARSEABLE`, `NO_TASKS`, `CYCLE`, `DANGLING_DEP`, `DUPLICATE_TASK_ID`, `NO_ACCEPTANCE`, `EMPTY_OWNERSHIP`, `OWNERSHIP_OVERLAP`, `PLAN_TASK_COVERAGE`, `UNKNOWN_TASK_ID`, `NO_PLAN_DIR`, `IO_ERROR`.
+The task file's own defects carry their own codes: `UNPARSEABLE`, `NO_TASKS`, `CYCLE`, `DANGLING_DEP`, `DUPLICATE_TASK_ID`, `NO_ACCEPTANCE`, `EMPTY_OWNERSHIP`, `TASK_FIELD_MISSING`, `TASK_FIELD_EMPTY`, `TASK_FIELD_TYPE`, `TASK_FIELD_DUPLICATE`, `TASK_ID_INVALID`, `TASK_STATUS_INVALID`, `OWNERSHIP_OVERLAP`, `PLAN_TASK_COVERAGE`, `UNKNOWN_TASK_ID`, `NO_PLAN_DIR`, `IO_ERROR`, `INTERNAL`, `PLAN_ISSUE`.
+
+`archgen_plan{action:'validate'}` enforces the same task-file rules and reports them the same way, so a plan that validates is a plan the floor accepts.
 
 **INFORMATIONAL (warnings — never block):**
 
@@ -93,6 +95,10 @@ The task file's own defects carry their own codes: `UNPARSEABLE`, `NO_TASKS`, `C
 | `PROFILE_NOT_RECORDED` | no profile was recorded — artifact necessity could not be checked |
 | `CONFIG_NOT_ENFORCED` | a rule could not run (the plan does not declare what the rule needs) |
 | `OWNERSHIP_CONTAINED` | one task's paths contain another's |
+| `TASK_FIELD_UNKNOWN` | a task carries a key the contract does not define |
+| `ARTIFACT_NOT_OWNED` | a task declares an artifact its file ownership does not cover |
+| `CONFIG_UNPARSEABLE` | `architecture.yaml` is present but does not parse — the defect is a syntax error, not a missing file |
+| `PROFILE_UNPARSEABLE` | the recorded plan profile is present but does not parse |
 | `WAIVER_COUNT_MISMATCH` | the recorded waived count disagrees with the ledger |
 | `GATE_IDENTITY_MISSING` | the gate block records no verifier |
 

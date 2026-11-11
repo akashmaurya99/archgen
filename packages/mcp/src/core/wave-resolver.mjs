@@ -7,10 +7,11 @@
 //   2 -> CYCLE             (dependency cycle)
 //   3 -> OWNERSHIP_CONFLICT (same-wave file_ownership overlap)
 //   4 -> INVALID_INPUT     (missing/invalid file)
-import { readFileSync } from 'node:fs';
-import { parseYaml } from './yaml.mjs';
-import { buildGraph, findCycle, computeWaves, findOwnershipConflict, GraphError } from './graph.mjs';
+import { buildGraph, findCycle, computeWaves, findOwnershipConflict, GraphError, ownedPaths } from './graph.mjs';
+import { readParsedPlanFile } from './plan-file.mjs';
 import { cycle, invalidInput, ownershipConflict } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * Resolve the executable waves of a task graph.
@@ -19,27 +20,22 @@ import { cycle, invalidInput, ownershipConflict } from './errors.mjs';
  * @returns {{waves: Array<Array<{id: string, title: string, status: string, file_ownership: string[]}>>, blockedByFailure: string[]}}
  */
 export function resolveWaves(file) {
-  let raw;
-  try {
-    raw = readFileSync(file, 'utf8');
-  } catch {
-    throw invalidInput(`cannot read ${file} (missing or unreadable)`, { file });
-  }
-  let data;
-  try {
-    ({ data } = parseYaml(raw, { filename: file }));
-  } catch (e) {
-    throw invalidInput(String(e.message ?? e), { file });
-  }
+  const { data } = readParsedPlanFile(file);
   const tasks = data?.tasks;
-  if (!Array.isArray(tasks)) throw invalidInput(`${file}: missing 'tasks:' sequence`, { file });
+  if (!Array.isArray(tasks)) throw invalidInput(
+    `${file}: missing 'tasks:' sequence`,
+    { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file },
+  );
 
   let byId;
   let prerequisites;
   try {
     ({ byId, prerequisites } = buildGraph(tasks));
   } catch (e) {
-    if (e instanceof GraphError) throw invalidInput(e.message, { file });
+    if (e instanceof GraphError) throw invalidInput(
+      e.message,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file },
+    );
     throw e;
   }
 
@@ -81,23 +77,12 @@ export function resolveWaves(file) {
  */
 export function listTasks(file, opts = {}) {
   const { status = null, module = null } = opts;
-  let raw;
-  try {
-    raw = readFileSync(file, 'utf8');
-  } catch {
-    throw invalidInput(`cannot read ${file} (missing or unreadable)`, { file });
-  }
-  let data;
-  try {
-    ({ data } = parseYaml(raw, { filename: file }));
-  } catch (e) {
-    throw invalidInput(String(e.message ?? e), { file });
-  }
+  const { data } = readParsedPlanFile(file);
   const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
   const filtered = tasks.filter((t) => {
     if (status && (t?.status ?? 'pending') !== status) return false;
     if (module) {
-      const owned = Array.isArray(t?.file_ownership) ? t.file_ownership.join(' ') : '';
+      const owned = ownedPaths(t).join(' ');
       if (!owned.includes(module)) return false;
     }
     return true;
@@ -108,7 +93,7 @@ export function listTasks(file, opts = {}) {
       title: t?.title ?? null,
       status: t?.status ?? 'pending',
       depends_on: Array.isArray(t?.depends_on) ? t.depends_on : [],
-      file_ownership: Array.isArray(t?.file_ownership) ? t.file_ownership : [],
+      file_ownership: ownedPaths(t),
       artifacts: Array.isArray(t?.artifacts) ? t.artifacts : [],
     })),
     total: filtered.length,

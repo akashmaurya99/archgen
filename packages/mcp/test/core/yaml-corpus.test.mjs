@@ -172,6 +172,78 @@ test('quoted values keep their exact text', () => {
   assert.deepEqual(data, { a: 'x y', b: 'z' });
 });
 
+// ── what an agent actually writes ───────────────────────────────────────────
+//
+// The corpus pins the FILE SHAPES. These pin the DECISIONS an agent cannot be
+// taught from the shapes: a title with a colon in it, an acceptance criterion
+// that reads like a mapping, a value the writer would flatten into a string.
+// Each of these was a fatal error or a silent corruption, and a plan that hit
+// one could not be validated, executed, or status-updated.
+
+test('a quoted sequence item is a scalar, never a mapping', () => {
+  // The key-shaped tests match INSIDE the quotes, so this used to be rewritten
+  // as a mapping and die on an unterminated quoted key.
+  const { data } = parseYaml('acceptance:\n  - "Test: returns 200"\n', { filename: 'case.yaml' });
+  assert.deepEqual(data, { acceptance: ['Test: returns 200'] });
+});
+
+test('a mapping value may contain ": "', () => {
+  // A nested mapping cannot start on the key's own line, so the remainder is
+  // unambiguously the scalar. Refusing it rejected ordinary titles and killed
+  // every check on the file.
+  const { data } = parseYaml('title: Refactor: the auth module\n', { filename: 'case.yaml' });
+  assert.deepEqual(data, { title: 'Refactor: the auth module' });
+});
+
+test('a quoted key in a sequence item stays a mapping', () => {
+  const { data } = parseYaml('items:\n  - "odd: key": 1\n', { filename: 'case.yaml' });
+  assert.deepEqual(data, { items: [{ 'odd: key': 1 }] });
+});
+
+test('a flow mapping nested in a flow sequence parses', () => {
+  const { data } = parseYaml('a: [{x: 1, y: 2}]\n', { filename: 'case.yaml' });
+  assert.deepEqual(data, { a: [{ x: 1, y: 2 }] });
+});
+
+test('the writer never flattens a collection into a scalar', () => {
+  // The first key of a sequence item shared the dash's line, so its value was
+  // written through the scalar encoder: a list became "a,b" and an object
+  // became "[object Object]". The writer put that on disk.
+  const source = 'tasks:\n  - acceptance: ["a", "b"]\n    id: T1\n';
+  const { data } = parseYaml(source, { filename: 'case.yaml' });
+  const { data: again } = parseYaml(stringifyYaml(data), { filename: 'case.yaml' });
+  assert.deepEqual(again, data);
+});
+
+test('every value the writer emits reads back unchanged', () => {
+  // The writer's contract is that its output parses back to the value it was
+  // given. A value it cannot express must be quoted, never approximated.
+  const values = [
+    'plain text', 'has: colon', 'a, b', 'C#', 'x # y', 'has "quotes"', "it's",
+    "'quoted'", '"abc', '"', "'", '  padded  ', '- dash', '? question', '@ at',
+    'back`tick', '% pct', '{brace}', '[brack]', 'ends with colon:', 'true',
+    'false', 'null', '42', '-17', '3.14', 'yes', 'no', 'on', 'off', '',
+    'line1\nline2', 'multi\nline\n', 'a\tb', '修复：认证模块', 'http://x/y',
+  ];
+  for (const value of values) {
+    const out = stringifyYaml({ k: value });
+    let parsed;
+    try {
+      parsed = parseYaml(out, { filename: 'case.yaml' }).data;
+    } catch (e) {
+      assert.fail(`the writer emitted a file the parser refuses for ${JSON.stringify(value)}: ${out} — ${e.message}`);
+    }
+    assert.equal(parsed.k, value, `the writer lost ${JSON.stringify(value)}: emitted ${out}`);
+  }
+});
+
+test('the writer preserves a collection nested under a sequence item', () => {
+  const source = 'tasks:\n  - meta:\n      a: 1\n    id: T1\n';
+  const { data } = parseYaml(source, { filename: 'case.yaml' });
+  const { data: again } = parseYaml(stringifyYaml(data), { filename: 'case.yaml' });
+  assert.deepEqual(again, data);
+});
+
 /** Escape a literal string for use inside a RegExp. */
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

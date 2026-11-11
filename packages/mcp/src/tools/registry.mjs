@@ -6,6 +6,7 @@
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { updateRegistry, showRegistry, DISPLAY_STATUSES } from '../core/registry-updater.mjs';
+import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const schema = z.object({
@@ -34,7 +35,7 @@ export function registerRegistryTools(server) {
         const p = project(shown.rows ?? [], {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_registry{action:'show',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+          next: toolCall('archgen_registry', { action: 'show', limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
         });
         return withMeta(
           { ...shown, rows: p.items },

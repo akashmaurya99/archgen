@@ -11,6 +11,8 @@ import { loadAsset } from '../context.mjs';
 import { setTaskStatus, STATUSES } from '../core/status-mutator.mjs';
 import { writeResumeSnapshot } from '../core/resume-snapshot.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { hint } from '../core/guidance.mjs';
+import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { resolveSlugInput, ScopeError } from '../core/scope.mjs';
 import { dirname, join } from 'node:path';
@@ -28,15 +30,16 @@ function slugDirFor(tasksFile, action) {
   } catch (e) {
     if (e instanceof ScopeError) {
       throw invalidInput(
-        `tasks.yaml must live in .archgen/<slug>/ — ${tasksFile} does not`,
-        { action, file: tasksFile },
-      );
+        `tasks.yaml must live in .archgen/<slug>/ — ${tasksFile} does not`, { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>' }), reason: "the task file lives inside the artifact space." }), action, file: tasksFile });
     }
     // A MISSING FILE is not an internal error. `realpathSync` throws a raw
     // ENOENT, which escaped as INTERNAL — a broken server, where the sibling
     // actions return INVALID_INPUT for the very same path.
     if (e?.code === 'ENOENT' || e?.code === 'ENOTDIR') {
-      throw invalidInput(`cannot read ${tasksFile} (missing or unreadable)`, { action, file: tasksFile });
+      throw invalidInput(
+        `cannot read ${tasksFile} (missing or unreadable)`,
+        { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), action, file: tasksFile },
+      );
     }
     throw e;
   }
@@ -79,22 +82,32 @@ export function registerTaskTools(server) {
 
       switch (action) {
         case 'set_status': {
-          if (!args.tasksYaml) throw invalidInput('tasksYaml is required for set_status', { action });
-          if (!args.taskId) throw invalidInput('taskId is required for set_status', { action });
-          if (!args.status) throw invalidInput('status is required for set_status', { action });
+          if (!args.tasksYaml) throw invalidInput(
+            'tasksYaml is required for set_status',
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: '<tasks.yaml>', taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action },
+          );
+          if (!args.taskId) throw invalidInput(
+            'taskId is required for set_status',
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: '<tasks.yaml>', taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action },
+          );
+          if (!args.status) throw invalidInput(
+            'status is required for set_status',
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: '<tasks.yaml>', taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action },
+          );
           return setTaskStatus(ctx.contain(args.tasksYaml), args.taskId, args.status, { force: args.force === true });
         }
         case 'list': {
-          if (!args.tasksYaml) throw invalidInput('tasksYaml is required for list', { action });
+          if (!args.tasksYaml) throw invalidInput(
+            'tasksYaml is required for list',
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list reads the task file." }), action },
+          );
           // The schema rejects a bad status, but the handler does NOT rely on
           // that: the CLI facade drives the handlers directly, and a free-text
           // status there returned an EMPTY list for a typo — a silent
           // "these tasks do not exist" answer.
           if (args.filterStatus && !STATUSES.includes(args.filterStatus)) {
             throw invalidInput(
-              `unknown status '${args.filterStatus}' (allowed: ${STATUSES.join('|')})`,
-              { action, filterStatus: args.filterStatus, allowed: STATUSES },
-            );
+              `unknown status '${args.filterStatus}' (allowed: ${STATUSES.join('|')})`, { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list carries every status." }), action, filterStatus: args.filterStatus, allowed: STATUSES });
           }
           const file = ctx.contain(args.tasksYaml);
           const listed = listTasks(file, {
@@ -111,11 +124,12 @@ export function registerTaskTools(server) {
             const all = listTasks(file, {});
             const one = (all.tasks ?? []).find((t) => t.id === args.taskId);
             if (!one) {
-              throw invalidInput(`no task '${args.taskId}' in ${args.tasksYaml}`, {
-                action,
+              throw invalidInput(
+                `no task '${args.taskId}' in ${args.tasksYaml}`,
+                { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list carries every task id." }), action,
                 taskId: args.taskId,
-                available: (all.tasks ?? []).map((t) => t.id),
-              });
+                available: (all.tasks ?? []).map((t) => t.id), },
+              );
             }
             const excludedBy = [];
             if (args.filterStatus && one.status !== args.filterStatus) excludedBy.push(`status:${args.filterStatus}`);
@@ -134,7 +148,7 @@ export function registerTaskTools(server) {
           const p = project(listed.tasks ?? [], {
             limit: args.limit,
             offset: args.offset,
-            next: `archgen_tasks{action:'list',tasksYaml:'${args.tasksYaml}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+            next: toolCall('archgen_tasks', { action: 'list', tasksYaml: args.tasksYaml, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
           });
           return withMeta(
             { ...listed, tasks: p.items },
@@ -143,12 +157,15 @@ export function registerTaskTools(server) {
               returned: p.returned,
               next: p.next,
               available: { tasks: p.total },
-              more: `archgen_tasks{action:'list',tasksYaml:'${args.tasksYaml}',taskId:'<one task>'}`,
+              more: toolCall('archgen_tasks', { action: 'list', tasksYaml: args.tasksYaml, taskId: '<one task>' }),
             }),
           );
         }
         case 'snapshot': {
-          if (!args.tasksYaml) throw invalidInput('tasksYaml is required for snapshot', { action });
+          if (!args.tasksYaml) throw invalidInput(
+            'tasksYaml is required for snapshot',
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'snapshot', tasksYaml: '<tasks.yaml>' }), reason: "the snapshot reads the task file." }), action },
+          );
           const tasksFile = ctx.contain(args.tasksYaml);
           // The snapshot belongs to the artifact space: `<slug>/.agent/`.
           // Deriving it from the tasks file's PARENT wrote it wherever that
@@ -159,8 +176,14 @@ export function registerTaskTools(server) {
           return writeResumeSnapshot(slugDir, waves);
         }
         case 'contract': {
-          if (!args.tasksYaml) throw invalidInput('tasksYaml is required for contract', { action });
-          if (!args.taskId) throw invalidInput('taskId is required for contract', { action });
+          if (!args.tasksYaml) throw invalidInput(
+            'tasksYaml is required for contract',
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'contract', tasksYaml: '<tasks.yaml>', taskId: '<task id>' }), reason: "the contract is built for one task." }), action },
+          );
+          if (!args.taskId) throw invalidInput(
+            'taskId is required for contract',
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'contract', tasksYaml: '<tasks.yaml>', taskId: '<task id>' }), reason: "the contract is built for one task." }), action },
+          );
           const tasksFile = ctx.contain(args.tasksYaml);
           const slugDir = args.slugDir ? ctx.contain(args.slugDir) : dirname(tasksFile);
 
@@ -287,7 +310,7 @@ export function registerTaskTools(server) {
             ...(docSectionsTotal > docSections.length
               ? {
                   docSectionsOmitted: docSectionsTotal - docSections.length,
-                  docSectionsHint: `read the rest with archgen_docs{action:'map',token:'${args.taskId}'}`,
+                  docSectionsHint: `read the rest with ${toolCall('archgen_docs', { action: 'map', token: args.taskId })}`,
                 }
               : {}),
             ...(capabilityWarnings.length
@@ -296,7 +319,10 @@ export function registerTaskTools(server) {
           };
         }
         case 'next': {
-          if (!args.tasksYaml) throw invalidInput('tasksYaml is required for next', { action });
+          if (!args.tasksYaml) throw invalidInput(
+            'tasksYaml is required for next',
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'next', tasksYaml: '<tasks.yaml>' }), reason: "the frontier reads the task file." }), action },
+          );
           const resolved = resolveWaves(ctx.contain(args.tasksYaml));
           // ONE wave, when the caller named a task: "which wave is this in?"
           if (args.taskId) {
@@ -309,11 +335,18 @@ export function registerTaskTools(server) {
               const all = listTasks(ctx.contain(args.tasksYaml), {});
               const one = (all.tasks ?? []).find((t) => t.id === args.taskId);
               if (!one) {
-                throw invalidInput(`no task '${args.taskId}' in ${args.tasksYaml}`, {
-                  action,
-                  taskId: args.taskId,
-                  available: resolved.waves.flat().map((t) => t.id),
-                });
+                throw invalidInput(
+                  `no task '${args.taskId}' in ${args.tasksYaml}`,
+                  {
+                    ...hint({
+                      action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }),
+                      reason: 'the list carries every task id.',
+                    }),
+                    action,
+                    taskId: args.taskId,
+                    available: resolved.waves.flat().map((t) => t.id),
+                  },
+                );
               }
               return {
                 taskId: args.taskId,
@@ -342,7 +375,7 @@ export function registerTaskTools(server) {
           const p = project(resolved.waves, {
             limit: args.limit,
             offset: args.offset,
-            next: `archgen_tasks{action:'next',tasksYaml:'${args.tasksYaml}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+            next: toolCall('archgen_tasks', { action: 'next', tasksYaml: args.tasksYaml, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
           });
           return withMeta(
             {
@@ -362,12 +395,15 @@ export function registerTaskTools(server) {
               returned: p.returned,
               next: p.next,
               available: { waves: p.total, tasks: resolved.waves.flat().length },
-              more: `archgen_tasks{action:'next',tasksYaml:'${args.tasksYaml}',taskId:'<one task>'}`,
+              more: toolCall('archgen_tasks', { action: 'next', tasksYaml: args.tasksYaml, taskId: '<one task>' }),
             }),
           );
         }
         default:
-          throw invalidInput(`unknown action '${action}'`, { action });
+          throw invalidInput(
+            `unknown action '${action}'`,
+            { ...hint({ action: toolCall('archgen_help', { topic: 'tasks' }), reason: "the actions are listed there." }), action },
+          );
       }
     },
   });

@@ -14,7 +14,9 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_regist
 import { ASSETS_DIR } from '../context.mjs';
 import { indexTopic, readTopic, searchTopic, listTopics, REF_TOPICS } from '../core/refs.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
+import { hint } from '../core/guidance.mjs';
 
 const ACTION_DESC = 'list|index|read|search';
 
@@ -56,7 +58,7 @@ export function registerRefTools(server) {
         const p = project(all, {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_refs{action:'list',limit:${bound},offset:${from + bound}}`,
+          next: toolCall('archgen_refs', { action: 'list', limit: bound, offset: from + bound }),
         });
         return withMeta(
           { topics: p.items },
@@ -65,13 +67,16 @@ export function registerRefTools(server) {
             returned: p.returned,
             next: p.next,
             available: { topics: p.total },
-            more: `archgen_refs{action:'index',topic:'<the topic you need>'}`,
+            more: toolCall('archgen_refs', { action: 'index', topic: '<the topic you need>' }),
           }),
         );
       }
 
       if (!args.topic) {
-        throw invalidInput(`topic is required for '${args.action}'`, { action: args.action, known: REF_TOPICS });
+        throw invalidInput(
+          `topic is required for '${args.action}'`,
+          { ...hint({ action: toolCall('archgen_refs', { action: 'index', topic: 'orchestration' }), reason: "the topics are listed there." }), action: args.action, known: REF_TOPICS },
+        );
       }
 
       if (args.action === 'index') {
@@ -84,7 +89,7 @@ export function registerRefTools(server) {
         const p = project(indexed.sections, {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_refs{action:'index',topic:'${args.topic}',limit:${bound},offset:${from + bound}}`,
+          next: toolCall('archgen_refs', { action: 'index', topic: args.topic, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { ...indexed, sections: p.items },
@@ -93,18 +98,21 @@ export function registerRefTools(server) {
             returned: p.returned,
             next: p.next,
             available: { sections: p.total },
-            more: `archgen_refs{action:'read',topic:'${args.topic}',section:'<the section you need>'}`,
+            more: toolCall('archgen_refs', { action: 'read', topic: args.topic, section: '<the section you need>' }),
           }),
         );
       }
 
       if (args.action === 'search') {
-        if (!args.token) throw invalidInput('search requires token', { action: args.action });
+        if (!args.token) throw invalidInput(
+          'search requires token',
+          { ...hint({ action: toolCall('archgen_refs', { action: 'search', topic: 'orchestration', token: '<token>' }), reason: "search needs a token." }), action: args.action },
+        );
         const found = searchTopic(args.topic, args.token, roots);
         const p = project(found.sections, {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_refs{action:'search',topic:'${args.topic}',token:'${args.token}',limit:${bound},offset:${from + bound}}`,
+          next: toolCall('archgen_refs', { action: 'search', topic: args.topic, token: args.token, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { ...found, sections: p.items },
@@ -113,7 +121,7 @@ export function registerRefTools(server) {
             returned: p.returned,
             next: p.next,
             available: { sections: p.total, matches: found.matchCount },
-            more: `archgen_refs{action:'read',topic:'${args.topic}',section:'<the section you need>'}`,
+            more: toolCall('archgen_refs', { action: 'read', topic: args.topic, section: '<the section you need>' }),
           }),
         );
       }
@@ -125,7 +133,7 @@ export function registerRefTools(server) {
       const p = project(read.sections, {
         limit: args.limit,
         offset: args.offset,
-        next: `archgen_refs{action:'read',topic:'${args.topic}',section:'<the section you need>',limit:${bound},offset:${from + bound}}`,
+        next: toolCall('archgen_refs', { action: 'read', topic: args.topic, section: '<the section you need>', limit: bound, offset: from + bound }),
       });
       return withMeta(
         { ...read, sections: p.items },
@@ -134,7 +142,7 @@ export function registerRefTools(server) {
           returned: p.returned,
           next: p.next,
           available: { sections: p.total },
-          more: `archgen_refs{action:'read',topic:'${args.topic}',section:'<the section you need>'}`,
+          more: toolCall('archgen_refs', { action: 'read', topic: args.topic, section: '<the section you need>' }),
         }),
       );
     },

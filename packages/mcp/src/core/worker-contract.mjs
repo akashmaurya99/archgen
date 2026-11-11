@@ -25,14 +25,14 @@
 // weaker contract and then needs another round to fix what it dropped. The
 // cost of a dispatch is measured where it belongs (the server, the CI gate,
 // the report to the user), and paid for by making the first answer complete.
-import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { parseYaml } from './yaml.mjs';
-import { buildGraph, GraphError } from './graph.mjs';
+import { buildGraph, GraphError, ownedPaths } from './graph.mjs';
+import { readParsedPlanFile } from './plan-file.mjs';
+import { toolCall } from './call.mjs';
 import { skillDirective } from './skill-manager.mjs';
 import { parseEdgeMatrix, readPlans } from './plan-audit.mjs';
 import { invalidInput } from './errors.mjs';
-import { noSuchTask } from './guidance.mjs';
+import { noSuchTask, hint } from './guidance.mjs';
 
 /**
  * Assemble the worker prompt for one task.
@@ -80,20 +80,14 @@ function claimedCases({ acceptance, taskId, slugDir, tasksYaml }) {
 
 export function buildWorkerContract(opts) {
   const { tasksYaml, taskId, slugDir = null } = opts;
-  if (!taskId) throw invalidInput('taskId is required to build a worker contract', {});
+  if (!taskId) {
+    throw invalidInput(
+      'taskId is required to build a worker contract',
+      { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: 'the list carries every task id.' }) },
+    );
+  }
 
-  let raw;
-  try {
-    raw = readFileSync(tasksYaml, 'utf8');
-  } catch {
-    throw invalidInput(`cannot read ${tasksYaml} (missing or unreadable)`, { file: tasksYaml });
-  }
-  let data;
-  try {
-    ({ data } = parseYaml(raw, { filename: tasksYaml }));
-  } catch (e) {
-    throw invalidInput(String(e?.message ?? e), { file: tasksYaml });
-  }
+  const { data } = readParsedPlanFile(tasksYaml);
   const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
   const task = tasks.find((t) => t?.id === taskId);
   if (!task) throw noSuchTask(taskId, tasks.map((t) => t?.id).filter(Boolean));
@@ -111,7 +105,10 @@ export function buildWorkerContract(opts) {
     ({ byId, prerequisites, dependents } = buildGraph(tasks));
   } catch (e) {
     if (e instanceof GraphError) {
-      throw invalidInput(`${tasksYaml}: ${e.message}`, { file: tasksYaml });
+      throw invalidInput(`${tasksYaml}: ${e.message}`, {
+        ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: 'validate reports what the task file is missing.' }),
+        file: tasksYaml,
+      });
     }
     throw e;
   }
@@ -119,7 +116,7 @@ export function buildWorkerContract(opts) {
   const downstream = (dependents.get(taskId) ?? []).map((id) => ({ id, title: byId.get(id)?.title ?? null }));
 
   const acceptance = Array.isArray(task.acceptance) ? task.acceptance : [];
-  const ownership = Array.isArray(task.file_ownership) ? task.file_ownership : [];
+  const ownership = ownedPaths(task);
   const artifacts = Array.isArray(task.artifacts) ? task.artifacts : [];
 
   // ── the edge cases THIS task must cover ──────────────────────────────────

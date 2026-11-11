@@ -16,10 +16,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml } from './yaml.mjs';
-import { buildGraph, findCycle, computeWaves, dedupeDependencies, computeQualityStats, GraphError } from './graph.mjs';
+import { buildGraph, findCycle, computeWaves, dedupeDependencies, computeQualityStats, GraphError, ownedPaths } from './graph.mjs';
+import { readParsedPlanFile } from './plan-file.mjs';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
-import { cycle, invalidInput, notFound } from './errors.mjs';
-import { noSuchTask } from './guidance.mjs';
+import { cycle, invalidInput } from './errors.mjs';
+import { noSuchTask, hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 // Whole-graph Mermaid above this node count is refused.
 export const MERMAID_WHOLE_MAX_NODES = 250;
@@ -91,8 +93,14 @@ export function resolvePlanScope(input, projectRoot = null) {
   try {
     scoped = resolveSlugInput(input, projectRoot);
   } catch (e) {
-    if (e instanceof ScopeError) throw invalidInput(`plan-graph: ${e.message}`, { input });
-    throw invalidInput(`cannot read ${input} (missing or unreadable)`, { input });
+    if (e instanceof ScopeError) throw invalidInput(
+      `plan-graph: ${e.message}`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>' }), reason: "the artifact space names the task file." }), input },
+    );
+    throw invalidInput(
+      `cannot read ${input} (missing or unreadable)`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), input },
+    );
   }
   return { root: scoped.root, slug: scoped.slug, tasksFile: join(scoped.root, 'tasks.yaml') };
 }
@@ -112,22 +120,12 @@ export function resolvePlanScope(input, projectRoot = null) {
 function loadPlan(input, projectRoot = null) {
   const { root, slug, tasksFile } = resolvePlanScope(input, projectRoot);
 
-  let raw;
-  try {
-    raw = readFileSync(tasksFile, 'utf8');
-  } catch {
-    throw invalidInput(`cannot read ${tasksFile} (missing or unreadable)`, { file: tasksFile });
-  }
-  let data;
-  try {
-    ({ data } = parseYaml(raw, { filename: tasksFile }));
-  } catch (e) {
-    throw invalidInput(`${tasksFile}: unparseable YAML (${String(e?.message ?? e).replace(/^[^:]*:\d+:\s*/, '')})`, {
-      file: tasksFile,
-    });
-  }
+  const { data } = readParsedPlanFile(tasksFile);
   const tasks = data?.tasks;
-  if (!Array.isArray(tasks)) throw invalidInput(`${tasksFile}: missing 'tasks:' sequence`, { file: tasksFile });
+  if (!Array.isArray(tasks)) throw invalidInput(
+    `${tasksFile}: missing 'tasks:' sequence`,
+    { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file: tasksFile },
+  );
 
   // Collapse duplicate depends_on entries BEFORE graph build so every downstream
   // view (adjacency, waves, Mermaid, counts) sees each edge exactly once.
@@ -170,9 +168,16 @@ function readModuleNames(dir) {
   try {
     parsed = parseYaml(archRaw, { filename: p }).data;
   } catch (e) {
-    throw invalidInput(`${p}: unparseable YAML (${String(e?.message ?? e).replace(/^[^:]*:\d+:\s*/, '')})`, {
-      file: p,
-    });
+    throw invalidInput(
+      `${p}: unparseable YAML (${String(e?.message ?? e).replace(/^[^:]*:\d+:\s*/, '')})`,
+      {
+        ...hint({
+          action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }),
+          reason: 'the architecture file must parse before the graph can name its modules.',
+        }),
+        file: p,
+      },
+    );
   }
   const mods = parsed?.modules;
   if (!Array.isArray(mods)) return null;
@@ -229,9 +234,27 @@ export function planGraph(input, opts = {}) {
   const module = opts.module ?? null;
 
   if (module !== null && (node !== null || mermaid)) {
-    throw invalidInput('module cannot combine with node/mermaid');
+    throw invalidInput(
+      'module cannot combine with node/mermaid',
+      {
+        ...hint({
+          action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>', node: '<task id>' }),
+          reason: 'scope the graph to one task.',
+        }),
+      },
+    );
   }
-  if (status && !mermaid) throw invalidInput('status requires mermaid');
+  if (status && !mermaid) {
+    throw invalidInput(
+      'status requires mermaid',
+      {
+        ...hint({
+          action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>', format: 'mermaid' }),
+          reason: 'status styling applies to the mermaid rendering only.',
+        }),
+      },
+    );
+  }
 
   const plan = loadPlan(input, opts.projectRoot ?? null);
   const { uniqueTasks, duplicatesCollapsed, quality, byId, prerequisites, dependents, waves, root, slug, tasksFile } = plan;
@@ -281,7 +304,7 @@ export function planGraph(input, opts = {}) {
           .filter((n) => n.id !== t.id)
           .map((n) => n.id)
           .sort(),
-        ownedFiles: [...(t.file_ownership ?? [])].sort(),
+        ownedFiles: [...ownedPaths(t)].sort(),
         acceptanceCount: Array.isArray(t.acceptance) ? t.acceptance.length : 0,
         artifacts: [...(t.artifacts ?? [])].sort(),
       },
@@ -298,9 +321,7 @@ export function planGraph(input, opts = {}) {
       // `module <name>`, which the tool refuses with mermaid — a dead end on
       // the documented path.
       throw invalidInput(
-        `graph too large to render whole (${nodeCount} nodes) — scope it: node <id>`,
-        { nodes: nodeCount, max: MERMAID_WHOLE_MAX_NODES },
-      );
+        `graph too large to render whole (${nodeCount} nodes) — scope it: node <id>`, { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>', node: '<task id>' }), reason: "scope the graph to one task." }), nodes: nodeCount, max: MERMAID_WHOLE_MAX_NODES });
     }
     const ids = uniqueTasks.map((t) => t.id).sort();
     const lines = [
@@ -320,7 +341,7 @@ export function planGraph(input, opts = {}) {
     // clash detector.
     const pattern = `${module}/**`;
     const matched = uniqueTasks
-      .filter((t) => (t.file_ownership ?? []).some((g) => globsMayOverlap(g, pattern)))
+      .filter((t) => ownedPaths(t).some((g) => globsMayOverlap(g, pattern)))
       .sort(byIdAsc);
     return {
       format: 'json',

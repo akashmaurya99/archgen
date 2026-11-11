@@ -21,6 +21,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { skillSearchPaths } from './skill-roots.mjs';
 import { invalidInput } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * Registry shape (see assets/skill-registry.json).
@@ -225,9 +227,7 @@ export async function installSkill(opts) {
   // target: an unknown one is a typed error, never a guess.
   if (!Object.prototype.hasOwnProperty.call(HARNESS_AGENT_IDS, harness)) {
     throw invalidInput(
-      `unknown harness '${harness}' (allowed: ${Object.keys(HARNESS_AGENT_IDS).join('|')})`,
-      { harness, allowed: Object.keys(HARNESS_AGENT_IDS) },
-    );
+      `unknown harness '${harness}' (allowed: ${Object.keys(HARNESS_AGENT_IDS).join('|')})`, { ...hint({ action: toolCall('archgen_skills', { action: 'list' }), reason: "the registry lists every harness the server can install into." }), harness, allowed: Object.keys(HARNESS_AGENT_IDS) });
   }
   const agentId = HARNESS_AGENT_IDS[harness];
 

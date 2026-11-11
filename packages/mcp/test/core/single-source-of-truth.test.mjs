@@ -25,7 +25,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadAsset } from '../../src/context.mjs';
-import { ISSUE_CODES, WARNING_CODES } from '../../src/core/plan-audit.mjs';
+import { ISSUE_CODES, WARNING_CODES, BASE_CODES, KNOWN_CODES } from '../../src/core/codes.mjs';
 import { buildPlanProfile } from '../../src/core/plan-profile.mjs';
 import { buildScaffold } from '../../src/core/scaffold.mjs';
 import { readWaivers } from '../../src/core/plan-audit.mjs';
@@ -58,20 +58,25 @@ test('the reference code table names no code the floor cannot report', () => {
   // Only the section that documents the floor's codes — other sections quote
   // codes in passing (e.g. a waiver's scope example).
   const section = ref.split("### The floor's codes")[1]?.split('### ')[0] ?? '';
-  const known = new Set([...Object.keys(ISSUE_CODES), ...Object.keys(WARNING_CODES)]);
-  const BASE = new Set([
-    'UNPARSEABLE', 'NO_TASKS', 'CYCLE', 'DANGLING_DEP', 'DUPLICATE_TASK_ID', 'NO_ACCEPTANCE',
-    'EMPTY_OWNERSHIP', 'OWNERSHIP_OVERLAP', 'PLAN_TASK_COVERAGE', 'UNKNOWN_TASK_ID', 'NO_PLAN_DIR',
-    'IO_ERROR', 'INTERNAL', 'PLAN_ISSUE',
-  ]);
+  const known = KNOWN_CODES;
+  const BASE = new Set(BASE_CODES.map(([, code]) => code));
   // The identifiers the section uses to NAME its owners are not floor codes.
-  const OWNERS = new Set(['ISSUE_CODES', 'WARNING_CODES', 'BASE_CODES']);
+  const OWNERS = new Set(['ISSUE_CODES', 'WARNING_CODES', 'BASE_CODES', 'KNOWN_CODES']);
   for (const m of section.matchAll(/`([A-Z][A-Z0-9_]{2,})`/g)) {
     if (OWNERS.has(m[1])) continue;
     assert.ok(
       known.has(m[1]) || BASE.has(m[1]),
       `orchestration.md lists ${m[1]}, which the floor can never report`,
     );
+  }
+});
+
+test('every code the classifier can return is a documented code', () => {
+  // `issueCode` falls back to PLAN_ISSUE for an unclassifiable message. A
+  // code the floor can EMIT must be in the table the reference renders.
+  assert.ok(KNOWN_CODES.has('PLAN_ISSUE'), 'PLAN_ISSUE must be a documented code');
+  for (const [, code] of BASE_CODES) {
+    assert.ok(KNOWN_CODES.has(code), `the classifier emits ${code}, which is not a documented code`);
   }
 });
 

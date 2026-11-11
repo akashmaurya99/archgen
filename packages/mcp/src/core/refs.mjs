@@ -24,6 +24,7 @@ import { join } from 'node:path';
 import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd } from './docs.mjs';
 import { notFound } from './errors.mjs';
 import { noSuchSection } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /** The reference documents this server serves. */
 export const REF_TOPICS = [
@@ -166,7 +167,7 @@ export function readTopic(topic, opts) {
     return {
       ...indexed,
       whole: false,
-      next: `archgen_refs{action:'read',topic:'${resolved.topic}',section:'<the section you need>'}`,
+      next: toolCall('archgen_refs', { action: 'read', topic: resolved.topic, section: '<the section you need>' }),
       hint: 'read ONE section — a whole topic is a map plus the text you did not ask for.',
     };
   }
@@ -200,7 +201,7 @@ export function readTopic(topic, opts) {
   if (ownEnd !== section.endLine) out.sectionEndLine = section.endLine;
   if (children.length) {
     out.next =
-      `archgen_refs{action:'read',topic:'${resolved.topic}',section:'<child slug>'} — ` +
+      `${toolCall('archgen_refs', { action: 'read', topic: resolved.topic, section: '<child slug>' })} — ` +
       `${children.length} nested subsection(s) were not included`;
   }
   return out;

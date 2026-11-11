@@ -17,7 +17,9 @@ import { verifyPlan, planCoverage } from '../core/verifier.mjs';
 import { planGraph } from '../core/plan-grapher.mjs';
 import { analyzeImpact } from '../core/impact-analyzer.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
+import { hint } from '../core/guidance.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information.
@@ -54,9 +56,7 @@ function resolveCollection(action, collection, fallback) {
   if (collection === undefined || collection === null) return fallback;
   if (!allowed.includes(collection)) {
     throw invalidInput(
-      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`,
-      { action, collection, allowed },
-    );
+      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'plan' }), reason: "the collections of each action are listed there." }), action, collection, allowed });
   }
   return collection;
 }
@@ -76,9 +76,7 @@ function rejectCollection(action, collection) {
   if (collection === undefined || collection === null) return;
   const allowed = COLLECTIONS[action] ?? [];
   throw invalidInput(
-    `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`,
-    { action, collection },
-  );
+    `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'plan' }), reason: "the collections of each action are listed there." }), action, collection });
 }
 
 const schema = z.object({
@@ -197,7 +195,10 @@ export function registerPlanTools(server) {
         }
         case 'verify': {
           const file = requireTasksYaml(args, ctx);
-          if (!args.planDir) throw invalidInput('verify requires planDir', { action });
+          if (!args.planDir) throw invalidInput(
+            'verify requires planDir',
+            { ...hint({ action: toolCall('archgen_plan', { action: 'verify', tasksYaml: '<tasks.yaml>', planDir: '<planDir>' }), reason: "verify needs the plans directory." }), action },
+          );
           const planDirArg = ctx.contain(args.planDir);
           const collection = resolveCollection('verify', args.collection, 'issues');
           const out = verifyPlan(file, planDirArg, {
@@ -242,7 +243,10 @@ export function registerPlanTools(server) {
         }
         case 'coverage': {
           const file = requireTasksYaml(args, ctx);
-          if (!args.planDir) throw invalidInput('coverage requires planDir', { action });
+          if (!args.planDir) throw invalidInput(
+            'coverage requires planDir',
+            { ...hint({ action: toolCall('archgen_plan', { action: 'coverage', tasksYaml: '<tasks.yaml>', planDir: '<planDir>' }), reason: "coverage needs the plans directory." }), action },
+          );
           const planDirArg = ctx.contain(args.planDir);
           const collection = resolveCollection('coverage', args.collection, 'tasks');
           // ONE task, when the caller named one: the answer is about THAT
@@ -355,7 +359,10 @@ export function registerPlanTools(server) {
         }
         case 'impact': {
           const file = requireTasksYaml(args, ctx);
-          if (!args.target) throw invalidInput('impact requires target (a task id or an artifact path)', { action });
+          if (!args.target) throw invalidInput(
+            'impact requires target (a task id or an artifact path)',
+            { ...hint({ action: toolCall('archgen_plan', { action: 'impact', tasksYaml: '<tasks.yaml>', target: '<task id>' }), reason: "impact needs the task to trace." }), action },
+          );
           const blast = analyzeImpact(file, args.target);
           // The payload is WINDOWED. It used to carry every impacted id while
           // the meta reported a limit of 3 — and the "next" call returned the
@@ -374,7 +381,7 @@ export function registerPlanTools(server) {
           // could never reach the other two — the agent had to guess the
           // collection name the tool never mentioned.
           const cont = (c, off) =>
-            `archgen_plan{action:'impact',tasksYaml:'${file}',target:'${args.target}',collection:'${c}',limit:${args.limit ?? 50},offset:${off}}`;
+            toolCall('archgen_plan', { action: 'impact', tasksYaml: file, target: args.target, collection: c, limit: args.limit ?? 50, offset: off });
           const nextOf = {
             direct: cont('direct', direct.offset + direct.items.length),
             transitive: cont('transitive', transitive.offset + transitive.items.length),
@@ -428,9 +435,10 @@ export function registerPlanTools(server) {
         case 'profile': {
           rejectCollection('profile', args.collection);
           if (!args.intent) {
-            throw invalidInput('profile requires intent (GREENFIELD-SYSTEM | GREENFIELD-MODULE | BROWNFIELD-FEATURE | BROWNFIELD-CHANGE)', {
-              action,
-            });
+            throw invalidInput(
+              'profile requires intent (GREENFIELD-SYSTEM | GREENFIELD-MODULE | BROWNFIELD-FEATURE | BROWNFIELD-CHANGE)',
+              { ...hint({ action: toolCall('archgen_plan', { action: 'profile', intent: 'GREENFIELD-SYSTEM', slug: '<slug>' }), reason: "the profile starts from one of four intents." }), action, },
+            );
           }
           return buildPlanProfile(loadAsset('depth-ladder.json'), {
             intent: args.intent,
@@ -442,7 +450,10 @@ export function registerPlanTools(server) {
         }
         case 'scaffold': {
           rejectCollection('scaffold', args.collection);
-          if (!args.scope) throw invalidInput('scaffold requires scope (SMALL | MEDIUM | LARGE)', { action });
+          if (!args.scope) throw invalidInput(
+            'scaffold requires scope (SMALL | MEDIUM | LARGE)',
+            { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', intent: 'GREENFIELD-SYSTEM', slug: '<slug>' }), reason: "the scaffold serves one scope class." }), action },
+          );
           const built = buildScaffold(loadAsset('depth-ladder.json'), args.scope, {
             slug: args.slug ?? null,
             templatesDir: TEMPLATES_DIR,
@@ -481,12 +492,13 @@ export function registerPlanTools(server) {
               : Object.keys(built.skeletons ?? {}).find((k) => k === wanted || k.endsWith(`/${wanted}`));
             const skeleton = key ? built.skeletons?.[key] : null;
             if (!artifact && !skeleton) {
-              throw invalidInput(`no skeleton '${wanted}' for scope ${args.scope}`, {
-                action,
+              throw invalidInput(
+                `no skeleton '${wanted}' for scope ${args.scope}`,
+                { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>', file: '<one file>' }), reason: "the scaffold serves the artifacts the profile marked create." }), action,
                 file: wanted,
                 available: (built.artifacts ?? []).map((a) => a.path),
-                skeletons: Object.keys(built.skeletons ?? {}),
-              });
+                skeletons: Object.keys(built.skeletons ?? {}), },
+              );
             }
             // An artifact the profile marks OMIT (or, in class mode,
             // conditional) must not be served as "write this" — there is no
@@ -495,9 +507,7 @@ export function registerPlanTools(server) {
             // `skeleton: null`, and the floor then reported the copy.
             if (artifact && artifact.decision && artifact.decision !== 'create') {
               throw invalidInput(
-                `the profile marks '${artifact.path}' as ${artifact.decision} — do not write it (${artifact.reason ?? 'no reason recorded'})`,
-                { action, file: wanted, decision: artifact.decision, reason: artifact.reason ?? null },
-              );
+                `the profile marks '${artifact.path}' as ${artifact.decision} — do not write it (${artifact.reason ?? 'no reason recorded'})`, { ...hint({ action: toolCall('archgen_plan', { action: 'profile', intent: 'GREENFIELD-SYSTEM', slug: '<slug>' }), reason: "the profile decides which artifacts to create." }), action, file: wanted, decision: artifact.decision, reason: artifact.reason ?? null });
             }
             // ONLY the file. The old payload kept the whole scaffold and
             // replaced the skeletons map, so a "one file" call still carried
@@ -517,7 +527,7 @@ export function registerPlanTools(server) {
               },
               skeleton,
               writeThese: artifact ? [artifact.path] : [],
-              nextStep: `Write ${artifact?.path ?? wanted} from the skeleton above, then archgen_plan{action:'validate'}.`,
+              nextStep: `Write ${artifact?.path ?? wanted} from the skeleton above, then ${toolCall('archgen_plan', { action: 'validate' })}.`,
             };
           }
           // The one-file cursor carries the SAME inputs the call did, and the
@@ -525,27 +535,30 @@ export function registerPlanTools(server) {
           // scope, so following it re-entered CLASS mode — and class mode
           // refused the very artifacts the profile had marked `create`.
           const servedScope = built.scopeClass ?? args.scope;
-          const sameInputs = [
-            `scope:'${servedScope}'`,
-            args.intent ? `intent:'${args.intent}'` : null,
-            args.signals?.length ? `signals:[${args.signals.map((s) => `'${s}'`).join(',')}]` : null,
-            args.modules !== undefined ? `modules:${JSON.stringify(args.modules)}` : null,
-            args.tasks !== undefined ? `tasks:${JSON.stringify(args.tasks)}` : null,
-            `slug:'${args.slug ?? '<slug>'}'`,
-          ].filter(Boolean);
+          const sameInputs = {
+            scope: servedScope,
+            intent: args.intent,
+            signals: args.signals?.length ? args.signals : undefined,
+            modules: args.modules,
+            tasks: args.tasks,
+            slug: args.slug ?? '<slug>',
+          };
           return withMeta(
             built,
             moreMeta({
               total: (built.writeThese ?? []).length,
               returned: (built.writeThese ?? []).length,
               available: { files: (built.writeThese ?? []).length },
-              more: `archgen_plan{action:'scaffold',${sameInputs.join(',')},file:'<one file>'}`,
+              more: toolCall('archgen_plan', { action: 'scaffold', ...sameInputs, file: '<one file>' }),
             }),
           );
         }
         case 'brief': {
           rejectCollection('brief', args.collection);
-          if (!args.kind) throw invalidInput('brief requires kind', { action });
+          if (!args.kind) throw invalidInput(
+            'brief requires kind',
+            { ...hint({ action: toolCall('archgen_plan', { action: 'brief', kind: 'verifier', tasksYaml: '<tasks.yaml>', planDir: '<planDir>' }), reason: "the brief kinds are verifier, review, survey and investigate." }), action },
+          );
           // The artifact space is resolved from whatever the caller named:
           // the tasks.yaml it already holds, the plans dir, or the slug alone.
           //
@@ -582,22 +595,29 @@ export function registerPlanTools(server) {
           if (missing.length) {
             const passable = missing.filter((m) => m === 'topic' || m === 'round');
             throw invalidInput(
-              `brief '${kind}' is missing ${missing.join(', ')} — pass ${passable.length ? passable.join(', ') : 'the missing values'}`,
-              { action, kind, missing },
-            );
+              `brief '${kind}' is missing ${missing.join(', ')} — pass ${passable.length ? passable.join(', ') : 'the missing values'}`, { ...hint({ action: toolCall('archgen_plan', { action: 'brief', kind: 'investigate', tasksYaml: '<tasks.yaml>', planDir: '<planDir>', topic: '<topic>', round: '1' }), reason: "an investigate brief needs a topic." }), action, kind, missing });
           }
           return { kind, brief: `${renderBriefContext(briefContext)}\n${brief}`, scope };
         }
         case 'graph': {
           rejectCollection('graph', args.collection);
           const input = args.tasksYaml ?? args.planDir;
-          if (!input) throw invalidInput('graph requires tasksYaml (a slug directory or a tasks.yaml path)', { action });
+          if (!input) throw invalidInput(
+            'graph requires tasksYaml (a slug directory or a tasks.yaml path)',
+            { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>' }), reason: "the graph is read from the task file." }), action },
+          );
           const format = args.format ?? 'json';
           if (format === 'mermaid' && args.module) {
-            throw invalidInput('module cannot combine with mermaid output', { action });
+            throw invalidInput(
+              'module cannot combine with mermaid output',
+              { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>', node: '<task id>' }), reason: "scope the graph to one task." }), action },
+            );
           }
           if (args.status && format !== 'mermaid') {
-            throw invalidInput('status requires mermaid output', { action });
+            throw invalidInput(
+              'status requires mermaid output',
+              { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>', format: 'mermaid' }), reason: "status styling applies to the mermaid rendering only." }), action },
+            );
           }
           const rendered = planGraph(ctx.contain(input), {
             node: args.node ?? null,
@@ -620,7 +640,7 @@ export function registerPlanTools(server) {
             limit: args.limit,
             offset: args.offset,
           });
-          const next = `archgen_plan{action:'graph',tasksYaml:'${input}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`;
+          const next = toolCall('archgen_plan', { action: 'graph', tasksYaml: input, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) });
           return withMeta(
             { ...graph, waves: waves.items },
             moreMeta({
@@ -635,7 +655,10 @@ export function registerPlanTools(server) {
           // The schema rejects unknown actions before this point; the explicit
           // default guarantees an unknown action can never fall through into
           // the wrong branch if validation is ever bypassed.
-          throw invalidInput(`unknown action '${action}'`, { action });
+          throw invalidInput(
+            `unknown action '${action}'`,
+            { ...hint({ action: toolCall('archgen_help', { topic: 'plan' }), reason: "the actions are listed there." }), action },
+          );
       }
     },
   });
@@ -647,7 +670,10 @@ export function registerPlanTools(server) {
  * @param {import('../context.mjs').Context} ctx
  */
 function requireTasksYaml(args, ctx) {
-  if (!args.tasksYaml) throw invalidInput('tasksYaml is required for this action', { action: args.action });
+  if (!args.tasksYaml) throw invalidInput(
+    'tasksYaml is required for this action',
+    { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "every action reads the task file." }), action: args.action },
+  );
   return ctx.contain(args.tasksYaml);
 }
 
@@ -663,11 +689,12 @@ function requireTasksYaml(args, ctx) {
  * @param {number} offset the offset of the NEXT slice
  */
 function nextCall(action, args, offset) {
-  const parts = [`archgen_plan{action:'${action}'`];
-  if (args.tasksYaml) parts.push(`tasksYaml:'${args.tasksYaml}'`);
-  if (args.planDir) parts.push(`planDir:'${args.planDir}'`);
-  if (args.collection) parts.push(`collection:'${args.collection}'`);
-  parts.push(`limit:${args.limit ?? 50}`);
-  parts.push(`offset:${Math.max(0, offset)}`);
-  return `${parts.join(',')}}`;
+  return toolCall('archgen_plan', {
+    action,
+    tasksYaml: args.tasksYaml,
+    planDir: args.planDir,
+    collection: args.collection,
+    limit: args.limit ?? 50,
+    offset: Math.max(0, offset),
+  });
 }

@@ -10,6 +10,8 @@
 // scope); the data lives in assets/platform-capabilities.json.
 import { existsSync } from 'node:fs';
 import { invalidInput, notFound } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * The capability row for one harness (or every harness).
@@ -57,9 +59,7 @@ export function detectHarness(registry, opts) {
   }
   if (found.length === 0) {
     throw invalidInput(
-      `no known harness detected in ${projectRoot} — follow the unknown-platform procedure (web-search the official docs, propose, get approval)`,
-      { projectRoot },
-    );
+      `no known harness detected in ${projectRoot} — follow the unknown-platform procedure (web-search the official docs, propose, get approval)`, { ...hint({ action: toolCall('archgen_setup', { action: 'harness_info' }), reason: "the harness registry names every harness the server detects." }), projectRoot });
   }
   // The registry's detection order breaks ties.
   const order = registry.detectionOrder ?? [];

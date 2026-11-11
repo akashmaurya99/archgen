@@ -7,6 +7,7 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_regist
 import { docIndex } from '../core/doc-navigator.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
+import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 const ACTION_DESC = 'index|digest|section|refs|map|validate';
@@ -48,9 +49,7 @@ function resolveCollection(action, collection, fallback) {
   if (collection === undefined || collection === null) return fallback;
   if (!allowed.includes(collection)) {
     throw invalidInput(
-      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`,
-      { action, collection, allowed },
-    );
+      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'docs' }), reason: "the collections of each action are listed there." }), action, collection, allowed });
   }
   return collection;
 }
@@ -64,9 +63,7 @@ function rejectCollection(action, collection) {
   if (collection === undefined || collection === null) return;
   const allowed = COLLECTIONS[action] ?? [];
   throw invalidInput(
-    `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`,
-    { action, collection },
-  );
+    `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'docs' }), reason: "the collections of each action are listed there." }), action, collection });
 }
 
 /**
@@ -90,18 +87,18 @@ export function registerDocTools(server) {
         case 'index': {
           resolveCollection('index', args.collection, 'files');
           const overview = docIndex(slugDir, { mode: 'overview', file: args.file ?? null, projectRoot: ctx.projectRoot });
-          return bounded('files', overview.data, args, `archgen_docs{action:'index',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`, {
+          return bounded('files', overview.data, args, toolCall('archgen_docs', { action: 'index', slugDir, limit: bound, offset: from + bound }), {
             files: (overview.data.files ?? []).length,
-            more: `archgen_docs{action:'section',slugDir:'${slugDir}',section:'<the section you need>'}`,
+            more: toolCall('archgen_docs', { action: 'section', slugDir, section: '<the section you need>' }),
           });
         }
         case 'digest': {
           resolveCollection('digest', args.collection, 'files');
           const digest = docIndex(slugDir, { mode: 'digest', file: args.file ?? null, projectRoot: ctx.projectRoot });
-          return bounded('files', digest.data, args, `archgen_docs{action:'digest',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`, {
+          return bounded('files', digest.data, args, toolCall('archgen_docs', { action: 'digest', slugDir, limit: bound, offset: from + bound }), {
             files: (digest.data.files ?? []).length,
             sectionsOmitted: digest.data.sectionsOmitted === true,
-            more: `archgen_docs{action:'section',slugDir:'${slugDir}',section:'<the section you need>'}`,
+            more: toolCall('archgen_docs', { action: 'section', slugDir, section: '<the section you need>' }),
           });
         }
         case 'validate': {
@@ -113,9 +110,8 @@ export function registerDocTools(server) {
           const collection = resolveCollection('validate', args.collection, 'broken');
           const report = docIndex(slugDir, { mode: 'validate', file: args.file ?? null, projectRoot: ctx.projectRoot });
           const data = report.data;
-          const scope = args.file ? `,file:'${args.file}'` : '';
           const cont = (c, off) =>
-            `archgen_docs{action:'validate',slugDir:'${slugDir}'${scope},collection:'${c}',limit:${bound},offset:${off}}`;
+            toolCall('archgen_docs', { action: 'validate', slugDir, file: args.file, collection: c, limit: bound, offset: off });
           const broken = project(data.broken ?? [], {
             limit: args.limit,
             offset: collection === 'broken' ? args.offset : 0,
@@ -158,30 +154,37 @@ export function registerDocTools(server) {
           );
         }
         case 'refs': {
-          if (!args.token) throw invalidInput('refs requires a token', { action: args.action });
+          if (!args.token) throw invalidInput(
+            'refs requires a token',
+            { ...hint({ action: toolCall('archgen_docs', { action: 'refs', token: '<token>' }), reason: "refs searches for one token." }), action: args.action },
+          );
           resolveCollection('refs', args.collection, 'matches');
           const refs = docIndex(slugDir, { mode: 'refs', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
           // The continuation keeps the FILE SCOPE. It used to drop it, so
           // the "next call" was a different query and returned different
           // matches.
-          const scope = args.file ? `,file:'${args.file}'` : '';
-          return bounded('matches', refs.data, args, `archgen_docs{action:'refs',slugDir:'${slugDir}',token:'${args.token}'${scope},limit:${bound},offset:${from + bound}}`, {
+          return bounded('matches', refs.data, args, toolCall('archgen_docs', { action: 'refs', slugDir, token: args.token, file: args.file, limit: bound, offset: from + bound }), {
             matches: (refs.data.matches ?? []).length,
           });
         }
         case 'map': {
-          if (!args.token) throw invalidInput('map requires a token', { action: args.action });
+          if (!args.token) throw invalidInput(
+            'map requires a token',
+            { ...hint({ action: toolCall('archgen_docs', { action: 'map', token: '<token>' }), reason: "map finds the sections that mention one token." }), action: args.action },
+          );
           resolveCollection('map', args.collection, 'sections');
           const map = docIndex(slugDir, { mode: 'map', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
-          const scope = args.file ? `,file:'${args.file}'` : '';
-          return bounded('sections', map.data, args, `archgen_docs{action:'map',slugDir:'${slugDir}',token:'${args.token}'${scope},limit:${bound},offset:${from + bound}}`, {
+          return bounded('sections', map.data, args, toolCall('archgen_docs', { action: 'map', slugDir, token: args.token, file: args.file, limit: bound, offset: from + bound }), {
             sections: (map.data.sections ?? []).length,
             matches: map.data.matchCount ?? undefined,
-            more: `archgen_docs{action:'section',slugDir:'${slugDir}',section:'<the section you need>'}`,
+            more: toolCall('archgen_docs', { action: 'section', slugDir, section: '<the section you need>' }),
           });
         }
         case 'section': {
-          if (!args.section) throw invalidInput('section requires a section path', { action: args.action });
+          if (!args.section) throw invalidInput(
+            'section requires a section path',
+            { ...hint({ action: toolCall('archgen_docs', { action: 'section', section: '<section>' }), reason: "section fetches one section." }), action: args.action },
+          );
           // `section` returns ONE section — it has no collection to window.
           rejectCollection('section', args.collection);
           const found = docIndex(slugDir, {
@@ -198,7 +201,10 @@ export function registerDocTools(server) {
           return found.data;
         }
         default:
-          throw invalidInput(`unknown action '${args.action}'`, { action: args.action });
+          throw invalidInput(
+            `unknown action '${args.action}'`,
+            { ...hint({ action: toolCall('archgen_help', { topic: 'docs' }), reason: "the actions are listed there." }), action: args.action },
+          );
       }
     },
   });
@@ -239,7 +245,7 @@ export function resolveSlugDir(ctx, explicit) {
         "archgen_plan{action:'scaffold',scope:'LARGE',slug:'<slug>'}",
       ),
       hint({
-        action: "archgen_plan{action:'scaffold',scope:'LARGE',slug:'<slug>'}",
+        action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>' }),
         reason: 'scaffold returns content; you write it.',
       }),
     );

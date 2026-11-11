@@ -12,12 +12,10 @@
 // and the graph call failed on every plan, so the reviewer ran without it.
 // Rendering it once, into the brief, removes the extra calls AND the
 // dependency.
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { docIndex } from './doc-navigator.mjs';
 import { planGraph } from './plan-grapher.mjs';
 import { verifyPlan } from './verifier.mjs';
-import { parseYaml } from './yaml.mjs';
 
 /**
  * The archgen calls each brief kind is ALLOWED to make.

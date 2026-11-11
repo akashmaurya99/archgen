@@ -13,6 +13,8 @@ import { join } from 'node:path';
 import { invalidInput } from './errors.mjs';
 import { TEMPLATES_DIR } from '../context.mjs';
 import { buildPlanProfile, scopeArtifactRules } from './plan-profile.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * Which skeleton serves which artifact.
@@ -33,7 +35,10 @@ function readTemplate(templatesDir, name, slug) {
   try {
     text = readFileSync(join(templatesDir, name), 'utf8');
   } catch {
-    throw invalidInput(`artifact template '${name}' is missing from the server assets`, { template: name });
+    throw invalidInput(
+      `artifact template '${name}' is missing from the server assets`,
+      { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), template: name },
+    );
   }
   return text
     .replaceAll('<slug>', slug)
@@ -70,9 +75,10 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   const requested = String(scopeClass ?? '').toUpperCase();
   const spec = ladder.classes?.[requested];
   if (!spec) {
-    throw invalidInput(`unknown scope class '${scopeClass}' (allowed: ${Object.keys(ladder.classes ?? {}).join('|')})`, {
-      scopeClass,
-    });
+    throw invalidInput(
+      `unknown scope class '${scopeClass}' (allowed: ${Object.keys(ladder.classes ?? {}).join('|')})`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'profile', intent: 'GREENFIELD-SYSTEM', slug: '<slug>' }), reason: "the profile names every scope class." }), scopeClass, },
+    );
   }
 
   const slug = opts.slug ?? '<slug>';

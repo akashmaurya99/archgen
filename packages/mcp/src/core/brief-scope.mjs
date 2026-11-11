@@ -25,6 +25,8 @@ import { realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
 import { invalidInput } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 // The slug is a directory name, never a path: a slug of "../../etc" must not
 // be able to steer the brief's paths out of the artifact space.
@@ -119,7 +121,10 @@ function deriveFromPlansPath(p) {
  */
 export function resolveBriefScope(opts) {
   const { tasksYaml = null, planDir = null, slug = null, projectRoot } = opts;
-  if (!projectRoot) throw invalidInput('brief scope needs a project root', {});
+  if (!projectRoot) throw invalidInput(
+    'brief scope needs a project root',
+    { ...hint({ action: toolCall('archgen_plan', { action: 'brief', kind: 'verifier', tasksYaml: '<tasks.yaml>', planDir: '<planDir>', projectRoot: '<absolute path>' }), reason: "the brief resolves every path against the project root." }) },
+  );
 
   let slugDir = null;
   let resolvedSlug = null;
@@ -132,12 +137,18 @@ export function resolveBriefScope(opts) {
       scoped = resolveSlugInput(tasksYaml, projectRoot);
     } catch (e) {
       if (e instanceof ScopeError) {
-        throw invalidInput(`tasks.yaml must live in .archgen/<slug>/ — ${tasksYaml} does not`, { file: tasksYaml });
+        throw invalidInput(
+          `tasks.yaml must live in .archgen/<slug>/ — ${tasksYaml} does not`,
+          { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>' }), reason: "the task file lives inside the artifact space." }), file: tasksYaml },
+        );
       }
       // The file may not exist yet. The path SHAPE still proves the scope.
       scoped = deriveFromTasksPath(tasksYaml);
       if (!scoped) {
-        throw invalidInput(`cannot read ${tasksYaml} (missing or unreadable)`, { file: tasksYaml });
+        throw invalidInput(
+          `cannot read ${tasksYaml} (missing or unreadable)`,
+          { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file: tasksYaml },
+        );
       }
     }
     slugDir = scoped.root;
@@ -153,7 +164,10 @@ export function resolveBriefScope(opts) {
   } else if (planDir) {
     const scoped = deriveFromPlansPath(planDir);
     if (!scoped) {
-      throw invalidInput(`plans dir must live in .archgen/<slug>/plans — ${planDir} does not`, { file: planDir });
+      throw invalidInput(
+        `plans dir must live in .archgen/<slug>/plans — ${planDir} does not`,
+        { ...hint({ action: toolCall('archgen_plan', { action: 'coverage', tasksYaml: '<tasks.yaml>', planDir: '.archgen/<slug>/plans' }), reason: "the plans directory is part of the artifact space." }), file: planDir },
+      );
     }
     slugDir = scoped.root;
     resolvedSlug = scoped.slug;
@@ -161,27 +175,32 @@ export function resolveBriefScope(opts) {
     source = 'planDir';
   } else if (slug) {
     if (!SLUG_RE.test(slug)) {
-      throw invalidInput(`slug '${slug}' is not a valid slug (lowercase, dash-separated)`, { slug });
+      throw invalidInput(
+        `slug '${slug}' is not a valid slug (lowercase, dash-separated)`,
+        { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>' }), reason: "a slug names the artifact space on disk." }), slug },
+      );
     }
     slugDir = realpathNearest(join(projectRoot, '.archgen', slug));
     resolvedSlug = slug;
     tasksFile = join(slugDir, 'tasks.yaml');
     source = 'slug';
   } else {
-    throw invalidInput('brief needs tasks.yaml, a plans dir, or a slug — pass one of them', {
-      action: 'brief',
-      missing: ['tasks.yaml', 'slug'],
-    });
+    throw invalidInput(
+      'brief needs tasks.yaml, a plans dir, or a slug — pass one of them',
+      { ...hint({ action: toolCall('archgen_plan', { action: 'brief', kind: 'verifier', tasksYaml: '<tasks.yaml>', planDir: '<planDir>' }), reason: "a brief needs the plan it briefs." }), action: 'brief',
+      missing: ['tasks.yaml', 'slug'], },
+    );
   }
 
   // The two spellings must agree. A caller that passes a tasks.yaml from one
   // slug and the name of another has made a mistake the brief would
   // otherwise paper over.
   if (slug && resolvedSlug && slug !== resolvedSlug) {
-    throw invalidInput(`slug '${slug}' does not match the artifact space '${resolvedSlug}'`, {
-      slug,
-      actual: resolvedSlug,
-    });
+    throw invalidInput(
+      `slug '${slug}' does not match the artifact space '${resolvedSlug}'`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', slug: '<slug>' }), reason: "the slug and the artifact space must be the same one." }), slug,
+      actual: resolvedSlug, },
+    );
   }
 
   return {

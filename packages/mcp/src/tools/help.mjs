@@ -9,8 +9,39 @@
 // arrives on demand.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
+import { YAML_SUBSET } from '../core/yaml-subset.mjs';
+
+/**
+ * The YAML subset briefing, rendered from the contract the tests check.
+ *
+ * One source: core/yaml-subset.mjs states each rule with an example, the
+ * test runs every example through the real parser, and this briefing and
+ * the reference section both render the same table. The agent can therefore
+ * learn the rules on demand — instead of discovering them by failing.
+ */
+function yamlBriefing() {
+  const supported = YAML_SUBSET.filter((r) => !r.expect.error);
+  const refused = YAML_SUBSET.filter((r) => r.expect.error);
+  const line = (r) => `- \`${r.id}\` — ${r.rule}`;
+  return `# archgen YAML subset
+
+\`tasks.yaml\` and \`architecture.yaml\` are parsed by a hand-rolled YAML subset. Every rule below is checked against the real parser by the test suite, so it is exactly what the server does.
+
+**Supported**
+
+${supported.map(line).join('\n')}
+
+**Refused — the parser says so, with the line**
+
+${refused.map(line).join('\n')}
+
+Two habits remove every failure this subset can cause: **quote every acceptance criterion** (\`- "the api returns the list"\`), and **quote every value that contains \`": "\`**. A flow collection splits on commas — use a block list for a value that contains one.
+
+A finding names the field and the line: \`archgen_plan{action:'validate'}\` returns every defect at once, each with a code, a message and the fix that clears it.`;
+}
 
 const TOPICS = {
+  yaml: yamlBriefing(),
   plan: `# archgen_plan
 
 Validates and analyzes a plan (tasks.yaml + plans/).
@@ -34,6 +65,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 **Reading the result**
 - \`ok\` = the CALL succeeded; plan health is \`data.valid\` (\`data.verdict\` for verify). A broken plan is still \`ok:true\`.
 - \`valid:false\` with \`errors\`: fix every error, re-run; never pass the gate with errors outstanding.
+- \`validate\` returns EVERY defect at once — each finding carries a \`code\`, the field and line it is in, and the \`fix\` that clears it. Fix them in ONE pass, then re-run; \`errorCodes\` counts them by class.
 - \`warnings\` never block; unknown keys are warnings.
 - \`verify\` ISSUES = gate failure: fix, re-verify (max 2 automatic rounds, then ask the user).
 
@@ -41,6 +73,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 - \`status\` only affects mermaid; \`module\` cannot combine with \`node\` or mermaid.
 - Whole-graph mermaid is refused above 250 nodes—scope with \`node\` or \`module\`.
 - \`profile\` takes \`modules\`/\`tasks\` as a COUNT — a number, or the list itself (its length is the count).
+- \`tasks.yaml\` is a hand-rolled YAML subset: quote every value, and never use a block scalar (\`|\`, \`>\`). A plain value MAY contain \`": "\`; an UNQUOTED \`key: value\` list item is read as a MAPPING, so quote a criterion that contains one. \`archgen_help{topic:'yaml'}\` and \`§artifact-templates/the-yaml-subset\` state the rules.
 - \`verify\` IS the mechanical floor: ownership overlap, the mirrored test tree, matrix citations, PRD requirement coverage, the recorded profile decisions, decision files, declared paths, wave labels. Run it to APPROVE BEFORE dispatching a gate agent; the gate brief then carries the floor's result, a plan snapshot, and the maps, so the agent judges instead of re-deriving. Every finding carries a stable CODE (\`issueCodes\`/\`warningCodes\` count them); \`issues\` block, \`warnings\` (e.g. one task's glob containing another's, or a rule that is NOT ENFORCED) do not. The findings list is BOUNDED but WALKABLE: \`collection\` selects which list \`offset\`/\`limit\` window (\`issues\` or \`warnings\`), and \`meta.next\` names the call that continues the collection you asked for.
 - Where an action has several collections, \`collection\` says which one the window walks, and naming a collection the action does not have is an \`INVALID_INPUT\` error — never a silently dropped argument.
 - \`scaffold\` returns each file's CONTENT and **writes nothing**—you write under \`.archgen/<slug>/\`. The profile decides which artifacts are create/reuse/omit; required files must exist and every omission needs a recorded reason.
@@ -257,7 +290,7 @@ Nine tools, one domain each. The server resolves paths, validates input, and ret
 
 const schema = z.object({
   topic: z
-    .enum(['plan', 'tasks', 'docs', 'registry', 'codegraph', 'setup', 'skills', 'refs', 'all'])
+    .enum(['plan', 'tasks', 'docs', 'registry', 'codegraph', 'setup', 'skills', 'refs', 'yaml', 'all'])
     .describe('Domain to explain.'),
   projectRoot: projectRootArg,
 });

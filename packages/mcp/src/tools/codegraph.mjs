@@ -8,6 +8,7 @@ import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, APPROVE_DESC } from './_register.mjs';
 import { loadAsset } from '../context.mjs';
 import { manageCodegraph, assertLocation } from '../core/codegraph-manager.mjs';
+import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 const ACTION_DESC = 'ensure|status|wire';
 
@@ -113,7 +114,7 @@ export function registerCodegraphTools(server) {
       // continuation, so eight harnesses were unreachable.
       const det = project(report.detected ?? [], {
         ...window,
-        next: `archgen_codegraph{action:'${args.action}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+        next: toolCall('archgen_codegraph', { action: args.action, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
       });
       shaped.detected = det.items;
       const manualTotal = shaped.wiring?.manualTotal ?? 0;
@@ -124,7 +125,7 @@ export function registerCodegraphTools(server) {
           returned: det.returned,
           next: det.next,
           more: manualTotal > shaped.wiring?.manual?.length
-            ? `archgen_codegraph{action:'${args.action}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`
+            ? toolCall('archgen_codegraph', { action: args.action, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) })
             : undefined,
           available: { harnesses: det.total, wiringManual: manualTotal },
         }),

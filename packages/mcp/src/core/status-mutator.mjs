@@ -15,9 +15,12 @@
 // ANY transition out of 'done' requires explicit intent (force): reopening
 // completed work — directly or via a failed/blocked hop — is refused without it.
 import { readFileSync } from 'node:fs';
-import { parseYaml, stringifyYaml } from './yaml.mjs';
+import { stringifyYaml } from './yaml.mjs';
+import { readParsedPlanFile } from './plan-file.mjs';
 import { conflict, invalidInput } from './errors.mjs';
 import { writeFileAtomic, withFileLock } from './fs-safety.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 
@@ -62,7 +65,10 @@ export function setTaskStatus(file, taskId, nextStatus, opts = {}) {
   const force = opts.force === true;
 
   if (!STATUSES.includes(nextStatus)) {
-    throw invalidInput(`invalid status '${nextStatus}' (allowed: ${STATUSES.join('|')})`, { status: nextStatus });
+    throw invalidInput(
+      `invalid status '${nextStatus}' (allowed: ${STATUSES.join('|')})`,
+      { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list carries every task and its status." }), status: nextStatus },
+    );
   }
 
   // The whole read-modify-write runs under an exclusive lock. Atomic writes
@@ -78,31 +84,31 @@ function mutateStatus(file, taskId, nextStatus, force) {
   try {
     raw = readFileSync(file, 'utf8');
   } catch {
-    throw invalidInput(`cannot read ${file} (missing or unreadable)`, { file });
+    throw invalidInput(
+      `cannot read ${file} (missing or unreadable)`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file },
+    );
   }
   // Detect the file's dominant line ending BEFORE parsing so the rewrite keeps
   // the author's convention instead of churning every line CRLF<->LF.
   const eol = detectEol(raw);
 
-  let data;
-  let comments;
-  try {
-    ({ data, comments } = parseYaml(raw, { filename: file }));
-  } catch (e) {
-    throw invalidInput(
-      `${file}: unparseable YAML (${String(e?.message ?? e).replace(/^[^:]*:\d+:\s*/, '')})`,
-      { file },
-    );
-  }
+  const { data, comments } = readParsedPlanFile(file);
   const tasks = data?.tasks;
-  if (!Array.isArray(tasks)) throw invalidInput(`${file}: missing 'tasks:' sequence`, { file });
+  if (!Array.isArray(tasks)) throw invalidInput(
+    `${file}: missing 'tasks:' sequence`,
+    { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file },
+  );
 
   // Ids are matched as TEXT, and — when both sides are numeric — as NUMBERS.
   // YAML reads `id: 007` as the number 7, so the id the agent holds ("007")
   // and the id the file holds (7) are different strings for the same task.
   // A strict comparison made such a task permanently unaddressable.
   const task = tasks.find((t) => t && sameId(t.id, taskId));
-  if (!task) throw invalidInput(`task '${taskId}' not found in ${file}`, { file, taskId });
+  if (!task) throw invalidInput(
+    `task '${taskId}' not found in ${file}`,
+    { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list carries every task id." }), file, taskId },
+  );
 
   const prev = task.status ?? 'pending';
   if (prev === 'done' && nextStatus !== 'done' && !force) {

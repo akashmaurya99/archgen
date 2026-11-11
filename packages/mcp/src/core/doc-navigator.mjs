@@ -32,7 +32,8 @@ import { buildGraph, GraphError } from './graph.mjs';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
 import { parseMarkdown, buildSections, findSection, anchorExists, sectionChildren, sectionOwnEnd } from './docs.mjs';
 import { cycle, invalidInput, notFound } from './errors.mjs';
-import { artifactSpaceMissing } from './guidance.mjs';
+import { artifactSpaceMissing, hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 // Overview emits at most this many files (sorted); above it, truncated:true.
 // The cap is a BACKSTOP for a caller that bypasses the tool's own paging —
@@ -93,7 +94,10 @@ export function resolveDocScope(input, projectRoot = null) {
   try {
     scoped = resolveSlugInput(input, projectRoot);
   } catch (e) {
-    if (e instanceof ScopeError) throw invalidInput(`doc-index: ${e.message}`, { input });
+    if (e instanceof ScopeError) throw invalidInput(
+      `doc-index: ${e.message}`,
+      { ...hint({ action: toolCall('archgen_docs', { action: 'index' }), reason: "the index lists every document in the artifact space." }), input },
+    );
     // The artifact space does not exist yet. Say WHY, and what to do: the
     // scaffold tool returns CONTENT and writes nothing, so the caller has to
     // write it before any artifact tool can read it.
@@ -342,7 +346,10 @@ export function docIndex(input, opts = {}) {
       hitReal = resolve(hit);
     }
     if (!hitReal.startsWith(slugDir + sep)) {
-      throw invalidInput(`file ${fileScopeArg} is outside ${input}`, { file: fileScopeArg });
+      throw invalidInput(
+        `file ${fileScopeArg} is outside ${input}`,
+        { ...hint({ action: toolCall('archgen_docs', { action: 'index', slugDir: '<artifact space>', file: '<file>' }), reason: "a document outside the artifact space is not this plan's." }), file: fileScopeArg },
+      );
     }
     fileScope = relFromSlug(hit);
   }
@@ -369,7 +376,10 @@ export function docIndex(input, opts = {}) {
     try {
       raw = readFileSync(tasksAbs, 'utf8');
     } catch {
-      throw invalidInput(`cannot read ${tasksRel} in ${input} (missing or unreadable)`, { file: tasksRel });
+      throw invalidInput(
+        `cannot read ${tasksRel} in ${input} (missing or unreadable)`,
+        { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file: tasksRel },
+      );
     }
     let taskIds = new Set();
     let tasks = null; // hoisted: the validate branch's structural gate needs it
@@ -379,12 +389,13 @@ export function docIndex(input, opts = {}) {
         ({ data } = parseYaml(raw, { filename: tasksRel }));
       } catch (e) {
         throw invalidInput(
-          `${tasksRel}: unparseable YAML (${String(e?.message ?? e).replace(/^[^:]*:\d+:\s*/, '')})`,
-          { file: tasksRel },
-        );
+          `${tasksRel}: unparseable YAML (${String(e?.message ?? e).replace(/^[^:]*:\d+:\s*/, '')})`, { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "the task file must parse before the documents can be read against it." }), file: tasksRel });
       }
       tasks = data?.tasks;
-      if (!Array.isArray(tasks)) throw invalidInput(`${tasksRel}: missing 'tasks:' sequence`, { file: tasksRel });
+      if (!Array.isArray(tasks)) throw invalidInput(
+        `${tasksRel}: missing 'tasks:' sequence`,
+        { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file: tasksRel },
+      );
       taskIds = new Set(tasks.map((t) => String(t?.id)));
     }
 
@@ -537,7 +548,10 @@ export function docIndex(input, opts = {}) {
   }
 
   if (mode === 'refs') {
-    if (!token) throw invalidInput('refs mode requires a token', {});
+    if (!token) throw invalidInput(
+      'refs mode requires a token',
+      { ...hint({ action: toolCall('archgen_docs', { action: 'refs', token: '<token>' }), reason: "refs searches for one token." }) },
+    );
     // Backlink query: any line in any markdown artifact containing the token as
     // a whole word. INTENTIONAL asymmetry vs validate: this lens lists EVERY
     // occurrence line (a "where is this mentioned" report), while validate
@@ -653,7 +667,7 @@ export function docIndex(input, opts = {}) {
               sectionsOmitted: true,
               omittedSections: omittedFiles.reduce((n, f) => n + f.truncated, 0),
               // The EXACT continuation: the file's own digest is complete.
-              hint: `scope the digest to one file for its complete outline — e.g. archgen_docs{action:'digest',file:'${omittedFiles[0].path}'}`,
+              hint: `scope the digest to one file for its complete outline — e.g. ${toolCall('archgen_docs', { action: 'digest', file: omittedFiles[0].path })}`,
             }
           : {}),
       },
@@ -661,7 +675,10 @@ export function docIndex(input, opts = {}) {
   }
 
   if (mode === 'section') {
-    if (!sectionRef) throw invalidInput('section mode requires a path', {});
+    if (!sectionRef) throw invalidInput(
+      'section mode requires a path',
+      { ...hint({ action: toolCall('archgen_docs', { action: 'section', section: '<section>' }), reason: "section fetches one section." }) },
+    );
 
     const hash = sectionRef.indexOf('#');
     const filePart = hash === -1 ? sectionRef : sectionRef.slice(0, hash);
@@ -703,7 +720,10 @@ export function docIndex(input, opts = {}) {
         hitReal = resolve(hit);
       }
       if (!hitReal.startsWith(slugDir + sep)) {
-        throw invalidInput(`section ${sectionRef} is outside ${input}`, { section: sectionRef });
+        throw invalidInput(
+          `section ${sectionRef} is outside ${input}`,
+          { ...hint({ action: toolCall('archgen_docs', { action: 'digest', slugDir: '<artifact space>' }), reason: "a section outside the artifact space is not this plan's." }), section: sectionRef },
+        );
       }
       const doc = parsedDocAt(hit);
       if (!doc) throw notFound(`cannot read section ${sectionRef} (unreadable)`, { section: sectionRef });
@@ -782,7 +802,10 @@ export function docIndex(input, opts = {}) {
   }
 
   if (mode === 'map') {
-    if (!token) throw invalidInput('map mode requires a token', {});
+    if (!token) throw invalidInput(
+      'map mode requires a token',
+      { ...hint({ action: toolCall('archgen_docs', { action: 'map', token: '<token>' }), reason: "map finds the sections that mention one token." }) },
+    );
     // Section-level retrieval: WHERE is this token mentioned?
     //
     // The sections OVERLAP — a parent section's body contains its children's —

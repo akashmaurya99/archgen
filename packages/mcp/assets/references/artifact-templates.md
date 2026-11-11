@@ -161,11 +161,44 @@ gate:
 ## Structural correctness — verifier-enforced authoring rules
 
 - **Topological waves:** wave / `parallel_group` labels match the `depends_on` order (`archgen_plan{action:'graph', format:'mermaid'}`). Dependents never precede or share a wave with prerequisites.
-- **`artifacts` ⊆ `file_ownership`:** every artifact path matches the task's ownership globs.
+- **`artifacts` ⊆ `file_ownership`:** every artifact path matches the task's ownership globs. The floor REPORTS a mismatch (`ARTIFACT_NOT_OWNED`, a warning) — it never blocks on it, so a plan that was accepted yesterday is not blocked today.
 - **Runnable verification:** repo-root-relative commands (no `../`, no `--plan .`) with exact flags, sample sizes, and thresholds.
-- **Restricted YAML subset:** block mappings/sequences and single-line flow collections only. **BANNED:** block scalars (`|` / `>`), duplicate keys, and multi-line flow collections.
+- **Restricted YAML subset:** see `## The YAML subset` below — it is a FORMAT contract, not a reviewer rule.
 - **Targeted edits:** small surgical edits or a clean full regeneration—never large multi-region patches.
 - **Both trees:** `structure:` lists the source tree and its sibling test tree. **Every path in `structure:` and every `owns[]` glob must be owned by a task** — the floor checks it, and a path with `<...>` placeholders is skipped until you fill them in.
+
+## The YAML subset — what `tasks.yaml` accepts
+
+`archgen` parses a hand-rolled YAML subset. The rules are checked against the real parser by the test suite, so they are exactly what the server does — not an approximation.
+
+**Supported**
+
+| Rule | What it means |
+|---|---|
+| `nested-mappings` | Mappings nest by two-space indentation. |
+| `block-sequence` | A block sequence item starts with `- `. |
+| `block-sequence-of-mappings` | A block sequence item may be a mapping: `- key: value`. |
+| `flow-sequence` | A flow sequence is single-line: `[a, b]`. |
+| `flow-mapping` | A flow mapping is single-line and flat: `{k: v, k2: v2}`. |
+| `quoted-scalars` | Single and double quotes are both supported, and both keep their text exactly. |
+| `comments` | A `#` starts a comment — full-line or after a value. |
+| `plain-value-with-colon` | **A plain value MAY contain `": "`** — `title: Refactor: the auth module` reads as one scalar. |
+| `quoted-item-with-colon` | **A quoted sequence item is a SCALAR**, never a mapping. Quote a criterion that contains `": "`. |
+
+**Refused — the parser says so, with the line**
+
+| Rule | What is refused |
+|---|---|
+| `unquoted-item-with-colon` | An UNQUOTED `key: value` sequence item is a MAPPING — so an unquoted criterion containing `": "` becomes an object. Quote it. |
+| `block-scalars-banned` | Block scalars (`|`, `>`). Write one line. |
+| `anchors-banned` | Anchors and tags (`&`, `*`, `!`). |
+| `duplicate-keys-banned` | Duplicate keys are refused, never silently last-wins. |
+| `tabs-banned` | Tabs in the indentation. Spaces only. |
+| `nested-flow-mapping-banned` | A flow mapping inside a flow mapping. |
+| `nested-sequence-banned` | A nested sequence item (`- - x`). |
+| `scalar-root-banned` | A bare scalar as the document. A plan is always a mapping. |
+
+Two habits remove every failure this subset can cause: **quote every acceptance criterion** (`- "the api returns the list"`), and **quote every value that contains `": "`**. A flow collection splits on commas — use a block list for a value that contains one.
 
 ## Agent workspace & artifact location — the two-tier rule
 

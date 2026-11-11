@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { invalidInput } from './core/errors.mjs';
 import { assertWithinRoot, containPath } from './core/fs-safety.mjs';
 import { GLOBAL_SKILL_ROOTS, PROJECT_SKILL_ROOTS, skillSearchPaths } from './core/skill-roots.mjs';
+import { hint } from './core/guidance.mjs';
+import { toolCall } from './core/call.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -107,12 +109,18 @@ export function loadAsset(name) {
   try {
     text = readFileSync(p, 'utf8');
   } catch {
-    throw invalidInput(`missing server asset '${name}'`, { asset: name });
+    throw invalidInput(
+      `missing server asset '${name}'`,
+      { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: name },
+    );
   }
   try {
     return JSON.parse(text);
   } catch (e) {
-    throw invalidInput(`server asset '${name}' is not valid JSON: ${e.message}`, { asset: name });
+    throw invalidInput(
+      `server asset '${name}' is not valid JSON: ${e.message}`,
+      { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: name },
+    );
   }
 }
 
@@ -159,7 +167,10 @@ export class Context {
    */
   withProjectRoot(candidate) {
     if (typeof candidate !== 'string' || candidate.trim() === '') {
-      throw invalidInput('projectRoot must be a non-empty string', { projectRoot: candidate });
+      throw invalidInput(
+        'projectRoot must be a non-empty string',
+        { ...hint({ action: toolCall('archgen_setup', { action: 'doctor', projectRoot: '<absolute path>' }), reason: "the project root is the anchor every path resolves against." }), projectRoot: candidate },
+      );
     }
     const abs = resolve(this.anchorRoot, candidate);
     assertWithinRoot(this.anchorRoot, abs);
@@ -178,7 +189,10 @@ export class Context {
    * @returns {string} absolute path
    */
   contain(p) {
-    if (typeof p !== 'string' || p.trim() === '') throw invalidInput('path must be a non-empty string', { path: p });
+    if (typeof p !== 'string' || p.trim() === '') throw invalidInput(
+      'path must be a non-empty string',
+      { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>', projectRoot: '<absolute path>' }), reason: "a path is the unit every artifact is addressed by." }), path: p },
+    );
     return containPath(this.projectRoot, p);
   }
 

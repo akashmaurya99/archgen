@@ -11,6 +11,7 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_regist
 import { loadAsset } from '../context.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
+import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import {
   matchSkills,
@@ -74,8 +75,8 @@ export function registerSkillTools(server) {
           const one = rows.find((s) => s.id === args.skillId || s.slug === args.skillId);
           if (!one) {
             throw invalidInput(
-              teach(`unknown skill '${args.skillId}'`, 'the registry lists every id and slug', "archgen_skills{action:'list'}"),
-              hint({ action: "archgen_skills{action:'list'}", reason: 'the registry is the vocabulary.' }),
+              teach(`unknown skill '${args.skillId}'`, 'the registry lists every id and slug', toolCall('archgen_skills', { action: 'list' })),
+              hint({ action: toolCall('archgen_skills', { action: 'list' }), reason: 'the registry is the vocabulary.' }),
             );
           }
           return { version: registry.version, installer: registry.installer, skill: one, skills: [one] };
@@ -83,7 +84,7 @@ export function registerSkillTools(server) {
         const p = project(rows, {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_skills{action:'list',limit:${bound},offset:${from + bound}}`,
+          next: toolCall('archgen_skills', { action: 'list', limit: bound, offset: from + bound }),
         });
         return withMeta(
           { version: registry.version, installer: registry.installer, skills: p.items },
@@ -110,7 +111,7 @@ export function registerSkillTools(server) {
           // It used to carry only the title, so a task matched on its summary
           // or its file ownership produced an EMPTY next page — the agent
           // followed the tool's own cursor and got nothing.
-          next: `archgen_skills{action:'match',title:'${args.title ?? ''}',summary:'${args.summary ?? ''}',fileOwnership:[${(args.fileOwnership ?? []).map((f) => `'${f}'`).join(',')}],limit:${bound},offset:${from + bound}}`,
+          next: toolCall('archgen_skills', { action: 'match', title: args.title ?? '', summary: args.summary ?? '', fileOwnership: args.fileOwnership ?? [], limit: bound, offset: from + bound }),
         });
         // The required and installed lists are computed from the WHOLE match
         // set, not from the page. They used to be computed from the page, so
@@ -141,7 +142,7 @@ export function registerSkillTools(server) {
         const p = project(all.installed ?? [], {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_skills{action:'installed',limit:${bound},offset:${from + bound}}`,
+          next: toolCall('archgen_skills', { action: 'installed', limit: bound, offset: from + bound }),
         });
         return withMeta(
           { installed: p.items },
@@ -151,7 +152,18 @@ export function registerSkillTools(server) {
 
       // install | load
       const wanted = args.skillId;
-      if (!wanted) throw invalidInput('skillId is required for this action', { action: args.action });
+      if (!wanted) {
+        throw invalidInput(
+          'skillId is required for this action',
+          {
+            ...hint({
+              action: toolCall('archgen_skills', { action: 'list' }),
+              reason: 'the registry lists every skill.',
+            }),
+            action: args.action,
+          },
+        );
+      }
       const entry =
         registry.skills.find((s) => s.id === wanted || s.slug === wanted) ??
         (registry.routing && (registry.routing.id === wanted || registry.routing.slug === wanted)
@@ -162,9 +174,9 @@ export function registerSkillTools(server) {
           teach(
             `unknown skill '${wanted}'`,
             'the registry lists every id and slug',
-            "archgen_skills{action:'list'}",
+            toolCall('archgen_skills', { action: 'list' }),
           ),
-          hint({ action: "archgen_skills{action:'list'}", reason: 'the registry is the vocabulary.' }),
+          hint({ action: toolCall('archgen_skills', { action: 'list' }), reason: 'the registry is the vocabulary.' }),
         );
       }
 
@@ -179,7 +191,7 @@ export function registerSkillTools(server) {
             installed: false,
             sections: [],
             searchedPaths: found.searchedPaths ?? [],
-            hint: 'not installed — install it first: archgen_skills{action:\'install\',skillId:\'' + entry.slug + '\',approve:true}',
+            hint: 'not installed — install it first: ' + toolCall('archgen_skills', { action: 'install', skillId: entry.slug, approve: true }),
           };
         }
         const content = readFileSync(found.path, 'utf8');
@@ -194,11 +206,18 @@ export function registerSkillTools(server) {
               s.slug.replace(/-{2,}/g, '-') === wanted.replace(/-{2,}/g, '-'),
           );
           if (!hit) {
-            throw invalidInput(`no section '${args.section}' in skill '${entry.slug}'`, {
-              skillId: entry.slug,
-              section: args.section,
-              available: sections.map((s) => s.slug),
-            });
+            throw invalidInput(
+              `no section '${args.section}' in skill '${entry.slug}'`,
+              {
+                ...hint({
+                  action: toolCall('archgen_skills', { action: 'digest', skillId: '<skill id>' }),
+                  reason: 'the digest is the map of the sections of a skill.',
+                }),
+                skillId: entry.slug,
+                section: args.section,
+                available: sections.map((s) => s.slug),
+              },
+            );
           }
           // The named section IS the answer. The page projection used to
           // slice it away when `offset > 0`, so the call returned an empty
@@ -215,7 +234,7 @@ export function registerSkillTools(server) {
         const p = project(sections, {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_skills{action:'digest',skillId:'${entry.slug}',limit:${bound},offset:${from + bound}}`,
+          next: toolCall('archgen_skills', { action: 'digest', skillId: entry.slug, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { skill: entry.slug, installed: true, path: found.path, scope: found.scope, sections: p.items },
@@ -224,7 +243,7 @@ export function registerSkillTools(server) {
             returned: p.returned,
             next: p.next,
             available: { sections: p.total },
-            more: `archgen_skills{action:'load',skillId:'${entry.slug}',section:'<the section you need>'}`,
+            more: toolCall('archgen_skills', { action: 'load', skillId: entry.slug, section: '<the section you need>' }),
           }),
         );
       }
@@ -258,7 +277,7 @@ export function registerSkillTools(server) {
           followInstruction: loaded.loaded ? followInstruction({ slug: entry.slug, path: loaded.path, domain: entry.domain }) : null,
           hint: loaded.loaded
             ? null
-            : 'not installed — install it first: archgen_skills{action:\'install\',skillId:\'' + entry.slug + '\',approve:true}',
+            : 'not installed — install it first: ' + toolCall('archgen_skills', { action: 'install', skillId: entry.slug, approve: true }),
         };
         // Where the tool looked matters only when it found nothing.
         if (!loaded.loaded) result.searchedPaths = loaded.searchedPaths ?? [];
@@ -273,9 +292,7 @@ export function registerSkillTools(server) {
             sections.find((s) => s.slug.replace(/-{2,}/g, '-') === wanted.replace(/-{2,}/g, '-'));
           if (!hit) {
             throw invalidInput(
-              `no section '${args.section}' in skill '${entry.slug}'`,
-              { skillId: entry.slug, section: args.section, available: sections.map((s) => s.slug) },
-            );
+              `no section '${args.section}' in skill '${entry.slug}'`, { ...hint({ action: toolCall('archgen_skills', { action: 'digest', skillId: '<skill id>' }), reason: "the digest is the map of a skill's sections." }), skillId: entry.slug, section: args.section, available: sections.map((s) => s.slug) });
           }
           const body = loaded.content.split('\n').slice(hit.line - 1, hit.endLine).join('\n');
           return { ...result, section: hit.slug, sectionTitle: hit.title, sectionText: body };
@@ -283,7 +300,7 @@ export function registerSkillTools(server) {
         const p = project(result.sections, {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_skills{action:'load',skillId:'${entry.slug}',limit:${bound},offset:${from + bound}}`,
+          next: toolCall('archgen_skills', { action: 'load', skillId: entry.slug, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { ...result, sections: p.items },
@@ -292,7 +309,7 @@ export function registerSkillTools(server) {
             returned: p.returned,
             next: p.next,
             available: { sections: p.total },
-            more: `archgen_skills{action:'load',skillId:'${entry.slug}',section:'<the section you need>'}`,
+            more: toolCall('archgen_skills', { action: 'load', skillId: entry.slug, section: '<the section you need>' }),
           }),
         );
       }

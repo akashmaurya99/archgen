@@ -8,11 +8,11 @@
 // plan's current state.
 //
 // The file is the primary re-entry artifact after any context compaction.
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { parseYaml } from './yaml.mjs';
-import { invalidInput } from './errors.mjs';
+import { readParsedPlanFile } from './plan-file.mjs';
 import { writeFileAtomic } from './fs-safety.mjs';
+import { ownedPaths } from './graph.mjs';
 
 /**
  * Build the resume snapshot body from a parsed plan.
@@ -69,7 +69,7 @@ export function renderResume(slug, tasks, waves) {
       lines.push(`- **${t.id}** — ${t.title ?? ''}`);
       lines.push(`  - status: ${statusOf(t)}`);
       lines.push(`  - owns: ${sections}`);
-      lines.push(`  - files: ${(byId.get(t.id)?.file_ownership ?? []).join(', ') || '—'}`);
+      lines.push(`  - files: ${ownedPaths(byId.get(t.id)).join(', ') || '—'}`);
     }
   }
   lines.push('');
@@ -85,18 +85,7 @@ export function renderResume(slug, tasks, waves) {
  */
 export function writeResumeSnapshot(slugDir, waves) {
   const tasksFile = join(slugDir, 'tasks.yaml');
-  let raw;
-  try {
-    raw = readFileSync(tasksFile, 'utf8');
-  } catch {
-    throw invalidInput(`cannot read ${tasksFile} (missing or unreadable)`, { file: tasksFile });
-  }
-  let data;
-  try {
-    ({ data } = parseYaml(raw, { filename: tasksFile }));
-  } catch (e) {
-    throw invalidInput(String(e?.message ?? e), { file: tasksFile });
-  }
+  const { data } = readParsedPlanFile(tasksFile);
   const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
   const slug = slugDir.split(/[\\/]/).filter(Boolean).pop() ?? 'unknown';
 

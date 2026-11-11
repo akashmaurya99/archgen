@@ -4,9 +4,11 @@
 // Extracted verbatim from skill/scripts/impact.mjs (deleted in the MCP-first
 // cutover). Output shape is byte-identical to the old script's stdout JSON:
 //   { direct: [taskIds], transitive: [taskIds], artifacts: [paths] }
-import { readFileSync } from 'node:fs';
-import { parseYaml } from './yaml.mjs';
+import { readParsedPlanFile } from './plan-file.mjs';
 import { invalidInput, notFound } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { ownedPaths } from './graph.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * Compute the blast radius of a task id or artifact path.
@@ -16,22 +18,12 @@ import { invalidInput, notFound } from './errors.mjs';
  * @returns {{direct: string[], transitive: string[], artifacts: string[]}}
  */
 export function analyzeImpact(file, target) {
-  let raw;
-  try {
-    raw = readFileSync(file, 'utf8');
-  } catch {
-    throw invalidInput(`cannot read ${file} (missing or unreadable)`, { file });
-  }
-  let data;
-  try {
-    ({ data } = parseYaml(raw, { filename: file }));
-  } catch (e) {
-    throw invalidInput(`${file}: unparseable YAML (${String(e?.message ?? e).replace(/^[^:]*:\d+:\s*/, '')})`, {
-      file,
-    });
-  }
+  const { data } = readParsedPlanFile(file);
   const tasks = data?.tasks;
-  if (!Array.isArray(tasks)) throw invalidInput(`${file}: missing 'tasks:' sequence`, { file });
+  if (!Array.isArray(tasks)) throw invalidInput(
+    `${file}: missing 'tasks:' sequence`,
+    { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "validate reports what the task file is missing." }), file },
+  );
 
   // Resolve target to a seed set of task ids.
   const byId = new Map(tasks.map((t) => [t.id, t]));
@@ -41,7 +33,7 @@ export function analyzeImpact(file, target) {
   } else {
     // Artifact-path mode: any task whose artifacts[] or file_ownership[] covers it.
     seeds = tasks
-      .filter((t) => (t.artifacts ?? []).includes(target) || (t.file_ownership ?? []).includes(target))
+      .filter((t) => (t.artifacts ?? []).includes(target) || ownedPaths(t).includes(target))
       .map((t) => t.id);
     if (seeds.length === 0) {
       throw notFound(`no task claims '${target}' (not an id, artifact, or ownership glob)`, { target });

@@ -1,8 +1,10 @@
 # comment lines are preserved by archgen_tasks{set_status}
+# Every value below is QUOTED. A quoted value is always a string; an unquoted
+# one that contains ": " becomes a mapping, and a flow list splits on commas.
 tasks:
   # Wave 1 — foundation
   - id: TASK-01
-    title: <outcome this task delivers>
+    title: "<outcome this task delivers>"
     depends_on: []
     # <source-root> and <test-root> are the DECLARED roots from
     # architecture.yaml toolchain. test_root is the root of the tree that
@@ -15,7 +17,7 @@ tasks:
 
   # Wave 2 — feature
   - id: TASK-02
-    title: <feature behavior>
+    title: "<feature behavior>"
     depends_on: [TASK-01]
     file_ownership: ["<source-root>/<feature>/**", "<test-root>/<feature>/**"]
     acceptance:
@@ -24,7 +26,7 @@ tasks:
 
   # Final integration — its own wave, so its parallel_group matches
   - id: TASK-03
-    title: <integration outcome>
+    title: "<integration outcome>"
     depends_on: [TASK-02]
     parallel_group: wave-3
     file_ownership: ["<source-root>/<integration>/**", "<test-root>/integration/<feature>/**", "docs/<feature>.md"]
@@ -36,13 +38,13 @@ tasks:
   # Its paths are DISJOINT from TASK-02's — a later task must never own a
   # file inside another task's glob.
   - id: TASK-04
-    title: <failure-sensitive operation with retry>
+    title: "<failure-sensitive operation with retry>"
     depends_on: [TASK-03]
     parallel_group: wave-4
     file_ownership:
-      - <source-root>/<recovery>/<implementation file>          # per naming_conventions.dir_layout
-      - <test-root>/<recovery>/<mirrored test file>             # the mirrored test tree
-      - docs/<feature>-recovery.md
+      - "<source-root>/<recovery>/<implementation file>"          # per naming_conventions.dir_layout
+      - "<test-root>/<recovery>/<mirrored test file>"             # the mirrored test tree
+      - "docs/<feature>-recovery.md"
     artifacts: ["docs/<feature>-recovery.md"]
     acceptance:
       - "duplicate submission performs the operation once (covers E1)"

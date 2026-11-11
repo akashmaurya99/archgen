@@ -12,31 +12,17 @@
 // usable at scale: fixes can be grouped by code, tests assert behaviour
 // instead of prose, and CI can count classes ("7 MIRROR_MISSING, 4
 // MATRIX_CLAIM_MISMATCH") instead of counting sentences.
-import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { parseYaml } from './yaml.mjs';
-import { buildGraph, findCycle, computeWaves, findOwnershipConflict, GraphError } from './graph.mjs';
+import { buildGraph, computeWaves, findOwnershipConflict, GraphError } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { auditPlan } from './plan-audit.mjs';
+import { validateTasks } from './validator.mjs';
+import { readPlanFile } from './plan-file.mjs';
+import { formatFindings } from './diagnostics.mjs';
+import { issueCode, graphIssueCode } from './codes.mjs';
 import { invalidInput } from './errors.mjs';
-
-/** The codes the floor reports for the checks that predate the audit. */
-const BASE_CODES = [
-  [/^unparseable tasks\.yaml/, 'UNPARSEABLE'],
-  [/^missing tasks: sequence/, 'NO_TASKS'],
-  [/^dependency cycle:/, 'CYCLE'],
-  [/^dangling depends_on reference:/, 'DANGLING_DEP'],
-  [/duplicate task id:/, 'DUPLICATE_TASK_ID'],
-  [/has no acceptance criteria/, 'NO_ACCEPTANCE'],
-  [/has empty or whitespace-only acceptance/, 'NO_ACCEPTANCE'],
-  [/has empty file_ownership/, 'EMPTY_OWNERSHIP'],
-  [/^same-wave ownership overlap:/, 'OWNERSHIP_OVERLAP'],
-  [/is not mentioned in any plan file/, 'PLAN_TASK_COVERAGE'],
-  [/^plan references unknown task id/, 'UNKNOWN_TASK_ID'],
-  [/^plans dir not found/, 'NO_PLAN_DIR'],
-  [/^cannot read/, 'IO_ERROR'],
-  [/^internal check failure/, 'INTERNAL'],
-];
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * The stable code for a finding.
@@ -45,13 +31,7 @@ const BASE_CODES = [
  * checks are classified by their message shape. A message that matches
  * nothing gets `PLAN_ISSUE` — never a silent pass.
  */
-export function issueCode(message) {
-  const text = String(message ?? '');
-  const explicit = /^([A-Z][A-Z0-9_]{2,}):\s/.exec(text);
-  if (explicit) return explicit[1];
-  for (const [pattern, code] of BASE_CODES) if (pattern.test(text)) return code;
-  return 'PLAN_ISSUE';
-}
+export { issueCode };
 
 /**
  * The most findings one answer carries.
@@ -113,12 +93,15 @@ export function verifyPlan(file, planDir, opts = {}) {
   let lastAudit = null;
 
   let data;
-  try {
-    ({ data } = parseYaml(readFileSync(file, 'utf8'), { filename: file }));
-  } catch (e) {
+  let provenance = new Map();
+  const read = readPlanFile(file);
+  if (read.findings.length) {
+    const first = read.findings[0];
     return {
       verdict: 'ISSUES',
-      issues: [`UNPARSEABLE: unparseable tasks.yaml: ${e.message}`],
+      // The same finding the validator reports, rendered as a line: the code,
+      // where it is, and the fix that clears it.
+      issues: [`UNPARSEABLE: ${first.message}${first.fix ? ` — ${first.fix}` : ''}`],
       warnings: [],
       issueCodes: { UNPARSEABLE: 1 },
       warningCodes: {},
@@ -129,38 +112,30 @@ export function verifyPlan(file, planDir, opts = {}) {
       omitted: { issues: 0, warnings: 0 },
     };
   }
-  const tasks = data?.tasks;
-  if (!Array.isArray(tasks)) issues.push('NO_TASKS: missing tasks: sequence');
+  data = read.data;
+  provenance = read.provenance;
 
-  if (issues.length === 0) {
+  // The task file's own rules are the VALIDATOR's — one implementation, so
+  // `validate` and `verify` cannot disagree about what a valid plan is.
+  const checked = validateTasks(data, { provenance });
+  const tasks = checked.tasks;
+  issues.push(...formatFindings(checked.errors));
+  warnings.push(...formatFindings(checked.warnings));
+
+  // The remaining checks need a graph. A plan whose graph does not build has
+  // no waves, no ownership map and no coverage — but a plan that merely lacks
+  // acceptance criteria still has all three, so the gate does not skip them.
+  if (checked.graphOk) {
     try {
       const { byId, prerequisites } = buildGraph(tasks);
-      const cycle = findCycle(prerequisites);
-      if (cycle.length) issues.push(`CYCLE: dependency cycle: ${cycle.join(' -> ')}`);
 
-      // Every task must carry acceptance criteria — the verifier refuses work
-      // that cannot be objectively checked later. Entries must be non-blank
-      // strings: whitespace-only or empty entries are placeholders, not criteria.
-      for (const t of tasks) {
-        if (!Array.isArray(t.acceptance) || t.acceptance.length === 0) {
-          issues.push(`NO_ACCEPTANCE: task '${t.id}' has no acceptance criteria`);
-        } else if (t.acceptance.some((a) => typeof a !== 'string' || a.trim() === '')) {
-          issues.push(`NO_ACCEPTANCE: task '${t.id}' has empty or whitespace-only acceptance criteria`);
-        }
-        if (!Array.isArray(t.file_ownership) || t.file_ownership.length === 0) {
-          issues.push(`EMPTY_OWNERSHIP: task '${t.id}' has empty file_ownership`);
-        }
-      }
-
-      if (!issues.length) {
-        const { waves } = computeWaves(byId, prerequisites);
-        for (const wave of waves) {
-          const conflict = findOwnershipConflict(wave);
-          if (conflict) {
-            issues.push(
-              `OWNERSHIP_OVERLAP: same-wave ownership overlap: '${conflict.glob}' on '${conflict.a}' and '${conflict.b}'`,
-            );
-          }
+      const { waves } = computeWaves(byId, prerequisites);
+      for (const wave of waves) {
+        const conflict = findOwnershipConflict(wave);
+        if (conflict) {
+          issues.push(
+            `OWNERSHIP_OVERLAP: same-wave ownership overlap: '${conflict.glob}' on '${conflict.a}' and '${conflict.b}'`,
+          );
         }
       }
 
@@ -174,7 +149,7 @@ export function verifyPlan(file, planDir, opts = {}) {
       issues.push(...audit.issues);
       warnings.push(...audit.warnings);
     } catch (e) {
-      if (e instanceof GraphError) issues.push(`CYCLE: ${e.message}`);
+      if (e instanceof GraphError) issues.push(`${graphIssueCode(e.message)}: ${e.message}`);
       else issues.push(`INTERNAL: internal check failure: ${e?.message ?? String(e)}`);
     }
   }
@@ -242,20 +217,20 @@ export function planCoverage(file, planDir, opts = {}) {
   const limit = Number.isInteger(opts.limit) && opts.limit > 0 ? Math.min(opts.limit, MAX_FINDINGS) : MAX_FINDINGS;
   const collection = String(opts.collection ?? 'tasks');
 
-  let data;
-  try {
-    ({ data } = parseYaml(readFileSync(file, 'utf8'), { filename: file }));
-  } catch (e) {
+  const read = readPlanFile(file);
+  if (read.findings.length) {
+    const first = read.findings[0];
     return {
       tasks: { items: [], total: 0, coveredTotal: 0, uncoveredTotal: 0, omitted: 0, offset: 0 },
       covered: { items: [], total: 0, omitted: 0, offset: 0 },
       uncovered: { items: [], total: 0, omitted: 0, offset: 0 },
-      findings: { items: [`UNPARSEABLE: unparseable tasks.yaml: ${e.message}`], total: 1, omitted: 0, offset: 0 },
+      findings: { items: [`UNPARSEABLE: ${first.message}${first.fix ? ` — ${first.fix}` : ''}`], total: 1, omitted: 0, offset: 0 },
       requirements: { total: 0, covered: 0, uncovered: [], uncoveredTotal: 0, omitted: 0, offset: 0 },
       edgeCases: { total: 0, linked: 0, unlinked: [], unlinkedTotal: 0, omitted: 0, offset: 0 },
       profileRecorded: false,
     };
   }
+  const data = read.data;
   const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
   const { findings, referenced, mentionedInTasks } = checkPlanCoverage(planDir, tasks);
   const covered = [];
@@ -320,10 +295,11 @@ export function planCoverage(file, planDir, opts = {}) {
     const isCovered = covered.includes(wanted);
     const isUncovered = uncovered.includes(wanted);
     if (!isCovered && !isUncovered) {
-      throw invalidInput(`no task '${wanted}' in ${file}`, {
-        taskId: wanted,
-        available: [...covered, ...uncovered],
-      });
+      throw invalidInput(
+        `no task '${wanted}' in ${file}`,
+        { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list carries every task id." }), taskId: wanted,
+        available: [...covered, ...uncovered], },
+      );
     }
     // The findings must be ABOUT this task. A substring test matched
     // `T10`'s finding when the caller asked about `T1` — the answer was
