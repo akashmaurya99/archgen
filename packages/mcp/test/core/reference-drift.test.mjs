@@ -57,9 +57,19 @@ test('the depth ladder and artifact-templates.md agree on the edge-case minimum'
   // whole point of the gate: the reference and the ladder can never disagree
   // about how many edge cases a MEDIUM task needs.
   assert.match(ref, /Edge cases[^\n]*\b3\b/, 'the reference must state the MEDIUM minimum');
-  assert.equal(ladder.classes.MEDIUM.minEdgeCasesPerTask, 3);
-  assert.ok(ladder.classes.LARGE.minEdgeCasesPerTask >= 3);
-  assert.equal(ladder.classes.SMALL.minEdgeCasesPerTask, 0);
+  assert.equal(ladder.profile.depthBudgets.MEDIUM.edgeCasesPerTask, 3);
+  assert.ok(ladder.profile.depthBudgets.LARGE.edgeCasesPerTask >= 3);
+  assert.equal(ladder.profile.depthBudgets.SMALL.edgeCasesPerTask, 0);
+  // ONE owner for the edge-case ceiling. The class used to carry a second
+  // copy, and the two disagreed at LARGE (3 against 7) — one payload, two
+  // different answers.
+  for (const cls of Object.keys(ladder.classes)) {
+    assert.equal(
+      ladder.classes[cls].minEdgeCasesPerTask,
+      undefined,
+      `${cls} must not carry a second edge-case budget — profile.depthBudgets owns it`,
+    );
+  }
 });
 
 test('the depth ladder and artifact-templates.md agree on the class names', () => {

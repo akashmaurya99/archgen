@@ -254,8 +254,7 @@ export function auditPlan({ slugDir, tasks }) {
               `the profile marks '${path}' as reuse of '${host}', but that file does not exist`,
             ),
           );
-        }
-        // A REUSE decision means "the host owns this fact — do not write a
+        }        // A REUSE decision means "the host owns this fact — do not write a
         // copy". A generated copy of a host document is the defect the
         // artifact-necessity mechanism exists to prevent.
         const present = presentIn(family, path);
@@ -311,8 +310,8 @@ export function auditPlan({ slugDir, tasks }) {
   } else {
     for (const t of tasks) {
       const id = String(t?.id ?? '');
-      for (const g of t?.file_ownership ?? []) {
-        const glob = String(g);
+      for (const raw of t?.file_ownership ?? []) {
+        const glob = normalizeGlob(raw);
         if (glob !== roots.sourceRoot && !glob.startsWith(`${roots.sourceRoot}/`)) continue;
         // THE MIRROR: the path under the source root, preserved, under the
         // DECLARED test root. `src/features/catalog/api/x.ts` with
@@ -326,13 +325,13 @@ export function auditPlan({ slugDir, tasks }) {
         const dir = under.split('/').slice(0, -1).join('/');
         const mirroredDir = dir ? `${roots.testRoot}/${dir}` : roots.testRoot;
         const covered = tasks.some((o) =>
-          (o?.file_ownership ?? []).some((og) => globsMayOverlap(og, `${mirroredDir}/**`)),
+          (o?.file_ownership ?? []).some((og) => globsMayOverlap(normalizeGlob(og), `${mirroredDir}/**`)),
         );
         if (!covered) {
           issues.push(
             finding(
               'MIRROR_MISSING',
-              `task '${id}' owns '${g}' but no task owns the mirrored test path '${mirroredDir}/**' ` +
+              `task '${id}' owns '${glob}' but no task owns the mirrored test path '${mirroredDir}/**' ` +
                 '(code-standards: the test tree is a sibling and mirrors the source path under the declared test_root)',
             ),
           );
@@ -579,6 +578,11 @@ export function auditPlan({ slugDir, tasks }) {
     if (!w.reason.trim()) missing.push('reason');
     if (!w.approvedBy.trim()) missing.push('approved_by');
     if (!w.approvedAt.trim()) missing.push('approved_at');
+    // A BARE WILDCARD is not a scope — it is a blanket. `scope: ["*"]`
+    // matched every subject of every finding, so one line in the ledger
+    // approved the entire plan.
+    const blanket = w.scope.filter((s) => /^\*+$/.test(String(s).trim()));
+    if (blanket.length) missing.push(`a scope of ${blanket.join(', ')} (a bare wildcard approves everything)`);
     if (missing.length) {
       waiverIssues.push(
         finding(
@@ -865,9 +869,31 @@ export function sourceAndTestRoots(architecture) {
   const tst = typeof tool.test_root === 'string' ? tool.test_root.trim() : '';
   const usable = (v) => Boolean(v) && !v.startsWith('<') && !v.includes('<');
   if (usable(src) && usable(tst)) {
-    return { enforced: true, sourceRoot: src.replace(/\/+$/, ''), testRoot: tst.replace(/\/+$/, '') };
+    return {
+      enforced: true,
+      sourceRoot: normalizeRoot(src),
+      testRoot: normalizeRoot(tst),
+    };
   }
   return { enforced: false, sourceRoot: null, testRoot: null };
+}
+
+/**
+ * A declared root, normalised.
+ *
+ * `./src` and `src` are the same root. The floor compared the declared root
+ * against an ownership glob literally, so a plan that declared `./src` — or
+ * owned `./src/core/**` — silently skipped the mirrored-tree rule and still
+ * reached APPROVE. A rule that cannot run must say so, never weaken
+ * silently.
+ */
+function normalizeRoot(root) {
+  return String(root).replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
+/** An ownership glob, normalised the same way a root is. */
+function normalizeGlob(glob) {
+  return String(glob).replace(/^\.\//, '');
 }
 
 /**
@@ -944,11 +970,20 @@ function projectRootOf(slugDir) {
   return resolve(parent, '..');
 }
 
-/** An artifact path relative to the artifact space, whatever form it was recorded in. */
+/**
+ * An artifact path relative to the artifact space, whatever form it was
+ * recorded in.
+ *
+ * The `.archgen/<slug>/` prefix is stripped only when it is the PATH'S OWN
+ * prefix. It used to be stripped from anywhere in the string, so a
+ * repository path that merely CONTAINED an `.archgen/` segment
+ * (`packages/app/.archgen/config.md`) was rewritten to `config.md` and
+ * reported as missing.
+ */
 function normalizeArtifactPath(path) {
   const p = String(path).replaceAll('\\', '/').replace(/^\.\//, '');
-  const at = p.indexOf('.archgen/');
-  if (at >= 0) return p.slice(at + '.archgen/'.length).replace(/^[^/]+\//, '');
+  const anchored = /^\.archgen\/[^/]+\//.exec(p);
+  if (anchored) return p.slice(anchored[0].length);
   return p;
 }
 
@@ -1065,6 +1100,9 @@ export function waiverCovers(waiver, issue) {
       continue;
     }
     if (s.includes('/') || s.includes('*')) {
+      // A BARE WILDCARD is not a scope — it is a blanket. `scope: ["*"]`
+      // matched every subject of every finding.
+      if (/^\*+$/.test(s)) continue;
       if (subjects.some((subject) => matchesFamily(s, subject))) return true;
       continue;
     }
@@ -1081,17 +1119,26 @@ export function waiverCovers(waiver, issue) {
  * The SUBJECTS a finding names — the things a waiver can scope.
  *
  *   - the paths it quotes:  owns 'src/core/**'
- *   - the task#acceptance refs it cites:  cites T9#1
+ *   - the task#acceptance refs it is ABOUT:  cites T19#1
  *
  * The prose between them is NOT a subject: a waiver scoped to a word that
  * happens to appear in a sentence must not approve the finding.
+ *
+ * The DETAIL CLAUSE is excluded too. A finding reads "… cites T19#1, but
+ * that acceptance does not claim 'E1' — the acceptance that claims it is
+ * T1#1." The finding is about T19#1; T1#1 is the detail. A waiver scoped to
+ * T1#1 must not silence it.
  *
  * @param {string} text the finding text
  * @returns {string[]}
  */
 export function findingSubjects(text) {
-  const quoted = [...String(text).matchAll(/'([^']+)'/g)].map((m) => m[1]);
-  const refs = [...String(text).matchAll(/(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9._-]*#\d+)(?![0-9])/g)].map(
+  const raw = String(text);
+  // The DETAIL clause — everything from the em dash on — explains, it does
+  // not identify.
+  const subject = raw.split(/\s+—\s+/)[0];
+  const quoted = [...subject.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  const refs = [...subject.matchAll(/(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9._-]*#\d+)(?![0-9])/g)].map(
     (m) => m[1],
   );
   return [...new Set([...quoted, ...refs])];

@@ -1,3 +1,72 @@
+## [0.1.6] - 2026-11-11
+
+A contract release: the reference rule is the skill's path rule, every
+continuation keeps its scope, and every answer describes the collection it
+actually returned.
+
+**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.**
+
+| Artifact | Published as | Tag |
+|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.6` |
+| `packages/cli` | `archgen-skill` | `vcli-0.1.6` |
+
+### Fixed — references resolve by the skill's path rule
+
+`archgen_docs{action:'validate'}` resolved EVERY path-like reference against
+the referencing document and required it to land inside the artifact space.
+The skill mandates **repo-root-relative paths** — and the profile hands out
+exactly that form (`.archgen/<slug>/architecture.yaml`) — so the mandated
+form was reported broken, in the very file the profile told the agent to
+write it in.
+
+The rule is now the skill's rule:
+
+- a target starting with `./` or `../` is relative to the **document's own
+  directory**, and must land inside the artifact space;
+- any other target is relative to the **project root**;
+- a project-root path that names an artifact of the artifact space must
+  exist;
+- a project-root path **outside** it is a repository path or an **output
+  declaration** — a file the plan will create — and is not broken for not
+  existing yet.
+
+Each finding now carries the rule it was judged by, so the repair loop needs
+no source reading.
+
+### Fixed — every continuation keeps its scope, and every answer describes itself
+
+- `archgen_codegraph` reported the PAGE as the total and published no
+  continuation: the tail of the detected harnesses was unreachable.
+- `archgen_setup{action:'harnesses'}` dropped `location` from its cursor, so
+  the next page listed the global config path the caller had excluded.
+- `archgen_plan{action:'verify'}` always described the ISSUES collection —
+  even when the warnings were asked for — and its two collections had
+  different window lengths, so one offset could not walk both.
+- `archgen_plan{action:'scaffold'}`'s one-file cursor dropped the profile
+  inputs, re-entering class mode and refusing the artifacts the profile had
+  marked `create`.
+- `collection` was silently ignored on every action that has no such
+  collection. It is now a typed error everywhere.
+- `archgen_tasks{action:'snapshot'}` answered `INTERNAL` for a missing file.
+
+### Fixed — the floor judges the plan, not the spelling
+
+- The mirrored-tree rule silently skipped a plan whose roots or globs were
+  written `./src` — so it could reach `APPROVE` with no test tree at all.
+- A waiver could silence an unrelated finding through a finding's DETAIL
+  clause, and a bare `*` scope approved everything. Both are refused.
+- A `reuse` host path that merely CONTAINED an `.archgen/` segment was
+  rewritten and reported missing.
+- LARGE carried two different "edge cases per task" numbers — one payload,
+  two answers. The depth budget is now the only owner.
+
+### Changed — the always-on ceiling
+
+The reference rule and the collection contract live in the always-on kernel
+and in the tool briefings. The always-on total moves **13,132 tokens**; the
+documented CI ceiling stays **13,800**, keeping its ~5% margin.
+
 ## [0.1.5] - 2026-11-11
 
 A small correctness release: the scope profile accepts the evidence an agent

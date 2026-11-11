@@ -37,7 +37,6 @@ const COLLECTIONS = {
   coverage: ['tasks', 'covered', 'uncovered', 'findings', 'requirements', 'edgeCases'],
   impact: ['direct', 'transitive', 'artifacts'],
 };
-
 /**
  * The collection a caller named, validated against the action's own set.
  *
@@ -55,11 +54,31 @@ function resolveCollection(action, collection, fallback) {
   if (collection === undefined || collection === null) return fallback;
   if (!allowed.includes(collection)) {
     throw invalidInput(
-      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|')})`,
+      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`,
       { action, collection, allowed },
     );
   }
   return collection;
+}
+
+/**
+ * Reject `collection` on an action that has NO collection.
+ *
+ * The argument is shared across actions, so a caller could name a collection
+ * on an action that ignores it — and the call silently succeeded with the
+ * argument dropped. A named collection is a request; an impossible one is an
+ * error, never a quiet no-op.
+ *
+ * @param {string} action
+ * @param {string|undefined} collection
+ */
+function rejectCollection(action, collection) {
+  if (collection === undefined || collection === null) return;
+  const allowed = COLLECTIONS[action] ?? [];
+  throw invalidInput(
+    `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`,
+    { action, collection },
+  );
 }
 
 const schema = z.object({
@@ -209,8 +228,12 @@ export function registerPlanTools(server) {
           return withMeta(
             out,
             moreMeta({
-              total: out.issuesTotal,
-              returned: out.issues.length,
+              // The SELECTED collection. It always described the issues, so
+              // `verify{collection:'warnings'}` reported the ISSUES total
+              // over the warnings' payload — and an empty warnings window
+              // with a non-zero total read as "the warnings are clean".
+              total: collection === 'warnings' ? out.warningsTotal : out.issuesTotal,
+              returned: collection === 'warnings' ? out.warnings.length : out.issues.length,
               next,
               more,
               available: { issues: out.issuesTotal, warnings: out.warningsTotal },
@@ -403,6 +426,7 @@ export function registerPlanTools(server) {
           );
         }
         case 'profile': {
+          rejectCollection('profile', args.collection);
           if (!args.intent) {
             throw invalidInput('profile requires intent (GREENFIELD-SYSTEM | GREENFIELD-MODULE | BROWNFIELD-FEATURE | BROWNFIELD-CHANGE)', {
               action,
@@ -417,6 +441,7 @@ export function registerPlanTools(server) {
           });
         }
         case 'scaffold': {
+          rejectCollection('scaffold', args.collection);
           if (!args.scope) throw invalidInput('scaffold requires scope (SMALL | MEDIUM | LARGE)', { action });
           const built = buildScaffold(loadAsset('depth-ladder.json'), args.scope, {
             slug: args.slug ?? null,
@@ -495,17 +520,31 @@ export function registerPlanTools(server) {
               nextStep: `Write ${artifact?.path ?? wanted} from the skeleton above, then archgen_plan{action:'validate'}.`,
             };
           }
+          // The one-file cursor carries the SAME inputs the call did, and the
+          // class the scaffold SERVED. It used to carry only the requested
+          // scope, so following it re-entered CLASS mode — and class mode
+          // refused the very artifacts the profile had marked `create`.
+          const servedScope = built.scopeClass ?? args.scope;
+          const sameInputs = [
+            `scope:'${servedScope}'`,
+            args.intent ? `intent:'${args.intent}'` : null,
+            args.signals?.length ? `signals:[${args.signals.map((s) => `'${s}'`).join(',')}]` : null,
+            args.modules !== undefined ? `modules:${JSON.stringify(args.modules)}` : null,
+            args.tasks !== undefined ? `tasks:${JSON.stringify(args.tasks)}` : null,
+            `slug:'${args.slug ?? '<slug>'}'`,
+          ].filter(Boolean);
           return withMeta(
             built,
             moreMeta({
               total: (built.writeThese ?? []).length,
               returned: (built.writeThese ?? []).length,
               available: { files: (built.writeThese ?? []).length },
-              more: `archgen_plan{action:'scaffold',scope:'${args.scope}',slug:'${args.slug ?? '<slug>'}',file:'<one file>'}`,
+              more: `archgen_plan{action:'scaffold',${sameInputs.join(',')},file:'<one file>'}`,
             }),
           );
         }
         case 'brief': {
+          rejectCollection('brief', args.collection);
           if (!args.kind) throw invalidInput('brief requires kind', { action });
           // The artifact space is resolved from whatever the caller named:
           // the tasks.yaml it already holds, the plans dir, or the slug alone.
@@ -550,6 +589,7 @@ export function registerPlanTools(server) {
           return { kind, brief: `${renderBriefContext(briefContext)}\n${brief}`, scope };
         }
         case 'graph': {
+          rejectCollection('graph', args.collection);
           const input = args.tasksYaml ?? args.planDir;
           if (!input) throw invalidInput('graph requires tasksYaml (a slug directory or a tasks.yaml path)', { action });
           const format = args.format ?? 'json';

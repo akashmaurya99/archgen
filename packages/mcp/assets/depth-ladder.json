@@ -169,7 +169,6 @@
       "label": "SMALL — add or touch a few things",
       "intentDefaults": ["BROWNFIELD-CHANGE"],
       "planSections": ["Profile", "Intent", "Tasks", "Risks"],
-      "minEdgeCasesPerTask": 0,
       "requires": [],
       "forbids": ["docs/prd.md", "architecture.yaml", "decisions/", "docs/<module>.md"],
       "notes": [
@@ -181,7 +180,6 @@
       "label": "MEDIUM — a real feature with real risk",
       "intentDefaults": ["GREENFIELD-MODULE", "BROWNFIELD-FEATURE"],
       "planSections": ["Profile", "Context", "Per-task sections", "Verification steps"],
-      "minEdgeCasesPerTask": 3,
       "requires": ["plan context of 2-4 paragraphs", "per-task sections with approach + edge cases + out-of-scope", "ordered runnable verification steps"],
       "forbids": ["docs/prd.md"],
       "notes": [
@@ -194,7 +192,6 @@
       "label": "LARGE — a full professional stack (greenfield from scratch)",
       "intentDefaults": ["GREENFIELD-SYSTEM"],
       "planSections": ["Profile", "Context", "Per-task sections", "Edge-case matrices", "Verification steps"],
-      "minEdgeCasesPerTask": 3,
       "requires": [
         "docs/prd.md when the profile marks it create (~1 page per major module)",
         "architecture.yaml with naming_conventions, data_contracts, api_contracts and environment_matrix",

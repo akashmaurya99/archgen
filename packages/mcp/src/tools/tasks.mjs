@@ -32,6 +32,12 @@ function slugDirFor(tasksFile, action) {
         { action, file: tasksFile },
       );
     }
+    // A MISSING FILE is not an internal error. `realpathSync` throws a raw
+    // ENOENT, which escaped as INTERNAL — a broken server, where the sibling
+    // actions return INVALID_INPUT for the very same path.
+    if (e?.code === 'ENOENT' || e?.code === 'ENOTDIR') {
+      throw invalidInput(`cannot read ${tasksFile} (missing or unreadable)`, { action, file: tasksFile });
+    }
     throw e;
   }
 }
@@ -339,7 +345,18 @@ export function registerTaskTools(server) {
             next: `archgen_tasks{action:'next',tasksYaml:'${args.tasksYaml}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
           });
           return withMeta(
-            { ...resolved, waves: p.items },
+            {
+              ...resolved,
+              waves: p.items,
+              // THE FRONTIER — the wave that is executable NOW. The payload
+              // listed every remaining wave with nothing marking which one
+              // to dispatch, so the agent had to guess.
+              frontier: p.items[0] ?? null,
+              frontierIndex: p.offset + 1,
+              ...(p.items.length === 0 && resolved.waves.length === 0
+                ? { note: 'no waves remain — every task is done or blocked' }
+                : {}),
+            },
             moreMeta({
               total: p.total,
               returned: p.returned,

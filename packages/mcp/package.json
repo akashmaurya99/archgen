@@ -1,6 +1,6 @@
 {
   "name": "archgen-mcp",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "MCP server for archgen \u2014 the single runtime that owns architecture-plan validation, wave execution, artifact navigation, CodeGraph bootstrap and harness MCP wiring for coding agents.",
   "license": "MIT",
   "type": "module",

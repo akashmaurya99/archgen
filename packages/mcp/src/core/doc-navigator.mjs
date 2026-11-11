@@ -102,6 +102,10 @@ export function resolveDocScope(input, projectRoot = null) {
   return {
     slugDir: scoped.root,
     repoRoot: dirname(scoped.root), // the `.archgen` directory — output vocabulary stays root-relative
+    // The PROJECT root — where repository paths live. The skill mandates
+    // repo-root-relative paths (`configs/base.yaml`, `.archgen/<slug>/x.yaml`),
+    // so a reference can only be resolved against it.
+    projectRoot: resolve(dirname(scoped.root), '..'),
     slug: scoped.slug,
   };
 }
@@ -231,6 +235,76 @@ function sectionPayload(doc, section, { path, include = 'own' }) {
 }
 
 /**
+ * HOW A REFERENCE RESOLVES — the rule, in one place.
+ *
+ * The rule is the SKILL's path contract, not an implementation detail:
+ *
+ *   1. A target that starts with `./` or `../` is relative to the
+ *      DOCUMENT's own directory. It must land inside the artifact space and
+ *      exist.
+ *   2. Any other target is relative to the PROJECT root — because the skill
+ *      mandates repo-root-relative paths. It resolves when it exists.
+ *   3. A project-root path that lands INSIDE the artifact space must exist:
+ *      it names an artifact of the plan.
+ *   4. A project-root path OUTSIDE the artifact space is not a link. It is a
+ *      repository path or an OUTPUT DECLARATION — a file the plan will
+ *      create — and it is not broken for not existing yet.
+ *
+ * Rule 4 is the correction. The old rule resolved EVERY target against the
+ * document and demanded it land inside the artifact space, so the paths the
+ * skill MANDATES — a repo-root product path like `configs/base.yaml`, and the
+ * profile's own `.archgen/<slug>/architecture.yaml` — were reported broken
+ * in the very files the profile told the agent to write them in.
+ */
+export const REFERENCE_RULE =
+  'a reference starting with ./ or ../ is relative to the document\'s directory and must land inside the artifact space; ' +
+  'any other reference is relative to the project root — it must exist if it names an artifact of the artifact space, ' +
+  'and a repository path that does not exist yet is an output declaration, not a broken link';
+
+/**
+ * Resolve one reference target.
+ *
+ * @param {string} target the link target (no anchor)
+ * @param {string} docAbs the absolute path of the referencing document
+ * @param {string} projectRoot the project root
+ * @param {string} slugDir the artifact space
+ * @returns {{ok: boolean, path?: string, label?: string, detail?: string}}
+ */
+export function resolveReference(target, docAbs, projectRoot, slugDir) {
+  if (!target) return { ok: true };
+  const inSlug = (p) => p === slugDir || p.startsWith(slugDir + sep);
+  const exists = (p) => {
+    try {
+      return existsSync(p);
+    } catch {
+      return false;
+    }
+  };
+
+  if (target.startsWith('./') || target.startsWith('../')) {
+    // Document-relative: the explicit way to say "beside this document".
+    const abs = resolve(dirname(docAbs), target);
+    if (inSlug(abs) && exists(abs)) return { ok: true, path: abs, label: abs };
+    if (!inSlug(abs)) {
+      return {
+        ok: false,
+        detail: `'${target}' resolves outside the artifact space — a './' or '../' reference must land inside it`,
+      };
+    }
+    return { ok: false, detail: `'${target}' does not exist (looked for ${abs})` };
+  }
+
+  // Project-root-relative: the skill's mandated form.
+  const abs = resolve(projectRoot, target);
+  if (exists(abs)) return { ok: true, path: abs, label: abs };
+  if (inSlug(abs)) {
+    return { ok: false, detail: `'${target}' names an artifact of the artifact space, but ${abs} does not exist` };
+  }
+  // Outside the artifact space and not there yet: an output declaration.
+  return { ok: true };
+}
+
+/**
  * Query the markdown artifacts under a slug directory.
  *
  * @param {string} input slug directory (or a tasks.yaml inside one)
@@ -243,7 +317,7 @@ export function docIndex(input, opts = {}) {
   const sectionRef = opts.section ?? null;
   const fileScopeArg = opts.file ?? null;
 
-  const { slugDir, repoRoot, slug } = resolveDocScope(input, opts.projectRoot ?? null);
+  const { slugDir, repoRoot, projectRoot, slug } = resolveDocScope(input, opts.projectRoot ?? null);
   const relFromRoot = (abs) => relative(repoRoot, abs).split(sep).join('/');
   const relFromSlug = (abs) => relative(slugDir, abs).split(sep).join('/');
   const parsedDocAt = makeDocCache();
@@ -402,21 +476,32 @@ export function docIndex(input, opts = {}) {
         const hash = link.target.indexOf('#');
         const target = hash === -1 ? link.target : link.target.slice(0, hash);
         const anchor = hash === -1 ? null : link.target.slice(hash + 1);
-        // A link target is resolved against the document's directory, so a
-        // link like `../../../secrets.md` would otherwise point outside the
-        // artifact space. The link is checked, never READ from outside: a
-        // target outside the slug directory is reported as broken rather
-        // than followed.
-        const targetAbs = target ? resolve(dirname(doc.abs), target) : '';
-        const inside = targetAbs && (targetAbs === slugDir || targetAbs.startsWith(slugDir + sep));
-        if (target && (!inside || !existsSync(targetAbs))) {
-          broken.push({ kind: 'link', ref: link.target, file: relFromRoot(doc.abs), line: link.line });
+        const resolved = resolveReference(target, doc.abs, projectRoot, slugDir);
+        if (!resolved.ok) {
+          // The finding carries the RULE, not just the verdict: a caller
+          // handed only the broken list could not repair a single link
+          // without reading the implementation to learn how a link resolves.
+          broken.push({
+            kind: 'link',
+            ref: link.target,
+            file: relFromRoot(doc.abs),
+            line: link.line,
+            detail: resolved.detail,
+            resolution: REFERENCE_RULE,
+          });
           continue;
         }
-        if (anchor && target && /\.md$/i.test(target)) {
-          const targetDoc = parsedDocAt(targetAbs);
+        if (anchor && resolved.path && /\.md$/i.test(target)) {
+          const targetDoc = parsedDocAt(resolved.path);
           if (targetDoc && !anchorExists(targetDoc, anchor)) {
-            broken.push({ kind: 'anchor', ref: link.target, file: relFromRoot(doc.abs), line: link.line });
+            broken.push({
+              kind: 'anchor',
+              ref: link.target,
+              file: relFromRoot(doc.abs),
+              line: link.line,
+              detail: `the anchor '#${anchor}' does not exist in ${resolved.label}`,
+              resolution: REFERENCE_RULE,
+            });
           }
         }
       }

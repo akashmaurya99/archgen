@@ -64,8 +64,9 @@ Artifacts are executed by sub-agents with zero conversation history. Enforce str
 3. **Zero chat dependency:** `.archgen/<slug>/` must be 100% self-contained. Unwritten facts do not exist.
 4. **Forbidden phrases:** never `"as discussed"`, `"the usual pattern"`, `"same as before"`, or `"see chat"`. Cite artifact paths/keys instead.
 5. **Cross-reference, do not restate:** point at contracts (`../architecture.yaml data_contracts.orders`).
-6. **GitHub-exact anchors:** lowercase, strip punctuation except `-` and `_`, and convert every whitespace character to `-` without collapsing runs (`## TASK-02 — Auth API` → `#task-02--auth-api`).
-7. **Verifier-compatible IDs:** `verify` rejects unknown `UPPERCASE-NN` tokens in `plans/*.md`. Define `FR-<MODULE>-nn` in `docs/prd.md`, cite them in `tasks.yaml` acceptance, link via anchors inside plans, and keep every task ID present in `plans/*.md`.
+6. **How a reference resolves:** a target starting with `./` or `../` is relative to the **document's own directory** and must land inside the artifact space; any other target is relative to the **project root**. A project-root path that names an artifact of the artifact space must exist; one outside it is a repository path or an **output declaration** — a file the plan will create — and is not broken for not existing yet. `archgen_docs{action:'validate'}` judges every reference by this rule and carries it with each finding.
+7. **GitHub-exact anchors:** lowercase, strip punctuation except `-` and `_`, and convert every whitespace character to `-` without collapsing runs (`## TASK-02 — Auth API` → `#task-02--auth-api`).
+8. **Verifier-compatible IDs:** `verify` rejects unknown `UPPERCASE-NN` tokens in `plans/*.md`. Define `FR-<MODULE>-nn` in `docs/prd.md`, cite them in `tasks.yaml` acceptance, link via anchors inside plans, and keep every task ID present in `plans/*.md`.
 
 ## Mechanical invariants — proven by the floor, so make them true the first time
 

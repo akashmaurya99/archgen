@@ -4,10 +4,10 @@ description: Evidence-scoped architecture generation and autonomous task executi
 license: MIT
 compatibility: Requires Node.js >= 20. archgen-mcp provides every deterministic capability; the skill ships no code.
 metadata:
-  version: 0.1.5
+  version: 0.1.6
   repo: https://github.com/akashmaurya99/archgen
   requires:
-    archgen_mcp: ">=0.1.5"
+    archgen_mcp: ">=0.1.6"
 ---
 
 # archgen — evidence-scoped planning & wave execution
@@ -123,7 +123,7 @@ Depth budgets (`§artifact-templates/depth-budgets`) are ceilings: stop when the
    - Run the **FETCH-SKILL pre-planning scan**.
    - **Commit the artifact set** before the first wave—never ignored (Hard Rule 10).
 4. **Validate & register:** `archgen_plan{action:'validate', tasksYaml}` until `data.valid:true`; then `archgen_registry{action:'update', slug, status:'planned'}`.
-5. **FLOOR, THEN GATE (sized):** run `archgen_plan{action:'verify', tasksYaml, planDir}` and fix every issue it reports until it returns `APPROVE`—the floor is the deterministic truth (ownership, mirrored tests, matrix citations, requirement coverage, profile decisions, decision files, declared paths, wave labels) and it costs no agent. Every finding carries a stable CODE: `issueCodes`/`warningCodes` count EVERY finding by class while the list shows a sample of 40—fix them grouped by code AND file, in ONE pass, then re-run the floor; if your own code comes back, the class was not fixed. Walk the rest with `archgen_plan{action:'verify', tasksYaml, planDir, offset:40}` (and `collection:'warnings'` for the warnings). Only then dispatch the gate: SMALL → main agent; MEDIUM → one verifier sub-agent; LARGE → one top-tier verifier, via `archgen_plan{action:'brief', kind:'verifier', tasksYaml, planDir}` verbatim. A finding BLOCKS only if it names the artifact, the rule it violates, and the fix; otherwise it is a NIT or an OBSERVATION and never starts a round. **Both gate stages run at most TWO rounds**—round 1 exhaustive, round 2 a delta re-check; there is no round 3, and the residual is the user's decision (`§orchestration/gate-protocol`). After the gate, record the canonical `plan_profile.gate` block (`§artifact-templates/gate-metrics`).
+5. **FLOOR, THEN GATE (sized):** run `archgen_plan{action:'verify', tasksYaml, planDir}` and fix every issue it reports until it returns `APPROVE`—the floor is the deterministic truth (ownership, mirrored tests, matrix citations, requirement coverage, profile decisions, decision files, declared paths, wave labels) and it costs no agent. Every finding carries a stable CODE: `issueCodes`/`warningCodes` count EVERY finding by class while the list shows a sample—fix them grouped by code AND file, in ONE pass, then re-run the floor; if your own code comes back, the class was not fixed. Walk the rest with the continuation `meta.next` names. Only then dispatch the gate: SMALL → main agent; MEDIUM → one verifier sub-agent; LARGE → one top-tier verifier, via `archgen_plan{action:'brief', kind:'verifier', tasksYaml, planDir}` verbatim. A finding BLOCKS only if it names the artifact, the rule it violates, and the fix; otherwise it is a NIT or an OBSERVATION and never starts a round. **Both gate stages run at most TWO rounds**—round 1 exhaustive, round 2 a delta re-check; there is no round 3, and the residual is the user's decision (`§orchestration/gate-protocol`). After the gate, record the canonical `plan_profile.gate` block (`§artifact-templates/gate-metrics`).
 6. **PLAN-REVIEW (sized):** SMALL/MEDIUM → main-agent review; LARGE → one independent top-tier reviewer in a FRESH session, via `archgen_plan{action:'brief', kind:'review', tasksYaml, planDir}` verbatim. Same two-round protocol as the verifier: fix findings in one pass, re-run the floor, then the delta round. One user "more review" approval = exactly ONE extra pass, with a stated purpose.
 7. **USER GATE:** present artifacts with create/reuse/omit decisions, wave summary (`archgen_tasks{action:'next', tasksYaml}`), and ownership map. Ask `"Approve to start work?"` `[wait for user]`
 8. **Execute:** on approval → **START-WORK**.

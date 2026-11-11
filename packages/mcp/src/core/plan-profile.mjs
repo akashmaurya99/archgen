@@ -295,7 +295,10 @@ function scaffoldCall(scopeClass, input) {
   ];
   if (input.modules) parts.push(`modules:${input.modules}`);
   if (input.tasks) parts.push(`tasks:${input.tasks}`);
-  parts.push(`slug:'${input.slug ?? '<slug>'}'`);
+  // A slug is only named when there IS one. The literal '<slug>' was carried
+  // otherwise, and following it verbatim produced artifact paths containing
+  // '<slug>'.
+  if (input.slug) parts.push(`slug:'${input.slug}'`);
   return `${parts.join(',')}}`;
 }
 

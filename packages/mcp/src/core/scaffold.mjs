@@ -205,7 +205,11 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     intentDefaults: spec.intentDefaults ?? [],
     artifacts,
     planSections: spec.planSections ?? [],
-    minEdgeCasesPerTask: spec.minEdgeCasesPerTask ?? 0,
+    // The edge-case budget has ONE owner: `profile.depthBudgets`. The class
+    // used to carry a second copy (`minEdgeCasesPerTask`), and the two
+    // disagreed at LARGE (3 against 7), so one payload said two different
+    // things about the same ceiling.
+    minEdgeCasesPerTask: depthBudgets?.edgeCasesPerTask ?? spec.minEdgeCasesPerTask ?? 0,
     requires: spec.requires ?? [],
     forbids: spec.forbids ?? [],
     notes: spec.notes ?? [],

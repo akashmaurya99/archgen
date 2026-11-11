@@ -48,11 +48,25 @@ function resolveCollection(action, collection, fallback) {
   if (collection === undefined || collection === null) return fallback;
   if (!allowed.includes(collection)) {
     throw invalidInput(
-      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|')})`,
+      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`,
       { action, collection, allowed },
     );
   }
   return collection;
+}
+
+/**
+ * Reject `collection` on an action that has NO collection — a named
+ * collection is a request, and an impossible one is an error, never a
+ * silently dropped argument.
+ */
+function rejectCollection(action, collection) {
+  if (collection === undefined || collection === null) return;
+  const allowed = COLLECTIONS[action] ?? [];
+  throw invalidInput(
+    `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`,
+    { action, collection },
+  );
 }
 
 /**
@@ -74,6 +88,7 @@ export function registerDocTools(server) {
       const from = args.offset ?? 0;
       switch (args.action) {
         case 'index': {
+          resolveCollection('index', args.collection, 'files');
           const overview = docIndex(slugDir, { mode: 'overview', file: args.file ?? null, projectRoot: ctx.projectRoot });
           return bounded('files', overview.data, args, `archgen_docs{action:'index',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`, {
             files: (overview.data.files ?? []).length,
@@ -81,6 +96,7 @@ export function registerDocTools(server) {
           });
         }
         case 'digest': {
+          resolveCollection('digest', args.collection, 'files');
           const digest = docIndex(slugDir, { mode: 'digest', file: args.file ?? null, projectRoot: ctx.projectRoot });
           return bounded('files', digest.data, args, `archgen_docs{action:'digest',slugDir:'${slugDir}',limit:${bound},offset:${from + bound}}`, {
             files: (digest.data.files ?? []).length,
@@ -143,6 +159,7 @@ export function registerDocTools(server) {
         }
         case 'refs': {
           if (!args.token) throw invalidInput('refs requires a token', { action: args.action });
+          resolveCollection('refs', args.collection, 'matches');
           const refs = docIndex(slugDir, { mode: 'refs', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
           // The continuation keeps the FILE SCOPE. It used to drop it, so
           // the "next call" was a different query and returned different
@@ -154,6 +171,7 @@ export function registerDocTools(server) {
         }
         case 'map': {
           if (!args.token) throw invalidInput('map requires a token', { action: args.action });
+          resolveCollection('map', args.collection, 'sections');
           const map = docIndex(slugDir, { mode: 'map', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
           const scope = args.file ? `,file:'${args.file}'` : '';
           return bounded('sections', map.data, args, `archgen_docs{action:'map',slugDir:'${slugDir}',token:'${args.token}'${scope},limit:${bound},offset:${from + bound}}`, {
@@ -164,6 +182,8 @@ export function registerDocTools(server) {
         }
         case 'section': {
           if (!args.section) throw invalidInput('section requires a section path', { action: args.action });
+          // `section` returns ONE section — it has no collection to window.
+          rejectCollection('section', args.collection);
           const found = docIndex(slugDir, {
             mode: 'section',
             section: args.section,

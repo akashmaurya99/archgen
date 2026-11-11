@@ -176,7 +176,10 @@ export function registerSetupTools(server) {
         const p = project(rows, {
           limit: args.limit,
           offset: args.offset,
-          next: `archgen_setup{action:'harnesses',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
+          // The continuation keeps the LOCATION filter. It used to drop it,
+          // so the cursor re-introduced the very bug the filter fixed: the
+          // next page listed the GLOBAL config path the caller had excluded.
+          next: `archgen_setup{action:'harnesses',location:'${location}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
         });
         return withMeta(
           {

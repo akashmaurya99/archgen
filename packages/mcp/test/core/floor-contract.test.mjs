@@ -337,6 +337,61 @@ test('a different declared test root is honoured too — the floor never guesses
   }
 });
 
+test('a \'./\'-prefixed root or glob does not silently skip the mirror rule', () => {
+  // `./src` and `src` are the same root. The floor compared them literally,
+  // so a plan that declared one and owned the other skipped the rule and
+  // still reached APPROVE.
+  const f = fixture({
+    architecture: 'toolchain:\n  source_root: ./src\n  test_root: ./tests\n',
+  });
+  try {
+    const audit = auditPlan({
+      slugDir: f.slugDir,
+      tasks: [{ id: 'T1', depends_on: [], file_ownership: ['./src/core/**'], acceptance: ['x'] }],
+    });
+    assert.ok(
+      audit.issues.some((i) => i.startsWith('MIRROR_MISSING')),
+      `the mirror rule must still run: ${audit.issues.join(' | ')}`,
+    );
+    assert.ok(
+      audit.issues.some((i) => i.includes('tests/core/**')),
+      `the mirrored path must use the DECLARED root: ${audit.issues.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a host_path that merely CONTAINS .archgen/ is not rewritten', () => {
+  const root = mkdtempSync(join(tmpdir(), 'archgen-host-'));
+  const slugDir = join(root, '.archgen', 'demo');
+  mkdirSync(join(slugDir, 'plans'), { recursive: true });
+  mkdirSync(join(root, 'packages', 'app', '.archgen'), { recursive: true });
+  writeFileSync(join(root, 'packages', 'app', '.archgen', 'config.md'), '# Config\n', 'utf8');
+  writeFileSync(
+    join(slugDir, 'answers.yaml'),
+    [
+      'plan_profile:',
+      '  artifacts:',
+      '    - path: .archgen/demo/docs/prd.md',
+      '      decision: reuse',
+      '      reason: the host PRD is current',
+      '      host_path: packages/app/.archgen/config.md',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  try {
+    const audit = auditPlan({ slugDir, tasks: TASKS });
+    assert.ok(
+      !audit.issues.some((i) => i.startsWith('PROFILE_REUSE_MISSING')),
+      `the host path must resolve as written: ${audit.issues.join(' | ')}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // ── 6. the profile's own home is a real artifact ───────────────────────────
 
 test('a MEDIUM plan can satisfy its own recorded create of answers.yaml', () => {
@@ -509,6 +564,22 @@ test('a waiver scoped to one acceptance does not cover a LONGER one', () => {
   const issue = "MATRIX_CLAIM_MISMATCH: edge-case matrix row 'E4' cites T9#20, but that acceptance does not claim 'E4'";
   assert.ok(waiverCovers({ scope: ['T9#20'] }, issue), 'the exact acceptance matches');
   assert.ok(!waiverCovers({ scope: ['T9#2'] }, issue), 'T9#2 must not cover T9#20');
+});
+
+test('a waiver does not cover a finding through its DETAIL clause', () => {
+  // The finding is about T19#1. T1#1 appears only in the detail clause —
+  // "the acceptance that claims it is T1#1" — so a waiver scoped to T1#1
+  // must not silence it.
+  const issue =
+    "MATRIX_CLAIM_MISMATCH: edge-case matrix row 'E1' cites T19#1, but that acceptance does not claim 'E1' — the acceptance that claims it is T1#1.";
+  assert.ok(!waiverCovers({ scope: ['T1#1'] }, issue), 'the detail clause is not a subject');
+  assert.ok(waiverCovers({ scope: ['T19#1'] }, issue), 'the subject matches');
+});
+
+test('a bare wildcard waiver scope approves nothing', () => {
+  const issue = "MIRROR_MISSING: task 'T1' owns 'src/core/**' but no task owns the mirrored test path";
+  assert.ok(!waiverCovers({ scope: ['*'] }, issue), 'a bare wildcard is a blanket, not a scope');
+  assert.ok(!waiverCovers({ scope: ['**'] }, issue), 'a bare wildcard is a blanket, not a scope');
 });
 
 // ── 9. the family a file belongs to ────────────────────────────────────────

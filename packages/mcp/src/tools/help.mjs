@@ -26,7 +26,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 | \`verify\` | the deterministic floor → APPROVE or ISSUES (+ warnings) | tasksYaml, planDir, offset? |
 | \`coverage\` | tasks covered vs missing in the plans | tasksYaml, planDir |
 | \`profile\` | evidence-based scope + per-artifact create/reuse/omit decisions | intent, signals?, modules?, tasks?, slug? |
-| \`scaffold\` | the artifact set + skeletons (with an intent: EXACTLY the create set) | scope, slug?, intent?, signals?, file? |
+| \`scaffold\` | the artifact set + skeletons (with an intent: EXACTLY the create set) | scope, slug?, intent?, signals?, modules?, tasks?, file? |
 | \`brief\` | ready-to-send sub-agent prompt (graph, docs check, evidence map rendered) | kind, tasksYaml? |
 | \`graph\` | dependency graph; \`format:'mermaid'\` for a diagram | tasksYaml, node?, module?, format?, status? |
 | \`impact\` | direct + transitive dependents of a task id or path | tasksYaml, target |
@@ -40,7 +40,9 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 **Gotchas**
 - \`status\` only affects mermaid; \`module\` cannot combine with \`node\` or mermaid.
 - Whole-graph mermaid is refused above 250 nodes—scope with \`node\` or \`module\`.
-- \`verify\` IS the mechanical floor: ownership overlap, the mirrored test tree, matrix citations, PRD requirement coverage, the recorded profile decisions, decision files, declared paths, wave labels. Run it to APPROVE BEFORE dispatching a gate agent; the gate brief then carries the floor's result, a plan snapshot, and the maps, so the agent judges instead of re-deriving. Every finding carries a stable CODE (\`issueCodes\`/\`warningCodes\` count them); \`issues\` block, \`warnings\` (e.g. one task's glob containing another's, or a rule that is NOT ENFORCED) do not. The findings list is BOUNDED but WALKABLE: \`offset\` returns the next window and \`meta.next\` names the call.
+- \`profile\` takes \`modules\`/\`tasks\` as a COUNT — a number, or the list itself (its length is the count).
+- \`verify\` IS the mechanical floor: ownership overlap, the mirrored test tree, matrix citations, PRD requirement coverage, the recorded profile decisions, decision files, declared paths, wave labels. Run it to APPROVE BEFORE dispatching a gate agent; the gate brief then carries the floor's result, a plan snapshot, and the maps, so the agent judges instead of re-deriving. Every finding carries a stable CODE (\`issueCodes\`/\`warningCodes\` count them); \`issues\` block, \`warnings\` (e.g. one task's glob containing another's, or a rule that is NOT ENFORCED) do not. The findings list is BOUNDED but WALKABLE: \`collection\` selects which list \`offset\`/\`limit\` window (\`issues\` or \`warnings\`), and \`meta.next\` names the call that continues the collection you asked for.
+- Where an action has several collections, \`collection\` says which one the window walks, and naming a collection the action does not have is an \`INVALID_INPUT\` error — never a silently dropped argument.
 - \`scaffold\` returns each file's CONTENT and **writes nothing**—you write under \`.archgen/<slug>/\`. The profile decides which artifacts are create/reuse/omit; required files must exist and every omission needs a recorded reason.
 - \`brief\` kinds: verifier | review | survey | investigate. It derives the slug from \`tasksYaml\` when omitted; every path is ABSOLUTE (works from any cwd). Verifier/review briefs render the graph, reference-integrity result, and evidence map, so the sub-agent needs no tool call.
 - Verifier/reviewer return \`VERDICT:\` + a COVERAGE table (every dimension PASS / FAIL / N/A); findings without it are INCOMPLETE.
@@ -106,7 +108,8 @@ Navigates markdown artifacts under \`.archgen/<slug>/\`.
 - \`index\` is the file map; \`digest\` is the outline (with the slugs you can fetch). Do not pay for both.
 - Anchors validate against real heading slugs—a renamed section is a broken anchor, not a silent pass.
 - \`map\` is section-level; \`refs\` is line-level. Use \`map\` to navigate, \`refs\` for exact lines.
-- \`validate\` reports each broken reference once, at its first occurrence.
+- \`validate\` reports each broken reference once, at its first occurrence, and each finding carries the RULE it was judged by.
+- **HOW A REFERENCE RESOLVES:** a target starting with \`./\` or \`../\` is relative to the DOCUMENT's directory and must land inside the artifact space; any other target is relative to the PROJECT root. A project-root path that names an artifact of the artifact space must exist; one outside it is a repository path or an OUTPUT DECLARATION (a file the plan will create) and is not broken for not existing yet.
 - Not found → available sections are returned; one call recovers.
 - \`slugDir\` defaults to the most recently modified \`.archgen/<slug>/\` under the project root.
 - Batch with \`allSettled\`, not \`all\`.`,
@@ -162,7 +165,7 @@ Installation, MCP wiring, and health.
 **Actions**
 | action | what it does | args |
 |---|---|---|
-| \`doctor\` | issues only (WARN/FAIL) + status/summary/versions | projectRoot? |
+| \`doctor\` | issues only (WARN/FAIL) + status/summary/versions + \`serverActions\` | projectRoot? |
 | \`bootstrap\` | wire archgen MCP + ensure CodeGraph in one call; a no-op when already configured | projectRoot?, location?, approve?, telemetry? |
 | \`install_mcp\` | write ONLY the archgen MCP entry into detected harnesses | projectRoot?, location?, approve? |
 | \`uninstall_mcp\` | remove the archgen MCP entries this server wrote | projectRoot?, location?, approve? |
@@ -173,6 +176,7 @@ Installation, MCP wiring, and health.
 - Every config write needs \`approve:true\`; without it you get the PLAN, nothing is written.
 - \`location\`: project | global | both. Global writes touch \$HOME.
 - Known top-level keys: \`mcpServers\` / \`servers\` / \`mcp\` / \`context_servers\`—never assume one.
+- \`doctor\` also reports \`serverActions\`: the actions this server offers. Fewer actions in YOUR tool schema means your client holds a stale catalog—reload the session.
 - \`harness_info\` returns the fallback procedure for an unknown platform instead of failing.`,
 
   skills: `# archgen_skills

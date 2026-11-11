@@ -66,7 +66,6 @@ export function issueCode(message) {
  * from the FULL count, never from the capped list.
  */
 export const MAX_FINDINGS = 40;
-export const MAX_WARNINGS = 20;
 
 /** Count findings by code. */
 function countByCode(list) {
@@ -188,10 +187,13 @@ export function verifyPlan(file, planDir, opts = {}) {
   // not bounded. Each collection now has its own window and its own cursor.
   const offset = Number.isInteger(opts.offset) ? opts.offset : 0;
   const limit = Number.isInteger(opts.limit) && opts.limit > 0 ? Math.min(opts.limit, MAX_FINDINGS) : MAX_FINDINGS;
-  const warningLimit = Math.min(limit, MAX_WARNINGS);
   const collection = opts.collection === 'warnings' ? 'warnings' : 'issues';
+  // BOTH collections use the SAME window. They used to differ (40 issues, 20
+  // warnings), so ONE offset could not walk both: the offset that continued
+  // the issues skipped past the warnings entirely, and the warnings after
+  // index 20 were unreachable at any offset.
   const cappedIssues = cap(issues, limit, collection === 'issues' ? offset : 0);
-  const cappedWarnings = cap(warnings, warningLimit, collection === 'warnings' ? offset : 0);
+  const cappedWarnings = cap(warnings, limit, collection === 'warnings' ? offset : 0);
   return {
     verdict: issues.length ? 'ISSUES' : 'APPROVE',
     issues: cappedIssues.shown,

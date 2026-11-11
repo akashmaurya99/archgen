@@ -107,19 +107,26 @@ export function registerCodegraphTools(server) {
       // are bounded — and the agent is told what else it could fetch.
       const window = { limit: args.limit, offset: args.offset };
       const shaped = shapeReport(report, window);
-      // The detected harnesses are a collection too.
-      shaped.detected = project(report.detected ?? [], {
+      // The detected harnesses are a collection too — and the projection is
+      // KEPT, so the total, the count and the continuation describe the WHOLE
+      // list. Discarding it made `limit: 1` report a total of 1 and no
+      // continuation, so eight harnesses were unreachable.
+      const det = project(report.detected ?? [], {
         ...window,
         next: `archgen_codegraph{action:'${args.action}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`,
-      }).items;
+      });
+      shaped.detected = det.items;
       const manualTotal = shaped.wiring?.manualTotal ?? 0;
       return withMeta(
         shaped,
         moreMeta({
-          total: shaped.detected.length,
-          returned: shaped.detected.length,
-          next: undefined,
-          available: { harnesses: shaped.detected.length, wiringManual: manualTotal },
+          total: det.total,
+          returned: det.returned,
+          next: det.next,
+          more: manualTotal > shaped.wiring?.manual?.length
+            ? `archgen_codegraph{action:'${args.action}',limit:${args.limit ?? 50},offset:${(args.offset ?? 0) + (args.limit ?? 50)}}`
+            : undefined,
+          available: { harnesses: det.total, wiringManual: manualTotal },
         }),
       );
     },

@@ -344,6 +344,89 @@ test('the doctor reports the actions the RUNNING server offers', async () => {
   assert.ok(envelope.data.serverActionsHint, 'the inventory must say what to do with it');
 });
 
+test('a continuation keeps the scope it was called with', async () => {
+  // The harnesses cursor dropped `location`, so the next page listed the
+  // global config path the caller had excluded — the very bug the filter
+  // exists to prevent.
+  const envelope = await call('archgen_setup', { action: 'harnesses', location: 'project', limit: 1 });
+  assert.ok(envelope.ok, envelope.error?.message);
+  if (envelope.meta?.next) {
+    assert.match(
+      envelope.meta.next,
+      /location:'project'/,
+      `the continuation must keep the location scope: ${envelope.meta.next}`,
+    );
+  }
+});
+
+test('the codegraph answer reports the WHOLE detected list, not the page', async () => {
+  const envelope = await call('archgen_codegraph', { action: 'status', limit: 1 });
+  assert.ok(envelope.ok, envelope.error?.message);
+  const meta = envelope.meta ?? {};
+  // The total describes the whole list, and the continuation reaches it.
+  assert.ok(
+    meta.total >= (envelope.data.detected?.length ?? 0),
+    'the total must describe the whole list',
+  );
+  if ((envelope.data.detected?.length ?? 0) < meta.total) {
+    assert.ok(meta.next, 'a truncated list must name its continuation');
+  }
+});
+
+test('verify\'s meta describes the collection that was ASKED for', async () => {
+  const warnings = await call('archgen_plan', {
+    action: 'verify',
+    tasksYaml: sandbox.tasksYaml,
+    planDir: sandbox.plansDir,
+    collection: 'warnings',
+  });
+  assert.ok(warnings.ok, warnings.error?.message);
+  assert.equal(
+    warnings.meta.total,
+    warnings.data.warningsTotal,
+    'the total must be the warnings total',
+  );
+  assert.equal(
+    warnings.meta.returned,
+    warnings.data.warnings.length,
+    'the returned count must be the warnings shown',
+  );
+});
+
+test('a collection an action does not have is a typed error', async () => {
+  for (const [tool, args] of [
+    ['archgen_plan', { action: 'graph', tasksYaml: sandbox.tasksYaml, collection: 'issues' }],
+    ['archgen_plan', { action: 'profile', intent: 'GREENFIELD-SYSTEM', collection: 'issues' }],
+    ['archgen_docs', { action: 'index', collection: 'broken' }],
+    ['archgen_docs', { action: 'section', section: 'x', collection: 'broken' }],
+  ]) {
+    const envelope = await call(tool, args);
+    assert.ok(!envelope.ok, `${tool}{${JSON.stringify(args)}} must be refused`);
+    assert.equal(envelope.error?.code, 'INVALID_INPUT');
+  }
+});
+
+test('the scaffold\'s one-file cursor keeps the profile inputs', async () => {
+  const envelope = await call('archgen_plan', {
+    action: 'scaffold',
+    scope: 'MEDIUM',
+    intent: 'GREENFIELD-SYSTEM',
+    signals: ['production', 'product-facing', 'multi-module'],
+    slug: 'demo',
+  });
+  assert.ok(envelope.ok, envelope.error?.message);
+  assert.ok(envelope.meta?.more, 'the scaffold must name its one-file cursor');
+  // The cursor must re-enter PROFILE mode with the same inputs — otherwise it
+  // serves the class candidate set and refuses the profile's own artifacts.
+  assert.match(envelope.meta.more, /intent:'GREENFIELD-SYSTEM'/);
+  assert.match(envelope.meta.more, /signals:\[/);
+  assert.match(
+    envelope.meta.more,
+    new RegExp(`scope:'${envelope.data.scopeClass}'`),
+    `the cursor must name the class the scaffold SERVED: ${envelope.meta.more}`,
+  );
+});
+
 test('the outer bootstrap payload has the same keys on both paths', async () => {
   const setup = await call('archgen_setup', { action: 'bootstrap', location: 'project', approve: false });
   assert.ok(setup.ok, setup.error?.message);

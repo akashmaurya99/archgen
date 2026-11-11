@@ -17,6 +17,8 @@ Dispatch 1–2 survey sub-agents with `archgen_plan{action:'brief', kind:'survey
 
 ## §verifier — plan review brief
 
+The verifier judges what the deterministic floor cannot: scope fit, artifact necessity, contract completeness, and whether the plan delivers what was agreed. The floor runs first, locally, at zero agent cost — a gate agent never sees a mechanical defect.
+
 ### The floor comes FIRST — the gate agent never sees a mechanical defect
 
 Before a gate agent is dispatched, the ORCHESTRATOR drives the deterministic floor to `APPROVE`:
