@@ -13,6 +13,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +24,29 @@ const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = join(CLI, '..', '..');
 const MCP_BIN = join(REPO, 'packages', 'mcp', 'bin', 'archgen-mcp.mjs');
 const CORPUS = join(REPO, 'fixtures', 'yaml-corpus');
+
+/**
+ * The integration tests below drive the REAL archgen MCP binary, which needs
+ * the MCP SDK + Zod installed under packages/mcp. The CLI itself is
+ * zero-dependency, so a checkout that only installs the CLI (or runs its
+ * suite directly) has no reason to have those packages. Skip — with the
+ * command that enables the coverage — rather than fail on an install the
+ * caller never asked for. The official CI's cli job installs them, so the
+ * tests do run there.
+ */
+const mcpRequire = createRequire(join(REPO, 'packages', 'mcp', 'package.json'));
+const mcpDepsMissing = (() => {
+  try {
+    mcpRequire.resolve('@modelcontextprotocol/server/stdio');
+    mcpRequire.resolve('zod/v4');
+    return false;
+  } catch {
+    return true;
+  }
+})();
+const skipWithoutMcpDeps = mcpDepsMissing
+  ? 'packages/mcp dependencies are not installed — run: npm ci --prefix packages/mcp'
+  : false;
 
 const TASKS_SRC = readFileSync(join(CORPUS, 'tasks-block.yaml'), 'utf8');
 const ARCH_SRC = readFileSync(join(CORPUS, 'architecture.yaml'), 'utf8');
@@ -168,7 +192,7 @@ test('idempotent: second run reports nothing pending and changes nothing', async
   assert.deepEqual(await pendingMigrations(proj), []);
 });
 
-test('archgen_tasks{set_status} works on a stamped tasks.yaml: status flips, stamp survives verbatim', async () => {
+test('archgen_tasks{set_status} works on a stamped tasks.yaml: status flips, stamp survives verbatim', { skip: skipWithoutMcpDeps }, async () => {
   const dir = seedArtifacts();
   const tasksPath = join(dir, 'tasks.yaml');
   const r0 = await applyMigration('001-stamp-provenance', proj, { dryRun: false });
@@ -191,7 +215,7 @@ test('archgen_tasks{set_status} works on a stamped tasks.yaml: status flips, sta
   assert.ok(after.includes('# Core pipeline — do first'));
 });
 
-test('archgen_plan{verify} APPROVEs a stamped fixture copied from the yaml corpus', async () => {
+test('archgen_plan{verify} APPROVEs a stamped fixture copied from the yaml corpus', { skip: skipWithoutMcpDeps }, async () => {
   const dir = seedArtifacts('corpus-check');
   const plansDir = join(proj, 'plans-x');
   mkdirSync(plansDir, { recursive: true });
