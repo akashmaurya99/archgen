@@ -61,6 +61,31 @@ no source reading.
 - LARGE carried two different "edge cases per task" numbers — one payload,
   two answers. The depth budget is now the only owner.
 
+### Added — a way to test an unpublished build
+
+A build that is not on the registry cannot be tested with `npx
+archgen-skill init` — that installs the PUBLISHED packages. One command now
+installs a checkout into a project instead:
+
+```sh
+scripts/install-local.sh <project-dir>              # MCP wired globally
+scripts/install-local.sh <project-dir> --location-project   # MCP wired into the project
+scripts/install-local.sh <project-dir> --check      # report only, change nothing
+```
+
+It points the skill at the checkout's vendored copy and the MCP entry at the
+checkout's server (`ARCHGEN_MCP_BIN`), so the client drives the code that was
+just built. Nothing is published, and the global `archgen-mcp` install is left
+untouched.
+
+### Fixed — an override no longer mutates the global install
+
+The bootstrap refreshed the global npm install of `archgen-mcp` even when
+`ARCHGEN_MCP_BIN` named the server to use — mutating a machine-wide install
+nobody asked for, and failing for any build that is not published yet. An
+override now means **"use this binary"**, and the global install is left
+exactly as it is.
+
 ### Changed — the always-on ceiling
 
 The reference rule and the collection contract live in the always-on kernel
