@@ -59,12 +59,20 @@ export function bootstrapServers(opts) {
   // The server is refreshed to the version THIS CLI ships with: the CLI and
   // the server are released together, so an older server is an older
   // implementation of the very tools the CLI wires.
+  //
+  // An `ARCHGEN_MCP_BIN` OVERRIDE means the caller has chosen the binary.
+  // The global install is then left exactly as it is: upgrading it would
+  // mutate a machine-wide install nobody asked for — and for a build that is
+  // not published yet the upgrade can only fail.
   let serverNote = '';
-  if (global && !noMcp) {
+  const override = env.ARCHGEN_MCP_BIN;
+  if (global && !noMcp && !override) {
     const version = packageRoot ? serverVersion(packageRoot) : 'latest';
     const installed = ensureGlobalServer({ env, version });
     serverNote = installed.note;
     if (installed.detail) serverNote += ` (${installed.detail})`;
+  } else if (override) {
+    serverNote = 'the global install is untouched — ARCHGEN_MCP_BIN names the server to use';
   }
 
   const resolved = resolveMcpBinary({ projectRoot: projectDir, env });

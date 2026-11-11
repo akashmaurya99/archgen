@@ -114,3 +114,28 @@ output unilaterally.
   description, an argument, or the skill.
 - `.codegraph/` indexes are machine-local; they may be committed for team
   projects ONLY when the team deliberately opts in.
+
+## Testing an unpublished build
+
+A build that is not on the registry cannot be tested with `npx
+archgen-skill init` — that installs the PUBLISHED packages. One command
+installs this checkout into a project instead:
+
+```sh
+scripts/install-local.sh <project-dir>            # MCP wired globally (the default)
+scripts/install-local.sh <project-dir> --location-project   # MCP wired into the project
+scripts/install-local.sh <project-dir> --check    # report what is installed, change nothing
+```
+
+It points the skill at this repo's vendored copy and the MCP entry at this
+repo's server (`ARCHGEN_MCP_BIN`), so the client drives the code you just
+built. Nothing is published, and the global `archgen-mcp` install is left
+exactly as it is.
+
+**Restart the client session afterwards.** A client validates a call against
+the tool catalog it was given when the session connected; a session that
+predates the upgrade rejects a valid action. `archgen_setup{action:'doctor'}`
+reports `serverActions` — the action list the running server offers — so the
+two can be compared in one call.
+
+To revert the wiring: `packages/mcp/bin/archgen-mcp.mjs uninstall-mcp --yes`.
