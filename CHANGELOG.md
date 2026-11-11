@@ -1,3 +1,48 @@
+## [0.1.5] - 2026-11-11
+
+A small correctness release: the scope profile accepts the evidence an agent
+actually has, and a rejected call is diagnosable in one call.
+
+**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.**
+
+| Artifact | Published as | Tag |
+|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.5` |
+| `packages/cli` | `archgen-skill` | `vcli-0.1.5` |
+
+### Fixed — the scope profile accepted only a count
+
+`archgen_plan{action:'profile'}` took `modules` and `tasks` as **numbers**.
+The arguments are named after the things they count, so an agent that had
+already enumerated the modules and the tasks of a plan passed **the lists**
+— and the schema refused them.
+
+The tool now takes either: a number, or the list itself, whose length is the
+count. The same evidence scores the same way either way, and the profile's
+`next` call always carries the canonical number.
+
+### Added — the doctor reports what the running server offers
+
+A client caches the tool catalog it was handed when the session connected.
+When the server is upgraded afterwards, the client keeps validating against
+the old schema and rejects a valid action with the old allowed values — while
+`doctor` (whose own action list never changed) reports the new server
+version. The two facts read as a contradiction.
+
+`archgen_setup{action:'doctor'}` now reports **`serverActions`** — the action
+list the running server offers — so one call settles which side is stale.
+
+### Changed — the always-on kernel says how to check the server
+
+The bootstrap section now asks the agent to confirm the **server** (not just
+the presence of a tool) and routes any rejected call through the doctor. It
+also states plainly that a tool's output is never reconstructed from the
+server's installed files.
+
+The always-on total moves **13,164 tokens** and the documented CI ceiling
+moves with it **13,600 → 13,800**, keeping the same ~5% margin over the
+measured total that it has always had.
+
 ## [0.1.4] - 2026-11-11
 
 A correctness release: four independent audit rounds swept every tool, every

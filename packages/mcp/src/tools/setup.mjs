@@ -5,6 +5,7 @@ import { loadAsset } from '../context.mjs';
 import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary, uninstallArchgenMcp } from '../core/mcp-server-manager.mjs';
 import { manageCodegraph, assertLocation, findCodegraph, codegraphState } from '../core/codegraph-manager.mjs';
 import { shapeReport } from './codegraph.mjs';
+import { getToolSpec, registeredToolNames } from './_register.mjs';
 import { detectHarnesses } from '../core/harness-wiring.mjs';
 import { platformCapabilities, detectHarness } from '../core/platform-caps.mjs';
 import { checkCapability } from '../core/compat.mjs';
@@ -52,6 +53,31 @@ export function summarizeWiring(result) {
     summary.skipped = skipped.map((w) => ({ harness: w.harness, path: w.path, detail: w.detail }));
   }
   return summary;
+}
+
+/**
+ * What the RUNNING server actually offers, per tool.
+ *
+ * WHY THIS EXISTS. A client caches the tool catalog it was handed when the
+ * session connected. If the server is upgraded afterwards, the client keeps
+ * validating against the old schema and rejects a valid action with the old
+ * allowed values — while `doctor` (whose own action list never changed)
+ * reports the new server version. The two facts look contradictory.
+ *
+ * This inventory settles it in ONE call: it is the server's own action list,
+ * so comparing it with the client's schema says which of the two is stale.
+ *
+ * @returns {Record<string, string[]>}
+ */
+export function serverActionInventory() {
+  const out = {};
+  for (const name of registeredToolNames()) {
+    const spec = getToolSpec(name);
+    const action = spec?.inputSchema?.shape?.action;
+    const values = action?._def?.values ?? action?.options ?? null;
+    if (Array.isArray(values)) out[name] = values.slice();
+  }
+  return out;
 }
 
 /**
@@ -214,6 +240,9 @@ export function registerSetupTools(server) {
         // every call.
         const issues = checks.filter((c) => c.status !== 'OK');
         const failed = issues.some((c) => c.status === 'FAIL');
+        // The RUNNING server's action inventory — the fact that makes a
+        // stale CLIENT catalog diagnosable instead of baffling.
+        const inventory = serverActionInventory();
         return {
           status: failed ? 'FAIL' : issues.length ? 'WARN' : 'OK',
           // The denominator is the number of checks RUN — the summary used
@@ -227,6 +256,10 @@ export function registerSetupTools(server) {
             server: ctx.serverVersion,
             codegraph: codegraph?.version ?? null,
           },
+          serverActions: inventory,
+          serverActionsHint:
+            'The actions this server offers. If your tool schema lists fewer, your client is holding a stale catalog — ' +
+            'reload the session so it re-fetches the tool list.',
         };
       }
 

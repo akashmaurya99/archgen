@@ -123,7 +123,7 @@ export function buildPlanProfile(ladder, input = {}) {
     rationale.push(`${signal} ${weight > 0 ? '+' : ''}${weight}`);
   }
 
-  const modules = Number.isInteger(input.modules) && input.modules > 0 ? input.modules : null;
+  const modules = countOf(input.modules);
   if (modules !== null) {
     let moduleAdd = 0;
     for (const step of spec.moduleWeights ?? []) {
@@ -138,7 +138,7 @@ export function buildPlanProfile(ladder, input = {}) {
   // The TASK COUNT is evidence too. It used to be accepted by the tool
   // schema and then ignored, so `profile{tasks: 200}` was byte-identical to
   // `profile{}` — an argument that advertised a signal and dropped it.
-  const taskCount = Number.isInteger(input.tasks) && input.tasks > 0 ? input.tasks : null;
+  const taskCount = countOf(input.tasks);
   if (taskCount !== null) {
     let taskAdd = 0;
     for (const step of spec.taskWeights ?? []) {
@@ -276,7 +276,7 @@ export function buildPlanProfile(ladder, input = {}) {
     // produced a scaffold for a DIFFERENT profile — a different class, a
     // different artifact set, and a floor that then reported the recorded
     // profile as unsatisfied.
-    next: scaffoldCall(scopeClass, { intent, signals, modules: input.modules ?? null, tasks: input.tasks ?? null, slug }),
+    next: scaffoldCall(scopeClass, { intent, signals, modules, tasks: taskCount, slug }),
   };
 }
 
@@ -297,6 +297,22 @@ function scaffoldCall(scopeClass, input) {
   if (input.tasks) parts.push(`tasks:${input.tasks}`);
   parts.push(`slug:'${input.slug ?? '<slug>'}'`);
   return `${parts.join(',')}}`;
+}
+
+/**
+ * A COUNT, however the caller expressed it.
+ *
+ * The tool accepts a number, or the LIST the count is derived from — an agent
+ * that has already enumerated the modules or the tasks of a plan should not
+ * have to reduce them to a number before the tool can use them.
+ *
+ * @param {number|Array<unknown>|null|undefined} value
+ * @returns {number|null}
+ */
+function countOf(value) {
+  if (Number.isInteger(value) && value > 0) return value;
+  if (Array.isArray(value) && value.length > 0) return value.length;
+  return null;
 }
 
 /** A rule with a SIGNAL condition can be switched on and off by evidence. */

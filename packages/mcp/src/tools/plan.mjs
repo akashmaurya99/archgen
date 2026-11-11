@@ -79,8 +79,14 @@ const schema = z.object({
   slug: z.string().optional().describe('Project slug (profile, scaffold, brief).'),
   intent: z.enum(INTENTS).optional().describe('Scope intent (profile, scaffold).'),
   signals: z.array(z.enum(SCOPE_SIGNALS)).optional().describe('Evidence signals (profile, scaffold).'),
-  modules: z.number().int().positive().optional().describe('Modules touched/created (profile, scaffold).'),
-  tasks: z.number().int().positive().optional().describe('Estimated task count (profile, scaffold).'),
+  modules: z
+    .union([z.number().int().positive(), z.array(z.unknown()).min(1)])
+    .optional()
+    .describe('Modules touched/created: a count, or the list itself (profile, scaffold).'),
+  tasks: z
+    .union([z.number().int().positive(), z.array(z.unknown()).min(1)])
+    .optional()
+    .describe('Planned tasks: a count, or the list itself (profile, scaffold).'),
   file: z.string().optional().describe('One artifact file (scaffold).'),
   kind: z.enum(BRIEF_KINDS).optional().describe('verifier|review|survey|investigate (brief).'),
   featureRequest: z.string().optional().describe('One-line feature request (brief).'),

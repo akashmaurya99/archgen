@@ -140,15 +140,15 @@ asking for approval.
 ## Token footprint
 
 Measured, not guessed. `npm run test:budget` reports it, and CI fails if the
-always-on footprint exceeds 13,600 tokens.
+always-on footprint exceeds 13,800 tokens.
 
 **Every session pays this much, and no more:**
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 7,566 |
-| MCP tool catalog (9 tools) | 5,404 |
-| **Always-on total** | **12,970** — 40% of a 32k window |
+| `skill/SKILL.md` | 7,681 |
+| MCP tool catalog (9 tools) | 5,483 |
+| **Always-on total** | **13,164** — 40% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
 references are 17,424 tokens *in total*, but a typical section is **271

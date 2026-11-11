@@ -287,6 +287,63 @@ test('a collection the action does not have is a typed error — in docs too', a
   assert.match(envelope.error?.message ?? '', /not a collection of 'validate'/);
 });
 
+test('profile accepts a COUNT or the LIST itself', async () => {
+  // The argument is named `modules`/`tasks`; an agent that has already
+  // enumerated them should not have to reduce them to a number first.
+  const withNumbers = await call('archgen_plan', {
+    action: 'profile',
+    intent: 'GREENFIELD-SYSTEM',
+    signals: ['multi-module'],
+    modules: 4,
+    tasks: 15,
+    slug: 'demo',
+  });
+  const withLists = await call('archgen_plan', {
+    action: 'profile',
+    intent: 'GREENFIELD-SYSTEM',
+    signals: ['multi-module'],
+    modules: [{ name: 'a' }, { name: 'b' }, { name: 'c' }, { name: 'd' }],
+    tasks: ['one', 'two', 'three'],
+    slug: 'demo',
+  });
+  assert.ok(withNumbers.ok, withNumbers.error?.message);
+  assert.ok(withLists.ok, withLists.error?.message);
+  assert.equal(
+    withLists.data.scopeClass,
+    withNumbers.data.scopeClass,
+    'the same evidence must score the same way',
+  );
+  // The LIST form scores from its LENGTH: 4 modules and 3 tasks.
+  const listScore = withLists.data.score;
+  const numberScore = (
+    await call('archgen_plan', {
+      action: 'profile',
+      intent: 'GREENFIELD-SYSTEM',
+      signals: ['multi-module'],
+      modules: 4,
+      tasks: 3,
+      slug: 'demo',
+    })
+  ).data.score;
+  assert.equal(listScore, numberScore, 'the list length must be the count');
+});
+
+test('the doctor reports the actions the RUNNING server offers', async () => {
+  const envelope = await call('archgen_setup', { action: 'doctor' });
+  assert.ok(envelope.ok, envelope.error?.message);
+  const inventory = envelope.data.serverActions;
+  assert.ok(inventory && typeof inventory === 'object', 'the doctor must report the action inventory');
+  assert.ok(
+    inventory.archgen_plan?.includes('profile'),
+    `the running server offers profile: ${JSON.stringify(inventory.archgen_plan)}`,
+  );
+  assert.ok(
+    inventory.archgen_plan?.includes('scaffold'),
+    'the running server offers scaffold',
+  );
+  assert.ok(envelope.data.serverActionsHint, 'the inventory must say what to do with it');
+});
+
 test('the outer bootstrap payload has the same keys on both paths', async () => {
   const setup = await call('archgen_setup', { action: 'bootstrap', location: 'project', approve: false });
   assert.ok(setup.ok, setup.error?.message);
