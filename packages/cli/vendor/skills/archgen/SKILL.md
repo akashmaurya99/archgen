@@ -4,10 +4,10 @@ description: Evidence-scoped architecture generation and autonomous task executi
 license: MIT
 compatibility: Requires Node.js >= 20. archgen-mcp provides every deterministic capability; the skill ships no code.
 metadata:
-  version: 0.1.4
+  version: 0.1.5
   repo: https://github.com/akashmaurya99/archgen
   requires:
-    archgen_mcp: ">=0.1.4"
+    archgen_mcp: ">=0.1.5"
 ---
 
 # archgen — evidence-scoped planning & wave execution
