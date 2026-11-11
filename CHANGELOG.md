@@ -1,6 +1,17 @@
-## [Unreleased]
+## [0.1.4] - 2026-11-11
 
-Scope is now **measured**, and an artifact has to **earn** its place.
+A correctness release: four independent audit rounds swept every tool, every
+skill file, every brief and every template, and **every defect they found was
+fixed at the root** — the gate can now approve a plan the user has explicitly
+waived, no bound hides its tail, and the always-on kernel says exactly what
+the tools do.
+
+**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.**
+
+| Artifact | Published as | Tag |
+|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.4` |
+| `packages/cli` | `archgen-skill` | `vcli-0.1.4` |
 
 ### Fixed — the floor could never approve a waived plan
 
