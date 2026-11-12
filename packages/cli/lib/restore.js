@@ -15,13 +15,9 @@ import { cpSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { BACKUP_PATHS_FILE, BACKUP_ROOT_REL, moveToBackupInto, readBackupPaths } from './store.js';
+import { BACKUP_PATHS_FILE, BACKUP_ROOT_REL, byName, moveToBackupInto, readBackupPaths } from './store.js';
 import { GLOBAL_BACKUP_REL, globalTargets } from './install.js';
 import { lstatSafe } from './fs-paths.js';
-
-function byName(a, b) {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
 
 function summarize(dir) {
   let files = 0;

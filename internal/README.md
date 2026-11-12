@@ -31,6 +31,28 @@ tools/
 - `check-capability-contract.mjs` — the skill declares the MCP server
   version it needs, and that requirement must be satisfiable by THIS
   release. An undeclared dependency is a latent outage.
+- `structure-lint.mjs` — the repository's SHAPE must stay clean. Every other
+  gate checks what the code DOES; this one checks what it LOOKS LIKE:
+  - **S1** no NUL byte in a tracked file — one had made a source file read
+    as BINARY to grep, `file` and every editor
+  - **S2** no `node_modules` inside a package's source — the CLI is
+    zero-dependency, so one can only be a stray install, and it sits FIRST
+    on Node's module-resolution path (a stale v0.1.3 copy of the server
+    once sat under `packages/cli/lib/`)
+  - **S3** every source file has a header comment
+  - **S4** no helper copied VERBATIM into two files of one package
+  - **S5** every relative import resolves to a file that exists
+  - **S6** no directory holds more than 20 files — the drift this whole
+    reorganisation exists to stop
+  Run: `node internal/tools/lint/structure-lint.mjs`. The gate's own tests
+  are in `internal/test/structure-lint.test.mjs`: they build a scratch
+  repository with ONE defect in it and assert the gate reports THAT
+  defect, because a gate that cannot fail is a gate whose behaviour nobody
+  knows.
+- `tracked-files.mjs` — the shared reader for "the files this repository
+  contains". Git is the source of truth, not the working tree: an
+  untracked local artifact is machine state, and a gate that fires on the
+  machine it runs on is a gate that gets ignored.
 
 ### release/
 

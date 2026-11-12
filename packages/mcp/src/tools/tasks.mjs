@@ -14,7 +14,7 @@ import { writeResumeSnapshot } from '../core/plan/resume-snapshot.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
 import { hint } from '../core/protocol/guidance.mjs';
 import { toolCall } from '../core/protocol/call.mjs';
-import { moreMeta, project, withMeta } from '../envelope.mjs';
+import { moreMeta, project, warningMeta, withMeta } from '../envelope.mjs';
 import { resolveSlugInput, ScopeError } from '../core/plan/scope.mjs';
 import { dirname, join } from 'node:path';
 import { ownedPaths } from '../core/plan/graph.mjs';
@@ -51,10 +51,6 @@ function resolveTasks(args, ctx, action) {
  * @param {string|null} warning
  * @returns {object}
  */
-function resolvedMeta(warning) {
-  return warning ? { warnings: [warning] } : {};
-}
-
 /**
  * The `.archgen/<slug>/` directory a tasks file belongs to.
  *
@@ -143,7 +139,7 @@ export function registerTaskTools(server) {
             { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: file, taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action, file },
           );
           const updated = setTaskStatus(file, args.taskId, args.status, { force: args.force === true });
-          return withMeta(updated, resolvedMeta(warning));
+          return withMeta(updated, warningMeta(warning));
         }
         case 'list': {
           const { file, warning } = resolveTasks(args, ctx, action);
@@ -191,7 +187,7 @@ export function registerTaskTools(server) {
                   ? { excludedBy, note: `this task exists but does not match ${excludedBy.join(', ')}` }
                   : {}),
               },
-              resolvedMeta(warning),
+              warningMeta(warning),
             );
           }
           const p = project(listed.tasks ?? [], {
@@ -213,7 +209,7 @@ export function registerTaskTools(server) {
                 available: { tasks: p.total },
                 more: toolCall('archgen_tasks', { action: 'list', tasksYaml: file, taskId: '<one task>' }),
               }),
-              ...resolvedMeta(warning),
+              ...warningMeta(warning),
             },
           );
         }
@@ -226,7 +222,7 @@ export function registerTaskTools(server) {
           const slugDir = slugDirFor(tasksFile, action);
           const waves = resolveWaves(tasksFile).waves;
           const snapshot = writeResumeSnapshot(slugDir, waves);
-          return withMeta(snapshot, resolvedMeta(warning));
+          return withMeta(snapshot, warningMeta(warning));
         }
         case 'contract': {
           const { file: tasksFile, warning } = resolveTasks(args, ctx, action);
@@ -415,7 +411,7 @@ export function registerTaskTools(server) {
                   note: `task '${args.taskId}' is ${one.status} — it is in no active wave`,
                   blockedByFailure: resolved.blockedByFailure,
                 },
-                resolvedMeta(warning),
+                warningMeta(warning),
               );
             }
             // The wave index is 1-BASED, like the snapshot's. It used to be
@@ -430,7 +426,7 @@ export function registerTaskTools(server) {
                 wave: resolved.waves[index],
                 blockedByFailure: resolved.blockedByFailure,
               },
-              resolvedMeta(warning),
+              warningMeta(warning),
             );
           }
           // The waves are the plan's shape; a long plan would dump every task
@@ -463,7 +459,7 @@ export function registerTaskTools(server) {
                 available: { waves: p.total, tasks: resolved.waves.flat().length },
                 more: toolCall('archgen_tasks', { action: 'next', tasksYaml: file, taskId: '<one task>' }),
               }),
-              ...resolvedMeta(warning),
+              ...warningMeta(warning),
             },
           );
         }

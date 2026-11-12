@@ -16,6 +16,7 @@ import {
   FEATURES_END,
   FEATURES_START,
   START,
+  countOccurrences,
   detectBlockVersion,
   renderBlock,
   upsertFeaturesRegistry,
@@ -27,12 +28,6 @@ import { compareSemver, parseSemver } from './version.js';
 import { readInstalledVersion, readStamp, writeStamp } from './version-stamp.js';
 import { mcpDoctor } from './mcp-server.js';
 import { lstatSafe, relJoin } from './fs-paths.js';
-
-function countOccurrences(haystack, needle) {
-  let n = 0;
-  for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) n++;
-  return n;
-}
 
 /**
  * @param {string} projectDir project root to inspect

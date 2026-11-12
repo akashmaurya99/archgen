@@ -34,10 +34,10 @@
 // ever needing an edit.
 //
 // Usage: node internal/tools/version-lint.mjs [--root <dir>]
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { trackedFiles } from './tracked-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = resolve(HERE, '..', '..', '..');
@@ -106,16 +106,6 @@ function currentSeries(root = DEFAULT_ROOT) {
  * Using git's index (rather than walking the disk) means build artifacts,
  * node_modules and other untracked state are never scanned.
  */
-function trackedFiles(root) {
-  try {
-    return execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
-      .split('\n')
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
 /**
  * @param {{root?: string}} opts repo root
  * @returns {{file: string, line: number, value: string}[]} violations

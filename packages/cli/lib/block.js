@@ -128,12 +128,6 @@ export function renderClaudeBridgeText() {
   return [START, provenanceLine(), '@AGENTS.md', END].join('\n');
 }
 
-function countOccurrences(haystack, needle) {
-  let n = 0;
-  for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) n++;
-  return n;
-}
-
 function stripCompleteBlocks(text) {
   let out = text;
   for (;;) {
@@ -157,6 +151,25 @@ function stripCompleteBlocks(text) {
  * @param {string} block rendered block
  * @param {string} eol line ending used when appending to empty/missing files
  */
+/**
+ * How many times a marker appears in a text.
+ *
+ * The managed-block format is a START marker and an END marker, and a file
+ * with the wrong NUMBER of them is broken in a way a reader cannot fix by
+ * hand — it has to be rewritten. Both the writer (block.js) and the
+ * doctor need that count, and it was written twice, byte for byte. Two
+ * copies of one rule is how one rule starts disagreeing with itself.
+ *
+ * @param {string} haystack the text to search
+ * @param {string} needle the marker to count
+ * @returns {number} how many times it appears
+ */
+export function countOccurrences(haystack, needle) {
+  let n = 0;
+  for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) n++;
+  return n;
+}
+
 export function upsertBlock(existing, block, eol = '\n') {
   // Every write carries the CURRENT provenance stamp regardless of what the
   // caller rendered — this is what upgrades legacy unversioned blocks in place.

@@ -160,3 +160,22 @@ export function withMeta(data, meta) {
   return { data, __meta: meta };
 }
 
+/**
+ * The meta map for a tool that may warn.
+ *
+ * A tool that has something to say says it in `meta.warnings`, and a tool
+ * that has nothing to say says NOTHING — an empty `warnings` array would
+ * tell the agent that a warning list was considered and found empty, which
+ * is a fact nobody needs and every reader has to check.
+ *
+ * It was written twice, byte for byte, in the plan and the tasks tool. Two
+ * copies of one rule is how one rule starts disagreeing with itself, so it
+ * lives here with the envelope it belongs to.
+ *
+ * @param {string|undefined|null} warning the warning, when there is one
+ * @returns {object} the meta map to spread into an envelope
+ */
+export function warningMeta(warning) {
+  return warning ? { warnings: [warning] } : {};
+}
+

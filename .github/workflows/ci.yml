@@ -140,6 +140,29 @@ jobs:
       # version and is checked by the step above.
       - run: node internal/tools/lint/version-lint.mjs
 
+  # Structure gate: the repository's SHAPE must stay clean. Every other gate
+  # checks what the code DOES; this one checks what it LOOKS LIKE — no NUL
+  # bytes, no nested node_modules inside a package, no headerless source
+  # file, no helper copied verbatim, no import that points nowhere, no
+  # directory grown past the size it was laid out for.
+  #
+  # Each of those was a real defect once, and none of them would fail any
+  # other gate: a stale 17MB dependency inside the published lib/ and a
+  # NUL byte that made a source file binary to grep both left every other
+  # job green.
+  structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run test:structure
+      # The gate's own tests: they build a scratch repository with one
+      # defect in it and assert the gate reports THAT defect. A gate that
+      # cannot fail is a gate whose behaviour nobody knows.
+      - run: node --test internal/test/structure-lint.test.mjs
+
   # Repo immutability: the suites must never mutate the repository (a suite
   # that silently deletes a tracked file looks like a green run).
   immutable:

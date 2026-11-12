@@ -20,10 +20,11 @@
 // vendor byte-identical — it is the published-layout copy the config loader
 // resolves, so a stale/missing one would break version reporting.
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { DEV_ONLY_RELPATHS } from '../lib/store.js';
+import { invokedDirectly } from './invoked-directly.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CLI_ROOT = resolve(SCRIPT_DIR, '..'); // packages/cli
@@ -174,16 +175,4 @@ function main() {
   console.log(`synced skill -> ${dest} (mirror; pruned OS junk + stray version stamps + dev-only scripts/test; archgen.config.json hash verified)`);
 }
 
-// Node realpath-resolves import.meta.url, but process.argv[1] keeps its
-// as-typed form; where the script is launched through a symlinked path
-// (macOS /tmp and /var/folders -> /private/...) a plain equality never matches
-// and main() would silently never run. Resolve argv[1] the same way first.
-function invokedDirectly() {
-  if (!process.argv[1]) return false;
-  try {
-    return import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href;
-  } catch {
-    return false;
-  }
-}
-if (invokedDirectly()) main();
+if (invokedDirectly(import.meta.url)) main();

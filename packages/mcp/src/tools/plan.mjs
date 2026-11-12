@@ -20,7 +20,7 @@ import { analyzeImpact } from '../core/plan/impact-analyzer.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
 import { assertPathToken } from '../core/protocol/slug.mjs';
 import { toolCall } from '../core/protocol/call.mjs';
-import { moreMeta, project, withMeta } from '../envelope.mjs';
+import { moreMeta, project, warningMeta, withMeta } from '../envelope.mjs';
 import { hint } from '../core/protocol/guidance.mjs';
 import { resolutionWarning, resolveTasksFile } from '../core/fs/tasks-file.mjs';
 
@@ -215,7 +215,7 @@ export function registerPlanTools(server) {
                   : warnTruncated
                     ? warnNext
                     : undefined,
-            }), ...resolvedMeta(warning) },
+            }), ...warningMeta(warning) },
           );
         }
         case 'verify': {
@@ -263,7 +263,7 @@ export function registerPlanTools(server) {
               next,
               more,
               available: { issues: out.issuesTotal, warnings: out.warningsTotal },
-            }), ...resolvedMeta(warning) },
+            }), ...warningMeta(warning) },
           );
         }
         case 'coverage': {
@@ -379,7 +379,7 @@ export function registerPlanTools(server) {
                 requirements: covered.requirements.uncoveredTotal,
                 edgeCases: covered.edgeCases.unlinkedTotal,
               },
-            }), ...resolvedMeta(warning) },
+            }), ...warningMeta(warning) },
           );
         }
         case 'impact': {
@@ -454,7 +454,7 @@ export function registerPlanTools(server) {
                 transitive: transitive.total,
                 artifacts: artifacts.total,
               },
-            }), ...resolvedMeta(warning) },
+            }), ...warningMeta(warning) },
           );
         }
         case 'profile': {
@@ -706,10 +706,6 @@ export function registerPlanTools(server) {
  * @param {string|null} warning
  * @returns {object}
  */
-function resolvedMeta(warning) {
-  return warning ? { warnings: [warning] } : {};
-}
-
 /**
  * Resolve the tasks.yaml argument, defaulting to the project's active slug.
  *

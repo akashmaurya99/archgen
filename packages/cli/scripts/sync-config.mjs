@@ -78,10 +78,11 @@ export function serverSatisfies(version, spec) {
 // as a CI gate (npm run sync:check) so drift fails the build instead of being
 // silently repaired by the next sync run.
 
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { parseConfig } from '../lib/config.js';
+import { invokedDirectly } from './invoked-directly.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = resolve(SCRIPT_DIR, '..', '..', '..'); // repo root
@@ -262,16 +263,4 @@ function main() {
   console.log(touched.length ? 'sync-config: updated:\n  ' + touched.join('\n  ') : 'sync-config: already in sync');
 }
 
-// Node realpath-resolves import.meta.url, but process.argv[1] keeps its
-// as-typed form; where the script is launched through a symlinked path
-// (macOS /tmp and /var/folders -> /private/...) a plain equality never matches
-// and main() would silently never run. Resolve argv[1] the same way first.
-function invokedDirectly() {
-  if (!process.argv[1]) return false;
-  try {
-    return import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href;
-  } catch {
-    return false;
-  }
-}
-if (invokedDirectly()) main();
+if (invokedDirectly(import.meta.url)) main();

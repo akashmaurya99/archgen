@@ -15,10 +15,11 @@
   ],
   "scripts": {
     "setup": "npm ci --prefix packages/mcp",
-    "test": "npm run test:internal && npm run test:mcp && npm run test:cli && npm run test:teaching",
+    "test": "npm run test:internal && npm run test:mcp && npm run test:cli && npm run test:teaching && npm run test:structure",
     "test:internal": "node --test internal/test/",
     "test:cli": "npm --prefix packages/cli test",
     "test:teaching": "node internal/tools/lint/teaching-lint.mjs",
+    "test:structure": "node internal/tools/lint/structure-lint.mjs",
     "test:fixtures": "npm --prefix packages/mcp ci --no-audit --no-fund && bash fixtures/greenfield-demo/run.sh && bash fixtures/brownfield-demo/run.sh && bash fixtures/verifier-negative/run.sh && bash fixtures/tool-matrix/run.sh && node packages/mcp/scripts/matrix.mjs",
     "test:matrix": "node packages/mcp/scripts/matrix.mjs",
     "sync": "node packages/mcp/scripts/gen-catalog.mjs && npm --prefix packages/cli run sync",

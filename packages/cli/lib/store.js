@@ -94,6 +94,26 @@ export const OBSOLETE_RELPATHS = ['scripts'];
  * @param {string} packagedRoot the packaged (vendor) skill tree
  * @returns {string[]} the relpaths that are obsolete
  */
+/**
+ * Compare two names, for a stable sort.
+ *
+ * `Array.prototype.sort` is stable in modern Node, but a STABLE ORDER is
+ * what the fingerprint depends on: the same tree must hash the same on
+ * every machine and every run, so the names are compared explicitly rather
+ * than left to the engine's default (which compares strings as UTF-16 code
+ * units, and would order an uppercase name before a lowercase one).
+ *
+ * It was written twice, byte for byte. Two copies of one rule is how one
+ * rule starts disagreeing with itself.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number} -1, 0 or 1
+ */
+export function byName(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function findObsolete(absRoot, packagedRoot) {
   const found = [];
   for (const rel of OBSOLETE_RELPATHS) {
@@ -223,10 +243,6 @@ export function assertWithinRoot(rootAbs, absPath) {
 /** Version string of this CLI package (used for the in-store stamp). */
 export function cliVersion(packageRoot) {
   return JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version;
-}
-
-function byName(a, b) {
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /**

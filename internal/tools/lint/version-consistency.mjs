@@ -38,11 +38,11 @@
 // its presence. `strayLiterals` proves the property holds.
 //
 // Usage: node internal/tools/version-consistency.mjs [--root <dir>]
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSkillFrontmatter } from '../../../packages/mcp/src/core/protocol/compat.mjs';
+import { trackedFiles } from './tracked-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = resolve(HERE, '..', '..', '..');
@@ -88,16 +88,6 @@ function installShBlocks(text) {
 }
 
 /** Every tracked file, relative to the repo root. */
-function trackedFiles(root) {
-  try {
-    return execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
-      .split('\n')
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
 /**
  * The surfaces that must carry the canonical version — DISCOVERED from the
  * TRACKED files.
