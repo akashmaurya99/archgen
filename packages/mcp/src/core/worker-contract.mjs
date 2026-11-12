@@ -16,8 +16,9 @@
 // which components to use" costs a whole second dispatch — the prompt, the
 // agent, its exploration and its output, all again. So the contract carries
 // everything the worker needs to produce a correct first answer: the rules of
-// the capability skill (not a pointer to a file it may never open), the exact
-// sections to read, and an explicit statement of what it must NOT do.
+// the capability skill (embedded, so it need not open the file — but it MAY
+// open it, and it is told where it is), the exact sections to read, and an
+// explicit statement of what it must NOT do.
 //
 // NOTE ON SIZE: there is deliberately NO token count in the prompt or the
 // returned payload. A number the model can see becomes a number it tries to
@@ -33,6 +34,15 @@ import { skillDirective } from './skill-manager.mjs';
 import { parseEdgeMatrix, readPlans } from './artifact-space.mjs';
 import { invalidInput } from './errors.mjs';
 import { noSuchTask, hint } from './guidance.mjs';
+
+/**
+ * The read-only archgen actions.
+ *
+ * The complete list, because a partial one reads as "these are the only ones
+ * you may use" — and a worker that reads that as a ban stops asking the
+ * tools it was given.
+ */
+const READONLY_ACTIONS = "archgen_plan{validate,verify,graph,impact,coverage,profile,scaffold,brief}, archgen_docs, archgen_refs, archgen_help, archgen_tasks{next,list,contract}, archgen_codegraph{status}, archgen_setup{doctor,harnesses,harness_info}, archgen_skills{match,installed,load,digest,list}, archgen_registry{show}";
 
 /**
  * Assemble the worker prompt for one task.
@@ -221,9 +231,9 @@ export function buildWorkerContract(opts) {
   }
 
   if (opts.docSections && opts.docSections.length) {
-    lines.push('## Your context — read ONLY these sections');
+    lines.push('## Your context — start with these sections');
     lines.push('');
-    lines.push('Do NOT read the whole plan. These are the sections that contain your contract:');
+    lines.push('These sections contain your contract — read them first. The whole plan is not required:');
     for (const s of opts.docSections) {
       lines.push(`- ${s.file} § ${s.section}${s.title ? ` — ${s.title}` : ''}`);
     }
@@ -251,24 +261,48 @@ export function buildWorkerContract(opts) {
 
   // ── what the worker must NOT do ──────────────────────────────────────────
   //
-  // Without this, a worker reads the archgen skill and its references (the
-  // orchestrator's protocol, not its), and runs the archgen tool suite to
-  // re-derive what this contract already says. That is a second and third
-  // reading of the same facts — pure cost, and a chance to drift from the
-  // protocol the orchestrator is actually following.
+  // The contract is the worker's CONTEXT, not a cage. It used to forbid
+  // reading the archgen skill and its references outright, and to forbid the
+  // tool suite outright. Both were absolute, and both were wrong:
+  //
+  //   - the contract is a SNAPSHOT. The plan, the code and the sibling
+  //     wave's output can change under the worker, and a contract that
+  //     cannot answer a question left the worker to guess or to stall —
+  //     the two things a worker must never do;
+  //   - a worker that needs the capability skill's rules, the plan's own
+  //     section, or the host's conventions can now READ them, and the
+  //     cheapest source is named rather than forbidden.
+  //
+  // What stays bounded is the WORK: the orchestrator's protocol is not the
+  // worker's to run. The worker does not open gates, does not dispatch
+  // agents, does not rewrite the plan, and does not touch another task's
+  // status. The single write it owns is the set_status it is told to make.
   lines.push('## Rules for you');
   lines.push('');
   lines.push(
-    '- Do NOT read the archgen skill, its references, or any protocol document. They belong to the ' +
-      'orchestrator. Everything you need is in this contract.',
+    '- This contract is your context: it carries your acceptance criteria, your files, your dependencies and ' +
+      'the rules you must follow. Read it first.',
   );
   lines.push(
-    '- Do NOT run the archgen tool suite. The ONLY archgen call you make is the set_status in ' +
-      '"When you finish". The orchestrator already ran every deterministic check.',
+    '- You MAY read anything else you need to do the job correctly: the archgen skill and its references, the ' +
+      'capability skill named above, the plan, tasks.yaml, or the host repository. When something here does ' +
+      'not answer your question, go and read it — do not guess, and do not come back asking.',
+  );
+  lines.push(
+    '- Read the cheapest source that answers it: this contract, then the named section, then the file, then the ' +
+      'tool. Do not read whole documents when a section is named.',
+  );
+  lines.push(
+    '- The read-only archgen actions are yours for facts: ' + READONLY_ACTIONS + '. The ONLY archgen write you make is ' +
+      'the set_status in "When you finish". Do not open the gates, do not dispatch anyone, and do not change ' +
+      'another task\'s status.',
   );
   lines.push('- Edit NOTHING outside your owned files.');
   lines.push('- Do NOT talk to other workers — coordination happens through tasks.yaml.');
-  lines.push('- Finish in ONE pass: the contract above is complete. Do not come back asking for context.');
+  lines.push(
+    '- Finish in ONE pass: everything you need is in this contract or one read away. Do not come back asking for ' +
+      'context.',
+  );
   lines.push('');
 
   lines.push('## Paths and working state');

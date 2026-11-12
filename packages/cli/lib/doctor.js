@@ -24,7 +24,7 @@ import {
 import { resolveSkillSource } from './init.js';
 import { CLAUDE_LINK_REL, DEV_ONLY_RELPATHS, MANIFEST_REL, STORE_REL, VERSION_FILE, assertNotSymlink, assertWithinRoot, cliVersion, findObsolete, hashDir, loadManifest, pruneDevOnly, pruneObsolete, saveManifest } from './store.js';
 import { compareSemver, parseSemver } from './version.js';
-import { readStamp, writeStamp } from './version-stamp.js';
+import { readInstalledVersion, readStamp, writeStamp } from './version-stamp.js';
 import { mcpDoctor } from './mcp-server.js';
 
 function lstatSafe(p) {
@@ -423,7 +423,10 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
   const ghSkills = join(root, '.github', 'skills', 'archgen');
   if (existsSync(ghSkills)) noteInstall(ghSkills);
   for (const p of installs) {
-    const v = readStamp(p);
+    // The version the skill DECLARES, with the stamp as the fallback: a
+    // link install points at the packaged skill, which carries its version
+    // in its own frontmatter.
+    const v = readInstalledVersion(p);
     const slot = v ?? (existsSync(join(p, VERSION_FILE)) ? 'unknown (pre-0.1 stamp)' : 'missing');
     add(v ? 'OK' : 'WARN', `skill ${p}: ${slot}`);
   }

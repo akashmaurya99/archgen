@@ -96,11 +96,12 @@ export function loadAllBriefs(briefsDir) {
  *      orchestrator two extra tool calls per round, one of which (the graph)
  *      failed on every plan. The tool renders them once, into the brief.
  *
- *   3. THE FORBIDDEN LIST. Without it, a sub-agent reads the archgen skill
- *      and its references (the orchestrator's protocol, not its) and runs the
- *      archgen tool suite to re-derive what it was just handed. That is a
- *      second and third reading of the same facts — pure cost, and a chance
- *      to drift from the protocol the orchestrator is following.
+ *   3. THE BOUND. The brief is the agent's context, not a cage: it may read
+ *      the archgen skill, its references, the plan and the repository when a
+ *      question the brief does not answer needs an answer. What is bounded is
+ *      the WORK — the calls that change something. The brief names them, so
+ *      the agent judges instead of re-deriving the facts it was handed, and
+ *      it can still look up what it was not handed.
  *
  * @param {{
  *   scope?: {slug?: string, slugDir?: string, plansDir?: string, tasksYaml?: string}|null,
@@ -117,19 +118,28 @@ export function renderBriefContext(ctx = {}) {
   out.push('## CONTEXT — read this first');
   out.push('');
   out.push(
-    'Everything you need is in this brief. Do NOT read the archgen skill, its references, or any ' +
-      'protocol document — they are the ORCHESTRATOR\'s, and reading them re-derives context you were ' +
-      'already given.',
+    'This brief is your context: read it first, and judge what it carries.',
+  );
+  out.push(
+    'You MAY read anything else you need to judge correctly: the archgen skill and its references, the plan, ' +
+      'tasks.yaml, or the host repository. When the brief does not answer a question, go and read it — do not ' +
+      'guess, and do not report a blocker you could have resolved by reading.',
+  );
+  out.push(
+    'Read the cheapest source that answers it: this brief, then the named section, then the file, then the tool. ' +
+      'Do not read whole documents when a section is named.',
   );
   const allowed = ctx.allowedCalls ?? [];
   out.push(
-    allowed.length
-      ? `Do NOT run the archgen tool suite beyond these calls: ${allowed.join(', ')}.`
-      : 'Do NOT run the archgen tool suite at all.',
+    'The read-only archgen actions are yours for facts: archgen_plan{validate,verify,graph,impact,coverage,' +
+      'profile,scaffold,brief}, archgen_docs, archgen_refs, archgen_help, archgen_tasks{next,list,contract}, ' +
+      'archgen_codegraph{status}, archgen_setup{doctor,harnesses,harness_info}, ' +
+      'archgen_skills{match,installed,load,digest,list}, archgen_registry{show}.',
   );
   out.push(
-    'Read ONLY the files in EVIDENCE, and only the sections named. Do not read whole documents when a ' +
-      'section is named.',
+    allowed.length
+      ? `These are the ONLY archgen calls beyond reading that you may make: ${allowed.join(', ')}.`
+      : 'Make no archgen call that changes anything — you judge, you do not repair.',
   );
   out.push('');
 

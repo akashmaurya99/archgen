@@ -238,16 +238,27 @@ test('a capability skill that is not installed makes the task undispatchable', (
   }
 });
 
-test('the contract forbids reading the archgen skill and running the tool suite', () => {
+test('the contract lets the worker READ what it needs, and bounds only the WRITES', () => {
   const { dir, tasks } = sandbox();
   try {
     const c = buildWorkerContract({ tasksYaml: tasks, taskId: 'C', slugDir: dir });
-    // A worker that re-reads the orchestrator's protocol re-derives what the
-    // contract already says, and can drift from it.
-    assert.match(c.prompt, /Do NOT read the archgen skill/i);
-    assert.match(c.prompt, /Do NOT run the archgen tool suite/i);
+    // The contract is a SNAPSHOT: the plan, the code and the capability
+    // skill can change under the worker, so a question it cannot answer
+    // must be answerable by reading — not by guessing, and not by stalling.
+    assert.match(c.prompt, /MAY read anything else you need/i);
+    assert.match(c.prompt, /archgen skill and its references/i);
+    assert.match(c.prompt, /read the cheapest source/i);
+    // The bound is the WORK: reading is free, changing is not.
+    assert.match(c.prompt, /read-only archgen actions are yours for facts/i);
+    assert.match(c.prompt, /archgen_docs/);
+    assert.match(c.prompt, /archgen_refs/);
+    assert.match(c.prompt, /ONLY archgen write you make is the set_status/i);
+    assert.match(c.prompt, /do not open the gates/i);
     // The one archgen call the worker DOES make.
     assert.match(c.prompt, /set_status/);
+    // The old absolute bans are gone.
+    assert.doesNotMatch(c.prompt, /Do NOT read the archgen skill/i);
+    assert.doesNotMatch(c.prompt, /Do NOT run the archgen tool suite/i);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -266,7 +277,7 @@ test('the CodeGraph directive is emitted when the project is indexed', () => {
   }
 });
 
-test('the pre-located doc sections are included — never the whole plan', () => {
+test('the pre-located doc sections are included — the plan itself is not dumped', () => {
   const { dir, tasks } = sandbox();
   try {
     const c = buildWorkerContract({
@@ -275,7 +286,10 @@ test('the pre-located doc sections are included — never the whole plan', () =>
       slugDir: dir,
       docSections: [{ file: 'plans/demo.md', section: 'C — Scaffold', title: 'Scaffold' }],
     });
-    assert.match(c.prompt, /read ONLY these sections/i);
+    // The sections are NAMED, so the worker opens one section instead of the
+    // whole plan — a cost rule, not a ban: the worker may still read more.
+    assert.match(c.prompt, /start with these sections/i);
+    assert.match(c.prompt, /The whole plan is not required/i);
     assert.ok(c.prompt.includes('plans/demo.md § C — Scaffold'));
   } finally {
     rmSync(dir, { recursive: true, force: true });

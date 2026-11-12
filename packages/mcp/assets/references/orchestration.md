@@ -1,6 +1,6 @@
 # Orchestration playbook — survey, verify, review, dispatch
 
-Sub-agent briefs and wave rules for the orchestrator (`SKILL.md`). Workers never read this file.
+Sub-agent briefs and wave rules for the orchestrator (`SKILL.md`). A worker may read this file when it needs a fact it was not handed — it is not its default context.
 
 ## §survey — brownfield codebase analysis brief
 

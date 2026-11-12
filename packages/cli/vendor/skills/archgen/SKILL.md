@@ -59,7 +59,7 @@ archgen_refs { action: 'read', topic: 'orchestration', section: 'dispatch--wave-
 3. **Reload after compaction** (Hard Rule 9).
 4. **Never guess a protocol**—if an unread `§` covers your next step, load it first.
 
-*Exception:* `references/code-standards.md` stays local so workers without MCP access can read it.
+*Exception:* `references/code-standards.md` stays local, so a worker without MCP access can read it.
 
 ## Hard rules — read first
 
@@ -144,7 +144,7 @@ Run from the repo root.
 1. **Frontier:** `archgen_tasks{action:'next', tasksYaml}`. `CYCLE`/`OWNERSHIP_CONFLICT` → fix `tasks.yaml`, re-run. `blockedByFailure` → report; exclude until re-planned. Empty + nothing blocked → step 7.
 2. **Mark running:** `archgen_tasks{action:'set_status', tasksYaml, taskId, status:'running'}` per task.
 3. **Dispatch (`§orchestration/dispatch`):**
-   - Sub-agents are for WORK, never lookups; the orchestrator calls `archgen_tasks`, `archgen_plan`, `archgen_docs`, `archgen_registry` directly.
+   - Sub-agents are for WORK, never lookups; the orchestrator calls `archgen_tasks`, `archgen_plan`, `archgen_docs`, `archgen_registry` directly. A worker may read for itself—on demand, cheapest source first.
    - Max 3 parallel; zero file overlap; one writer per path; no gate agents during a wave.
    - Track `dispatchKey → session`; continue the same agent for fixes.
    - Sub-agents unavailable → **self-execute sequentially** without asking; cross-harness/CLI switching needs approval.

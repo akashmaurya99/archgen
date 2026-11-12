@@ -4,7 +4,7 @@
 
 import { cpSync, existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSkillSource } from './init.js';
 import { assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackupInto, pruneDevOnly, refuseSymlinkMessage } from './store.js';
@@ -200,8 +200,13 @@ export function installGlobal(opts = {}) {
         }
         // The link itself holds no bytes, and the thing it points at is the
         // PACKAGED skill — writing a stamp there mutated the npm package and
-        // shared one stamp across every link target. The version lives in
-        // the skill's own frontmatter, so a link needs no stamp at all.
+        // shared one stamp across every link target. An INSTALLED package is
+        // never written to; a checkout may carry the stamp, because the repo
+        // manages that copy. Either way the version is in the skill's own
+        // frontmatter, which is where every reader takes it from.
+        if (!source.includes(`${sep}node_modules${sep}`)) {
+          stampNote(rows, dest, () => writeStamp(source, version));
+        }
         record(manifest, 'link', dest);
         rows.push([status, 'link', dest]);
       }

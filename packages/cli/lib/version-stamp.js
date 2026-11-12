@@ -18,6 +18,39 @@ import { VERSION_FILE, assertNotSymlink } from './store.js';
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
 /**
+ * The version an installed skill declares in its OWN frontmatter.
+ *
+ * The frontmatter is present in every install mode — a copied store, a
+ * symlink to the packaged skill, a git checkout — and it cannot disagree
+ * with the skill it describes. The stamp is the fallback, for a store from
+ * before the frontmatter carried a version.
+ *
+ * @param {string} skillRoot
+ * @returns {string|null}
+ */
+export function readDeclaredVersion(skillRoot) {
+  if (!skillRoot) return null;
+  let raw;
+  try {
+    raw = readFileSync(join(skillRoot, 'SKILL.md'), 'utf8');
+  } catch {
+    return null;
+  }
+  const m = /^\s*version:\s*["']?([\d]+\.[\d]+\.[\d]+)["']?\s*$/m.exec(raw);
+  return m ? m[1] : null;
+}
+
+/**
+ * The version of an installed skill: what the skill declares, else its stamp.
+ *
+ * @param {string} skillRoot
+ * @returns {string|null}
+ */
+export function readInstalledVersion(skillRoot) {
+  return readDeclaredVersion(skillRoot) ?? readStamp(skillRoot);
+}
+
+/**
  * Read the stamp from a skill root (the directory containing SKILL.md).
  * @returns {string|null} the trimmed `MAJOR.MINOR.PATCH` string, or null when
  *   the stamp is absent, unreadable, or not plain semver ("unknown").
