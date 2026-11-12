@@ -1,3 +1,20 @@
+// sync-config.mjs — propagate the canonical version to every derived surface.
+//
+// WHY THIS FILE EXISTS. The version lives in ONE place — archgen.config.json.
+// Every other surface that carries a version (the skill's config, the SKILL.md
+// frontmatter, the CLI's and the MCP server's package.json) DERIVES it from
+// that file. A hand-written copy of a version is a release chore and a drift
+// source: it is wrong at the next release, nobody notices, and the fix is a
+// manual edit nobody remembers to make.
+//
+// So this script writes the derived surfaces from the canonical one, and
+// `--check` refuses to write — which is what CI runs, so a drifted file can
+// never ship.
+//
+// It also enforces the CAPABILITY CONTRACT: the skill declares the MCP server
+// version it needs, and that requirement must be satisfiable by THIS release.
+// The check runs BEFORE anything is written, so a bad requirement never leaves
+// a half-synced tree behind.
 
 /**
  * Read the skill's declared capability requirement from its frontmatter:

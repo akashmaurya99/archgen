@@ -1,6 +1,6 @@
 # Architecture Conventions
 
-Normative shape of `.archgen/<slug>/architecture.yaml` — the architecture contract archgen writes into a project before any task graph is planned. Every generator, validator, and verifier in `skills/archgen/scripts/` treats this document as the source of truth.
+Normative shape of `.archgen/<slug>/architecture.yaml` — the architecture contract archgen writes into a project before any task graph is planned. Every generator, validator, and verifier in the MCP server (`packages/mcp/src/core/`) treats this document as the source of truth.
 
 ## File location
 

@@ -184,7 +184,8 @@ complete does not.
 | [`skill/`](skill/) | The agent skill — `SKILL.md` + `references/code-standards.md` (guidance only; the server owns every capability) | vendored into npm |
 | [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `doctor` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
 | [`packages/mcp/`](packages/mcp/) | The `archgen-mcp` server — every deterministic capability | npm: [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp) |
-| [`schemas/`](schemas/) | Task-file JSON schema + architecture conventions | repo contract |
+| [`packages/mcp/schemas/`](packages/mcp/schemas/) | The task-file JSON schema (`tasks.schema.json`) — ships with the server | npm: `archgen-mcp` |
+| [`schemas/`](schemas/) | The architecture.yaml conventions (normative shape, repo contract) | repo-only |
 | [`fixtures/`](fixtures/) | Deterministic E2E drivers + shared YAML corpus | repo-only |
 | [`internal/`](internal/) | QA tooling (token budget, version gates) — never shipped | repo-only |
 | [`docs/`](docs/) | Architecture walkthrough · agent setup prompt · release process | repo-only |
