@@ -11,6 +11,11 @@
 // completes. The rule behind a code lives in codes.mjs, which the reference
 // document also reads, so a code is never documented in one place and
 // emitted from another.
+//
+// TWO RENDERINGS, ONE FINDING. The validator returns the structured finding;
+// the floor renders it as one line (`CODE: message — fix`) because a gate
+// brief reads as prose and a line is what a reviewer can quote. Both come
+// from the same object, so they cannot disagree.
 
 /**
  * @typedef {{code: string, message: string, fix?: string}} Finding
