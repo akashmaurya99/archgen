@@ -8,7 +8,7 @@
 // pruned only when left completely empty, and never past the guarded
 // .claude/.agents levels.
 
-import { existsSync, lstatSync, readlinkSync, rmSync, unlinkSync } from 'node:fs';
+import { existsSync, readlinkSync, rmSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { stripManagedFile } from './block.js';
 import {
@@ -23,14 +23,7 @@ import {
 } from './store.js';
 import { resolveSkillSource } from './init.js';
 import { uninstallMcp } from './mcp-server.js';
-
-function lstatSafe(p) {
-  try { return lstatSync(p); } catch { return null; }
-}
-
-function relJoin(rel) {
-  return join(...rel.split('/'));
-}
+import { lstatSafe, relJoin } from './fs-paths.js';
 
 /**
  * @param {string} projectDir project root to clean

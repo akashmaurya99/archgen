@@ -7,7 +7,7 @@
 // reported AND it fails the run (the process exits non-zero whenever any
 // FAIL row was produced).
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { globalTargets } from './install.js';
@@ -26,19 +26,12 @@ import { CLAUDE_LINK_REL, DEV_ONLY_RELPATHS, MANIFEST_REL, STORE_REL, VERSION_FI
 import { compareSemver, parseSemver } from './version.js';
 import { readInstalledVersion, readStamp, writeStamp } from './version-stamp.js';
 import { mcpDoctor } from './mcp-server.js';
-
-function lstatSafe(p) {
-  try { return lstatSync(p); } catch { return null; }
-}
+import { lstatSafe, relJoin } from './fs-paths.js';
 
 function countOccurrences(haystack, needle) {
   let n = 0;
   for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) n++;
   return n;
-}
-
-function relJoin(rel) {
-  return join(...rel.split('/'));
 }
 
 /**

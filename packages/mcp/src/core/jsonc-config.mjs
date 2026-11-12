@@ -67,7 +67,7 @@ export function mergeEntry(text, key, serverId, entry) {
   }
   const style = detectStyle(text, root);
   const parts = key.split('.');
-  const resolved = resolvePath(root, parts);
+  const resolved = walkKeyPath(root, parts);
   if (resolved.ambiguous) {
     // A duplicated key makes the target ambiguous: JSON.parse would read the
     // last one, so splicing the first would have no effect.
@@ -108,12 +108,17 @@ export function mergeEntry(text, key, serverId, entry) {
 /**
  * Walk a dotted key path through the scanned tree.
  *
+ * WHY IT IS NOT CALLED `resolvePath`: another module had a `resolvePath`
+ * that resolved a FILESYSTEM path — a different operation under the same
+ * name. Two names for two operations in one codebase is how a reader picks
+ * the wrong one. This one walks a tree of members, so it is named for that.
+ *
  * @param {object} root the scanned top-level object
  * @param {string[]} parts the path segments
  * @returns {{member: object|null, parent: object|null, missing: string|null,
  *   missingIndex: number, ambiguous: boolean, blocked: string|null}}
  */
-function resolvePath(root, parts) {
+function walkKeyPath(root, parts) {
   let container = root;
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
@@ -185,7 +190,7 @@ export function removeEntry(text, key, serverId) {
   } catch (e) {
     return { text, changed: false, reason: `cannot locate the target safely (${e.message})` };
   }
-  const resolved = resolvePath(root, key.split('.'));
+  const resolved = walkKeyPath(root, key.split('.'));
   if (resolved.ambiguous) {
     return { text, changed: false, reason: `the key '${key}' appears more than once` };
   }

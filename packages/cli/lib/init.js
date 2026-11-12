@@ -17,13 +17,14 @@
 //   to a symlink; a customized one is left untouched with a warning;
 // - installs are atomic: built in a temp sibling dir, then renamed.
 
-import { cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { importsAgents, hasManagedBlock, renderBlock, START, END, upsertManagedFile } from './block.js';
 import { CLAUDE_LINK_REL, STORE_REL, VERSION_FILE, appendEntry, assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackup, pruneDevOnly } from './store.js';
 import { writeStamp } from './version-stamp.js';
 import { bootstrapServers } from './bootstrap.js';
+import { lstatSafe, relJoin } from './fs-paths.js';
 
 const CONTEXT_FILES = ['AGENTS.md', 'CLAUDE.md'];
 
@@ -35,14 +36,6 @@ export function resolveSkillSource(packageRoot) {
   ];
   for (const c of candidates) if (existsSync(join(c, 'SKILL.md'))) return c;
   throw new Error('bundled archgen skill not found (expected vendor/skills/archgen)');
-}
-
-function lstatSafe(p) {
-  try { return lstatSync(p); } catch { return null; }
-}
-
-function relJoin(rel) {
-  return join(...rel.split('/'));
 }
 
 /**

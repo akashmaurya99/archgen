@@ -2,7 +2,7 @@
 // Installs the archgen skill into every EXISTING harness skills dir; manifest
 // records entries so --uninstall removes exactly what we put there.
 
-import { cpSync, existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync, lstatSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ import { assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackupIn
 import { writeStamp } from './version-stamp.js';
 import { loadConfig } from './config.js';
 import { bootstrapServers } from './bootstrap.js';
+import { lstatSafe } from './fs-paths.js';
 
 // Module-anchored default: works from the npm package (cli/lib -> cli/vendor)
 // AND from a monorepo checkout (packages/cli/lib -> ../../skill) without depending on cwd.
@@ -83,10 +84,6 @@ export function recordedRoots(home) {
   } catch {
     return [];
   }
-}
-
-function lstatSafe(p) {
-  try { return lstatSync(p); } catch { return null; }
 }
 
 /** Collision-free timestamp for `<tdir>/.archgen-backups/<ts>/` (ms clock can tick twice). */

@@ -68,7 +68,7 @@ export function planFileError(file, findings) {
   // The path is resolved so every tool spells it the same way — one tool
   // resolved its input through a realpath and another did not, and the same
   // broken file produced two different messages.
-  const where = resolvePath(file);
+  const where = realPathOf(file);
   const next = toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' });
   return invalidInput(
     teach(
@@ -85,12 +85,18 @@ export function planFileError(file, findings) {
 }
 
 /**
- * The file's path, resolved.
+ * The file's real path, when it has one.
+ *
+ * WHY IT IS NOT CALLED `resolvePath`: another module had a `resolvePath`
+ * that walks a JSON tree by key path — a different operation under the same
+ * name. Two names for two operations in one codebase is how a reader picks
+ * the wrong one. This one answers "what path does this really point at",
+ * so it is named for that.
  *
  * @param {string} file
- * @returns {string}
+ * @returns {string} the real path, or the input when it cannot be resolved
  */
-function resolvePath(file) {
+function realPathOf(file) {
   try {
     return realpathSync.native(file);
   } catch {
