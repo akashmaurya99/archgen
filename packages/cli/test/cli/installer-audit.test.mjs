@@ -33,11 +33,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { installGlobal, uninstallGlobal, recordRoot, recordedRoots } from '../lib/install.js';
-import { doctorProject } from '../lib/doctor.js';
-import { restoreMain } from '../lib/restore.js';
+import { installGlobal, uninstallGlobal, recordRoot, recordedRoots } from '../../lib/install.js';
+import { doctorProject } from '../../lib/doctor.js';
+import { restoreMain } from '../../lib/restore.js';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BIN = join(CLI, 'bin', 'archgen.mjs');
 
 let proj, home, mcpStub, mcpArgs;

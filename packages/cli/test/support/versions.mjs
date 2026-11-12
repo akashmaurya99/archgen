@@ -25,7 +25,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const CLI_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** The version under test — read from the package, never written down. */
 export const RELEASE = JSON.parse(readFileSync(join(CLI_ROOT, 'package.json'), 'utf8')).version;

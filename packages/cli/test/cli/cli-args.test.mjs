@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BIN = join(CLI, 'bin', 'archgen.mjs');
 const REPO = join(CLI, '..', '..');
 // The local MCP server, so `doctor` does not reach out to the npm registry

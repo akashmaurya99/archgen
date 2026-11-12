@@ -23,12 +23,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initProject } from '../lib/init.js';
-import { doctorProject } from '../lib/doctor.js';
-import { OLDER_STAMP } from './versions.mjs';
-import { END, START, detectBlockVersion } from '../lib/block.js';
+import { initProject } from '../../lib/init.js';
+import { doctorProject } from '../../lib/doctor.js';
+import { OLDER_STAMP } from '../support/versions.mjs';
+import { END, START, detectBlockVersion } from '../../lib/block.js';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VERSION = JSON.parse(readFileSync(join(CLI, 'package.json'), 'utf8')).version;
 const STORE = (p) => join(p, '.agents', 'skills', 'archgen');
 const NO_BOOTSTRAP = { env: { ARCHGEN_CODEGRAPH: '0' } };

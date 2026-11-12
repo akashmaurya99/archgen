@@ -13,10 +13,10 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureGlobalServer, installedServerVersion, serverVersion } from '../lib/global-server.js';
+import { ensureGlobalServer, installedServerVersion, serverVersion } from '../../lib/global-server.js';
 
 // The versions come from the ONE shared helper — see test/versions.mjs.
-import { RELEASE, OLDER_STAMP as OLDER, NEWER_STAMP as NEWER, escapeRe } from './versions.mjs';
+import { RELEASE, OLDER_STAMP as OLDER, NEWER_STAMP as NEWER, escapeRe } from '../support/versions.mjs';
 
 let dir;
 let binDir;
@@ -123,6 +123,6 @@ test('a failed install keeps the old server and reports why', () => {
 });
 
 test('the CLI version comes from the CLI package', () => {
-  assert.equal(serverVersion(join(import.meta.dirname, '..')), RELEASE);
+  assert.equal(serverVersion(join(import.meta.dirname, '..', '..')), RELEASE);
   assert.equal(serverVersion('/nowhere'), 'latest');
 });

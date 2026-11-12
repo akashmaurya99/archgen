@@ -28,17 +28,17 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initProject } from '../lib/init.js';
-import { uninstallProject } from '../lib/uninstall-project.js';
-import { assertWithinRoot, saveManifest } from '../lib/store.js';
-import { bootstrapServers } from '../lib/bootstrap.js';
+import { initProject } from '../../lib/init.js';
+import { uninstallProject } from '../../lib/uninstall-project.js';
+import { assertWithinRoot, saveManifest } from '../../lib/store.js';
+import { bootstrapServers } from '../../lib/bootstrap.js';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VENDOR = join(CLI, 'vendor', 'skills', 'archgen');
 const BIN = join(CLI, 'bin', 'archgen.mjs');
 const REFUSE_RE = /Refusing to write through symlink/;
 // The installed package's version comes from the ONE shared helper.
-import { RELEASE } from './versions.mjs';
+import { RELEASE } from '../support/versions.mjs';
 const STORE = (p) => join(p, '.agents', 'skills', 'archgen');
 const NO_BOOTSTRAP = { env: { ARCHGEN_CODEGRAPH: '0' } };
 

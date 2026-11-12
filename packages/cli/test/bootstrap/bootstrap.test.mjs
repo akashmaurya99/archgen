@@ -9,13 +9,13 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bootstrapServers, renderBootstrapReport } from '../lib/bootstrap.js';
-import { initProject } from '../lib/init.js';
-import { resolveSkillSource } from '../lib/init.js';
-import { resolveMcpBinary } from '../lib/mcp-server.js';
+import { bootstrapServers, renderBootstrapReport } from '../../lib/bootstrap.js';
+import { initProject } from '../../lib/init.js';
+import { resolveSkillSource } from '../../lib/init.js';
+import { resolveMcpBinary } from '../../lib/mcp-server.js';
 
 const THIS_FILE = fileURLToPath(import.meta.url);
-const PACKAGE_ROOT = join(dirname(THIS_FILE), '..');
+const PACKAGE_ROOT = join(dirname(THIS_FILE), '..', '..');
 const tmp = () => mkdtempSync(join(tmpdir(), 'archgen-bootstrap-test-'));
 
 test('bootstrap: ARCHGEN_CODEGRAPH=0 skips it (no spawn, no writes)', () => {

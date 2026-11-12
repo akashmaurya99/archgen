@@ -14,7 +14,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CLI_ROOT = join(HERE, '..');            // packages/cli
+const CLI_ROOT = join(HERE, '..', '..');            // packages/cli
 const REPO_ROOT = join(CLI_ROOT, '..', '..'); // monorepo root
 const BIN = join(CLI_ROOT, 'bin', 'archgen.mjs');
 

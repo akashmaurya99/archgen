@@ -22,9 +22,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { globalBinPath } from '../lib/spawn-npm.js';
+import { globalBinPath } from '../../lib/spawn-npm.js';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BIN = join(CLI, 'bin', 'archgen.mjs');
 
 let proj, home, prefix, pathDir, mcpStub;

@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const INSTALL_SH = join(REPO, 'install.sh');
 
 /**

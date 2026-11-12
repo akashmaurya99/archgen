@@ -17,10 +17,10 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { migrateMain } from '../lib/migrate.js';
-import { applyMigration, listMigrations, pendingMigrations } from '../lib/migrations/index.mjs';
+import { migrateMain } from '../../lib/migrate.js';
+import { applyMigration, listMigrations, pendingMigrations } from '../../lib/migrations/index.mjs';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REPO = join(CLI, '..', '..');
 const MCP_BIN = join(REPO, 'packages', 'mcp', 'bin', 'archgen-mcp.mjs');
 const CORPUS = join(REPO, 'fixtures', 'yaml-corpus');
@@ -243,7 +243,7 @@ test('applyMigration API: unknown id -> not-found; clean project -> clean; dryRu
   assert.deepEqual(dry.files.sort(), ['.archgen/demo-shop/architecture.yaml', '.archgen/demo-shop/tasks.yaml']);
   assert.deepEqual(snapshot(proj), before, 'default dry-run wrote nothing');
 
-  const ctxBackupThrows = await import('../lib/migrations/index.mjs').then(({ makeCtx }) => {
+  const ctxBackupThrows = await import('../../lib/migrations/index.mjs').then(({ makeCtx }) => {
     const ctx = makeCtx(proj, { dryRun: true });
     try { ctx.backup('.archgen/demo-shop/tasks.yaml'); return false; } catch { return true; }
   });

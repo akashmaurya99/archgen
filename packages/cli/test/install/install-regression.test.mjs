@@ -19,9 +19,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { installGlobal, uninstallGlobal, MANIFEST_NAME } from '../lib/install.js';
+import { installGlobal, uninstallGlobal, MANIFEST_NAME } from '../../lib/install.js';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VENDOR = join(CLI, 'vendor', 'skills', 'archgen');
 const VERSION = JSON.parse(readFileSync(join(CLI, 'package.json'), 'utf8')).version;
 

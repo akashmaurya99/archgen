@@ -44,6 +44,6 @@
     "sync:check": "node scripts/sync-config.mjs --check && node scripts/sync-vendor.mjs --check",
     "sync": "node scripts/sync-config.mjs && node scripts/sync-vendor.mjs",
     "prepublishOnly": "node scripts/sync-config.mjs && node scripts/sync-vendor.mjs",
-    "test": "ARCHGEN_CODEGRAPH=0 node --test test/*.test.mjs"
+    "test": "ARCHGEN_CODEGRAPH=0 node --test test/"
   }
 }

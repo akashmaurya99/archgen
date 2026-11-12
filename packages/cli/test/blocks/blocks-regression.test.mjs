@@ -23,10 +23,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { END, START, atomicWrite, renderBlock, upsertBlock } from '../lib/block.js';
-import { makeCtx } from '../lib/migrations/index.mjs';
+import { END, START, atomicWrite, renderBlock, upsertBlock } from '../../lib/block.js';
+import { makeCtx } from '../../lib/migrations/index.mjs';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 let dir;
 
@@ -88,7 +88,7 @@ test('L7: a temp-name collision is retried instead of failing the write', () => 
 });
 
 test('M16: a migration mutates exactly the files the framework backed up', async () => {
-  const mig = await import('../lib/migrations/001-stamp-provenance.mjs');
+  const mig = await import('../../lib/migrations/001-stamp-provenance.mjs');
   const project = join(dir, 'project');
   mkdirSync(join(project, '.archgen', 'demo'), { recursive: true });
   mkdirSync(join(project, '.archgen', 'other'), { recursive: true });
@@ -110,7 +110,7 @@ test('M16: a migration mutates exactly the files the framework backed up', async
 });
 
 test('M16: the framework reports the backed-up file set as the applied set', async () => {
-  const { applyMigration } = await import('../lib/migrations/index.mjs');
+  const { applyMigration } = await import('../../lib/migrations/index.mjs');
   const project = join(dir, 'project2');
   mkdirSync(join(project, '.archgen', 'demo'), { recursive: true });
   writeFileSync(join(project, '.archgen', 'demo', 'tasks.yaml'), 'tasks: []\n');

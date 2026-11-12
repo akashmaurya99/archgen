@@ -21,14 +21,14 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initProject } from '../lib/init.js';
-import { installGlobal } from '../lib/install.js';
-import { restoreBackups, restoreMain } from '../lib/restore.js';
+import { initProject } from '../../lib/init.js';
+import { installGlobal } from '../../lib/install.js';
+import { restoreBackups, restoreMain } from '../../lib/restore.js';
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const STORE = (p) => join(p, '.agents', 'skills', 'archgen');
 // The installed package's version comes from the ONE shared helper.
-import { RELEASE } from './versions.mjs';
+import { RELEASE } from '../support/versions.mjs';
 
 let proj;
 

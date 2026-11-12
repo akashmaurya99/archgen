@@ -16,10 +16,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashDir, DEV_ONLY_RELPATHS, OBSOLETE_RELPATHS } from '../lib/store.js';
+import { hashDir, DEV_ONLY_RELPATHS, OBSOLETE_RELPATHS } from '../../lib/store.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CLI_ROOT = join(HERE, '..'); // packages/cli
+const CLI_ROOT = join(HERE, '..', '..'); // packages/cli
 const BIN = join(CLI_ROOT, 'bin', 'archgen.mjs');
 
 let dir;

@@ -11,15 +11,15 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configCandidates, loadConfig, loadConfigFrom, parseConfig } from '../lib/config.js';
-import { START, END, FEATURES_START, FEATURES_END, renderManagedBlockText, renderClaudeBridgeText } from '../lib/block.js';
-import { VERSION_FILE, MANIFEST_REL, BACKUP_ROOT_REL } from '../lib/store.js';
-import { MANIFEST_NAME } from '../lib/install.js';
-import { syncConfig, setFrontmatterVersion, setPackageVersion } from '../scripts/sync-config.mjs';
-import { parseSkillFrontmatter, satisfies } from '../../mcp/src/core/protocol/compat.mjs';
-import { syncVendor } from '../scripts/sync-vendor.mjs';
+import { configCandidates, loadConfig, loadConfigFrom, parseConfig } from '../../lib/config.js';
+import { START, END, FEATURES_START, FEATURES_END, renderManagedBlockText, renderClaudeBridgeText } from '../../lib/block.js';
+import { VERSION_FILE, MANIFEST_REL, BACKUP_ROOT_REL } from '../../lib/store.js';
+import { MANIFEST_NAME } from '../../lib/install.js';
+import { syncConfig, setFrontmatterVersion, setPackageVersion } from '../../scripts/sync-config.mjs';
+import { parseSkillFrontmatter, satisfies } from '../../../mcp/src/core/protocol/compat.mjs';
+import { syncVendor } from '../../scripts/sync-vendor.mjs';
 
-const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const CANONICAL_PATH = join(REPO, 'archgen.config.json');
 const CANONICAL = JSON.parse(readFileSync(CANONICAL_PATH, 'utf8'));
 const VERSION = CANONICAL.version;
