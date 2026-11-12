@@ -12,7 +12,7 @@
 // It also refuses a requirement the server cannot satisfy TODAY — a skill
 // wired to a server that is too old is a broken install for every user.
 //
-// Usage: node internal/tools/check-capability-contract.mjs
+// Usage: node internal/tools/lint/check-capability-contract.mjs
 // Exit 0 ok · 1 contract violation · 4 usage/IO error
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

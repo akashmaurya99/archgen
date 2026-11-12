@@ -1,8 +1,6 @@
 // docs.mjs — the `archgen_docs` tool: navigate the markdown artifacts under
 // `.archgen/<slug>/`.
 import { z } from 'zod/v4';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { routingSentence } from '../core/protocol/routing.mjs';
 import { docIndex } from '../core/docs/doc-navigator.mjs';
@@ -11,7 +9,7 @@ import { invalidInput } from '../core/protocol/errors.mjs';
 import { hint, teach } from '../core/protocol/guidance.mjs';
 import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
-
+import { collectionRules } from '../core/protocol/action-args.mjs';
 
 /** The collections each action pages. A mismatch is a typed error. */
 const COLLECTIONS = {
@@ -21,6 +19,8 @@ const COLLECTIONS = {
   map: ['sections'],
   validate: ['broken', 'warnings'],
 };
+
+const { resolve: resolveCollection, reject: rejectCollection } = collectionRules(COLLECTIONS, 'docs');
 
 /**
  * The arguments each action takes. An argument that belongs to another
@@ -50,35 +50,6 @@ const schema = z.object({
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
 });
-
-/**
- * The collection a caller named, validated against the action's own set.
- *
- * @param {string} action
- * @param {string|undefined} collection
- * @param {string} fallback
- */
-function resolveCollection(action, collection, fallback) {
-  const allowed = COLLECTIONS[action] ?? [];
-  if (collection === undefined || collection === null) return fallback;
-  if (!allowed.includes(collection)) {
-    throw invalidInput(
-      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'docs' }), reason: "the collections of each action are listed there." }), action, collection, allowed });
-  }
-  return collection;
-}
-
-/**
- * Reject `collection` on an action that has NO collection — a named
- * collection is a request, and an impossible one is an error, never a
- * silently dropped argument.
- */
-function rejectCollection(action, collection) {
-  if (collection === undefined || collection === null) return;
-  const allowed = COLLECTIONS[action] ?? [];
-  throw invalidInput(
-    `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'docs' }), reason: "the collections of each action are listed there." }), action, collection });
-}
 
 /**
  * @param {import('@modelcontextprotocol/server').McpServer} server
@@ -250,7 +221,7 @@ function bounded(key, data, args, next, available) {
  * @param {import('../context.mjs').Context} ctx
  * @param {string|undefined} explicit
  */
-export function resolveSlugDir(ctx, explicit) {
+function resolveSlugDir(ctx, explicit) {
   if (explicit) return ctx.contain(explicit);
   const active = activeSlugDir(ctx);
   if (!active) {

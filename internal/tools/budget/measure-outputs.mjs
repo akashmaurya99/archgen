@@ -14,9 +14,9 @@
 // is a map the agent reads once and navigates. The two are not the same, and
 // only this measurement tells them apart.
 //
-//   node internal/tools/measure-outputs.mjs [--json]
+//   node internal/tools/budget/measure-outputs.mjs [--json]
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

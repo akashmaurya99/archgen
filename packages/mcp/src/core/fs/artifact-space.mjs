@@ -10,7 +10,7 @@
 //
 // One module for the space, one for the rules that judge it.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { loadAsset } from '../../context.mjs';
 
@@ -49,8 +49,7 @@ export function artifactFamilies() {
 }
 
 /** Derive a family pattern from a rule path when the rule carries none. */
-/** Derive a family pattern from a rule path when the rule carries none. */
-export function deriveFamily(path) {
+function deriveFamily(path) {
   const p = normalizeArtifactPath(path);
   return p.replaceAll('<slug>', '*').replaceAll('<module>', '*').replaceAll('<title>', '*');
 }
@@ -138,7 +137,6 @@ function normalizeRoot(root) {
 }
 
 /** An ownership glob, normalised the same way a root is. */
-/** An ownership glob, normalised the same way a root is. */
 export function normalizeGlob(glob) {
   return String(glob).replace(/^\.\//, '');
 }
@@ -197,7 +195,6 @@ export function parseEdgeMatrix(planText) {
 }
 
 /** Does `container` (a recursive glob) contain `inner`? */
-/** Does `container` (a recursive glob) contain `inner`? */
 export function containsGlob(container, inner) {
   if (!container.includes('**')) return false;
   const c = container.split('/');
@@ -207,17 +204,6 @@ export function containsGlob(container, inner) {
   return prefix.every((seg, idx) => seg === i[idx]);
 }
 
-/** A filename-ish slug of a decision title, for a best-effort file match. */
-/** A filename-ish slug of a decision title, for a best-effort file match. */
-function slug(title) {
-  return String(title)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 24);
-}
-
-/** The project root that contains an artifact space (`<root>/.archgen/<slug>`). */
 /** The project root that contains an artifact space (`<root>/.archgen/<slug>`). */
 export function projectRootOf(slugDir) {
   const parent = resolve(slugDir, '..');

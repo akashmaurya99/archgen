@@ -29,12 +29,12 @@ import { ownedPaths } from './graph.mjs';
  * response used two different formulas, so the snapshot could say "wave 3 of
  * 2" while the response said wave 2.
  */
-export function resumeWaveIndex(waves, statusOf) {
+function resumeWaveIndex(waves, statusOf) {
   const active = waves.findIndex((w) => w.some((t) => statusOf(t) !== 'done'));
   return active === -1 ? waves.length : active + 1;
 }
 
-export function renderResume(slug, tasks, waves) {
+function renderResume(slug, tasks, waves) {
   const byId = new Map(tasks.map((t) => [t?.id, t]));
   const statusOf = (t) => String(t?.status ?? 'pending');
 

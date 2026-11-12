@@ -6,7 +6,7 @@
     "",
     "TWO SERVERS: 'entries'/'npxEntries' describe the CodeGraph server;",
     "'archgenEntries'/'archgenNpxEntries' describe archgen's own server. Both",
-    "are written by the SAME writer (core/harness-wiring.mjs), so a platform",
+    "are written by the SAME writer (core/harness/harness-wiring.mjs), so a platform",
     "that works for one works for the other.",
     "",
     "ENTRY SHAPES: every platform has a DIFFERENT top-level key and a DIFFERENT",

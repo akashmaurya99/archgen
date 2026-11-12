@@ -17,11 +17,10 @@
 // ONE list, used by both, is the fix. The installer still WRITES to the
 // universal `.agents/skills/` store; this list is about READING, and a read
 // that misses an installed skill is the expensive failure.
-import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 /** The per-project skill roots, relative to a project directory. */
-export const PROJECT_SKILL_ROOTS = [
+const PROJECT_SKILL_ROOTS = [
   '.agents/skills',
   '.claude/skills',
   '.github/skills',
@@ -35,7 +34,7 @@ export const PROJECT_SKILL_ROOTS = [
 ];
 
 /** The user-global skill roots, relative to $HOME. */
-export const GLOBAL_SKILL_ROOTS = [
+const GLOBAL_SKILL_ROOTS = [
   '.agents/skills',
   '.claude/skills',
   '.config/opencode/skills',

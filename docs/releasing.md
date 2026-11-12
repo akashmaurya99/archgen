@@ -104,7 +104,7 @@ the four end-to-end fixtures and the uninstall. It runs against an isolated
   and are owned by the sync script and the capability-contract gate.
 
 CI runs the same set: `vendor-check` (drift + version consistency),
-`capability-contract`, `context-budget`, `mcp`, `cli`, `coverage`,
+`capability-contract`, `context-budget`, `structure`, `mcp`, `cli`, `coverage`,
 `fixtures`, `immutable`, `audit` (high-severity advisories in both npm
 packages) and `secret-scan`.
 
@@ -221,8 +221,8 @@ npm publish              # prepublishOnly re-derives the version from archgen.co
 CI publishes this package automatically on the `vmcp-<version>` tag (see the
 publish table above); the local command is the manual equivalent.
 
-The published tarball contains only `bin/`, `src/`, `assets/` and `README.md`
-(see the `files` field). `assets/` carries the canonical registries
+The published tarball contains only `bin/`, `src/`, `assets/`, `schemas/` and
+`README.md` (see the `files` field). `assets/` carries the canonical registries
 (`harness-mcp.json`, `skill-registry.json`, `depth-ladder.json`,
 `platform-capabilities.json`), the dispatch briefs, the artifact templates AND
 the protocol references — they ship WITH the server so a tool and its data can

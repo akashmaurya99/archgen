@@ -8,7 +8,7 @@
 // The comparison is BEFORE vs AFTER — not against HEAD — because a working
 // tree under development is legitimately dirty.
 //
-// Usage: node internal/tools/repo-immutable.mjs -- <command...>
+// Usage: node internal/tools/safety/repo-immutable.mjs -- <command...>
 //   With no command it only verifies that the tree is unchanged since the
 //   snapshot was taken at process start (useful as a post-hoc assertion).
 import { execFileSync, spawnSync } from 'node:child_process';

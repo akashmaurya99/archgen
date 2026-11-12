@@ -81,9 +81,15 @@ die()  { warn "$*"; exit 1; }
 # on both sides too. The scripts/ tree is OBSOLETE: the skill no longer ships
 # code (every capability moved into the archgen MCP server), so a store carried
 # over from the pre-MCP layout must shed it.
-prune_dev_only() { # $1 = installed store root
+#
+# 'scripts' is removed only when the PACKAGED tree no longer ships it — the
+# same rule the CLI's pruneObsolete() applies (findObsolete() skips a relpath
+# the package still carries). Removing it unconditionally would delete a
+# directory the installer itself had just shipped, if the skill ever grew
+# scripts/ again. $2 is the packaged (vendor) tree.
+prune_dev_only() { # $1 = installed store root, $2 = packaged tree root
   [ -d "$1/scripts/test" ] && rm -rf -- "$1/scripts/test"
-  [ -d "$1/scripts" ] && rm -rf -- "$1/scripts"
+  if [ ! -d "$2/scripts" ] && [ -d "$1/scripts" ]; then rm -rf -- "$1/scripts"; fi
   find "$1" -name '.DS_Store' -o -name 'Thumbs.db' -o -name 'desktop.ini' 2>/dev/null | while IFS= read -r f; do rm -f -- "$f"; done
   return 0
 }
@@ -234,7 +240,7 @@ if [ "$INIT" -eq 1 ]; then
     rm -rf -- "$STORE_TMP"
     die "could not copy the skill store into .agents/skills/archgen — the existing store was left untouched"
   fi
-  prune_dev_only "$STORE_TMP"
+  prune_dev_only "$STORE_TMP" "$SOURCE"
 
   if [ -e "$STORE" ] || [ -L "$STORE" ]; then
     if [ -d "$STORE" ] && [ ! -L "$STORE" ] && \
@@ -256,7 +262,7 @@ if [ "$INIT" -eq 1 ]; then
     rm -rf -- "$STORE_TMP"
     die "could not move the copied skill store into place at .agents/skills/archgen"
   fi
-  prune_dev_only "$STORE"
+  prune_dev_only "$STORE" "$SOURCE"
 
   # Version stamp inside the store. Canonical source: archgen.config.json at
   # the repo root; falls back to the CLI package.json scrape, then "dev".
@@ -466,11 +472,19 @@ BLOCK
     return 0
   }
 
-  write_bridge "$ROOT/CLAUDE.md" || BLOCK_FAILED=1
-
   # The pointer blocks. A failure is REPORTED, not fatal: the store is
   # installed, and the summary must say what is missing instead of exiting
   # with no explanation at all.
+  #
+  # The bridge was written TWICE here: once before this block, once in it.
+  # The second call saw the file the first one had just written and
+  # returned early — so the first call was dead work that produced a
+  # DUPLICATED warning when it failed, and the `BLOCK_FAILED=0` below
+  # discarded its failure. A CLAUDE.md that could not be written was
+  # therefore reported twice and counted once, and the count depended on
+  # which call happened to run last.
+  #
+  # It is written ONCE now, and its failure is counted where it happens.
   BLOCK_FAILED=0
   write_block "$ROOT/AGENTS.md" || BLOCK_FAILED=1
   write_bridge "$ROOT/CLAUDE.md" || BLOCK_FAILED=1
@@ -639,6 +653,11 @@ printf '%-8s %-5s %s\n' -------- ----- ----
 
 changed=0; same=0; skipped=0; failed=0
 
+# The version is read BEFORE anything is written, so a packaged tree with no
+# readable config fails the install instead of stamping every copy with
+# 'dev' — a stamp that tells `doctor` the tree is LEGACY when it is current.
+read_archgen_version
+
 while IFS= read -r tdir; do
   [ -n "$tdir" ] || continue
   dest="$tdir/archgen"
@@ -724,7 +743,17 @@ while IFS= read -r tdir; do
       fi
     fi
     if cp -R -- "$SOURCE" "$dest"; then
-      prune_dev_only "$dest"
+      prune_dev_only "$dest" "$SOURCE"
+      # The version stamp (CLI parity: install.js writes it in copy mode too).
+      # It is what `doctor` and the MCP server read to tell a fresh install
+      # from an outdated one, and WITHOUT it a copied global tree looks
+      # 'unknown (legacy)' forever — the CLI's own copy mode has always
+      # stamped, so a shell install was the only path that did not.
+      #
+      # ARCHGEN_VERSION is the one read at startup from the packaged
+      # archgen.config.json; CONFIG_VERSION/CLI_VERSION only exist on the
+      # --init path, so using them here would stamp 'dev'.
+      printf '%s\n' "${ARCHGEN_VERSION:-dev}" > "$dest/.archgen-version" 2>/dev/null || true
       printf '%-8s %-5s %s\n' OK copy "$dest"; changed=$((changed+1))
       manifest_add copy "$dest"
     else

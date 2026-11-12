@@ -33,9 +33,9 @@
 // so the gate adapts as the project moves (0.0.x now, 1.2.x later) without
 // ever needing an edit.
 //
-// Usage: node internal/tools/version-lint.mjs [--root <dir>]
+// Usage: node internal/tools/lint/version-lint.mjs [--root <dir>]
 import { readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trackedFiles } from './tracked-files.mjs';
 

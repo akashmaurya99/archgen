@@ -23,7 +23,6 @@ import {
   followInstruction,
   skillRules,
   skillSections,
-  HARNESS_AGENT_IDS,
 } from '../core/skill/skill-manager.mjs';
 
 /**
@@ -341,5 +340,3 @@ export function registerSkillTools(server) {
     },
   });
 }
-
-export { HARNESS_AGENT_IDS };

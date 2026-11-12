@@ -38,7 +38,7 @@ pass "[1/8] sandbox git repo ready at $SANDBOX"
 DOT="$SANDBOX/.archgen/demo"
 mkdir -p "$DOT/plans" "$DOT/docs" "$DOT/decisions" "$DOT/results"
 
-# ── [2/8] interview: pre-seeded answers file (references/interview.md) ──────
+# ── [2/8] interview: pre-seeded answers file (assets/references/interview.md)
 cp "$SCRIPT_DIR/answers.yaml" "$DOT/answers.yaml"
 grep -q '^scope_class: LARGE' "$DOT/answers.yaml" || fail "answers.yaml missing scope_class LARGE"
 pass "[2/8] interview answers seeded (.archgen/demo/answers.yaml, scope LARGE)"

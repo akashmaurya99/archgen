@@ -1,4 +1,4 @@
-# Pre-seeded interview answers — references/interview.md answers-file format.
+# Pre-seeded interview answers — packages/mcp/assets/references/interview.md answers-file format.
 # The GENERATE driver treats this as authoritative user input and skips the
 # conversational rounds (non-interactive E2E).
 scope_class: LARGE

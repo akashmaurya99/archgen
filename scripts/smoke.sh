@@ -13,7 +13,12 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/archgen-smoke.XXXXXX")"
-trap 'rm -rf "$WORK"' EXIT
+# The tarball directory is a SECOND temp dir, created further down. It is
+# removed by the same trap: a smoke test that leaves a temp dir behind on
+# every run — and on every FAILED run — litters the machine it ran on.
+TARBALLS=""
+cleanup() { rm -rf "$WORK"; [ -z "$TARBALLS" ] || rm -rf "$TARBALLS"; }
+trap cleanup EXIT
 
 pass() { printf "  ✅ %s\n" "$1"; }
 fail() { printf "  ❌ %s\n" "$1"; exit 1; }
@@ -171,7 +176,14 @@ pass "install.sh --init created the store and the pointer blocks"
 mkdir -p "$SH_HOME/victim/skills/archgen"
 printf 'victim\n' > "$SH_HOME/victim/skills/archgen/keep.txt"
 printf 'copy\t%s\n' "$SH_HOME/victim/skills/archgen" >> "$SH_HOME/.archgen-install-manifest.list"
-HOME="$SH_HOME" bash "$REPO/install.sh" --uninstall > "$WORK/sh-uninstall.log" 2>&1
+# A skipped entry is a PROBLEM, so the uninstall exits NON-ZERO on it — and
+# `set -e` would abort the smoke test on that line, before the assertion
+# below could run. The exit code is therefore CAPTURED AND ASSERTED, not
+# ignored: a zero exit would mean the installer removed a path it never
+# created, which is the exact defect this step exists to catch.
+if HOME="$SH_HOME" bash "$REPO/install.sh" --uninstall > "$WORK/sh-uninstall.log" 2>&1; then
+  fail "install.sh --uninstall claimed success while it skipped a manifest entry: $(cat "$WORK/sh-uninstall.log")"
+fi
 [ -f "$SH_HOME/victim/skills/archgen/keep.txt" ] || fail "install.sh --uninstall deleted a path it never installed"
 pass "install.sh --uninstall removed only what it recorded"
 

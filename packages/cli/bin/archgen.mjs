@@ -23,14 +23,10 @@ import { restoreMain } from '../lib/restore.js';
 import { migrateMain } from '../lib/migrate.js';
 import { compareSemver, fetchLatestVersion } from '../lib/version.js';
 import { npmInvocation, whichOnPath, globalBinPath } from '../lib/spawn-npm.js';
+import { cliVersion } from '../lib/store.js';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-
-function cliVersion() {
-  return JSON.parse(readFileSync(resolve(PACKAGE_ROOT, 'package.json'), 'utf8')).version;
-}
 
 function runInitAndDoctor(dir) {
   const r = initProject(dir, PACKAGE_ROOT);
@@ -272,7 +268,7 @@ try {
     case 'update': {
       const dir = targetDir();
       assertNoUnknownFlags();
-      const current = cliVersion();
+      const current = cliVersion(PACKAGE_ROOT);
       console.log('archgen update — running v' + current + ', checking npm registry…');
       const latest = fetchLatestVersion('archgen-skill');
       if (!latest) {
@@ -348,7 +344,7 @@ try {
       break;
     }
     case '--version': case '-v': {
-      console.log(cliVersion());
+      console.log(cliVersion(PACKAGE_ROOT));
       break;
     }
     case '--help': case '-h': case undefined: {

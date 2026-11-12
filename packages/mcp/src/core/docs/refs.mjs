@@ -21,7 +21,7 @@
 //      worker sub-agents may have no MCP tools.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd, sectionPurpose, firstProse, toPurpose } from './docs.mjs';
+import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd, firstProse, toPurpose } from './docs.mjs';
 import { notFound } from '../protocol/errors.mjs';
 import { noSuchSection } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';

@@ -28,7 +28,7 @@ const SEMVER_RE = /^\d+\.\d+\.\d+$/;
  * @param {string} skillRoot
  * @returns {string|null}
  */
-export function readDeclaredVersion(skillRoot) {
+function readDeclaredVersion(skillRoot) {
   if (!skillRoot) return null;
   let raw;
   try {

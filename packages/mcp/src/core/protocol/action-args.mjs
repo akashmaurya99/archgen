@@ -16,6 +16,9 @@
 // does take the argument. A wrong entry there changes a sentence; it can
 // never change what the tool does.
 import { WARNING_CODES } from './codes.mjs';
+import { invalidInput } from './errors.mjs';
+import { hint } from './guidance.mjs';
+import { toolCall } from './call.mjs';
 
 /**
  * The arguments each action takes, when it is known.
@@ -84,4 +87,64 @@ export function ignoredArgsWarning(ignored, owners) {
     `${WARNING_CODES.ARG_IGNORED}: the action ignored ${ignored.map((k) => `'${k}'`).join(', ')} — ` +
     `${named}. The call did what the action does; the argument changed nothing.`
   );
+}
+
+/**
+ * The collection rules for ONE tool.
+ *
+ * WHY A SHARED RULE. A `collection` argument is shared across the actions of
+ * a tool, so a caller can name a collection an action does not have. The
+ * answer must be a TYPED ERROR — never a silent fallback, and never a quiet
+ * no-op that drops the argument.
+ *
+ * The rule was written twice — once per tool — and the two copies were free
+ * to drift. One implementation, one place: the table and the help topic are
+ * the only things that differ, and they are the parameters.
+ *
+ * @param {Record<string, string[]>} collections the collections each action can walk
+ * @param {string} topic the help topic that lists them
+ * @returns {{
+ *   resolve: (action: string, collection: string|undefined, fallback: string) => string,
+ *   reject: (action: string, collection: string|undefined) => void,
+ * }}
+ */
+export function collectionRules(collections, topic) {
+  const allowedFor = (action) => collections[action] ?? [];
+
+  return {
+    /**
+     * The collection a caller named, validated against the action's own set.
+     *
+     * @param {string} action
+     * @param {string|undefined} collection
+     * @param {string} fallback the action's default collection
+     * @returns {string}
+     */
+    resolve(action, collection, fallback) {
+      const allowed = allowedFor(action);
+      if (collection === undefined || collection === null) return fallback;
+      if (!allowed.includes(collection)) {
+        throw invalidInput(
+          `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`,
+          { ...hint({ action: toolCall('archgen_help', { topic }), reason: 'the collections of each action are listed there.' }), action, collection, allowed },
+        );
+      }
+      return collection;
+    },
+
+    /**
+     * Reject `collection` on an action that has NO collection.
+     *
+     * @param {string} action
+     * @param {string|undefined} collection
+     */
+    reject(action, collection) {
+      if (collection === undefined || collection === null) return;
+      const allowed = allowedFor(action);
+      throw invalidInput(
+        `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`,
+        { ...hint({ action: toolCall('archgen_help', { topic }), reason: 'the collections of each action are listed there.' }), action, collection },
+      );
+    },
+  };
 }

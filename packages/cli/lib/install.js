@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSkillSource } from './init.js';
-import { assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackupInto, pruneDevOnly, refuseSymlinkMessage } from './store.js';
+import { assertNotSymlink, assertWithinRoot, cliVersion, hashDir, moveToBackupInto, pruneDevOnly, refuseSymlinkMessage, uniqueBackupTs } from './store.js';
 import { writeStamp } from './version-stamp.js';
 import { loadConfig } from './config.js';
 import { bootstrapServers } from './bootstrap.js';
@@ -55,7 +55,7 @@ function record(manifest, kind, path) {
  * built from the CURRENT working directory, so an install made in one
  * directory could never be removed from another.
  */
-export const ROOTS_NAME = '.archgen-install-roots.list';
+const ROOTS_NAME = '.archgen-install-roots.list';
 
 /**
  * Record a project root so its project-local destination is removable later.
@@ -83,14 +83,6 @@ export function recordedRoots(home) {
     return readFileSync(join(home, ROOTS_NAME), 'utf8').split('\n').filter(Boolean).map((r) => resolve(r));
   } catch {
     return [];
-  }
-}
-
-/** Collision-free timestamp for `<tdir>/.archgen-backups/<ts>/` (ms clock can tick twice). */
-function nextBackupTs(tdir) {
-  for (;;) {
-    const ts = new Date().toISOString().replace(/:/g, '-');
-    if (!existsSync(join(tdir, GLOBAL_BACKUP_REL, ts))) return ts;
   }
 }
 
@@ -152,7 +144,7 @@ export function installGlobal(opts = {}) {
           rows.push(['SAME', 'copy', dest]);
         } else {
           if (prev) {
-            const loc = moveToBackupInto(tdir, 'archgen', GLOBAL_BACKUP_REL, nextBackupTs(tdir));
+            const loc = moveToBackupInto(tdir, 'archgen', GLOBAL_BACKUP_REL, uniqueBackupTs(tdir, GLOBAL_BACKUP_REL));
             const abs = join(tdir, ...loc.split('/'));
             backups.push(abs);
             rows.push(['BACKED-UP', '-', abs]);
@@ -275,7 +267,7 @@ function backupEditedCopy(dest, packageRoot, backups) {
   }
   if (identical) return;
   const tdir = dirname(dest);
-  const loc = moveToBackupInto(tdir, 'archgen', GLOBAL_BACKUP_REL, nextBackupTs(tdir));
+  const loc = moveToBackupInto(tdir, 'archgen', GLOBAL_BACKUP_REL, uniqueBackupTs(tdir, GLOBAL_BACKUP_REL));
   backups.push(join(tdir, ...loc.split('/')));
 }
 

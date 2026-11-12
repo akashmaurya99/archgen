@@ -5,8 +5,8 @@
 //                           [--json] [--windows <list>] [--budget <n>] [--tokenizer <pkg>]
 // Exit 0 ok · 1 over --budget · 2 invalid input · 4 unreadable input.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { estimateTokens, exactTokens, fmtTokens, pctOf } from './tokens.mjs';
 

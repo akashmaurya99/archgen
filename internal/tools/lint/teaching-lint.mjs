@@ -9,7 +9,7 @@
 // in `packages/mcp/src` must carry a machine-readable next-step hint, unless
 // it is listed in ALLOWED_UNTAUGHT with a reason.
 //
-// Usage: node internal/tools/teaching-lint.mjs
+// Usage: node internal/tools/lint/teaching-lint.mjs
 // Exit 0 ok · 1 contract violation · 4 usage/IO error
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

@@ -34,7 +34,7 @@ const HELP_TOOL_FOR_TOPIC = {
 /**
  * The YAML subset briefing, rendered from the contract the tests check.
  *
- * One source: core/yaml-subset.mjs states each rule with an example, the
+ * One source: core/fs/yaml-subset.mjs states each rule with an example, the
  * test runs every example through the real parser, and this briefing and
  * the reference section both render the same table. The agent can therefore
  * learn the rules on demand — instead of discovering them by failing.
@@ -367,5 +367,3 @@ function routingMapFor(topic) {
   const map = routingMap(spec.actionArgs);
   return map ? `Args — ${map}.` : '';
 }
-
-export { TOPICS };

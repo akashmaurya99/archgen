@@ -6,7 +6,7 @@ Begin `tasks.yaml`, `architecture.yaml` and `answers.yaml` with the three YAML c
 
 ```yaml
 # schema_version: 1
-# generator: archgen v1.2.3
+# generator: archgen vX.Y.Z
 # generated_at: 2026-08-26T09:00:00.000Z
 ```
 

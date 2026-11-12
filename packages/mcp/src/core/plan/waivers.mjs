@@ -92,7 +92,7 @@ export function waiverCovers(waiver, issue) {
  * @param {string} text the finding text
  * @returns {string[]}
  */
-export function findingSubjects(text) {
+function findingSubjects(text) {
   const raw = String(text);
   // The DETAIL clause — everything from the em dash on — explains, it does
   // not identify.

@@ -16,10 +16,10 @@ import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
 import { writeFileAtomic } from '../fs/fs-safety.mjs';
 
-export const START_MARKER = '<!-- archgen:features:start -->';
-export const END_MARKER = '<!-- archgen:features:end -->';
-export const HEADER = '| Feature | Status | Updated |';
-export const SEPARATOR = '| --- | --- | --- |';
+const START_MARKER = '<!-- archgen:features:start -->';
+const END_MARKER = '<!-- archgen:features:end -->';
+const HEADER = '| Feature | Status | Updated |';
+const SEPARATOR = '| --- | --- | --- |';
 export const DISPLAY_STATUSES = ['planned', 'in progress', 'done', 'blocked', 'unknown'];
 // Task-level statuses the status mutator may write; anything else in tasks.yaml
 // means the file is not a contract we can read -> row falls back to unknown.
@@ -40,7 +40,7 @@ function fmtDate(d) {
  * @param {unknown} tasks
  * @returns {string}
  */
-export function deriveStatus(tasks) {
+function deriveStatus(tasks) {
   if (!Array.isArray(tasks)) return 'unknown';
   const statuses = [];
   for (const t of tasks) {
@@ -62,7 +62,7 @@ export function deriveStatus(tasks) {
  * @param {string} projectRoot
  * @returns {Map<string, {feature: string, status: string, updated: string}>}
  */
-export function scanFeatures(projectRoot) {
+function scanFeatures(projectRoot) {
   const archgenDir = join(projectRoot, '.archgen');
   const rows = new Map();
   if (!existsSync(archgenDir)) return rows;

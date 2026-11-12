@@ -25,7 +25,7 @@ import {
 import { resolveSkillSource } from './init.js';
 import { CLAUDE_LINK_REL, DEV_ONLY_RELPATHS, MANIFEST_REL, STORE_REL, VERSION_FILE, assertNotSymlink, assertWithinRoot, cliVersion, findObsolete, hashDir, loadManifest, pruneDevOnly, pruneObsolete, saveManifest } from './store.js';
 import { compareSemver, parseSemver } from './version.js';
-import { readInstalledVersion, readStamp, writeStamp } from './version-stamp.js';
+import { readInstalledVersion, writeStamp } from './version-stamp.js';
 import { mcpDoctor } from './mcp-server.js';
 import { lstatSafe, relJoin } from './fs-paths.js';
 

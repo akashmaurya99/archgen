@@ -21,7 +21,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { assertNotSymlink, assertWithinRoot, withFileLock, writeFileAtomic } from '../fs/fs-safety.mjs';
-import { mergeEntry, parseJsonc, removeEntry } from '../fs/jsonc-config.mjs';
+import { buildChain, mergeEntry, parseJsonc, removeEntry } from '../fs/jsonc-config.mjs';
 import { invalidInput } from '../protocol/errors.mjs';
 import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
@@ -124,7 +124,7 @@ export function configPathFor(cfg, ctx) {
 }
 
 /** Expand a leading `~/` to the home directory. */
-export function expandHome(p, home = homedir()) {
+function expandHome(p, home = homedir()) {
   return p.startsWith('~/') ? join(home, p.slice(2)) : p;
 }
 
@@ -135,7 +135,7 @@ export function expandHome(p, home = homedir()) {
  * resolved on both sides when they exist — a symlink pointing out of the
  * root must not pass as "inside".
  */
-export function pathIsWithin(abs, root) {
+function pathIsWithin(abs, root) {
   if (!abs || !root) return false;
   const resolvedRoot = resolve(root);
   const resolved = resolve(abs);
@@ -265,22 +265,6 @@ export function configHasServer(abs, cfg, serverId) {
 }
 
 /**
- * The nested object for a new config file.
- *
- * The key may be a DOTTED PATH: opencode keeps its servers at
- * `mcp.servers.<id>`, so a flat `{ "mcp.servers": … }` would put the entry
- * where opencode never looks — the server would be installed and invisible.
- */
-function nestedConfig(key, serverId, entry) {
-  const parts = key.split('.');
-  let value = { [serverId]: entry };
-  for (let i = parts.length - 1; i >= 0; i--) {
-    value = { [parts[i]]: value };
-  }
-  return value;
-}
-
-/**
  * Merge a server entry into a JSON MCP config.
  *
  * The read-merge-write runs under an exclusive lock on the config file. The
@@ -320,9 +304,15 @@ function mergeJsonConfig(abs, key, serverId, entry, opts) {
   }
   // A config that does not exist yet starts life as plain strict JSON; an
   // existing one is merged in place, so a JSONC file keeps its comments.
+  //
+  // The key may be a DOTTED PATH: opencode keeps its servers at
+  // `mcp.servers.<id>`, so a flat `{ "mcp.servers": … }` would put the entry
+  // where opencode never looks — the server would be installed and invisible.
+  // `buildChain` is the ONE implementation of "a dotted key path becomes a
+  // nested object chain"; the merge path uses it too.
   const result = existed
     ? mergeEntry(raw, key, serverId, entry)
-    : { text: JSON.stringify(nestedConfig(key, serverId, entry), null, 2) + '\n', changed: true };
+    : { text: JSON.stringify(buildChain(key.split('.'), serverId, entry), null, 2) + '\n', changed: true };
   if (result.reason) {
     // A file we cannot merge into is never rewritten.
     return { status: 'skipped', detail: `${result.reason} — left untouched`, path: abs };

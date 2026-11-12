@@ -37,7 +37,7 @@
 // theirs, so they are checked for the ABSENCE of a literal rather than for
 // its presence. `strayLiterals` proves the property holds.
 //
-// Usage: node internal/tools/version-consistency.mjs [--root <dir>]
+// Usage: node internal/tools/lint/version-consistency.mjs [--root <dir>]
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

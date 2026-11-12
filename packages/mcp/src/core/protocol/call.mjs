@@ -20,7 +20,7 @@
  * @param {unknown} value
  * @returns {string}
  */
-export function callValue(value) {
+function callValue(value) {
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) return `[${value.map(callValue).join(',')}]`;
   const text = String(value ?? '')

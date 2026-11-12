@@ -20,7 +20,7 @@ import { toolCall } from './core/protocol/call.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** This package's own root (packages/mcp). */
-export const SERVER_ROOT = resolve(HERE, '..');
+const SERVER_ROOT = resolve(HERE, '..');
 
 /** This package's assets directory (harness-mcp.json, mcp-template.json, …). */
 export const ASSETS_DIR = join(SERVER_ROOT, 'assets');

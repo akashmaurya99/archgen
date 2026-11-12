@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml } from '../fs/yaml.mjs';
-import { buildGraph, findCycle, computeWaves, dedupeDependencies, computeQualityStats, GraphError, ownedPaths } from './graph.mjs';
+import { buildGraph, findCycle, computeWaves, dedupeDependencies, computeQualityStats, globsMayOverlap, GraphError, ownedPaths } from './graph.mjs';
 import { readParsedPlanFile } from './plan-file.mjs';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
 import { cycle, invalidInput, notFound } from '../protocol/errors.mjs';
@@ -24,7 +24,7 @@ import { noSuchTask, hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
 
 // Whole-graph Mermaid above this node count is refused.
-export const MERMAID_WHOLE_MAX_NODES = 250;
+const MERMAID_WHOLE_MAX_NODES = 250;
 
 // Tasteful, professional palette; only done/running/failed get classes — every
 // other status (pending, ready, blocked) renders with Mermaid's default look.
@@ -41,28 +41,6 @@ const shortTitle = (t) => {
   return s.length > 36 ? `${s.slice(0, 35).trimEnd()}…` : s;
 };
 const nodeDecl = (t) => `${t.id}["${esc(t.id)} ${esc(shortTitle(t))}"]`;
-
-/** Local copy of lib/graph.mjs's internal glob-overlap heuristic: it is not
- *  exported upstream, so the module filter keeps the exact conservative rules
- *  here rather than inventing divergent ones. */
-function globsMayOverlap(a, b) {
-  if (a === b) return true;
-  // Deepen the check only when a recursive '**' is involved; plain literal
-  // globs keep the cheap equality rule above.
-  if (!a.includes('**') && !b.includes('**')) return false;
-  const as = a.split('/');
-  const bs = b.split('/');
-  const n = Math.min(as.length, bs.length);
-  for (let i = 0; i < n; i++) {
-    const x = as[i];
-    const y = bs[i];
-    if (x === y) continue;
-    if (x === '**' || y === '**') return true; // '**' swallows any divergence below it
-    if (x.includes('*') || y.includes('*') || x.includes('?') || y.includes('?')) return true; // uncertain -> flag
-    return false; // both segments literal and different: paths diverge here
-  }
-  return true; // one pattern is a segment-prefix of the other
-}
 
 /** BFS hop-distances from start across an adjacency map (start itself at 0). */
 function bfsDistances(start, adjacency) {

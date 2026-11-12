@@ -10,7 +10,7 @@
 // existing key is touched, nothing becomes required.
 //
 //   # schema_version: 1
-//   # generator: archgen v1.2.3      (version token omitted when unknowable)
+//   # generator: archgen vX.Y.Z      (version token omitted when unknowable)
 //   # generated_at: 2026-08-26T09:00:00.000Z
 //
 // Idempotency: detect/files/apply all key off the `# schema_version:` marker

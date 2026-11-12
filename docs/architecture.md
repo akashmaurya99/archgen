@@ -43,7 +43,7 @@ packages/mcp/src/core/       the server's implementations
 ```
 
 **`protocol/` and `fs/` are bottom layers.** Neither imports anything
-above it. `protocol` is what every tool imports (23 of the 46 core files
+above it. `protocol` is what every tool imports (27 of the 46 core files
 do), and `fs` is the only code that reads or writes a file. The four
 domains above them — `plan`, `docs`, `skill`, `harness` — are the
 capabilities themselves.
@@ -54,15 +54,16 @@ that no directory grows past the size it was laid out for, so the flat
 
 The CLI is flatter by design: `packages/cli/lib/` holds one file per
 command plus the shared primitives (`fs-paths.js`, `store.js`,
-`block.js`). A deeper tree would buy nothing in a package with fifteen
+`block.js`). A deeper tree would buy nothing in a package with sixteen
 files, and the CLI's zero-dependency rule means every import is one the
 reader can follow without a resolver.
 
-The tests mirror both: `packages/mcp/test/{protocol,plan,docs,skill,harness,fs}/`
+The tests mirror both: `packages/mcp/test/{protocol,plan,docs,skill,harness,fs,…}/`
 and `packages/cli/test/{blocks,cli,doctor,install,…}/`. A test lives in the
-folder of the code it tests, and both trees read the repository root from
-a shared helper rather than climbing a fixed number of directories — so
-moving a test never silently changes what it resolves.
+folder of the code it tests, and the MCP tree reads the repository root
+from a shared helper (`packages/mcp/test/support/repo-root.mjs`) rather
+than climbing a fixed number of directories — so moving a test never
+silently changes what it resolves.
 
 `internal/tools/` holds the repository's own gates, grouped by what they
 are for: `lint/` (a defect fails the build), `release/`, `budget/`,
@@ -182,7 +183,7 @@ exists, and every artifact on disk has a decision.
 
 `archgen_tasks{action:'next'}` resolves the dependency frontier into topological waves. A cycle or an ownership clash comes back as the typed error codes `CYCLE` / `OWNERSHIP_CONFLICT` — the orchestrator fixes `tasks.yaml` before proceeding.
 
-- **One worker per task.** Workers receive: task id + title, acceptance criteria verbatim, their `file_ownership` globs ("edit NOTHING outside these"), the code-standards reference, the **normative rules of every matched capability skill**, the pre-located doc sections, the CodeGraph directive when the project is indexed, and the done/failed status command. Workers never talk to each other; coordination happens only through `tasks.yaml` state.
+- **One worker per task.** Workers receive: task id + title, acceptance criteria verbatim, their `file_ownership` globs ("edit NOTHING outside these"), the code-standards reference, the **normative rules of every matched required capability skill**, the pre-located doc sections, the CodeGraph directive when the project is indexed, and the done/failed status command. Workers never talk to each other; coordination happens only through `tasks.yaml` state.
 - **Disjoint globs per wave.** Two same-wave tasks may not overlap on file ownership — enforced by the resolver and rejected by the verifier.
 - **Dispatch discipline.** A sub-agent is a WORK unit, not a lookup: status, wave frontier, plan health, graph and registry are always one orchestrator tool call, never a sub-agent. **At most 3 parallel sub-agents at a time** — a larger wave runs in batches of three. Parallel sets must have disjoint read AND write footprints; gate agents never run while a wave is in flight.
 - **Session reuse.** A follow-up **fix or clarification** in files that agent already touched CONTINUES its session — it holds the decisions and the dead ends, and a fresh agent would re-derive them. Three rules keep that reuse safe: **gate agents never reuse a session** (a verifier that continues the session of the agent it judges is not independent); **a changed contract invalidates the session** (re-prime it or start fresh — its earlier work rests on a stale acceptance); and **the session is an optimisation, never the record** — the durable facts are the contract in `tasks.yaml` and the git history.
@@ -201,8 +202,9 @@ Everything generated goes inside `.archgen/<project-slug>/` at the target repo r
 
 Step 0 asks the server: `archgen_setup { action: 'harness_info' }` detects the
 harness from env/config markers in order (`.claude/`, `.cursor/`, `.windsurf/`,
-`.opencode`, `.github/copilot-instructions.md`, `~/.codex`, `.gemini/`, `.kiro/`,
-`.trae/`) and returns its capability row — skill install paths, MCP config file +
+`.opencode`, `opencode.json`, `.github/copilot-instructions.md`, `~/.codex`,
+`.gemini/`, `.kiro/`, `.trae/`) and returns its capability row — skill install
+paths, MCP config file +
 top-level key + entry shape, the MCP CLI, restart semantics, and the sub-agent
 dispatch mechanism. The canonical data is
 `packages/mcp/assets/platform-capabilities.json`; `archgen_refs` →
@@ -228,7 +230,7 @@ Two support modes round out the loop:
   file ownership matches a capability domain (frontend/UI → ui-skills) is matched
   by WHOLE-WORD patterns; a `required` hit is installed before dispatch — exactly
   ONE skill, never a bundle, via
-  `npx -y skills add <repo> --skill <slug> --agent <agent> --yes`. The skill lands
+  `npx -y skills add <repo> --skill <slug> --agent <agent> --yes --json`. The skill lands
   at `<project>/.agents/skills/<slug>/SKILL.md`, and the worker is pointed at
   that file. Missing capabilities trigger a web search for a reputable skill
   repo, proposed to the user and added to the registry on approval.
@@ -311,7 +313,7 @@ to ship a skill whose declared minimum exceeds the server's version.
 | `archgen_plan { action: 'profile' }` | the scope score + per-artifact create/reuse/omit decisions + depth budgets |
 | `archgen_plan { action: 'scaffold' }` | the depth ladder's artifact set + skeletons |
 | `archgen_plan { action: 'brief' }` | the verifier / review / survey / investigate briefs |
-| `archgen_tasks { action: 'contract' }` | the worker prompt contract (8 rules) |
+| `archgen_tasks { action: 'contract' }` | the worker prompt contract (7 rules) |
 | `archgen_setup { action: 'harness_info' }` | the harness capability tables |
 
 ## The no-dead-action gate
@@ -342,7 +344,7 @@ So the gate is behavioural, not structural:
 - **`fixtures/tool-matrix/run.sh`** does the same through the REAL MCP binary
   and the REAL stdio transport — proving the whole path, not just the handler.
 - A brief may only name the archgen calls its allowed-call list permits
-  (`core/brief-context.mjs`), so a sub-agent cannot be sent to re-derive a
+  (`core/docs/brief-context.mjs`), so a sub-agent cannot be sent to re-derive a
   fact the brief already carries.
 
 ## Provenance & migration

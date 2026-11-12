@@ -8,7 +8,7 @@ skill can be measured and hardened in CI without taxing every installation.
 ## tools/ — grouped by what a tool is FOR
 
 The tools are grouped by purpose, so a new contributor can find the gate
-they care about without reading all nine:
+they care about without reading all eleven:
 
 ```
 tools/

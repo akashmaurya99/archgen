@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { REPO_ROOT, inRepo } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// packages/mcp/test/core -> repo root (four levels up).
+// packages/mcp/test/<domain> -> repo root (four levels up).
 const REPO = REPO_ROOT;
 const LEDGER = join(REPO, 'internal', 'claims', 'skill-claims.json');
 

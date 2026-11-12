@@ -25,7 +25,7 @@ import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
 import { project } from '../../envelope.mjs';
 
-export const CODEGRAPH_PACKAGE = '@colbymchenry/codegraph';
+const CODEGRAPH_PACKAGE = '@colbymchenry/codegraph';
 
 /** Run a command; never throws. Returns {ok, status, stdout, stderr}. */
 export function run(cmd, args, opts = {}) {
@@ -56,7 +56,7 @@ export function run(cmd, args, opts = {}) {
  * gone, while its output may still be in flight, and the last chunk of a
  * long install log would be lost.
  */
-export function runAsync(cmd, args, opts = {}) {
+function runAsync(cmd, args, opts = {}) {
   const { timeout = 120000, cwd, env, shell } = opts;
   return new Promise((resolve) => {
     let child;
@@ -178,7 +178,7 @@ export function codegraphState(opts) {
 }
 
 /** Current telemetry state: 'enabled' | 'disabled' | 'unknown'. */
-export function telemetryState(bin) {
+function telemetryState(bin) {
   if (!bin) return 'unknown';
   const r = run(bin, ['telemetry', 'status'], { timeout: 20000 });
   if (!r.ok) return 'unknown';

@@ -31,6 +31,7 @@ import { parseYaml } from '../fs/yaml.mjs';
 import { buildGraph, GraphError } from '../plan/graph.mjs';
 import { resolveSlugInput, ScopeError } from '../plan/scope.mjs';
 import { parseMarkdown, buildSections, findSection, anchorExists, sectionChildren, sectionOwnEnd } from './docs.mjs';
+import { wholeWordSource } from '../skill/skill-manager.mjs';
 import { cycle, invalidInput, notFound } from '../protocol/errors.mjs';
 import { artifactSpaceMissing, hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
@@ -56,7 +57,7 @@ export const DIGEST_SECTION_BUDGET = 80;
  * caller explicitly asked about: 501 sections in one file returned 400 and
  * the remaining 101 were unreachable by ANY call.
  */
-export const SINGLE_FILE_SECTION_BUDGET = 100000;
+const SINGLE_FILE_SECTION_BUDGET = 100000;
 
 // Separator for composite map keys. NUL cannot occur in a path or a link
 // target, so it is collision-proof — plain concatenation is not ("a"+"bc" vs
@@ -64,7 +65,6 @@ export const SINGLE_FILE_SECTION_BUDGET = 100000;
 const NUL = String.fromCharCode(0);
 
 const MD_RE = /\.md$/i;
-const YAML_RE = /\.ya?ml$/i;
 
 // Artifact-relative cross-references (artifact-templates.md rule 5).
 const GENERATED_AT_RE = /generated_at:\s*(\S+)/;
@@ -73,10 +73,6 @@ const GENERATED_AT_RE = /generated_at:\s*(\S+)/;
 // either side, but path punctuation (`/`, `.`, `-`) may border it — so
 // "0001" finds "decisions/0001-postgres-over-mongo.md" while "TASK-05"
 // still refuses to match "TASK-055" or "XTASK-05".
-function wholeWordSource(token) {
-  const esc = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return `(?<![A-Za-z0-9_])${esc}(?![A-Za-z0-9_])`;
-}
 const TASK_ID_SOURCE = '(?<![A-Za-z0-9_])TASK-\\d+(?![A-Za-z0-9_])';
 const FR_ID_SOURCE = '(?<![A-Za-z0-9_])FR-[A-Z0-9]+-\\d+(?![A-Za-z0-9_])';
 
@@ -87,7 +83,7 @@ const FR_ID_SOURCE = '(?<![A-Za-z0-9_])FR-[A-Z0-9]+-\\d+(?![A-Za-z0-9_])';
  * @param {string} input
  * @returns {{slugDir: string, repoRoot: string, slug: string}}
  */
-export function resolveDocScope(input, projectRoot = null) {
+function resolveDocScope(input, projectRoot = null) {
   let scoped;
   try {
     scoped = resolveSlugInput(input, projectRoot);
@@ -272,7 +268,7 @@ export const REFERENCE_RULE =
  * @param {string} slugDir the artifact space
  * @returns {{ok: boolean, path?: string, label?: string, detail?: string}}
  */
-export function resolveReference(target, docAbs, projectRoot, slugDir) {
+function resolveReference(target, docAbs, projectRoot, slugDir) {
   if (!target) return { ok: true };
   const inSlug = (p) => p === slugDir || p.startsWith(slugDir + sep);
   const exists = (p) => {

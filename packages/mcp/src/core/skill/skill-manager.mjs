@@ -20,6 +20,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { skillSearchPaths } from './skill-roots.mjs';
+import { slugifyHeading } from '../docs/docs.mjs';
 import { invalidInput } from '../protocol/errors.mjs';
 import { hint, teach } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
@@ -124,7 +125,7 @@ export function skillInstallPaths(projectRoot, slug, opts = {}) {
  * Is a capability skill already installed for this project?
  *
  * The SEARCH walks the same roots the archgen skill itself is resolved from
- * (core/skill-roots.mjs): the project chain upward, across every harness
+ * (core/skill/skill-roots.mjs): the project chain upward, across every harness
  * directory, then the user-global roots.
  *
  * It used to look at exactly ONE path — `<projectRoot>/.agents/skills/<slug>/
@@ -158,7 +159,7 @@ export function findInstalledSkill(projectRoot, slug, opts = {}) {
  * @param {string[]} args the CLI arguments
  * @param {{cwd: string, timeout?: number, env?: Record<string, string|undefined>}} opts
  */
-export function runSkillsCli(args, opts) {
+function runSkillsCli(args, opts) {
   const { cwd, timeout = 300000, env = process.env } = opts;
   const merged = {
     ...env,
@@ -515,16 +516,4 @@ export function skillSections(text) {
     });
   }
   return out;
-}
-
-/**
- * GitHub-exact heading slug — the same rule the artifact lens uses, so a
- * skill section slug and a plan section slug mean the same thing.
- */
-function slugifyHeading(text) {
-  return String(text)
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s_-]/gu, '')
-    .replace(/\s/g, '-');
 }

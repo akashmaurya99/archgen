@@ -123,7 +123,6 @@ printf '# Demo project\n\nProse that must survive a registry rewrite.\n\n<!-- ar
 
 TASKS="$DOT/tasks.yaml"
 PLANS="$DOT/plans"
-SLUGDIR="$DOT"
 
 # mcp <tool> <json> — call a tool through the REAL server and assert ok:true.
 CALLS=0

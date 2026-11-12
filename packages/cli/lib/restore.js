@@ -15,7 +15,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { BACKUP_PATHS_FILE, BACKUP_ROOT_REL, byName, moveToBackupInto, readBackupPaths } from './store.js';
+import { BACKUP_PATHS_FILE, BACKUP_ROOT_REL, byName, moveToBackupInto, readBackupPaths, uniqueBackupTs } from './store.js';
 import { GLOBAL_BACKUP_REL, globalTargets } from './install.js';
 import { lstatSafe } from './fs-paths.js';
 
@@ -75,13 +75,6 @@ function discoverSnapshots(opts = {}) {
  */
 function listBackups(projectRoot, options = {}) {
   return discoverSnapshots({ projectRoot: projectRoot || null, home: options.home, includeGlobal: options.includeGlobal });
-}
-
-function uniqueSafetyTs(base, backupRootRel) {
-  for (;;) {
-    const ts = new Date().toISOString().replace(/:/g, '-');
-    if (!existsSync(join(base, ...backupRootRel.split('/'), ts))) return ts;
-  }
 }
 
 /** Atomic copy-back: temp sibling dir, then rename into place. */
@@ -179,7 +172,7 @@ export function restoreBackups(projectRoot, options = {}) {
   const safetyBackups = [];
   const safetyRootRel = snap.origin === 'global' ? GLOBAL_BACKUP_REL : BACKUP_ROOT_REL;
   const safetyBase = destBase;
-  const safetyTs = uniqueSafetyTs(safetyBase, safetyRootRel);
+  const safetyTs = uniqueBackupTs(safetyBase, safetyRootRel);
   for (const en of entries) {
     if (!lstatSafe(en.destAbs)) continue;
     const loc = moveToBackupInto(safetyBase, en.rel, safetyRootRel, safetyTs);

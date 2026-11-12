@@ -21,7 +21,13 @@ command -v node >/dev/null 2>&1 || fail "node not found"
 
 # ── [1/7] sandbox git repo seeded with the pre-existing TS project ──────────
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/archgen-brownfield.XXXXXX")"
-trap 'rm -rf "$SANDBOX"' EXIT
+# The ownership list is written to a file of THIS run's own, and it is removed
+# by the same trap: a fixed name in a shared /tmp is world-writable (a link
+# planted there would have the list written THROUGH it), and a name that is
+# only removed on the happy path is left behind on every failed run.
+OWNERSHIP=""
+cleanup() { rm -rf "$SANDBOX"; [ -z "$OWNERSHIP" ] || rm -f -- "$OWNERSHIP"; }
+trap cleanup EXIT
 cp -R "$SCRIPT_DIR/project" "$SANDBOX/project"
 git -C "$SANDBOX" init -q
 git -C "$SANDBOX" config user.email fixture@example.invalid
@@ -93,6 +99,7 @@ mcp_exec archgen_plan "{\"action\":\"validate\",\"tasksYaml\":\"$TASKS\"}" >/dev
 pass "[3/7] MEDIUM artifacts written and validated (plan + tasks only)"
 
 # ── [4/7] ownership references EXISTING project paths ───────────────────────
+OWNERSHIP="$(mktemp "${TMPDIR:-/tmp}/archgen-ownership.XXXXXX")"
 YAML="$YAML" node --input-type=module -e '
 const { parseYaml } = await import("file://" + process.env.YAML);
 import { readFileSync } from "node:fs";
@@ -100,12 +107,11 @@ const { data } = parseYaml(readFileSync(process.argv[1], "utf8"), { filename: "t
 const globs = data.tasks.flatMap((t) => t.file_ownership ?? []);
 if (!globs.length) { console.error("no file_ownership found"); process.exit(1); }
 console.log(globs.join("\n"));
-' "$TASKS" > /tmp/archgen-ownership.$$ 2>/dev/null || fail "could not extract file_ownership"
+' "$TASKS" > "$OWNERSHIP" 2>/dev/null || fail "could not extract file_ownership"
 while IFS= read -r g; do
   [ -n "$g" ] || continue
   [ -f "$SANDBOX/project/$g" ] || fail "file_ownership references non-existent path: $g"
-done < /tmp/archgen-ownership.$$
-rm -f /tmp/archgen-ownership.$$
+done < "$OWNERSHIP"
 pass "[4/7] every file_ownership glob resolves to an existing tracked path"
 
 # ── [5/7] right-sizing proof: artifact set is EXACTLY three files ───────────

@@ -26,16 +26,9 @@ export const UNIVERSAL_ARGS = new Set(['limit', 'offset', 'projectRoot']);
 // definition keeps the wording identical everywhere and impossible to drift.
 export const LIMIT_DESC = 'Max items to return. Default 50.';
 export const OFFSET_DESC = 'Skip this many items.';
-export const PROJECT_ROOT_DESC = 'Absolute project root; defaults to the server cwd.';
+const PROJECT_ROOT_DESC = 'Absolute project root; defaults to the server cwd.';
 export const LOCATION_DESC = 'project | global | both. Default both.';
 export const APPROVE_DESC = 'Required to write; without it returns the plan.';
-
-/** The shared description of the universal arguments, by name. */
-export const UNIVERSAL_DESCRIPTIONS = {
-  limit: LIMIT_DESC,
-  offset: OFFSET_DESC,
-  projectRoot: PROJECT_ROOT_DESC,
-};
 
 /** The universal project-root argument, shared by every tool. */
 export const projectRootArg = z

@@ -79,7 +79,7 @@ export function mergeEntry(text, key, serverId, entry) {
 
   if (!resolved.member) {
     // The path does not exist yet. Build the missing chain and insert it.
-    const value = buildChain(parts, resolved.missingIndex ?? parts.length - 1, serverId, entry);
+    const value = buildChain(parts, serverId, entry, resolved.missingIndex ?? parts.length - 1);
     const out = insertMember(text, resolved.parent, JSON.stringify(resolved.missing), value, style, false);
     return { text: out, changed: out !== text };
   }
@@ -146,8 +146,18 @@ function walkKeyPath(root, parts) {
  * segment. The value is what goes UNDER that segment: the chain from the
  * segment below it down to the entry. The segment itself is the member's
  * name, so it is not repeated here.
+ *
+ * `fromIndex` defaults to -1 — the WHOLE chain — which is what a brand-new
+ * config file needs. A merge into an existing document passes the index of
+ * the segment that already exists, so only the part below it is built.
+ *
+ * @param {string[]} parts the key path, split on '.'
+ * @param {string} serverId the entry's member name
+ * @param {unknown} entry the entry itself
+ * @param {number} [fromIndex] the index of the first MISSING segment
+ * @returns {object}
  */
-function buildChain(parts, fromIndex, serverId, entry) {
+export function buildChain(parts, serverId, entry, fromIndex = -1) {
   let value = { [serverId]: entry };
   for (let i = parts.length - 1; i > fromIndex; i--) {
     value = { [parts[i]]: value };

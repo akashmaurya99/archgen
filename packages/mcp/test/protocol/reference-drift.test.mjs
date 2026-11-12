@@ -18,7 +18,7 @@ import { loadAsset, TEMPLATES_DIR } from '../../src/context.mjs';
 import { REPO_ROOT, inRepo } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// packages/mcp/test/core -> repo root (four levels up).
+// packages/mcp/test/<domain> -> repo root (four levels up).
 const REPO = REPO_ROOT;
 // The orchestrator-facing references moved into the MCP package (served by
 // archgen_refs); code-standards.md stays in the skill (workers read it as a

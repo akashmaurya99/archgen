@@ -21,14 +21,14 @@
 //
 // So the bump is a command, not a checklist.
 //
-//   node internal/tools/release-prepare.mjs <version> [--requires <version>]
+//   node internal/tools/release/release-prepare.mjs <version> [--requires <version>]
 //
 // It bumps the canonical version, propagates it to every derived surface,
 // regenerates the lockfiles, and then runs EVERY gate. If any gate fails, the
 // release is not ready and this says so. It never publishes and never tags —
 // publishing stays a deliberate, human, one-tag-at-a-time action.
 //
-// Usage: node internal/tools/release-prepare.mjs <version> [--requires <version>] [--dry-run]
+// Usage: node internal/tools/release/release-prepare.mjs <version> [--requires <version>] [--dry-run]
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -90,7 +90,7 @@ function main() {
   const root = DEFAULT_ROOT;
 
   if (!args.version) {
-    console.error('usage: node internal/tools/release-prepare.mjs <version> [--requires <version>] [--dry-run]');
+    console.error('usage: node internal/tools/release/release-prepare.mjs <version> [--requires <version>] [--dry-run]');
     process.exit(2);
   }
   if (!SEMVER.test(args.version)) {
@@ -128,7 +128,7 @@ function main() {
         '         Raise it if the skill now calls a capability that only this server has:',
       ),
     );
-    console.log(c.yellow(`           node internal/tools/release-prepare.mjs ${args.version} --requires '${wanted}'`));
+    console.log(c.yellow(`           node internal/tools/release/release-prepare.mjs ${args.version} --requires '${wanted}'`));
   }
 
   const TOTAL = 7;

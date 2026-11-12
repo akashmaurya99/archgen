@@ -27,13 +27,11 @@
 //
 // It is language-neutral BY CONSTRUCTION: the ids it joins are artifact ids
 // (edge rows, requirement ids, task ids), never code-level names.
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, resolve, sep } from 'node:path';
+import { join } from 'node:path';
 import { parseYaml } from '../fs/yaml.mjs';
 import { buildGraph, computeWaves, globsMayOverlap, ownedPaths } from './graph.mjs';
 import { WARNING_CODES } from '../protocol/codes.mjs';
-import { loadAsset } from '../../context.mjs';
 import {
   artifactFamilies,
   containsGlob,
@@ -41,7 +39,6 @@ import {
   familyOf,
   listArtifacts,
   listFiles,
-  matchesFamily,
   normalizeArtifactPath,
   normalizeGlob,
   parseEdgeMatrix,
@@ -709,7 +706,7 @@ function countCodes(list) {
  * reads against what it was handed, and the fingerprint lets the orchestrator
  * prove it.
  */
-export function planSnapshot(tasks, maps, planText, prdText, architecture) {
+function planSnapshot(tasks, maps, planText, prdText, architecture) {
   const rows = maps?.edgeMatrix ?? [];
   const fingerprint = createHash('sha256')
     .update(
@@ -737,7 +734,7 @@ export function planSnapshot(tasks, maps, planText, prdText, architecture) {
  * @param {string} planText the plan markdown
  * @returns {{artifacts: Array<object>, scope_class?: string}|null}
  */
-export function readProfile(answers, planText) {
+function readProfile(answers, planText) {
   const fromAnswers = answers?.plan_profile ?? answers?.profile ?? null;
   if (fromAnswers && Array.isArray(fromAnswers.artifacts)) return fromAnswers;
   const fence = readPlanProfile(planText).data;
@@ -758,7 +755,7 @@ export function readProfile(answers, planText) {
  *   `error` is set when the fence is present and does not parse — an absent
  *   fence is not an error.
  */
-export function readPlanProfile(planText) {
+function readPlanProfile(planText) {
   const text = String(planText ?? '');
   const heading = /^(#{1,4})[^\n]*profile[^\n]*$/im.exec(text);
   if (!heading) return { data: null, error: null };
@@ -783,15 +780,3 @@ export function readPlanProfile(planText) {
     return { data: null, error: String(e?.message ?? e) };
   }
 }
-
-/**
- * The artifact FAMILIES a plan's files fall into.
- *
- * A family is the ladder rule's path PATTERN: `plans/*.md` is the family of
- * every plan file, `decisions/*.md` the family of every decision record. The
- * recorded decision is proved against the family, so a plan may name its
- * files as it likes without the floor calling a satisfied decision missing.
- *
- * @returns {Array<{pattern: string, literals: number}>} most specific first
- */
-let FAMILY_CACHE = null;

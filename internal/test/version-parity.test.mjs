@@ -14,13 +14,9 @@
 // This test holds them to the same answers, over the same corpus.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { parseSkillFrontmatter, satisfies } from '../../packages/mcp/src/core/protocol/compat.mjs';
 import { readRequiresMcp, serverSatisfies } from '../../packages/cli/scripts/sync-config.mjs';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The frontmatter shapes a skill may declare. */
 const FRONTMATTERS = [

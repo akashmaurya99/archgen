@@ -20,7 +20,7 @@ import { validateTasks } from './validator.mjs';
 import { readPlanFile } from './plan-file.mjs';
 import { formatFindings } from '../protocol/diagnostics.mjs';
 import { waiverCovers } from './waivers.mjs';
-import { issueCode, graphIssueCode } from '../protocol/codes.mjs';
+import { issueCode } from '../protocol/codes.mjs';
 import { invalidInput } from '../protocol/errors.mjs';
 import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';

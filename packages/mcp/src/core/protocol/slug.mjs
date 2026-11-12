@@ -22,7 +22,7 @@ import { toolCall } from './call.mjs';
  * It is the directory name under `.archgen/`, so it is also a PATH SEGMENT:
  * a slash, a dot-dot or a space would take it somewhere else.
  */
-export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * Whether a string is a usable slug.
@@ -50,7 +50,7 @@ const TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
  * @param {unknown} value
  * @returns {boolean}
  */
-export function isPathToken(value) {
+function isPathToken(value) {
   return typeof value === 'string' && value.length <= 120 && TOKEN_RE.test(value);
 }
 

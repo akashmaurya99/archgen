@@ -85,7 +85,7 @@ export function summarizeWiring(result) {
  *
  * @returns {Record<string, string[]>}
  */
-export function serverActionInventory() {
+function serverActionInventory() {
   const out = {};
   for (const name of registeredToolNames()) {
     const spec = getToolSpec(name);

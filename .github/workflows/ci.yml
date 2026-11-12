@@ -112,7 +112,7 @@ jobs:
   # place — the `test:budget` script — and this job runs THAT script, so the
   # repository's own gate and CI's gate cannot disagree about the number.
   # (They did: CI carried a ceiling of 11,500 against the repository's
-  # 13,800, so the budget job failed on a clean tree while `npm run
+  # own, so the budget job failed on a clean tree while `npm run
   # test:budget` passed.)
   context-budget:
     runs-on: ubuntu-latest
@@ -191,6 +191,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The generated catalog gate reads the LIVE schemas, so it imports the
+      # server — and the server imports the MCP SDK. Without this install the
+      # two sync steps below die with ERR_MODULE_NOT_FOUND before they check
+      # anything, and the job fails for a reason that has nothing to do with
+      # the drift it exists to catch.
+      - run: npm ci --no-audit --no-fund
+        working-directory: packages/mcp
       # The ROOT scripts: they carry the CLI's own checks plus the generated
       # catalog gate, which proves the skill's tool table still matches the
       # live schemas. The CLI's check cannot see it, so a table naming an
@@ -198,6 +205,23 @@ jobs:
       - run: npm run sync:check
       - run: npm run sync
       - run: git diff --exit-code -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/mcp/package.json
+      # `git diff` sees only TRACKED files, so a NEW file dropped into the
+      # vendor tree — the mirror of skill/ — would pass the check above and
+      # ship in the npm tarball. `--exit-code` on an untracked file is a
+      # clean zero, so the drift it exists to catch would merge green.
+      #
+      # `git status --porcelain` sees both: a MODIFIED tracked file and an
+      # UNTRACKED new one. The vendor tree is a build output, so an
+      # untracked file there is always drift, never a developer's work.
+      - name: the derived files match the source, tracked and untracked
+        run: |
+          set -euo pipefail
+          dirty="$(git status --porcelain -- skill/archgen.config.json skill/SKILL.md packages/cli/vendor/skills/archgen packages/cli/package.json packages/mcp/package.json)"
+          if [ -n "$dirty" ]; then
+            echo "::error::the derived files drifted from their source (run 'npm run sync' and commit the result):"
+            echo "$dirty"
+            exit 1
+          fi
       # The umbrella check: every version surface — derived, hand-edited and
       # lockfile — must agree with archgen.config.json. It reports them all
       # together, each with the command that fixes it.

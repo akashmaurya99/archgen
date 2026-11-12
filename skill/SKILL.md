@@ -41,7 +41,7 @@ You are the **ORCHESTRATOR**: profile the work, elicit only unresolved forks, wr
 
 `archgen_docs` reads `.archgen/<slug>/`; `archgen_refs` reads archgen's protocols.
 
-**Writing actions** (everything else is read-only; the `readOnly` hint is per TOOL, so check the action): `archgen_tasks{set_status}` · `archgen_registry{update}` · `archgen_codegraph{ensure,wire}` · `archgen_setup{bootstrap,install_mcp,uninstall_mcp}` · `archgen_skills{install}`. `archgen_help{topic:'all'}` lists every action and its arguments.
+**Writing actions** (everything else is read-only; the `readOnly` hint is per TOOL, so check the action): `archgen_tasks{set_status,snapshot}` · `archgen_registry{update}` · `archgen_codegraph{ensure,wire}` · `archgen_setup{bootstrap,install_mcp,uninstall_mcp}` · `archgen_skills{install}`. `archgen_help{topic:'all'}` lists every action and its arguments.
 
 **Results** are `{ ok, data, error, meta }`. `ok:false` carries a typed `error.code` (`INVALID_INPUT`, `NOT_FOUND`, `CYCLE`, `OWNERSHIP_CONFLICT`, `CONFLICT`, `PERMISSION_DENIED`, `UNAVAILABLE`, `TIMEOUT`, `INTERNAL`)—handle it as data. `ok:true` means the call succeeded; inspect `data.valid` for plan health and `data.verdict` for gates.
 
@@ -196,4 +196,4 @@ Run from the repo root.
 
 ## Reference map
 
-`§` names resolve through `archgen_refs{action:'index', topic}`; the topics are `interview`, `artifact-templates`, `orchestration`, `platforms`, `mcp-and-skills`, `code-standards`. `references/code-standards.md` is the worker's rule file.
+`§` names resolve through `archgen_refs{action:'index', topic}`; the topics are listed in the catalog above. `references/code-standards.md` is the worker's rule file.

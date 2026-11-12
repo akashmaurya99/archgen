@@ -140,26 +140,26 @@ asking for approval.
 ## Token footprint
 
 Measured, not guessed. `npm run test:budget` reports it, and CI fails if the
-always-on footprint exceeds 13,800 tokens.
+always-on footprint exceeds 13,000 tokens.
 
 **Every session pays this much, and no more:**
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 7,649 |
-| MCP tool catalog (9 tools) | 5,483 |
-| **Always-on total** | **13,132** — 40% of a 32k window |
+| `skill/SKILL.md` | 7,462 |
+| MCP tool catalog (9 tools) | 5,538 |
+| **Always-on total** | **13,000** — 40% of a 32k window |
 
 **Everything else is pulled per section, on demand.** The five protocol
-references are 17,424 tokens *in total*, but a typical section is **271
+references are 18,960 tokens *in total*, but a typical section is **278
 tokens** — the agent loads the one it needs, never the file:
 
 | On demand | In total | What is actually read |
 | --- | ---: | --- |
-| A protocol reference | 17,424 | one section — **271 tokens** |
+| A protocol reference | 18,960 | one section — **278 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
-| A dispatch brief | 4,155 | the one being dispatched |
-| An artifact template | 2,733 | the one being scaffolded |
+| A dispatch brief | 4,069 | the one being dispatched |
+| An artifact template | 3,071 | the one being scaffolded |
 
 Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
 and `archgen_skills` serve one section at a time, and a dispatch brief arrives
@@ -188,7 +188,7 @@ complete does not.
 | [`schemas/`](schemas/) | The architecture.yaml conventions (normative shape) | repo-only |
 | [`fixtures/`](fixtures/) | Deterministic E2E drivers + shared YAML corpus | repo-only |
 | [`internal/`](internal/) | QA tooling (the gates) — never shipped | repo-only |
-| [`docs/`](docs/) | Architecture walkthrough · agent setup prompt · release process | repo-only |
+| [`docs/`](docs/) | The folder index · architecture walkthrough · the CI gate · agent setup prompt · release process | repo-only |
 
 ### Inside the two packages
 
@@ -266,6 +266,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
 | Doc | Contents |
 | --- | --- |
+| [docs/README.md](docs/README.md) | The index of the `docs/` folder |
 | [docs/architecture.md](docs/architecture.md) | Dual-mode design, gates, wave mechanics, platform detection |
 | [docs/ci.md](docs/ci.md) | The plan gate as a build gate — `archgen-mcp exec … --fail-on verdict:ISSUES` |
 | [docs/agent-setup-prompt.md](docs/agent-setup-prompt.md) | Copy-paste prompt: install archgen and verify it |

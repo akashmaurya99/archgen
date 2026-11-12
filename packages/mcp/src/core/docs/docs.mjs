@@ -81,7 +81,7 @@ function slugsMatch(a, b) {
 }
 
 /** Heading slugs incl. GitHub's -1/-2 duplicate disambiguation. */
-export function headingSlugs(doc) {
+function headingSlugs(doc) {
   const map = new Map();
   const counts = new Map();
   for (const h of doc.allHeadings ?? []) {
@@ -183,7 +183,7 @@ export function toPurpose(text) {
  * @param {object} section
  * @returns {string}
  */
-export function sectionPurpose(doc, section) {
+function sectionPurpose(doc, section) {
   const lines = doc?.lines ?? [];
   const start = section.line; // 0-based index of the line AFTER the heading
   // The authored purpose: the first non-empty line, when it is a quote.

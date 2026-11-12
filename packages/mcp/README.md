@@ -64,12 +64,13 @@ including when to call it, every action, and its gotchas.
 
 ### Fetching, not dumping
 
-Every tool takes `limit` and `offset` (default 50 items) — the bound is the
-caller's, and a bounded answer always reports what it left behind. Every
-collection narrows to **one item**: `taskId`, `skillId`, `file` + `section`,
-`harness`. Each answer's `meta` carries `available` (what else exists),
-`more` (the call that fetches one item) and `next` (the exact call for the
-next slice).
+Every collection-bearing tool takes `limit` and `offset` (default 50 items) —
+the bound is the caller's, and a bounded answer always reports what it left
+behind. (`archgen_help` is the exception: it returns ONE briefing, so it takes
+neither.) Every collection narrows to **one item**: `taskId`, `skillId`,
+`file` + `section`, `harness`. A bounded answer's `meta` carries `available`
+(what else exists), `more` (the call that fetches one item) and `next` (the
+exact call for the next slice).
 
 So the agent fetches what it needs instead of taking the whole set: a
 reference topic is fetched **one section** at a time (`section: '*'` asks for

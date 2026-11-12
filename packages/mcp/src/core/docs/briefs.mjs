@@ -253,8 +253,6 @@ export function renderBriefContext(ctx = {}) {
   return out.join('\n');
 }
 
-/** How many rows of a map the brief carries before it truncates. */
-const MAP_ROW_CAP = 60;
 /**
  * How many floor findings one brief lists.
  *

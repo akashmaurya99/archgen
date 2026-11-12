@@ -23,6 +23,7 @@ import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, warningMeta, withMeta } from '../envelope.mjs';
 import { hint } from '../core/protocol/guidance.mjs';
 import { resolutionWarning, resolveTasksFile } from '../core/fs/tasks-file.mjs';
+import { collectionRules } from '../core/protocol/action-args.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information. What DOES
@@ -45,45 +46,8 @@ const COLLECTIONS = {
   coverage: ['tasks', 'covered', 'uncovered', 'findings', 'requirements', 'edgeCases'],
   impact: ['direct', 'transitive', 'artifacts'],
 };
-/**
- * The collection a caller named, validated against the action's own set.
- *
- * The `collection` enum is SHARED by four actions, so a caller could name a
- * collection the action does not have — `coverage{collection:'issues'}`
- * answered with a silent zero while the payload carried twenty tasks. A
- * mismatch is a typed error, never a silent fallback.
- *
- * @param {string} action
- * @param {string|undefined} collection
- * @param {string} fallback the action's default collection
- */
-function resolveCollection(action, collection, fallback) {
-  const allowed = COLLECTIONS[action] ?? [];
-  if (collection === undefined || collection === null) return fallback;
-  if (!allowed.includes(collection)) {
-    throw invalidInput(
-      `'${collection}' is not a collection of '${action}' (allowed: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'plan' }), reason: "the collections of each action are listed there." }), action, collection, allowed });
-  }
-  return collection;
-}
 
-/**
- * Reject `collection` on an action that has NO collection.
- *
- * The argument is shared across actions, so a caller could name a collection
- * on an action that ignores it — and the call silently succeeded with the
- * argument dropped. A named collection is a request; an impossible one is an
- * error, never a quiet no-op.
- *
- * @param {string} action
- * @param {string|undefined} collection
- */
-function rejectCollection(action, collection) {
-  if (collection === undefined || collection === null) return;
-  const allowed = COLLECTIONS[action] ?? [];
-  throw invalidInput(
-    `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'plan' }), reason: "the collections of each action are listed there." }), action, collection });
-}
+const { resolve: resolveCollection, reject: rejectCollection } = collectionRules(COLLECTIONS, 'plan');
 
 /**
  * The arguments each action takes.
@@ -235,7 +199,6 @@ export function registerPlanTools(server) {
           // in the payload, so a caller that needs the tail can reach it.
           // The next call is emitted when EITHER list is truncated — the
           // warnings used to vanish with no pointer at all.
-          const effective = out.issues.length || out.warnings.length || args.limit || 40;
           const issueNext = nextCall('verify', args, out.issuesOffset + out.issues.length, file);
           const warningNext = nextCall('verify', args, out.warningsOffset + out.warnings.length, file);
           // OFFSET-AWARE: `omitted` is what is LEFT after this window. The
@@ -285,7 +248,7 @@ export function registerPlanTools(server) {
             limit: args.limit,
             collection,
           });
-          const call = (c, off) => nextCall('coverage', args, off, file);
+          const call = (c, off) => nextCall('coverage', args, off, file, c);
           const next = {
             tasks: call('tasks', covered.tasks.offset + covered.tasks.items.length),
             covered: call('covered', covered.covered.offset + covered.covered.items.length),
@@ -751,8 +714,14 @@ function requireTasksYaml(args, ctx) {
  * @param {string} action
  * @param {Record<string, unknown>} args the caller's arguments
  * @param {number} offset the offset of the NEXT slice
+ * @param {string|null} [file] the resolved task file to carry
+ * @param {string} [collection] the collection THIS call continues. It differs
+ *   from the caller's own argument when the call continues a collection the
+ *   caller did not ask for — the `meta.more` list. Carrying the caller's
+ *   argument there named the wrong collection, and every continuation in the
+ *   list pointed at the one the caller had already read.
  */
-function nextCall(action, args, offset, file = null) {
+function nextCall(action, args, offset, file = null, collection = args.collection) {
   const carried = {};
   for (const key of PLAN_ACTION_ARGS[action] ?? []) {
     if (args[key] !== undefined) carried[key] = args[key];
@@ -765,7 +734,7 @@ function nextCall(action, args, offset, file = null) {
   return toolCall('archgen_plan', {
     action,
     ...carried,
-    collection: args.collection,
+    collection,
     limit: args.limit ?? 50,
     offset: Math.max(0, offset),
   });

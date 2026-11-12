@@ -14,7 +14,7 @@ import { ignoredArgsWarning, trackArgs } from '../core/protocol/action-args.mjs'
 import { Context } from '../context.mjs';
 
 /** The envelope, as seen by the client. Loose so `data` can be any shape. */
-export const envelopeSchema = z
+const envelopeSchema = z
   .object({
     ok: z.boolean(),
     data: z.unknown().optional(),
@@ -134,7 +134,7 @@ export function registerTool(server, name, spec) {
 
 /** The process-wide context (project root = cwd unless overridden). */
 let cachedContext = null;
-export function serverContext() {
+function serverContext() {
   if (!cachedContext) cachedContext = new Context();
   return cachedContext;
 }

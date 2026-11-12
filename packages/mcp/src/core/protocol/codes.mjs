@@ -130,24 +130,3 @@ export function issueCode(message) {
   for (const [pattern, code] of BASE_CODES) if (pattern.test(text)) return code;
   return 'PLAN_ISSUE';
 }
-
-/**
- * The code for a graph defect.
- *
- * The graph reports four different defects — a cycle, a dangling reference,
- * a duplicate id and a malformed entry — and they were all reported as
- * `CYCLE`. An agent that groups its fixes by code then cannot tell a cycle
- * from a typo, and the documented `DANGLING_DEP` / `DUPLICATE_TASK_ID` codes
- * were unreachable.
- *
- * @param {string} message
- * @returns {string}
- */
-export function graphIssueCode(message) {
-  const text = String(message ?? '');
-  if (/^dangling depends_on reference:/.test(text)) return 'DANGLING_DEP';
-  if (/^duplicate task id:/.test(text)) return 'DUPLICATE_TASK_ID';
-  if (/^tasks\[\d+\]: not a mapping/.test(text)) return 'TASK_FIELD_TYPE';
-  if (/^tasks\[\d+\]: missing string 'id'/.test(text)) return 'TASK_ID_INVALID';
-  return 'CYCLE';
-}

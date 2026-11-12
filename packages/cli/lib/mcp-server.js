@@ -52,19 +52,6 @@ export function resolveMcpBinary(opts = {}) {
 }
 
 /**
- * Locate an executable on PATH (cross-platform, no shell).
- *
- * ONE implementation, in spawn-npm.js — this module used to carry its own
- * copy, and the two had drifted: the copy here skipped a path ending in '/',
- * the one there did not, and neither checked that the path was a FILE. Two
- * implementations of one rule is how the rules start disagreeing.
- *
- * Imported for this module's own use AND re-exported, so the callers that
- * already import it from here keep working.
- */
-export { whichOnPath };
-
-/**
  * Quote one argument for cmd.exe.
  *
  * cmd.exe parses `&`, `|`, `<`, `>`, `^` and whitespace as syntax even in an
@@ -181,7 +168,7 @@ export function requireProjectRoot(projectRoot, fn) {
  * @param {{projectRoot?: string, timeout?: number, env?: Record<string, string|undefined>}} opts
  * @returns {{ok: boolean, code: number|null, data: any, stdout: string, stderr: string, detail?: string}}
  */
-export function runMcp(args, opts = {}) {
+function runMcp(args, opts = {}) {
   const { timeout = 600000, env = process.env } = opts;
   const projectRoot = requireProjectRoot(opts.projectRoot ?? process.cwd(), 'runMcp');
   const resolved = resolveMcpBinary({ projectRoot, env });

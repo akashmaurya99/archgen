@@ -42,7 +42,7 @@ while [ $# -gt 0 ]; do
     --location-project) LOCATION_PROJECT=1; shift ;;
     --no-codegraph) NO_CODEGRAPH=1; shift ;;
     --check) CHECK_ONLY=1; shift ;;
-    -h|--help) sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option '$1'" ;;
     *) [ -n "$TARGET" ] && die "one project directory, please"; TARGET="$1"; shift ;;
   esac

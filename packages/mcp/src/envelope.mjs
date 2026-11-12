@@ -92,7 +92,7 @@ export function toToolResult(envelope) {
  * which call returns the next slice — so a bound never hides data, it only
  * makes the agent ask for it.
  */
-export const DEFAULT_LIMIT = 50;
+const DEFAULT_LIMIT = 50;
 
 /**
  * Narrow a collection to what the caller asked for, and report what is left.

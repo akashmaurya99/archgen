@@ -373,6 +373,26 @@ function recordBackupPaths(snapshotDir, relPaths) {
 }
 
 /**
+ * A backup timestamp that does not collide with an existing one.
+ *
+ * The millisecond clock can tick twice inside one operation, so the
+ * timestamp is checked against the vault and advanced until it is free.
+ * The vault path is a PARAMETER, so the project vault
+ * (`.archgen/.backup`) and the global vault (`.archgen-backups`) obey the
+ * same rule — one rule, one implementation.
+ *
+ * @param {string} base the vault's root directory
+ * @param {string} backupRootRel the backup root, relative to `base`
+ * @returns {string} the timestamp
+ */
+export function uniqueBackupTs(base, backupRootRel) {
+  for (;;) {
+    const ts = new Date().toISOString().replace(/:/g, '-');
+    if (!existsSync(join(base, ...backupRootRel.split('/'), ts))) return ts;
+  }
+}
+
+/**
  * Move an existing path into `<root>/<backupRootRel>/<ts>/<relPath>`, preserving
  * the relative layout so backups restore unambiguously. Generalized core shared
  * by the project vault (.archgen/.backup) and the global vault

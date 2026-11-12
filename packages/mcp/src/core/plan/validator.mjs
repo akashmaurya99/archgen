@@ -23,7 +23,15 @@ import { finding, countByCode } from '../protocol/diagnostics.mjs';
 import { issueCode } from '../protocol/codes.mjs';
 
 export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
-export const REQUIRED = ['id', 'title', 'file_ownership'];
+// 'acceptance' is required: a task with no acceptance criteria has no way to
+// be verified, and the floor's job is to catch exactly that. It was checked
+// as an EMPTY list but not as an ABSENT one, so a task could declare no
+// acceptance at all and pass — while NO_ACCEPTANCE ('a task carries no
+// acceptance criteria to verify') sat unused.
+//
+// Mirrors schemas/tasks.schema.json `required` — the parity test asserts
+// the two agree, so a change here must land in both.
+export const REQUIRED = ['id', 'title', 'file_ownership', 'acceptance'];
 export const KNOWN_KEYS = new Set([
   'id', 'title', 'status', 'depends_on', 'parallel_group', 'file_ownership', 'artifacts', 'acceptance',
 ]);
@@ -183,7 +191,19 @@ export function validateTasks(data, opts = {}) {
     for (const r of REQUIRED) {
       const v = t[r];
       if (v === undefined) {
-        errors.push(finding('TASK_FIELD_MISSING', `${where} has no '${r}'${lineOf(`${path}.${r}`)}`, { fix: `add '${r}'` }));
+        // 'acceptance' carries its own code: a task with no acceptance
+        // criteria is not a task missing a FIELD, it is a task with no way
+        // to be verified — which is what NO_ACCEPTANCE names. The message
+        // matches the matcher in core/protocol/codes.mjs, so issueCode()
+        // classifies it the same way when the finding crosses a boundary
+        // that drops the explicit code.
+        if (r === 'acceptance') {
+          errors.push(finding('NO_ACCEPTANCE', `${where} has no acceptance criteria${lineOf(`${path}.acceptance`)}`, {
+            fix: "give 'acceptance' at least one verifiable criterion",
+          }));
+        } else {
+          errors.push(finding('TASK_FIELD_MISSING', `${where} has no '${r}'${lineOf(`${path}.${r}`)}`, { fix: `add '${r}'` }));
+        }
       } else if (v === null || (typeof v === 'string' && v.trim() === '')) {
         errors.push(finding('TASK_FIELD_EMPTY', `${where} has an empty '${r}'${lineOf(`${path}.${r}`)}`, { fix: `give '${r}' a value` }));
       }
@@ -393,7 +413,7 @@ function checkArtifactsOwned(warnings, where, path, t, lineOf) {
  * @param {string} path
  * @returns {boolean}
  */
-export function globCovers(glob, path) {
+function globCovers(glob, path) {
   if (typeof glob !== 'string' || typeof path !== 'string') return false;
   if (!glob || !path) return false;
   if (/[<>]/.test(glob)) return false;

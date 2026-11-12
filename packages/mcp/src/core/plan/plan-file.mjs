@@ -63,7 +63,7 @@ export function readParsedPlanFile(file) {
  * @param {object[]} findings
  * @returns {import('./errors.mjs').ArchgenError}
  */
-export function planFileError(file, findings) {
+function planFileError(file, findings) {
   const first = findings[0] ?? { message: 'the file could not be read' };
   // The path is resolved so every tool spells it the same way — one tool
   // resolved its input through a realpath and another did not, and the same

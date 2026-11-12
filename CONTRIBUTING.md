@@ -13,8 +13,8 @@ packages/mcp/       `archgen-mcp` — the MCP server (owns every capability)
     harness/        MCP wiring, platform capability tables, CodeGraph
     fs/             the only layer that touches disk — containment, YAML, JSONC
   assets/           registries · templates · briefs · the protocol references
-packages/cli/       `archgen-skill` npm CLI (init / install / uninstall) — zero-dep
-internal/           repo-only QA tooling (token budget, estimators) — never shipped
+packages/cli/       `archgen-skill` npm CLI (init / install / doctor / update / restore / migrate / uninstall) — zero-dep
+internal/           repo-only QA tooling (lint / release / budget / safety) — never shipped
 fixtures/           deterministic end-to-end drivers + shared YAML corpus
 schemas/            the architecture.yaml conventions (the task schema ships in packages/mcp/schemas/)
 ```

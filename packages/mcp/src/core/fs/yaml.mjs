@@ -77,7 +77,7 @@ export function parseYaml(text, opts = {}) {
   // Drop blank/comment-only knowledge from the recursive descent input by
   // filtering here but recording positions first (keeps parser core simple).
   const pos = { i: 0 };
-  const data = parseBlock(lines, pos, 0, ctx, /*root*/ true, []);
+  const data = parseBlock(lines, pos, 0, ctx, []);
   // Guard: nothing structural may survive past the root block (e.g. a sequence
   // followed by a mapping at the same indent) — silent truncation would corrupt
   // contracts, so refuse loudly instead.
@@ -152,7 +152,7 @@ function classify(raw) {
 }
 
 /** Recursive block parser: consumes lines at >= indent belonging to this block. */
-function parseBlock(lines, pos, indent, ctx, root = false, basePath = []) {
+function parseBlock(lines, pos, indent, ctx, basePath = []) {
   // Decide map vs sequence by first content line at exactly this indent.
   const peek = peekContent(lines, pos, indent);
   if (!peek) return null;

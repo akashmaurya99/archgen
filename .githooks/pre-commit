@@ -4,5 +4,7 @@
 npm run sync:check || {
   echo "\npre-commit: derived files drifted from archgen.config.json."
   echo "Fix with: npm run sync   (then git add the results)"
+  echo "The check reads the LIVE tool schemas, so it needs the server's"
+  echo "dependencies installed once per clone: npm run setup"
   exit 1
 }

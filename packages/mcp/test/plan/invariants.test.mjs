@@ -50,6 +50,47 @@ function writeTasks(name, body = TASKS) {
 
 // ── error taxonomy ──────────────────────────────────────────────────────────
 
+test('a task with NO acceptance criteria is NO_ACCEPTANCE — not a silent pass', () => {
+  // WHY THIS TEST EXISTS. The validator checked an EMPTY acceptance list but
+  // not an ABSENT one: `checkStringList` returns early on an undefined
+  // value, so a task could declare no acceptance at all and pass the floor
+  // — while NO_ACCEPTANCE ('a task carries no acceptance criteria to
+  // verify') and its matcher sat unused.
+  //
+  // A task with no acceptance criteria has no way to be verified, which is
+  // exactly what the floor exists to catch. The absent case and the empty
+  // case are the same defect.
+  const p = writeTasks(
+    'no-acceptance.yaml',
+    `tasks:
+  - id: A
+    title: A
+    file_ownership: ["a"]
+`,
+  );
+  const result = validateTasksYaml(p);
+  assert.equal(result.valid, false, 'a task with no acceptance criteria must not validate');
+  assert.equal(result.errors.length, 1, 'exactly one finding, not two');
+  assert.equal(result.errors[0].code, 'NO_ACCEPTANCE');
+  assert.match(result.errors[0].message, /no acceptance criteria/);
+});
+
+test('an EMPTY acceptance list is NO_ACCEPTANCE too — the absent and empty cases agree', () => {
+  const p = writeTasks(
+    'empty-acceptance.yaml',
+    `tasks:
+  - id: A
+    title: A
+    file_ownership: ["a"]
+    acceptance: []
+`,
+  );
+  const result = validateTasksYaml(p);
+  assert.equal(result.valid, false, 'an empty acceptance list must not validate');
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].code, 'NO_ACCEPTANCE');
+});
+
 test('a dependency cycle is CYCLE, not INTERNAL', () => {
   const p = writeTasks(
     'cycle.yaml',
@@ -135,6 +176,7 @@ test('validate treats an unknown key as a warning, not an error', () => {
   - id: A
     title: A
     file_ownership: ["a"]
+    acceptance: ["it works"]
     surprise: 1
 `,
   );

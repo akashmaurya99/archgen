@@ -34,7 +34,7 @@
 //
 // Usage: node internal/tools/lint/structure-lint.mjs
 // Exit 0 ok · 1 a structural defect · 4 usage/IO error
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trackedFiles } from './tracked-files.mjs';
@@ -120,7 +120,7 @@ function importSpecifiers(text) {
  * @param {string} root the repository root
  * @returns {{ok: boolean, findings: string[]}}
  */
-export function lintStructure(root = ROOT) {
+function lintStructure(root = ROOT) {
   const findings = [];
   const files = trackedFiles(root);
 
