@@ -10,6 +10,7 @@ import { loadAsset } from '../context.mjs';
 import { manageCodegraph, assertLocation } from '../core/codegraph-manager.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 const ACTION_DESC = 'ensure|status|wire';
 
 /**
@@ -65,6 +66,16 @@ export function shapeReport(report, window = {}) {
   return out;
 }
 
+/**
+ * The arguments each action takes. An argument that belongs to another
+ * action is a typed error, not a silent no-op.
+ */
+const CODEGRAPH_ACTION_ARGS = {
+  ensure: ['location', 'approve', 'telemetry', 'noInstall', 'limit', 'offset'],
+  status: ['location', 'approve', 'telemetry', 'noInstall', 'limit', 'offset'],
+  wire: ['location', 'approve', 'telemetry', 'noInstall', 'limit', 'offset'],
+};
+
 const schema = z.object({
   action: z.enum(['ensure', 'status', 'wire']).describe(ACTION_DESC),
   location: z.enum(['project', 'global', 'both']).optional().describe(LOCATION_DESC),
@@ -81,6 +92,7 @@ const schema = z.object({
  */
 export function registerCodegraphTools(server) {
   registerTool(server, 'archgen_codegraph', {
+    actionArgs: CODEGRAPH_ACTION_ARGS,
     title: 'ArchGen CodeGraph',
     description:
       'Install, wire, or inspect CodeGraph (source-symbol index + MCP) and its project index. ' +

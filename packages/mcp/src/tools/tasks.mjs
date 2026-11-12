@@ -16,6 +16,7 @@ import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { resolveSlugInput, ScopeError } from '../core/scope.mjs';
 import { dirname, join } from 'node:path';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 /**
  * The `.archgen/<slug>/` directory a tasks file belongs to.
@@ -47,6 +48,18 @@ function slugDirFor(tasksFile, action) {
 
 const ACTION_DESC = 'next|set_status|list|snapshot|contract';
 
+/**
+ * The arguments each action takes. An argument that belongs to another
+ * action is a typed error, not a silent no-op.
+ */
+const TASKS_ACTION_ARGS = {
+  next: ['tasksYaml', 'taskId', 'limit', 'offset'],
+  set_status: ['tasksYaml', 'taskId', 'status', 'force'],
+  list: ['tasksYaml', 'taskId', 'filterStatus', 'module', 'limit', 'offset'],
+  snapshot: ['tasksYaml'],
+  contract: ['tasksYaml', 'taskId', 'slugDir', 'codeStandardsPath'],
+};
+
 const schema = z.object({
   action: z.enum(['next', 'set_status', 'list', 'snapshot', 'contract']).describe(ACTION_DESC),
   tasksYaml: z.string().optional().describe('tasks.yaml path (all actions).'),
@@ -70,6 +83,7 @@ const schema = z.object({
  */
 export function registerTaskTools(server) {
   registerTool(server, 'archgen_tasks', {
+    actionArgs: TASKS_ACTION_ARGS,
     title: 'ArchGen tasks',
     description:
       'Execute an archgen plan: next dependency-safe wave, atomic status updates, task listing, ' +

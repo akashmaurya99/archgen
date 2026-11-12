@@ -14,10 +14,9 @@
 //   bootstrap [--project <dir>]         wire the archgen MCP + ensure CodeGraph
 //   doctor [--project <dir>]            health report
 //   uninstall-mcp [--project <dir>]     remove the archgen MCP entries
-import { guard } from './envelope.mjs';
 import { Context } from './context.mjs';
 import { createServer } from './server.mjs';
-import { getToolSpec, registeredToolNames } from './tools/_register.mjs';
+import { getToolSpec, registeredToolNames, runTool } from './tools/_register.mjs';
 import { loadAsset } from './context.mjs';
 import { uninstallArchgenMcp, archgenMcpStatus } from './core/mcp-server-manager.mjs';
 import { assertLocation, findCodegraph } from './core/codegraph-manager.mjs';
@@ -194,7 +193,7 @@ export async function runCli(argv, io = {}) {
       out(JSON.stringify(envelope, null, 2));
       return 1;
     }
-    const envelope = await guard(spec.handler, ctx, check.data);
+    const envelope = await runTool(spec, ctx, check.data);
     out(JSON.stringify(envelope, null, 2));
     if (!envelope.ok) return 1;
     // `--fail-on <path>:<value>` turns a tool result into a BUILD GATE.
@@ -222,7 +221,7 @@ export async function runCli(argv, io = {}) {
     // MCP tool's no-op gate exists to remove. Delegating also means the CLI
     // and the tool can never disagree about what "already configured" means.
     const location = assertLocation(opts.location);
-    const envelope = await guard(getToolSpec('archgen_setup').handler, ctx, {
+    const envelope = await runTool(getToolSpec('archgen_setup'), ctx, {
       action: 'bootstrap',
       location,
       approve: opts.yes,

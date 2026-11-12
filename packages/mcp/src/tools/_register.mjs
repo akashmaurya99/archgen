@@ -10,6 +10,7 @@
 // matters as much as the tool logic.
 import { z } from 'zod/v4';
 import { guard, toToolResult } from '../envelope.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 import { Context } from '../context.mjs';
 
 /** The envelope, as seen by the client. Loose so `data` can be any shape. */
@@ -51,6 +52,38 @@ export function registeredToolNames() {
 }
 
 /**
+ * Run a tool's handler and shape its answer.
+ *
+ * ONE execution path. The MCP server and the CLI facade both reach the tools
+ * through here, so a behaviour added for one — the ignored-argument warning,
+ * the project-root selection — is never missing from the other.
+ *
+ * @param {any} spec the registered tool spec
+ * @param {import('../context.mjs').Context} ctx the per-call context
+ * @param {Record<string, unknown>} args the caller's arguments
+ * @returns {Promise<{ok: boolean, data?: unknown, error?: object, meta: object}>}
+ */
+export async function runTool(spec, ctx, args) {
+  // The schema is flat — one shape for every action — so a caller can pass an
+  // argument its action never reads. The handler says so: the arguments are
+  // tracked as they are read, and one that was passed and never read is
+  // reported. The call still did what the action does.
+  const tracked = trackArgs(args, spec.actionArgs);
+  const envelope = await guard(spec.handler, ctx, tracked.args);
+  const ignored = tracked.ignored();
+  if (ignored.length && envelope.ok) {
+    envelope.meta = {
+      ...(envelope.meta ?? {}),
+      warnings: [
+        ...(envelope.meta?.warnings ?? []),
+        ignoredArgsWarning(ignored, tracked.owners()),
+      ],
+    };
+  }
+  return envelope;
+}
+
+/**
  * Register one tool on the server.
  *
  * @param {import('@modelcontextprotocol/server').McpServer} server
@@ -63,6 +96,7 @@ export function registeredToolNames() {
  *   readOnly?: boolean,
  *   destructive?: boolean,
  *   idempotent?: boolean,
+ *   actionArgs?: Record<string, string[]>,
  * }} spec
  */
 export function registerTool(server, name, spec) {
@@ -92,7 +126,7 @@ export function registerTool(server, name, spec) {
         typeof requested === 'string' && requested.trim() !== ''
           ? base.withProjectRoot(requested)
           : base;
-      const envelope = await guard(spec.handler, ctx, args ?? {});
+      const envelope = await runTool(spec, ctx, args ?? {});
       return toToolResult(envelope);
     },
   );

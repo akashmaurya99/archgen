@@ -9,6 +9,7 @@ import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 const ACTION_DESC = 'index|digest|section|refs|map|validate';
 
@@ -19,6 +20,19 @@ const COLLECTIONS = {
   refs: ['matches'],
   map: ['sections'],
   validate: ['broken', 'warnings'],
+};
+
+/**
+ * The arguments each action takes. An argument that belongs to another
+ * action is a typed error, not a silent no-op.
+ */
+const DOCS_ACTION_ARGS = {
+  index: ['slugDir', 'file', 'collection'],
+  digest: ['slugDir', 'file', 'collection'],
+  validate: ['slugDir', 'file', 'collection', 'limit', 'offset'],
+  refs: ['slugDir', 'token', 'file', 'collection', 'limit', 'offset'],
+  map: ['slugDir', 'token', 'file', 'collection', 'limit', 'offset'],
+  section: ['slugDir', 'section', 'file', 'include', 'collection', 'limit', 'offset'],
 };
 
 const schema = z.object({
@@ -71,6 +85,7 @@ function rejectCollection(action, collection) {
  */
 export function registerDocTools(server) {
   registerTool(server, 'archgen_docs', {
+    actionArgs: DOCS_ACTION_ARGS,
     title: 'ArchGen docs',
     description:
       'Navigate an archgen plan\'s markdown by section — digest, section, map, refs, index, validate — ' +

@@ -13,8 +13,22 @@ import { invalidInput } from '../core/errors.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 const ACTION_DESC = 'doctor|bootstrap|install_mcp|uninstall_mcp|harnesses|harness_info';
+
+/**
+ * The arguments each action takes. An argument that belongs to another
+ * action is a typed error, not a silent no-op.
+ */
+const SETUP_ACTION_ARGS = {
+  doctor: ['location', 'approve', 'limit', 'offset'],
+  bootstrap: ['location', 'approve', 'telemetry', 'limit', 'offset'],
+  install_mcp: ['location', 'approve', 'telemetry', 'limit', 'offset'],
+  uninstall_mcp: ['location', 'approve', 'limit', 'offset'],
+  harnesses: ['location', 'approve', 'harness', 'limit', 'offset'],
+  harness_info: ['location', 'approve', 'harness', 'limit', 'offset'],
+};
 
 const schema = z.object({
   action: z.enum(['doctor', 'bootstrap', 'install_mcp', 'uninstall_mcp', 'harnesses', 'harness_info']).describe(ACTION_DESC),
@@ -87,6 +101,7 @@ export function serverActionInventory() {
  */
 export function registerSetupTools(server) {
   registerTool(server, 'archgen_setup', {
+    actionArgs: SETUP_ACTION_ARGS,
     title: 'ArchGen setup',
     description:
       'ArchGen install health and wiring: doctor, bootstrap, install/uninstall MCP, ' +

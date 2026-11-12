@@ -8,6 +8,16 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_regist
 import { updateRegistry, showRegistry, DISPLAY_STATUSES } from '../core/registry-updater.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
+
+/**
+ * The arguments each action takes. An argument that belongs to another
+ * action is a typed error, not a silent no-op.
+ */
+const REGISTRY_ACTION_ARGS = {
+  show: ['limit', 'offset'],
+  update: ['slug', 'status', 'limit', 'offset'],
+};
 
 const schema = z.object({
   action: z.enum(['update', 'show']).describe('update|show'),
@@ -23,6 +33,7 @@ const schema = z.object({
  */
 export function registerRegistryTools(server) {
   registerTool(server, 'archgen_registry', {
+    actionArgs: REGISTRY_ACTION_ARGS,
     title: 'ArchGen registry',
     description: 'Read or rewrite the AGENTS.md features registry from .archgen/.',
     inputSchema: schema,

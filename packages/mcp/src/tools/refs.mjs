@@ -17,8 +17,20 @@ import { invalidInput } from '../core/errors.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 const ACTION_DESC = 'list|index|read|search';
+
+/**
+ * The arguments each action takes. An argument that belongs to another
+ * action is a typed error, not a silent no-op.
+ */
+const REFS_ACTION_ARGS = {
+  list: ['limit', 'offset'],
+  index: ['topic', 'section', 'limit', 'offset'],
+  read: ['topic', 'section', 'limit', 'offset'],
+  search: ['topic', 'token', 'limit', 'offset'],
+};
 
 const schema = z.object({
   action: z.enum(['list', 'index', 'read', 'search']).describe(ACTION_DESC),
@@ -35,6 +47,7 @@ const schema = z.object({
  */
 export function registerRefTools(server) {
   registerTool(server, 'archgen_refs', {
+    actionArgs: REFS_ACTION_ARGS,
     title: 'ArchGen references',
     description:
       "Read archgen's protocol references (interview, artifacts, orchestration, platforms, MCP/skills) " +

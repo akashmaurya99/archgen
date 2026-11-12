@@ -72,6 +72,7 @@ export const WARNING_CODES = {
   ARTIFACT_NOT_OWNED: 'a task declares an artifact its file ownership does not cover',
   CONFIG_UNPARSEABLE: 'a plan artifact is present but does not parse',
   PROFILE_UNPARSEABLE: 'the recorded plan profile is present but does not parse',
+  ARG_IGNORED: 'an argument the action does not take was passed and ignored',
 };
 
 /**

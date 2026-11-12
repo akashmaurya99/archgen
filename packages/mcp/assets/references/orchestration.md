@@ -99,6 +99,7 @@ The task file's own defects carry their own codes: `UNPARSEABLE`, `NO_TASKS`, `C
 | `ARTIFACT_NOT_OWNED` | a task declares an artifact its file ownership does not cover |
 | `CONFIG_UNPARSEABLE` | `architecture.yaml` is present but does not parse — the defect is a syntax error, not a missing file |
 | `PROFILE_UNPARSEABLE` | the recorded plan profile is present but does not parse |
+| `ARG_IGNORED` | an argument the action does not take was passed, and the action ignored it — the call still did what the action does |
 | `WAIVER_COUNT_MISMATCH` | the recorded waived count disagrees with the ledger |
 | `GATE_IDENTITY_MISSING` | the gate block records no verifier |
 

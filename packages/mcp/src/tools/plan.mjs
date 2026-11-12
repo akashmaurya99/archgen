@@ -20,6 +20,7 @@ import { invalidInput } from '../core/errors.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information.
@@ -79,6 +80,23 @@ function rejectCollection(action, collection) {
     `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`, { ...hint({ action: toolCall('archgen_help', { topic: 'plan' }), reason: "the collections of each action are listed there." }), action, collection });
 }
 
+/**
+ * The arguments each action takes.
+ *
+ * The schema is flat, so this table is what keeps a call honest: an argument
+ * that belongs to another action is a typed error, not a silent no-op.
+ */
+const PLAN_ACTION_ARGS = {
+  validate: ['tasksYaml', 'planDir', 'collection', 'limit', 'offset'],
+  verify: ['tasksYaml', 'planDir', 'collection', 'limit', 'offset'],
+  graph: ['tasksYaml', 'planDir', 'node', 'module', 'format', 'status', 'collection', 'limit', 'offset'],
+  impact: ['tasksYaml', 'target', 'collection', 'limit', 'offset'],
+  coverage: ['tasksYaml', 'planDir', 'taskId', 'collection', 'limit', 'offset'],
+  profile: ['intent', 'signals', 'modules', 'tasks', 'slug', 'collection'],
+  scaffold: ['scope', 'intent', 'signals', 'modules', 'tasks', 'slug', 'file', 'collection'],
+  brief: ['kind', 'tasksYaml', 'planDir', 'slug', 'featureRequest', 'topic', 'round', 'collection'],
+};
+
 const schema = z.object({
   action: z.enum(['validate', 'verify', 'graph', 'impact', 'coverage', 'profile', 'scaffold', 'brief']).describe(ACTION_DESC),
   tasksYaml: z
@@ -136,6 +154,7 @@ const schema = z.object({
  */
 export function registerPlanTools(server) {
   registerTool(server, 'archgen_plan', {
+    actionArgs: PLAN_ACTION_ARGS,
     title: 'ArchGen plan',
     description:
       'Validate and analyze an archgen plan: schema validation, verifier gate, dependency graph, ' +
@@ -160,8 +179,8 @@ export function registerPlanTools(server) {
             // fetch the rest.
             collection,
           });
-          const errNext = nextCall('validate', { ...args, collection: 'errors', limit: args.limit }, report.errorsOffset + report.errors.length);
-          const warnNext = nextCall('validate', { ...args, collection: 'warnings', limit: args.limit }, report.warningsOffset + report.warnings.length);
+          const errNext = nextCall('validate', args, report.errorsOffset + report.errors.length);
+          const warnNext = nextCall('validate', args, report.warningsOffset + report.warnings.length);
           // The truncation test is OFFSET-AWARE. Comparing the page length
           // with the total is true at the tail too, so the continuation
           // pointed at the SAME offset and an agent following it spun
@@ -211,8 +230,8 @@ export function registerPlanTools(server) {
           // The next call is emitted when EITHER list is truncated — the
           // warnings used to vanish with no pointer at all.
           const effective = out.issues.length || out.warnings.length || args.limit || 40;
-          const issueNext = nextCall('verify', { ...args, collection: 'issues', limit: effective }, out.issuesOffset + out.issues.length);
-          const warningNext = nextCall('verify', { ...args, collection: 'warnings', limit: effective }, out.warningsOffset + out.warnings.length);
+          const issueNext = nextCall('verify', args, out.issuesOffset + out.issues.length);
+          const warningNext = nextCall('verify', args, out.warningsOffset + out.warnings.length);
           // OFFSET-AWARE: `omitted` is what is LEFT after this window. The
           // old test (`page.length < total`) was true at the tail as well,
           // so the continuation pointed at the same offset forever.
@@ -260,7 +279,7 @@ export function registerPlanTools(server) {
             limit: args.limit,
             collection,
           });
-          const call = (c, off) => nextCall('coverage', { ...args, collection: c }, off);
+          const call = (c, off) => nextCall('coverage', args, off);
           const next = {
             tasks: call('tasks', covered.tasks.offset + covered.tasks.items.length),
             covered: call('covered', covered.covered.offset + covered.covered.items.length),
@@ -688,11 +707,25 @@ function requireTasksYaml(args, ctx) {
  * @param {any} args the caller's arguments
  * @param {number} offset the offset of the NEXT slice
  */
+/**
+ * The continuation call for a collection window.
+ *
+ * The call carries the arguments the ACTION takes — not every argument the
+ * caller passed. A continuation that carried the whole argument set put the
+ * dead ones back in front of the agent, and the agent kept passing them.
+ *
+ * @param {string} action
+ * @param {Record<string, unknown>} args the caller's arguments
+ * @param {number} offset the offset of the NEXT slice
+ */
 function nextCall(action, args, offset) {
+  const carried = {};
+  for (const key of PLAN_ACTION_ARGS[action] ?? []) {
+    if (args[key] !== undefined) carried[key] = args[key];
+  }
   return toolCall('archgen_plan', {
     action,
-    tasksYaml: args.tasksYaml,
-    planDir: args.planDir,
+    ...carried,
     collection: args.collection,
     limit: args.limit ?? 50,
     offset: Math.max(0, offset),

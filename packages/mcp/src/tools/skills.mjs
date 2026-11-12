@@ -12,6 +12,7 @@ import { loadAsset } from '../context.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
 import { toolCall } from '../core/call.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import {
   matchSkills,
@@ -26,6 +27,19 @@ import {
 } from '../core/skill-manager.mjs';
 
 const ACTION_DESC = 'match|install|installed|load|digest|list';
+
+/**
+ * The arguments each action takes. An argument that belongs to another
+ * action is a typed error, not a silent no-op.
+ */
+const SKILLS_ACTION_ARGS = {
+  match: ['title', 'summary', 'fileOwnership', 'limit', 'offset'],
+  install: ['skillId', 'harness', 'global', 'approve', 'limit', 'offset'],
+  installed: ['limit', 'offset'],
+  load: ['skillId', 'section', 'limit', 'offset'],
+  digest: ['skillId', 'section', 'limit', 'offset'],
+  list: ['skillId', 'limit', 'offset'],
+};
 
 const schema = z.object({
   action: z.enum(['match', 'install', 'installed', 'load', 'digest', 'list']).describe(ACTION_DESC),
@@ -47,6 +61,7 @@ const schema = z.object({
  */
 export function registerSkillTools(server) {
   registerTool(server, 'archgen_skills', {
+    actionArgs: SKILLS_ACTION_ARGS,
     title: 'ArchGen skills',
     description:
       'Match, install, load, and inspect capability skills (UI, accessibility, motion) from the registry; ' +
