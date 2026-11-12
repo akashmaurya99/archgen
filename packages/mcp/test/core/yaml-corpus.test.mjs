@@ -35,6 +35,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseYaml, stringifyYaml } from '../../src/core/yaml.mjs';
+import { inRepo, requireCorpus } from '../repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // packages/mcp/test/core -> repo root (four levels up).
@@ -60,7 +61,8 @@ function commentOrder(text) {
 }
 
 test('the YAML corpus is present and non-empty', () => {
-  if (!existsSync(CORPUS_DIR)) return; // published package — no repo fixtures
+  if (!inRepo()) return; // published package — the corpus is not shipped
+  requireCorpus(CORPUS_DIR, 'the YAML corpus');
   assert.ok(
     corpusFiles.length >= 5,
     `the yaml corpus must not be emptied (found ${corpusFiles.length} files)`,
@@ -68,7 +70,8 @@ test('the YAML corpus is present and non-empty', () => {
 });
 
 test('every corpus file has a committed expectation', () => {
-  if (!existsSync(CORPUS_DIR)) return;
+  if (!inRepo()) return; // published package — the corpus is not shipped
+  requireCorpus(CORPUS_DIR, 'the YAML corpus');
   for (const file of corpusFiles) {
     const p = join(CORPUS_DIR, file.replace(/\.yaml$/, '.expected.json'));
     assert.ok(existsSync(p), `${file} has no .expected.json sibling`);

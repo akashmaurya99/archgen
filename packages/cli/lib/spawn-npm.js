@@ -68,7 +68,7 @@ export function whichOnPath(bin, env = process.env) {
  * The global npm prefix — where `npm install -g` puts its binaries.
  * @returns {string|null} null when npm cannot be queried
  */
-export function npmGlobalPrefix(env = process.env) {
+function npmGlobalPrefix(env = process.env) {
   try {
     const inv = npmInvocation(['prefix', '-g'], env);
     const r = spawnSync(inv.command, inv.args, {

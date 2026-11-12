@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseYaml } from '../../src/core/yaml.mjs';
 import { YAML_SUBSET } from '../../src/core/yaml-subset.mjs';
+import { inRepo } from '../repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REFS = join(HERE, '..', '..', 'assets', 'references');
@@ -43,7 +44,8 @@ for (const rule of YAML_SUBSET) {
 
 test('the reference states every rule of the subset', () => {
   const ref = join(REFS, 'artifact-templates.md');
-  if (!existsSync(ref)) return; // published package — no repo-level references
+  if (!inRepo()) return; // published package — the references are not shipped
+  assert.ok(existsSync(ref), 'the references must be present in the repository');
   const text = readFileSync(ref, 'utf8');
   for (const rule of YAML_SUBSET) {
     assert.ok(text.includes(rule.id), `artifact-templates.md must state the subset rule '${rule.id}'`);

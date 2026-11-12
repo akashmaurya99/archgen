@@ -252,6 +252,20 @@ export function registerSetupTools(server) {
             ? `codegraph ${codegraph.version} at ${codegraph.bin}`
             : 'codegraph not installed — run archgen_codegraph { action: "ensure" }',
         });
+        // THE WIRING. `archgenMcpStatus` computes which harness configs
+        // carry the server — and the doctor threw the answer away, so it
+        // reported "5/5 checks OK" on a machine where the server was wired
+        // into NO harness. The wiring is the question the doctor is asked.
+        const wired = (status.targets ?? []).filter((t) => t.wired);
+        const targets = status.targets ?? [];
+        checks.push({
+          status: targets.length === 0 ? 'WARN' : wired.length === 0 ? 'WARN' : 'OK',
+          msg: targets.length === 0
+            ? 'no harness config found — run archgen_setup { action: "install_mcp", approve: true }'
+            : wired.length === 0
+              ? `the server is wired into NO harness (${targets.length} config(s) found) — run archgen_setup { action: "install_mcp", approve: true }`
+              : `wired into ${wired.map((t) => `${t.harness} (${t.location})`).join(', ')}`,
+        });
         checks.push({
           status: 'OK',
           msg: `node ${process.versions.node} · server ${ctx.serverVersion}`,

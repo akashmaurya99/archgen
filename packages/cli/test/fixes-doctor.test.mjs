@@ -25,7 +25,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initProject } from '../lib/init.js';
 import { doctorProject } from '../lib/doctor.js';
-import { OLDER_STAMP } from './helpers/versions.mjs';
+import { OLDER_STAMP } from './versions.mjs';
 import { END, START, detectBlockVersion } from '../lib/block.js';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');

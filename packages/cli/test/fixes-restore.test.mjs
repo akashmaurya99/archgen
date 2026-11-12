@@ -28,7 +28,7 @@ import { restoreBackups, restoreMain } from '../lib/restore.js';
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 const STORE = (p) => join(p, '.agents', 'skills', 'archgen');
 // The installed package's version comes from the ONE shared helper.
-import { RELEASE } from './helpers/versions.mjs';
+import { RELEASE } from './versions.mjs';
 
 let proj;
 

@@ -164,7 +164,9 @@ function requiredArgs(spec, call) {
 
 test('the skill file the vendor ships is the skill file the repo holds', () => {
   const vendored = join(REPO, 'packages', 'cli', 'vendor', 'skills', 'archgen', 'SKILL.md');
-  if (!existsSync(vendored)) return;
+  // The vendored copy must EXIST here: a test that skips when it is missing
+  // cannot fail, and it looks like coverage.
+  assert.ok(existsSync(vendored), 'the vendored skill must exist — `npm run sync` writes it');
   assert.equal(
     readFileSync(vendored, 'utf8'),
     readFileSync(SKILL, 'utf8'),

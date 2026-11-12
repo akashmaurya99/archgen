@@ -232,12 +232,17 @@ pass "a brief derives its own paths from tasks.yaml (was: pass slug)"
 
 # The brief must carry no literal placeholder, and the contract must not
 # carry the old `<Domain>` one.
-node "$MCP" exec archgen_plan "{\"action\":\"brief\",\"kind\":\"verifier\",\"tasksYaml\":\"$TASKS\"}" --project "$SANDBOX" \
-  | grep -q '<slug dir>' && fail "the brief still carries a literal placeholder"
+# The output is captured FIRST: a pipe into grep makes a CRASHING tool look
+# like a clean one — the pipeline fails, the `&&` never fires, and the
+# assertion passes on an empty answer.
+brief_out="$(node "$MCP" exec archgen_plan "{\"action\":\"brief\",\"kind\":\"verifier\",\"tasksYaml\":\"$TASKS\"}" --project "$SANDBOX" 2>&1 || true)"
+[ -n "$brief_out" ] || fail "the brief call produced no answer"
+printf '%s' "$brief_out" | grep -q '<slug dir>' && fail "the brief still carries a literal placeholder"
 pass "the brief carries no literal placeholder"
 
-node "$MCP" exec archgen_tasks "{\"action\":\"contract\",\"tasksYaml\":\"$TASKS\",\"taskId\":\"API\"}" --project "$SANDBOX" \
-  | grep -q '<Domain>' && fail "the worker contract still carries <Domain>"
+contract_out="$(node "$MCP" exec archgen_tasks "{\"action\":\"contract\",\"tasksYaml\":\"$TASKS\",\"taskId\":\"API\"}" --project "$SANDBOX" 2>&1 || true)"
+[ -n "$contract_out" ] || fail "the worker contract call produced no answer"
+printf '%s' "$contract_out" | grep -q '<Domain>' && fail "the worker contract still carries <Domain>"
 pass "the worker contract carries no <Domain> placeholder"
 
 echo ""

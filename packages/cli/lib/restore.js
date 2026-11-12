@@ -61,7 +61,7 @@ function snapshotsUnder(origin, base, vaultAbs) {
  *            snapshotDir: string, summary: {files: number, dirs: number, topLevel: string[]}}>}
  *   Sorted newest-first, project before global (deterministic order).
  */
-export function discoverSnapshots(opts = {}) {
+function discoverSnapshots(opts = {}) {
   const home = opts.home ?? homedir();
   const out = [];
   if (opts.projectRoot) {
@@ -80,7 +80,7 @@ export function discoverSnapshots(opts = {}) {
  * @param {string} projectRoot project root to scan (may be '' when unused)
  * @param {{home?: string, includeGlobal?: boolean}} options
  */
-export function listBackups(projectRoot, options = {}) {
+function listBackups(projectRoot, options = {}) {
   return discoverSnapshots({ projectRoot: projectRoot || null, home: options.home, includeGlobal: options.includeGlobal });
 }
 

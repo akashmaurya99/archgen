@@ -22,7 +22,7 @@ import { mcpInvocation, quoteWindowsArg } from '../lib/mcp-server.js';
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // The installed package's version comes from the ONE shared helper.
-import { RELEASE } from './helpers/versions.mjs';
+import { RELEASE } from './versions.mjs';
 
 let dir;
 

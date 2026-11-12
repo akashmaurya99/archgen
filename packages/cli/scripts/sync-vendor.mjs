@@ -105,7 +105,7 @@ export function syncVendor({ root } = {}) {
  * @param {{root?: string}} opts repo root (defaults to this checkout's root)
  * @returns {{ok: boolean, differences: string[], source: string, dest: string}}
  */
-export function checkVendor({ root } = {}) {
+function checkVendor({ root } = {}) {
   const cliRoot = root ? resolve(root, 'packages', 'cli') : DEFAULT_CLI_ROOT;
   const repoRoot = root ? resolve(root) : resolve(cliRoot, '..', '..');
   const source = join(repoRoot, 'skill');

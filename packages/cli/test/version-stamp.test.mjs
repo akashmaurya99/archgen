@@ -22,7 +22,7 @@ import { installGlobal } from '../lib/install.js';
 import { doctorProject } from '../lib/doctor.js';
 import { uninstallProject } from '../lib/uninstall-project.js';
 import { readStamp, writeStamp } from '../lib/version-stamp.js';
-import { OLDER_STAMP } from './helpers/versions.mjs';
+import { OLDER_STAMP } from './versions.mjs';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..');
 const VENDOR = join(CLI, 'vendor', 'skills', 'archgen');

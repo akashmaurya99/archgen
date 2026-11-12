@@ -28,7 +28,23 @@ check_rejected() {
   local out
   out="$(mcp_exec archgen_plan "{\"action\":\"verify\",\"tasksYaml\":\"$dir/tasks.yaml\",\"planDir\":\"$dir/plans\"}" "$dir" 2>&1 || true)"
   printf '%s' "$out" | grep -q '"verdict": "ISSUES"' || fail "$label was NOT rejected: $out"
-  printf '%s' "$out" | grep -qi "$expect" || fail "$label rejected for the wrong reason (expected '$expect'): $out"
+  # The expectation must match a FINDING, not any text in the answer — a
+  # file path that happens to contain the word would satisfy a whole-blob grep.
+  # The findings are extracted with node: the answer is pretty-printed, so a
+  # line-based grep cannot span the array.
+  printf '%s' "$out" | node -e '
+    let s = "";
+    process.stdin.on("data", (d) => { s += d; }).on("end", () => {
+      let issues = "";
+      try { issues = (JSON.parse(s).data?.issues ?? []).join(" | "); } catch { issues = ""; }
+      // The expectation was written for the BASIC regular expression of grep,
+      // where a backslash-pipe is an alternation. A JavaScript regular
+      // expression reads a backslash-pipe as a literal pipe, so the
+      // alternation is translated here.
+      const pattern = process.argv[1].replace(/\\\|/g, "|");
+      if (!new RegExp(pattern, "i").test(issues)) process.exit(1);
+    });
+  ' "$expect" || fail "$label rejected for the wrong reason (expected '$expect' among the findings): $out"
   pass "$label rejected"
 }
 

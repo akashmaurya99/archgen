@@ -1,13 +1,17 @@
 // matrix.mjs — every defect class from the audit, checked against the server.
 //
-// Usage: node scripts/matrix.mjs [--project <dir>]
+// Usage: node scripts/matrix.mjs
 // Exit 0 all clear · 1 a class still fails
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const HERE = new URL('.', import.meta.url).pathname;
+// fileURLToPath, NOT `new URL(...).pathname`: the URL form keeps the
+// PERCENT-ENCODING, so a checkout under a path with a space could not find
+// the binary and every check failed.
+const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP = resolve(HERE, '..', 'bin', 'archgen-mcp.mjs');
 const root = mkdtempSync(join(tmpdir(), 'ag-matrix-'));
 const dot = join(root, '.archgen', 'demo');

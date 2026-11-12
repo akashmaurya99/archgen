@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadAsset, TEMPLATES_DIR } from '../../src/context.mjs';
+import { inRepo } from '../repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // packages/mcp/test/core -> repo root (four levels up).
@@ -137,7 +138,8 @@ test('the references never point at a deleted script', () => {
 
 test('the SKILL.md never points at a deleted script', () => {
   const skillMd = join(REPO, 'skill', 'SKILL.md');
-  if (!existsSync(skillMd)) return;
+  if (!inRepo()) return; // published package — the references are not shipped
+  assert.ok(existsSync(skillMd), 'the skill must be present in the repository');
   const text = readFileSync(skillMd, 'utf8');
   assert.doesNotMatch(
     text,
@@ -190,7 +192,8 @@ const readBrief = (name) => {
 
 test('code-standards.md keeps the test tree OUT of the source tree', () => {
   const p = join(SKILL_REFS, 'code-standards.md');
-  if (!existsSync(p)) return;
+  if (!inRepo()) return; // published package — the references are not shipped
+  assert.ok(existsSync(p), 'the references must be present in the repository');
   const text = readFileSync(p, 'utf8');
   assert.doesNotMatch(text, /colocat/i, 'the standards still teach colocated tests');
   assert.match(text, /sibling/i, 'the standards must say the test tree is a SIBLING of the source tree');

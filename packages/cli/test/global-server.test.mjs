@@ -15,8 +15,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureGlobalServer, installedServerVersion, serverVersion } from '../lib/global-server.js';
 
-// The versions come from the ONE shared helper — see test/helpers/versions.mjs.
-import { RELEASE, OLDER_STAMP as OLDER, NEWER_STAMP as NEWER, escapeRe } from './helpers/versions.mjs';
+// The versions come from the ONE shared helper — see test/versions.mjs.
+import { RELEASE, OLDER_STAMP as OLDER, NEWER_STAMP as NEWER, escapeRe } from './versions.mjs';
 
 let dir;
 let binDir;

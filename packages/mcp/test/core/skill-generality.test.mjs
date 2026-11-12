@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inRepo } from '../repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..', '..');
@@ -49,7 +50,8 @@ test('the always-on skill does not prescribe an application language or framewor
 });
 
 test('the canonical templates are language-neutral placeholders', () => {
-  if (!existsSync(TEMPLATES)) return;
+  if (!inRepo()) return; // published package — the templates are not shipped
+  assert.ok(existsSync(TEMPLATES), 'the templates must be present in the repository');
   for (const name of readdirSync(TEMPLATES)) {
     const text = read(join(TEMPLATES, name));
     if (!text) continue;
@@ -91,7 +93,8 @@ test('the survey records the host toolchain and existing docs', () => {
 
 test('the protocol references and briefs prescribe no language or toolchain', () => {
   const dir = join(REPO, 'packages', 'mcp', 'assets', 'references');
-  if (!existsSync(dir)) return;
+  if (!inRepo()) return; // published package — the templates are not shipped
+  assert.ok(existsSync(dir), 'the templates must be present in the repository');
   for (const name of readdirSync(dir)) {
     const text = read(join(dir, name));
     if (!text) continue;

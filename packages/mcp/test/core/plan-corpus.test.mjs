@@ -18,12 +18,14 @@ import { fileURLToPath } from 'node:url';
 
 import { parseYaml } from '../../src/core/yaml.mjs';
 import { verifyPlan, issueCode } from '../../src/core/verifier.mjs';
+import { inRepo, requireCorpus } from '../repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORPUS = join(HERE, '..', '..', '..', '..', 'fixtures', 'plan-corpus');
 
 function cases() {
-  if (!existsSync(CORPUS)) return [];
+  if (!inRepo()) return []; // published package — the corpus is not shipped
+  requireCorpus(CORPUS, 'the plan corpus');
   return readdirSync(CORPUS)
     .filter((name) => existsSync(join(CORPUS, name, 'expect.json')))
     .sort();

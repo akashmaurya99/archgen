@@ -189,7 +189,7 @@ function strayLiterals(root, version, realSurfaces) {
  * @param {{root?: string}} opts repo root
  * @returns {{ok: boolean, surfaces: {name: string, value: string, expected: string, fix?: string}[], stray: string[]}}
  */
-export function checkVersions({ root = DEFAULT_ROOT } = {}) {
+function checkVersions({ root = DEFAULT_ROOT } = {}) {
   const r = resolve(root);
   const read = (p) => (existsSync(join(r, p)) ? readFileSync(join(r, p), 'utf8') : '');
 

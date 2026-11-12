@@ -95,7 +95,7 @@ const VERSION = /(?:^|[^\w.])v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)(?![\w.])/g
  * @param {string} root repo root
  * @returns {string} e.g. "0.0"
  */
-export function currentSeries(root = DEFAULT_ROOT) {
+function currentSeries(root = DEFAULT_ROOT) {
   const cfg = JSON.parse(readFileSync(join(root, 'archgen.config.json'), 'utf8'));
   const [major, minor] = String(cfg.version ?? '').split('.');
   return `${major}.${minor}`;
@@ -120,7 +120,7 @@ function trackedFiles(root) {
  * @param {{root?: string}} opts repo root
  * @returns {{file: string, line: number, value: string}[]} violations
  */
-export function lintVersions({ root = DEFAULT_ROOT } = {}) {
+function lintVersions({ root = DEFAULT_ROOT } = {}) {
   const rootDir = resolve(root);
   const series = currentSeries(rootDir);
   const violations = [];

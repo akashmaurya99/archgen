@@ -38,7 +38,7 @@ const VENDOR = join(CLI, 'vendor', 'skills', 'archgen');
 const BIN = join(CLI, 'bin', 'archgen.mjs');
 const REFUSE_RE = /Refusing to write through symlink/;
 // The installed package's version comes from the ONE shared helper.
-import { RELEASE } from './helpers/versions.mjs';
+import { RELEASE } from './versions.mjs';
 const STORE = (p) => join(p, '.agents', 'skills', 'archgen');
 const NO_BOOTSTRAP = { env: { ARCHGEN_CODEGRAPH: '0' } };
 

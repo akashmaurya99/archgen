@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initProject } from '../lib/init.js';
 import { doctorProject } from '../lib/doctor.js';
-import { OLDER_STAMP, NEWER_STAMP, escapeRe } from './helpers/versions.mjs';
+import { OLDER_STAMP, NEWER_STAMP, escapeRe } from './versions.mjs';
 import {
   END,
   FEATURES_END,

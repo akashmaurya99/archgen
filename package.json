@@ -28,7 +28,8 @@
     "test:budget": "node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13800",
     "test:contract": "node internal/tools/check-capability-contract.mjs",
     "test:versions": "node internal/tools/version-lint.mjs && node internal/tools/version-consistency.mjs",
-    "release:prepare": "node internal/tools/release-prepare.mjs"
+    "release:prepare": "node internal/tools/release-prepare.mjs",
+    "measure": "node internal/tools/measure-outputs.mjs"
   },
   "engines": {
     "node": ">=20"

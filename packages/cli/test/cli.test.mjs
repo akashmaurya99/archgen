@@ -23,7 +23,7 @@ import { initProject } from '../lib/init.js';
 import { installGlobal, uninstallGlobal } from '../lib/install.js';
 import { doctorProject } from '../lib/doctor.js';
 import { uninstallProject } from '../lib/uninstall-project.js';
-import { OLDER_STAMP } from './helpers/versions.mjs';
+import { OLDER_STAMP } from './versions.mjs';
 import {
   renderBlock,
   upsertBlock,

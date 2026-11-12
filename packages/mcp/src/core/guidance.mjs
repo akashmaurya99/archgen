@@ -129,19 +129,3 @@ export function noSuchTask(taskId, available) {
   );
 }
 
-/**
- * "That path is outside the project."
- *
- * @param {string} path the refused path
- * @param {string} root the anchor the server is bound to
- */
-export function outsideProject(path, root) {
-  return invalidInput(
-    teach(
-      `the path is outside the project: ${path}`,
-      'the server is anchored to one root and cannot read or write outside it',
-      `use a path under ${root}`,
-    ),
-    hint({ action: `use a path under ${root}`, reason: 'the anchor is the boundary.' }),
-  );
-}

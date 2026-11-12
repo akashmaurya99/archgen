@@ -89,10 +89,16 @@ node "$CLI" "${INIT_ARGS[@]}"
 step "verifying"
 # The doctor resolves the skill relative to ITS project root, so it must run
 # against the target — not against this repo.
-( cd "$TARGET" && node "$SERVER" exec archgen_setup '{"action":"doctor"}' ) > /tmp/archgen-local-doctor.json 2>/dev/null || true
-node - <<'NODE'
+#
+# The report lands in a file of THIS run's own: a fixed name in a shared /tmp
+# is world-writable, so a symlink planted there would have the report
+# written THROUGH it — and two runs would race over the same path.
+DOCTOR_REPORT="$(mktemp "${TMPDIR:-/tmp}/archgen-local-doctor.XXXXXX")"
+trap 'rm -f -- "$DOCTOR_REPORT"' EXIT
+( cd "$TARGET" && node "$SERVER" exec archgen_setup '{"action":"doctor"}' ) > "$DOCTOR_REPORT" 2>/dev/null || true
+DOCTOR_REPORT="$DOCTOR_REPORT" node - <<'NODE'
 const fs = require('fs');
-const out = JSON.parse(fs.readFileSync('/tmp/archgen-local-doctor.json', 'utf8'));
+const out = JSON.parse(fs.readFileSync(process.env.DOCTOR_REPORT, 'utf8'));
 const d = out.data ?? {};
 console.log(`   doctor  ${d.status} — ${d.summary ?? ''}`);
 console.log(`   versions: skill ${d.versions?.skill ?? 'none'} · server ${d.versions?.server ?? 'none'}`);
