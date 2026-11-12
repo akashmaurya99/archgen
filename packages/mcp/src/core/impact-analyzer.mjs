@@ -7,7 +7,7 @@
 import { readParsedPlanFile } from './plan-file.mjs';
 import { invalidInput, notFound } from './errors.mjs';
 import { hint } from './guidance.mjs';
-import { ownedPaths } from './graph.mjs';
+import { isTaskMapping, ownedPaths } from './graph.mjs';
 import { toolCall } from './call.mjs';
 
 /**
@@ -26,24 +26,27 @@ export function analyzeImpact(file, target) {
   );
 
   // Resolve target to a seed set of task ids.
-  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const byId = new Map(tasks.filter(isTaskMapping).map((t) => [t.id, t]));
   let seeds;
   if (byId.has(target)) {
     seeds = [target];
   } else {
     // Artifact-path mode: any task whose artifacts[] or file_ownership[] covers it.
     seeds = tasks
-      .filter((t) => (t.artifacts ?? []).includes(target) || ownedPaths(t).includes(target))
+      .filter(isTaskMapping)
+      .filter((t) => (Array.isArray(t.artifacts) ? t.artifacts : []).includes(target) || ownedPaths(t).includes(target))
       .map((t) => t.id);
     if (seeds.length === 0) {
       throw notFound(`no task claims '${target}' (not an id, artifact, or ownership glob)`, { target });
     }
   }
 
-  // Reverse edges: dependents[prereq] = tasks that depend on it.
+  // Reverse edges: dependents[prereq] = tasks that depend on it. A
+  // malformed entry is the VALIDATOR's finding; this pass skips what it
+  // cannot read rather than dereferencing it.
   const dependents = new Map();
-  for (const t of tasks) {
-    for (const dep of t.depends_on ?? []) {
+  for (const t of tasks.filter(isTaskMapping)) {
+    for (const dep of Array.isArray(t.depends_on) ? t.depends_on : []) {
       if (!dependents.has(dep)) dependents.set(dep, new Set());
       dependents.get(dep).add(t.id);
     }

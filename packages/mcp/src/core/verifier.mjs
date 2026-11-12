@@ -13,7 +13,7 @@
 // instead of prose, and CI can count classes ("7 MIRROR_MISSING, 4
 // MATRIX_CLAIM_MISMATCH") instead of counting sentences.
 import { dirname } from 'node:path';
-import { buildGraph, computeWaves, findOwnershipConflict, GraphError } from './graph.mjs';
+import { computeWaves, findOwnershipConflict, graphMaps } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { auditPlan } from './plan-audit.mjs';
 import { validateTasks } from './validator.mjs';
@@ -122,12 +122,18 @@ export function verifyPlan(file, planDir, opts = {}) {
   issues.push(...formatFindings(checked.errors));
   warnings.push(...formatFindings(checked.warnings));
 
-  // The remaining checks need a graph. A plan whose graph does not build has
-  // no waves, no ownership map and no coverage — but a plan that merely lacks
-  // acceptance criteria still has all three, so the gate does not skip them.
-  if (checked.graphOk) {
-    try {
-      const { byId, prerequisites } = buildGraph(tasks);
+  // The wave-based checks need a graph. A plan whose graph does not build has
+  // no waves — but it still has a coverage report, a profile, a mirror rule
+  // and a decision list, and those are INDEPENDENT of the graph. Skipping
+  // them meant the gate reported one defect and the agent had to fix it and
+  // come back for the next: the round-trip-per-defect this validator exists
+  // to remove.
+  try {
+    if (checked.graphOk) {
+      // The tolerant construction: a dangling reference is the VALIDATOR's
+      // finding, and it must not abort the gate before the coverage, the
+      // mirror rule and the artifact audit have had their say.
+      const { byId, prerequisites } = graphMaps(tasks);
 
       const { waves } = computeWaves(byId, prerequisites);
       for (const wave of waves) {
@@ -138,20 +144,22 @@ export function verifyPlan(file, planDir, opts = {}) {
           );
         }
       }
-
-      issues.push(...checkPlanCoverage(planDir, tasks).findings.map((m) => withCode(m)));
-
-      // The mechanical floor: the checks a gate agent would otherwise make by
-      // hand, every round. They are computed HERE so the agent is left with
-      // the judgment it is actually for.
-      const audit = auditPlan({ slugDir: dirname(planDir), tasks });
-      lastAudit = audit;
-      issues.push(...audit.issues);
-      warnings.push(...audit.warnings);
-    } catch (e) {
-      if (e instanceof GraphError) issues.push(`${graphIssueCode(e.message)}: ${e.message}`);
-      else issues.push(`INTERNAL: internal check failure: ${e?.message ?? String(e)}`);
     }
+
+    issues.push(...checkPlanCoverage(planDir, tasks).findings.map((m) => withCode(m)));
+
+    // The mechanical floor: the checks a gate agent would otherwise make by
+    // hand, every round. They are computed HERE so the agent is left with
+    // the judgment it is actually for.
+    const audit = auditPlan({ slugDir: dirname(planDir), tasks });
+    lastAudit = audit;
+    issues.push(...audit.issues);
+    warnings.push(...audit.warnings);
+  } catch (e) {
+    // The graph defects are already reported — by the validator, which owns
+    // the task file's rules. What lands here is a failure of the CHECKS, not
+    // of the plan.
+    issues.push(`INTERNAL: internal check failure: ${e?.message ?? String(e)}`);
   }
 
   // The two lists are SEPARATE collections with separate windows.

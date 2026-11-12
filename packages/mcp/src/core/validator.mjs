@@ -14,12 +14,12 @@
 // The rules enforced here are the rules `schemas/tasks.schema.json` publishes.
 // The parity test pins the two together, so the published contract and the
 // enforcement cannot drift.
-import { buildGraph, findCycle, GraphError } from './graph.mjs';
+import { findCycle, graphMaps, isTaskMapping } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { readPlanFile } from './plan-file.mjs';
 import { project } from '../envelope.mjs';
 import { finding, countByCode } from './diagnostics.mjs';
-import { graphIssueCode } from './codes.mjs';
+import { issueCode } from './codes.mjs';
 
 export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 export const REQUIRED = ['id', 'title', 'file_ownership'];
@@ -30,6 +30,21 @@ export const KNOWN_KEYS = new Set([
 // Mirrors schemas/tasks.schema.json `id.pattern` — ids are strings, never
 // numeric-coerced scalars, or the task tools cannot address the task.
 export const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * The fix for each coverage defect.
+ *
+ * The coverage pass reports four different things — a task nobody mentions,
+ * a plan citing a task that does not exist, a missing plans directory and an
+ * unreadable file. One fix for all four sent the agent to the wrong place
+ * for three of them.
+ */
+const COVERAGE_FIXES = {
+  PLAN_TASK_COVERAGE: 'mention the task in a plan file under plans/ — the floor proves the plan covers the tasks',
+  UNKNOWN_TASK_ID: 'the plan cites a task that is not in tasks.yaml — add the task, or correct the reference',
+  NO_PLAN_DIR: 'create the plans directory under .archgen/<slug>/ and write the plan of record there',
+  IO_ERROR: 'the plan file could not be read — check its permissions and its path',
+};
 
 /**
  * Validate a tasks.yaml file.
@@ -68,12 +83,13 @@ export function validateTasksYaml(file, opts = {}) {
 
   if (planDir) {
     // Delegate plan<->task coverage checks to the single shared implementation.
+    // The finding is CLASSIFIED, not stamped: the coverage pass reports four
+    // different defects, and one code for all of them left NO_PLAN_DIR,
+    // UNKNOWN_TASK_ID and IO_ERROR unreachable from `validate` — and paired
+    // every one of them with a fix about mentioning a task in a plan.
     for (const f of checkPlanCoverage(planDir, checked.tasks).findings) {
-      errors.push(
-        finding('PLAN_TASK_COVERAGE', f, {
-          fix: 'mention the task in a plan file under plans/ — the floor proves the plan covers the tasks',
-        }),
-      );
+      const code = issueCode(f);
+      errors.push(finding(code, f, { fix: COVERAGE_FIXES[code] ?? COVERAGE_FIXES.PLAN_TASK_COVERAGE }));
     }
   }
 
@@ -132,9 +148,14 @@ export function validateTasks(data, opts = {}) {
   }
 
   const seenIds = new Map();
+  // The graph can only be built when every entry is a mapping with a usable
+  // id. A file that fails that cannot produce waves, and the gate must know
+  // so — otherwise it asks for waves the file cannot yield.
+  let entriesOk = true;
   tasks.forEach((t, i) => {
     const path = `tasks[${i}]`;
-    if (t === null || typeof t !== 'object' || Array.isArray(t)) {
+    if (!isTaskMapping(t)) {
+      entriesOk = false;
       errors.push(
         finding('TASK_FIELD_TYPE', `${path} is not a task mapping${lineOf(path)}`, {
           fix: 'each entry under `tasks:` is a mapping carrying at least id, title and file_ownership',
@@ -169,12 +190,14 @@ export function validateTasks(data, opts = {}) {
 
     if (t.id !== undefined && t.id !== null) {
       if (typeof t.id !== 'string' || !ID_PATTERN.test(t.id)) {
+        entriesOk = false;
         errors.push(
           finding('TASK_ID_INVALID', `${where} has an invalid id '${t.id}'${lineOf(`${path}.id`)}`, {
             fix: `use an id matching ${ID_PATTERN.source}`,
           }),
         );
       } else if (seenIds.has(t.id)) {
+        entriesOk = false;
         errors.push(
           finding('DUPLICATE_TASK_ID', `${where} repeats the id of ${seenIds.get(t.id)}${lineOf(`${path}.id`)}`, {
             fix: 'give every task a unique id — the tools address tasks by id',
@@ -220,33 +243,41 @@ export function validateTasks(data, opts = {}) {
     checkArtifactsOwned(warnings, where, path, t, lineOf);
   });
 
-  try {
-    const { prerequisites } = buildGraph(tasks);
-    const cycle = findCycle(prerequisites);
-    if (cycle.length) {
+  // ── the graph ─────────────────────────────────────────────────────────────
+  //
+  // The dangling references are computed HERE, not by buildGraph, because
+  // buildGraph stops at the FIRST bad entry: one typo then hid every other
+  // defect in the file, and the agent needed a round-trip per defect — the
+  // exact cost this validator exists to remove.
+  const knownIds = new Set(
+    tasks.filter(isTaskMapping).map((t) => t.id).filter((id) => typeof id === 'string'),
+  );
+  for (const t of tasks.filter(isTaskMapping)) {
+    for (const dep of Array.isArray(t.depends_on) ? t.depends_on : []) {
+      if (knownIds.has(dep)) continue;
       errors.push(
-        finding('CYCLE', `dependency cycle: ${cycle.join(' -> ')}`, {
-          fix: 'break the cycle — one of these tasks must not depend on the next',
+        finding('DANGLING_DEP', `dangling depends_on reference: '${t.id}' depends on unknown task '${dep}'`, {
+          fix: 'the referenced task must exist, or the dependency must be removed',
         }),
       );
     }
-  } catch (e) {
-    if (!(e instanceof GraphError)) throw e;
-    const code = graphIssueCode(e.message);
-    // A duplicate id is already reported by the per-task pass above, with
-    // the field and the line. Reporting it twice made one defect look like
-    // two.
-    if (code === 'DUPLICATE_TASK_ID') return { errors, warnings, tasks, graphOk: false };
-    const fix = code === 'DANGLING_DEP'
-      ? 'the referenced task must exist, or the dependency must be removed'
-      : code === 'CYCLE'
-        ? 'break the cycle — one of these tasks must not depend on the next'
-        : 'every task entry must be a mapping with a string id';
-    errors.push(finding(code, e.message, { fix }));
-    return { errors, warnings, tasks, graphOk: false };
   }
 
-  return { errors, warnings, tasks, graphOk: true };
+  // The cycle is found on a prerequisites map built HERE, not through
+  // buildGraph: buildGraph refuses a dangling reference before it can look
+  // for a cycle, so a file with both reported only the dangling one. The
+  // map is what findCycle needs, and findCycle already skips an edge to a
+  // task it has never seen.
+  const cycle = findCycle(graphMaps(tasks).prerequisites);
+  if (cycle.length) {
+    errors.push(
+      finding('CYCLE', `dependency cycle: ${cycle.join(' -> ')}`, {
+        fix: 'break the cycle — one of these tasks must not depend on the next',
+      }),
+    );
+  }
+
+  return { errors, warnings, tasks, graphOk: entriesOk };
 }
 
 /**

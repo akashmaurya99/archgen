@@ -2,8 +2,14 @@
 // WHY a lib: validate.mjs, next-tasks.mjs and verify-plan.mjs must agree on
 // cycle detection and wave semantics; three copies would drift (Metis finding).
 
-/** True iff `t` is a mapping object (not null, not an array, not a scalar). */
-function isTaskMapping(t) {
+/**
+ * True iff `t` is a mapping object (not null, not an array, not a scalar).
+ *
+ * A task file may hold a malformed entry — `tasks:` followed by a bare `-`.
+ * The validator REPORTS it, so every consumer downstream must be able to
+ * carry the file without dereferencing it.
+ */
+export function isTaskMapping(t) {
   return t !== null && typeof t === 'object' && !Array.isArray(t);
 }
 
@@ -31,6 +37,45 @@ export function buildGraph(tasks) {
       if (!byId.has(dep)) throw new GraphError(`dangling depends_on reference: '${t.id}' depends on unknown task '${dep}'`);
       if (!dependents.has(dep)) dependents.set(dep, []);
       dependents.get(dep).push(t.id);
+    }
+  }
+  return { byId, prerequisites, dependents };
+}
+
+/**
+ * The adjacency maps of a task list, WITHOUT refusing a malformed entry.
+ *
+ * `buildGraph` VALIDATES the file and throws on the first defect — the right
+ * behaviour for a caller that must not proceed on a broken plan. The validator
+ * and the floor need the MAPS of a file they have already reported on, so
+ * they build them here: one construction, two contracts.
+ *
+ * A task that is not a mapping, or has no id, is skipped — it has no place
+ * in a graph. A dependency on a task that does not exist is KEPT, so the
+ * dependent never becomes ready: an unsatisfiable dependency is a fact about
+ * the plan, not a reason to lose the edges around it.
+ *
+ * @param {any[]} tasks
+ * @returns {{byId: Map<string, any>, prerequisites: Map<string, string[]>, dependents: Map<string, Set<string>>}}
+ */
+export function graphMaps(tasks) {
+  /** @type {Map<string, any>} */
+  const byId = new Map();
+  /** @type {Map<string, string[]>} */
+  const prerequisites = new Map();
+  /** @type {Map<string, Set<string>>} */
+  const dependents = new Map();
+  for (const t of tasks ?? []) {
+    if (!isTaskMapping(t)) continue;
+    const id = String(t.id ?? '');
+    if (!id) continue;
+    byId.set(id, t);
+    prerequisites.set(id, Array.isArray(t.depends_on) ? t.depends_on : []);
+  }
+  for (const [id, deps] of prerequisites) {
+    for (const dep of deps) {
+      if (!dependents.has(dep)) dependents.set(dep, new Set());
+      dependents.get(dep).add(id);
     }
   }
   return { byId, prerequisites, dependents };

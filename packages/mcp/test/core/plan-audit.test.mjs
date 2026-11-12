@@ -20,7 +20,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { auditPlan, parseEdgeMatrix } from '../../src/core/plan-audit.mjs';
+import { auditPlan } from '../../src/core/plan-audit.mjs';
+import { parseEdgeMatrix } from '../../src/core/artifact-space.mjs';
 import { checkPlanCoverage } from '../../src/core/plan-coverage.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

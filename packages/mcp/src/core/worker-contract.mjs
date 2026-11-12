@@ -30,7 +30,7 @@ import { buildGraph, GraphError, ownedPaths } from './graph.mjs';
 import { readParsedPlanFile } from './plan-file.mjs';
 import { toolCall } from './call.mjs';
 import { skillDirective } from './skill-manager.mjs';
-import { parseEdgeMatrix, readPlans } from './plan-audit.mjs';
+import { parseEdgeMatrix, readPlans } from './artifact-space.mjs';
 import { invalidInput } from './errors.mjs';
 import { noSuchTask, hint } from './guidance.mjs';
 

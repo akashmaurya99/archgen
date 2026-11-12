@@ -109,10 +109,9 @@ function resolvePath(file) {
  * @returns {object}
  */
 function parseFinding(e) {
-  const raw = String(e?.message ?? e);
   const line = Number.isInteger(e?.line) ? e.line : null;
   const path = e?.path ?? null;
-  const detail = raw.replace(/^[^:]*:\d+:\s*/, '');
+  const detail = e?.detail ?? String(e?.message ?? e);
   const where = line ? ` (line ${line}${path ? `, ${path}` : ''})` : '';
   return finding('UNPARSEABLE', `${detail}${where}`, {
     fix: line

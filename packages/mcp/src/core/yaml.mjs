@@ -69,6 +69,7 @@ export function parseYaml(text, opts = {}) {
       throw new YamlError(`${filename}:${i + 1}: tab characters are not allowed in indentation`, {
         line: i + 1,
         path: null,
+        detail: 'tab characters are not allowed in indentation',
       });
     }
   });
@@ -101,6 +102,9 @@ class YamlError extends Error {
     this.line = detail.line ?? null;
     this.path = detail.path ?? null;
     this.code = detail.code ?? 'YAML_SYNTAX';
+    // The message WITHOUT its location. A filename may hold a colon, so the
+    // location cannot be recovered by stripping a prefix off the text.
+    this.detail = detail.detail ?? message;
   }
 }
 
@@ -117,6 +121,7 @@ function fail(ctx, lineNo, msg, path) {
   throw new YamlError(`${ctx.filename}:${lineNo}: ${msg}${where}`, {
     line: lineNo,
     path: hasPath ? formatPath(path) : null,
+    detail: msg,
   });
 }
 
@@ -506,7 +511,10 @@ function isPlainSafe(v) {
   if (/[\n\r\t]/.test(v)) return false;
   if (/^(true|false|null|~)$/i.test(v)) return false;
   if (/^(yes|no|on|off)$/i.test(v)) return false;
-  if (/^-?\d+(\.\d+)?$/.test(v)) return false;
+  // Every numeric form the reader accepts, exponent included: a value the
+  // reader would turn into a NUMBER must be quoted, or the writer changes
+  // its type on the way out.
+  if (/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(v)) return false;
   return true;
 }
 
@@ -536,7 +544,10 @@ function consumePendingAndParseKey(ctx, line, lineNo, keyPath) {
   return {
     name: m.key,
     inlineComment(kp) {
-      const { inlineComment } = splitInlineComment(line.text.slice(line.text.indexOf(':') + 1).trim());
+      // The value starts where the KEY ends. Slicing at the first colon
+      // found the colon INSIDE a quoted key ("odd: key": 1), so the reviewer's
+      // note on that line was lost on the next write.
+      const { inlineComment } = splitInlineComment(line.text.slice(m.end).trim());
       if (inlineComment) ctx.comments.push({ path: kp, inline: true, text: inlineComment });
     },
   };

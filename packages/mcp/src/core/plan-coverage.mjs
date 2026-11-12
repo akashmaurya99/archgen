@@ -4,6 +4,7 @@
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { isTaskMapping } from './graph.mjs';
 
 /**
  * @param {string} planDir
@@ -36,20 +37,23 @@ export function checkPlanCoverage(planDir, tasks) {
     return { findings: [`cannot read a plan file under ${planDir}: ${e.message}`], referenced, mentionedInTasks };
   }
 
-  const taskIds = new Set(tasks.map((t) => t.id));
+  const taskIds = new Set(tasks.filter(isTaskMapping).map((t) => t.id).filter(Boolean));
   // Task ids referenced in plans: bare tokens that match an existing-or-not id pattern.
   for (const t of taskIds) {
     const re = new RegExp(`\\b${escapeRe(t)}\\b`);
     if (re.test(planText)) referenced.add(t);
   }
-  for (const t of tasks) {
+  // A malformed entry is the VALIDATOR's finding; the coverage pass reports
+  // coverage, so it skips what it cannot read instead of crashing on it.
+  const readable = tasks.filter(isTaskMapping);
+  for (const t of readable) {
     if (!referenced.has(t.id)) findings.push(`task '${t.id}' is not mentioned in any plan file under ${planDir}`);
   }
   // A task may also be "covered" by ANOTHER task naming it — the dependency
   // graph documents it.
-  for (const t of tasks) {
-    for (const other of tasks) {
-      if (other?.id === t.id) continue;
+  for (const t of readable) {
+    for (const other of readable) {
+      if (other.id === t.id) continue;
       if (mentions(other, t.id)) mentionedInTasks.add(t.id);
     }
   }
