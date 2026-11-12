@@ -161,3 +161,23 @@ test('doctor reports one line per detected install: project store + globals', ()
   );
   assert.equal(d3.failures, 0);
 });
+
+test('the test suite never leaves a stamp in the repository\'s own vendor tree', () => {
+  // WHY THIS TEST EXISTS. In link mode installGlobal stamps the SOURCE tree
+  // — the packaged skill — because a symlink holds no bytes of its own. That
+  // is right for an installed package and for a checkout, but the CLI's own
+  // vendor/ tree is neither: it is the PUBLISH PAYLOAD, and .gitignore
+  // forbids a stamp there.
+  //
+  // A test that called installGlobal against the real packages/cli wrote a
+  // .archgen-version into vendor/skills/archgen. `npm publish` would have
+  // pruned it (prepublishOnly runs the sync), but `npm pack` does NOT run
+  // prepublishOnly — and the smoke test packs the tarball it installs. So
+  // the stamp reached the tarball the smoke test exercised.
+  //
+  // The suite must leave the repository byte-for-byte as it found it.
+  assert.ok(
+    !existsSync(join(VENDOR, STAMP)),
+    `the test suite left a ${STAMP} in the repository's vendor tree — it must install against a copy`,
+  );
+});

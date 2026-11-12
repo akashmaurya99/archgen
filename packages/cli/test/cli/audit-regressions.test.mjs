@@ -118,7 +118,18 @@ test('BUG-INST1 // AUDIT-REGRESSION global install does not record a FOREIGN sym
   symlinkSync(usersOwn, join(home, '.claude', 'skills', 'archgen'), 'dir');
 
   const install = await import(join(CLI_ROOT, 'lib', 'install.js'));
-  const r = install.installGlobal({ home });
+  // The install must run against a COPY of the CLI package, not the real one.
+  // In link mode installGlobal stamps the SOURCE tree (the packaged skill),
+  // so running it against the repository's own packages/cli wrote a
+  // .archgen-version into vendor/skills/archgen — a file .gitignore forbids
+  // there and one `npm pack` (which does NOT run prepublishOnly, unlike
+  // `npm publish`) would then ship in the tarball the smoke test installs.
+  //
+  // A copy gives the test the same package it would install in production
+  // and leaves the repository untouched.
+  const pkgRoot = join(dir, 'pkg');
+  copyCliPackage(pkgRoot);
+  const r = install.installGlobal({ home, packageRoot: pkgRoot });
   assert.equal(r.failures, 0, JSON.stringify(r.rows));
 
   const manifest = readFileSync(join(home, '.archgen-install-manifest.list'), 'utf8');
