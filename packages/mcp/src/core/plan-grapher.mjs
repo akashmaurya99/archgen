@@ -347,7 +347,7 @@ export function planGraph(input, opts = {}) {
       format: 'json',
       data: {
         module,
-        tasks: matched.map((t) => ({ id: t.id, title: t.title, status: t.status, file_ownership: t.file_ownership })),
+        tasks: matched.map((t) => ({ id: t.id, title: t.title, status: t.status, file_ownership: ownedPaths(t) })),
       },
     };
   }

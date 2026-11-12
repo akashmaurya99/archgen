@@ -62,7 +62,7 @@ export function resolveWaves(file) {
         id: t.id,
         title: t.title,
         status: t.status,
-        file_ownership: t.file_ownership,
+        file_ownership: ownedPaths(t),
       }))),
     blockedByFailure,
   };

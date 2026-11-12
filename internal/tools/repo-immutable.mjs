@@ -32,8 +32,20 @@ function snapshot() {
   const state = new Map();
   const tracked = gitLines(['ls-files', '-z']);
   const untracked = gitLines(['ls-files', '--others', '--exclude-standard', '-z']);
-  for (const path of [...tracked, ...untracked]) {
-    state.set(path, currentHash(path));
+  const paths = [...tracked, ...untracked];
+  const present = paths.filter((path) => existsSync(join(ROOT, path)));
+  const missing = paths.filter((path) => !existsSync(join(ROOT, path)));
+  for (const path of missing) state.set(path, null);
+  // ONE process for every path. `git hash-object` per file is a process
+  // spawn per file, and the repository has hundreds of them.
+  if (present.length) {
+    const out = execFileSync('git', ['hash-object', '--stdin-paths'], {
+      cwd: ROOT,
+      input: `${present.join('\n')}\n`,
+      encoding: 'utf8',
+    });
+    const hashes = out.trim().split('\n');
+    present.forEach((path, i) => state.set(path, hashes[i] ?? null));
   }
   return state;
 }
@@ -42,16 +54,6 @@ function snapshot() {
 function gitLines(args) {
   const out = execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
   return out.split('\0').filter(Boolean);
-}
-
-/** The current content hash of a path (null when it does not exist). */
-function currentHash(path) {
-  if (!existsSync(join(ROOT, path))) return null;
-  try {
-    return execFileSync('git', ['hash-object', '--', path], { cwd: ROOT, encoding: 'utf8' }).trim();
-  } catch {
-    return null;
-  }
 }
 
 /** Compare two snapshots. */

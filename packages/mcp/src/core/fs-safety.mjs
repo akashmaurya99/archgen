@@ -17,7 +17,7 @@
 // These semantics are inherited verbatim from the CLI's store.js and from
 // skill/scripts/set-status.mjs — the MCP server must not be weaker than the
 // scripts it replaces.
-import { lstatSync, mkdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { conflict, permissionDenied } from './errors.mjs';
 
@@ -230,8 +230,14 @@ export function withFileLock(file, fn, opts = {}) {
   try {
     return fn();
   } finally {
+    // ONLY the lock this holder took is removed. A holder that ran longer
+    // than staleMs had its lock stolen by the next writer; removing "the
+    // lock file" then removed the NEXT holder's lock, and a third writer
+    // entered the critical section beside it.
     try {
-      unlinkSync(lockPath);
+      if (readFileSync(lockPath, 'utf8').trim() === String(process.pid)) {
+        unlinkSync(lockPath);
+      }
     } catch {
       /* the lock is already gone */
     }

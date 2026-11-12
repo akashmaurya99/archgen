@@ -17,6 +17,7 @@ import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { resolveSlugInput, ScopeError } from '../core/scope.mjs';
 import { dirname, join } from 'node:path';
 import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
+import { ownedPaths } from '../core/graph.mjs';
 
 /**
  * The `.archgen/<slug>/` directory a tasks file belongs to.
@@ -223,7 +224,7 @@ export function registerTaskTools(server) {
             const matched = matchSkills(registry, {
               title: task?.title ?? '',
               summary: task?.summary ?? '',
-              fileOwnership: task?.file_ownership ?? [],
+              fileOwnership: ownedPaths(task),
             });
             const required = matched.filter((m) => m.policy === 'required');
             capabilities = required.map((m) => {
