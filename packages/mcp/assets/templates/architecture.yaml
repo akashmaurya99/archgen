@@ -1,56 +1,56 @@
-name: <project name>
-slug: <slug> # maps to .archgen/<slug>/
+name: "<project name>"
+slug: "<slug>" # maps to .archgen/<slug>/
 toolchain: # the host ecosystem — survey fills this before planning
-  language: <language>
-  runtime: <runtime and version>
-  package_manager: <package manager and command>
-  build: <build command>
-  test: <test command>
-  lint: <lint command>
-  typecheck: <typecheck command, or "not applicable">
+  language: "<language>"
+  runtime: "<runtime and version>"
+  package_manager: "<package manager and command>"
+  build: "<build command>"
+  test: "<test command>"
+  lint: "<lint command>"
+  typecheck: "<typecheck command, or 'not applicable'>"
   # The two ROOTS the floor mirrors between. source_root is where production
   # code lives; test_root is the root of the tree that MIRRORS it (e.g.
   # tests/unit). The floor mirrors <source-root>/x/y into <test-root>/x/y —
   # it never guesses a prefix or a level, so both are spelled out here.
-  source_root: <source root>                          # e.g. src
-  test_root: <root of the mirrored test tree>         # e.g. tests/unit
+  source_root: "<source root>"                       # e.g. src
+  test_root: "<root of the mirrored test tree>"       # e.g. tests/unit
 existing_docs: # host sources of truth; cite these instead of regenerating them
   - { path: "<path>", kind: "prd|architecture|adr|readme", status: "current|stale" }
 structure: # planned tree, defined BEFORE coding
   # Every path here MUST be owned by a task — the floor checks it.
-  - path: <source-root>/<module>/
-    purpose: <one-line purpose>
-  - path: <test-root>/<module>/
-    purpose: unit tests — the test tree, a SIBLING of the source root, mirroring the source path
+  - path: "<source-root>/<module>/"
+    purpose: "<one-line purpose>"
+  - path: "<test-root>/<module>/"
+    purpose: "unit tests — the test tree, a SIBLING of the source root, mirroring the source path"
 naming_conventions: # every task step and file_ownership entry cites these
-  file_naming: <host language/framework convention>
+  file_naming: "<host language/framework convention>"
   dir_layout: "<source-root>/<module>/...; shared code is separate; tests mirror the source path under <test-root>/"
-  symbol_casing: <host language convention>
+  symbol_casing: "<host language convention>"
   test_placement: "the test tree is a SIBLING of the source tree, never inside it; <test-root>/<path under the source root>/<the language's test file>"
 modules: # one entry per module; repeat per module
-  - name: <module>
-    responsibility: <single purpose>
+  - name: "<module>"
+    responsibility: "<single purpose>"
     owns: ["<source-root>/<module>/**", "<test-root>/<module>/**"]
     depends_on_modules: [] # DAG; drives task depends_on edges
     key_interfaces: # ONLY exports other modules may import
-      - <InterfaceName> (<source-root>/<module>/<entry file>)
+      - "<InterfaceName> (<source-root>/<module>/<entry file>)"
 data_contracts: # one block per entity; repeat per entity
-  <entity>:
-    storage: <table/file/store + migration path>
+  "<entity>":
+    storage: "<table/file/store + migration path>"
     fields:
-      - { field: <name>, type: <type>, required: true, notes: "<constraint>" }
+      - { field: "<name>", type: "<type>", required: true, notes: "<constraint>" }
 api_contracts: # one block per operation; repeat per operation
-  <module>:
-    - endpoint: <METHOD /path or function signature>
-      auth: <rule, or none>
-      request_payload: { <field>: <type> }
+  "<module>":
+    - endpoint: "<METHOD /path or function signature>"
+      auth: "<rule, or none>"
+      request_payload: { "<field>": "<type>" }
       success: "<status/shape or return type>"
       error_shape: { code: "<type>", message: "<type>", retryable: "<type>" }
 environment_matrix: # unparsed vars fail fast at the config boundary
-  - { var: <ENV_VAR>, dev: <value>, ci: <value>, prod: <value>, required: true }
+  - { var: "<ENV_VAR>", dev: "<value>", ci: "<value>", prod: "<value>", required: true }
 decisions: # index only; full records live in decisions/NNNN-title.md
-  - id: D1
-    title: <irreversible or hard-to-reverse decision>
-    context: <forces and constraints>
-    decision: <chosen option>
-    consequences: <trade-offs and migration cost>
+  - id: "D1"
+    title: "<irreversible or hard-to-reverse decision>"
+    context: "<forces and constraints>"
+    decision: "<chosen option>"
+    consequences: "<trade-offs and migration cost>"

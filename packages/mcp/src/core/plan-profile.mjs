@@ -18,6 +18,7 @@
 // The rules live in assets/depth-ladder.json (`profile`), so the data and the
 // behavior cannot drift: a drift test pins the two together.
 import { invalidInput } from './errors.mjs';
+import { assertSlug } from './slug.mjs';
 import { hint } from './guidance.mjs';
 import { toolCall } from './call.mjs';
 
@@ -194,6 +195,9 @@ export function buildPlanProfile(ladder, input = {}) {
           .slice(0, 4);
 
   const slug = input.slug ? String(input.slug) : null;
+  // A slug is a PATH SEGMENT under .archgen/. Without this, `../../evil`
+  // produced `.archgen/../../evil/tasks.yaml` — outside the artifact space.
+  if (slug !== null) assertSlug(slug, 'profile');
   const resolvePath = (p) => (slug ? p.replaceAll('<slug>', slug) : p);
   const artifacts = [];
   for (const rule of spec.artifactRules ?? []) {
@@ -290,23 +294,27 @@ export function buildPlanProfile(ladder, input = {}) {
 /**
  * The exact scaffold call that serves THIS profile's create set.
  *
+ * Built by the SHARED call builder, like every other cursor: a slug holding
+ * an apostrophe used to produce a call that would not parse, and the skill
+ * tells the agent to fetch the named call verbatim.
+ *
  * @param {string} scopeClass
  * @param {{intent: string, signals: string[], modules: number|null, tasks: number|null, slug: string|null}} input
+ * @returns {string}
  */
 function scaffoldCall(scopeClass, input) {
-  const parts = [
-    `archgen_plan{action:'scaffold'`,
-    `scope:'${scopeClass}'`,
-    `intent:'${input.intent}'`,
-    `signals:[${input.signals.map((s) => `'${s}'`).join(',')}]`,
-  ];
-  if (input.modules) parts.push(`modules:${input.modules}`);
-  if (input.tasks) parts.push(`tasks:${input.tasks}`);
-  // A slug is only named when there IS one. The literal '<slug>' was carried
-  // otherwise, and following it verbatim produced artifact paths containing
-  // '<slug>'.
-  if (input.slug) parts.push(`slug:'${input.slug}'`);
-  return `${parts.join(',')}}`;
+  return toolCall('archgen_plan', {
+    action: 'scaffold',
+    scope: scopeClass,
+    intent: input.intent,
+    signals: input.signals,
+    modules: input.modules ?? undefined,
+    tasks: input.tasks ?? undefined,
+    // A slug is only named when there IS one. The literal '<slug>' was carried
+    // otherwise, and following it verbatim produced artifact paths containing
+    // '<slug>'.
+    slug: input.slug ?? undefined,
+  });
 }
 
 /**

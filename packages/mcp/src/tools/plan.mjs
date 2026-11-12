@@ -9,7 +9,7 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_regist
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
 import { buildScaffold, skeletonKeyForPath } from '../core/scaffold.mjs';
 import { buildPlanProfile, INTENTS, SCOPE_SIGNALS } from '../core/plan-profile.mjs';
-import { loadBrief, remainingPlaceholders, renderBriefContext, BRIEF_KINDS } from '../core/briefs.mjs';
+import { loadBrief, renderBriefContext, BRIEF_KINDS } from '../core/briefs.mjs';
 import { resolveBriefScope, briefVars } from '../core/brief-scope.mjs';
 import { buildBriefContext } from '../core/brief-context.mjs';
 import { validateTasksYaml } from '../core/validator.mjs';
@@ -17,6 +17,7 @@ import { verifyPlan, planCoverage } from '../core/verifier.mjs';
 import { planGraph } from '../core/plan-grapher.mjs';
 import { analyzeImpact } from '../core/impact-analyzer.mjs';
 import { invalidInput } from '../core/errors.mjs';
+import { assertPathToken } from '../core/slug.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
@@ -593,12 +594,15 @@ export function registerPlanTools(server) {
             slug: args.slug ?? null,
             projectRoot: ctx.projectRoot,
           });
+          // The investigate brief writes its notes to `.agent/notes/<topic>.md`,
+          // so a topic of "../../evil" told the worker to write OUTSIDE the
+          // artifact space.
+          if (args.topic) assertPathToken(args.topic, 'topic', 'brief');
           const vars = briefVars(scope, {
             featureRequest: args.featureRequest ?? null,
             topic: args.topic ?? null,
             round: args.round ?? null,
           });
-
           // The context the brief carries: the evidence map, the pre-rendered
           // graph and the reference-integrity result.
           //
@@ -607,10 +611,11 @@ export function registerPlanTools(server) {
           // dependency on a call that used to fail on every plan.
           const briefContext = buildBriefContext(args.kind, scope, ctx);
 
-          const { kind, brief } = loadBrief(BRIEFS_DIR, args.kind, vars);
+          const { kind, brief, missing } = loadBrief(BRIEFS_DIR, args.kind, vars);
           // A brief with a placeholder still in it is a brief that would
-          // send a worker looking for a directory named "<slug dir>".
-          const missing = remainingPlaceholders(brief);
+          // send a worker looking for a directory named "<slug dir>". The
+          // placeholders are the TEMPLATE's — the agent's own text is never
+          // read as one.
           if (missing.length) {
             const passable = missing.filter((m) => m === 'topic' || m === 'round');
             throw invalidInput(

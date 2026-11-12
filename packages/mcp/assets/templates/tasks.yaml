@@ -1,9 +1,10 @@
 # comment lines are preserved by archgen_tasks{set_status}
-# Every value below is QUOTED. A quoted value is always a string; an unquoted
-# one that contains ": " becomes a mapping, and a flow list splits on commas.
+# Every VALUE below is QUOTED. A quoted value is always a string; an unquoted
+# one can become a NUMBER (id: 007 -> 7) or a mapping (a "key: value" list
+# item), and a flow list splits on commas.
 tasks:
   # Wave 1 — foundation
-  - id: TASK-01
+  - id: "TASK-01"
     title: "<outcome this task delivers>"
     depends_on: []
     # <source-root> and <test-root> are the DECLARED roots from
@@ -16,7 +17,7 @@ tasks:
       - "<observable behavior check> produces <expected output>"
 
   # Wave 2 — feature
-  - id: TASK-02
+  - id: "TASK-02"
     title: "<feature behavior>"
     depends_on: [TASK-01]
     file_ownership: ["<source-root>/<feature>/**", "<test-root>/<feature>/**"]
@@ -25,29 +26,29 @@ tasks:
       - "<API/CLI behavior> returns <observable result>"
 
   # Final integration — its own wave, so its parallel_group matches
-  - id: TASK-03
+  - id: "TASK-03"
     title: "<integration outcome>"
     depends_on: [TASK-02]
-    parallel_group: wave-3
-    file_ownership: ["<source-root>/<integration>/**", "<test-root>/integration/<feature>/**", "docs/<feature>.md"]
-    artifacts: ["docs/<feature>.md"] # must be a subset of file_ownership
+    parallel_group: "wave-3"
+    file_ownership: ["<source-root>/<integration>/**", "<test-root>/integration/<feature>/**", "docs/**"]
+    artifacts: ["docs/<feature>.md"] # must be covered by file_ownership
     acceptance:
       - "<integration command> completes <journey> against <test double or environment>"
 
   # LARGE-scope task example (cites edge-row IDs; PRD FR-* IDs when a PRD exists)
   # Its paths are DISJOINT from TASK-02's — a later task must never own a
   # file inside another task's glob.
-  - id: TASK-04
+  - id: "TASK-04"
     title: "<failure-sensitive operation with retry>"
     depends_on: [TASK-03]
-    parallel_group: wave-4
+    parallel_group: "wave-4"
     file_ownership:
       - "<source-root>/<recovery>/<implementation file>"          # per naming_conventions.dir_layout
       - "<test-root>/<recovery>/<mirrored test file>"             # the mirrored test tree
-      - "docs/<feature>-recovery.md"
+      - "docs/**"
     artifacts: ["docs/<feature>-recovery.md"]
     acceptance:
       - "duplicate submission performs the operation once (covers E1)"
       - "<dependency> 5xx retries <n> times, then returns <structured error> (covers E2)"
-      - "<invalid input> returns <error shape> matching ../architecture.yaml api_contracts.<module>.error_shape (covers FR-<MODULE>-02)"
+      - "<invalid input> returns <error shape> matching architecture.yaml api_contracts.<module>.error_shape (covers FR-<MODULE>-02)"
       - "<locale/format case> produces <expected representation> (covers E3)"

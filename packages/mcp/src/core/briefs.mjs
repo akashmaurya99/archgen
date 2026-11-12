@@ -34,11 +34,21 @@ export function loadBrief(briefsDir, kind, vars = {}) {
   } catch {
     throw notFound(`brief template '${key}.md' is missing`, { kind, path });
   }
+  // The placeholders the TEMPLATE carries are checked BEFORE the
+  // substitution, and a placeholder counts as missing only when the caller
+  // supplied nothing for it. Checking the FILLED brief read the agent's own
+  // text as a placeholder: a feature request of "add support for <T>
+  // generics" produced "brief 'survey' is missing T", and there was no
+  // argument that could clear it.
+  const missing = remainingPlaceholders(text).filter((name) => {
+    const value = vars[name];
+    return value === undefined || value === null || value === '';
+  });
   for (const [name, value] of Object.entries(vars)) {
     if (value === undefined || value === null || value === '') continue;
     text = text.split(`<${name}>`).join(String(value));
   }
-  return { kind: key, brief: text };
+  return { kind: key, brief: text, missing };
 }
 
 /**

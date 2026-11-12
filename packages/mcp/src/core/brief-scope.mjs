@@ -25,12 +25,13 @@ import { realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
 import { invalidInput } from './errors.mjs';
+import { isSlug } from './slug.mjs';
 import { hint } from './guidance.mjs';
 import { toolCall } from './call.mjs';
 
 // The slug is a directory name, never a path: a slug of "../../etc" must not
 // be able to steer the brief's paths out of the artifact space.
-const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 
 /**
  * The REAL path of a path that may not exist yet.
@@ -80,7 +81,7 @@ function deriveFromTasksPath(p) {
   if (basename(p) !== 'tasks.yaml') return null;
   const slugDir = dirname(p);
   const slug = basename(slugDir);
-  if (!SLUG_RE.test(slug)) return null;
+  if (!isSlug(slug)) return null;
   if (basename(dirname(slugDir)) !== '.archgen') return null;
   return { root: realpathNearest(slugDir), slug };
 }
@@ -95,7 +96,7 @@ function deriveFromPlansPath(p) {
   if (basename(p) !== 'plans') return null;
   const slugDir = dirname(p);
   const slug = basename(slugDir);
-  if (!SLUG_RE.test(slug)) return null;
+  if (!isSlug(slug)) return null;
   if (basename(dirname(slugDir)) !== '.archgen') return null;
   return { root: realpathNearest(slugDir), slug };
 }
@@ -174,7 +175,7 @@ export function resolveBriefScope(opts) {
     tasksFile = join(slugDir, 'tasks.yaml');
     source = 'planDir';
   } else if (slug) {
-    if (!SLUG_RE.test(slug)) {
+    if (!isSlug(slug)) {
       throw invalidInput(
         `slug '${slug}' is not a valid slug (lowercase, dash-separated)`,
         { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: 'LARGE', slug: '<slug>' }), reason: "a slug names the artifact space on disk." }), slug },

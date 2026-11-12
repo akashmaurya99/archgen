@@ -11,6 +11,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml } from './yaml.mjs';
 import { invalidInput } from './errors.mjs';
+import { isSlug } from './slug.mjs';
 import { hint } from './guidance.mjs';
 import { toolCall } from './call.mjs';
 import { writeFileAtomic } from './fs-safety.mjs';
@@ -121,9 +122,9 @@ export function updateRegistry(projectRoot, opts = {}) {
       { ...hint({ action: toolCall('archgen_registry', { action: 'update', slug: '<slug>', status: 'planned' }), reason: "the registry carries one of the four display statuses." }), status },
     );
   }
-  if (slug !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug)) {
+  if (slug !== null && !isSlug(slug)) {
     throw invalidInput(
-      `invalid slug '${slug}' (start alphanumeric; then letters, digits, '.', '_', '-')`,
+      `invalid slug '${slug}' (lowercase, dash-separated — one rule for every tool)`,
       { ...hint({ action: toolCall('archgen_registry', { action: 'update', slug: '<slug>', status: 'planned' }), reason: "a slug names a directory on disk." }), slug },
     );
   }

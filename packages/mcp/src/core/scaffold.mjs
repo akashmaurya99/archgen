@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { invalidInput } from './errors.mjs';
+import { assertSlug } from './slug.mjs';
 import { TEMPLATES_DIR } from '../context.mjs';
 import { buildPlanProfile, scopeArtifactRules } from './plan-profile.mjs';
 import { hint } from './guidance.mjs';
@@ -30,6 +31,19 @@ import { toolCall } from './call.mjs';
  * @param {string} name the template file name
  * @param {string} slug
  */
+/**
+ * Read a template and substitute the names it carries.
+ *
+ * `<slug>` and `<project name>` are the PROJECT's name, so they are filled in.
+ * `<feature>` is NOT: it is the FEATURE the task delivers, which only the
+ * agent knows, and filling it with the slug silently renamed every feature
+ * path in the plan. It stays a placeholder for the agent to replace.
+ *
+ * @param {string} templatesDir
+ * @param {string} name the template's file name
+ * @param {string} slug the project's slug
+ * @returns {string}
+ */
 function readTemplate(templatesDir, name, slug) {
   let text;
   try {
@@ -42,8 +56,7 @@ function readTemplate(templatesDir, name, slug) {
   }
   return text
     .replaceAll('<slug>', slug)
-    .replaceAll('<project name>', slug)
-    .replaceAll('<feature>', slug);
+    .replaceAll('<project name>', slug);
 }
 
 /**
@@ -82,6 +95,7 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   }
 
   const slug = opts.slug ?? '<slug>';
+  if (opts.slug) assertSlug(opts.slug, 'scaffold');
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
   const generator = opts.generator ?? 'archgen';
   const templatesDir = opts.templatesDir ?? TEMPLATES_DIR;
@@ -139,8 +153,13 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   const prdMd = templatesDir ? readTemplate(templatesDir, 'prd.md', slug) : null;
   const architectureYaml = templatesDir ? `${header}\n${readTemplate(templatesDir, 'architecture.yaml', slug)}` : null;
   const adrMd = templatesDir ? readTemplate(templatesDir, 'adr.md', slug) : null;
+  // ONE edge-case table. The generated rows and the static template used to
+  // be concatenated, so the plan carried TWO tables with the SAME row ids and
+  // DIFFERENT cases (E3 was "concurrent" in one and "authz denied" in the
+  // other) — and the floor then reported a dozen unresolved citations for
+  // rows the agent had never seen.
   const edgeMatrix = templatesDir
-    ? `${renderEdgeMatrix(ladder)}\n${readTemplate(templatesDir, 'edge-matrix.md', slug)}`
+    ? readTemplate(templatesDir, 'edge-matrix.md', slug)
     : renderEdgeMatrix(ladder);
   const mermaid = templatesDir ? readTemplate(templatesDir, 'mermaid.md', slug) : null;
 

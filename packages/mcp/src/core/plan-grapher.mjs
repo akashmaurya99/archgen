@@ -19,7 +19,7 @@ import { parseYaml } from './yaml.mjs';
 import { buildGraph, findCycle, computeWaves, dedupeDependencies, computeQualityStats, GraphError, ownedPaths } from './graph.mjs';
 import { readParsedPlanFile } from './plan-file.mjs';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
-import { cycle, invalidInput } from './errors.mjs';
+import { cycle, invalidInput, notFound } from './errors.mjs';
 import { noSuchTask, hint } from './guidance.mjs';
 import { toolCall } from './call.mjs';
 
@@ -185,6 +185,26 @@ function readModuleNames(dir) {
 }
 
 /** classDef lines for the given class names, in fixed order (focus first). */
+/**
+ * Whether an ownership glob touches a module.
+ *
+ * A module is a NAME ("catalog"), and a glob is a path ("src/catalog/**").
+ * The two meet when the glob carries a segment equal to the module — and the
+ * module may also be given as a path ("src/catalog"), which the conservative
+ * overlap rule already answers.
+ *
+ * @param {string} module
+ * @param {string} glob
+ * @returns {boolean}
+ */
+function moduleMatches(module, glob) {
+  const name = String(module ?? '');
+  if (!name) return false;
+  if (globsMayOverlap(glob, `${name}/**`)) return true;
+  const segments = String(glob).split('/').filter(Boolean);
+  return segments.some((s) => s === name || s === `${name}.*` || s === `${name}.md`);
+}
+
 function classDefLines(classNames) {
   const lines = [];
   if (classNames.includes('focus')) lines.push(`  classDef focus ${FOCUS_CLASS};`);
@@ -336,13 +356,25 @@ export function planGraph(input, opts = {}) {
   }
 
   if (module !== null) {
-    // Module filter: a task plausibly touches module <name> when any ownership
-    // glob may overlap "<name>/**" — conservative, same rules as the same-wave
-    // clash detector.
-    const pattern = `${module}/**`;
+    // Module filter. The module names the tool PUBLISHES are the
+    // architecture's own, so the filter matches a module NAME against the
+    // ownership globs — a task owns "src/catalog/**", so it touches the
+    // module "catalog". The old filter matched "<name>/**" against the
+    // globs, and a module called "catalog" whose tasks own "src/catalog/**"
+    // matched nothing at all: a silent zero for a name the tool had just
+    // handed the agent.
+    const modules = readModuleNames(root) ?? [];
     const matched = uniqueTasks
-      .filter((t) => ownedPaths(t).some((g) => globsMayOverlap(g, pattern)))
+      .filter((t) => ownedPaths(t).some((g) => moduleMatches(module, g)))
       .sort(byIdAsc);
+    if (!matched.length) {
+      // A module that matches nothing is a question the tool cannot answer,
+      // not an empty plan. The names it knows are in the error.
+      throw notFound(
+        `no task owns module '${module}'`,
+        { module, modules, available: uniqueTasks.map((t) => t.id) },
+      );
+    }
     return {
       format: 'json',
       data: {

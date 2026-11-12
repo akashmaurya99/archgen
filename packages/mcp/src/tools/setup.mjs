@@ -135,7 +135,9 @@ export function registerSetupTools(server) {
         };
         if (args.harness) {
           // The named harness's row goes INSIDE the envelope, not instead
-          // of it.
+          // of it. A harness the registry does not know is a CALLER mistake
+          // and is refused with the list of the ones it does know; the
+          // fallback below is for a platform it could not DETECT.
           return { ...base, harness: args.harness, capabilities: platformCapabilities(caps, args.harness) };
         }
         try {
