@@ -283,10 +283,15 @@ export function buildWorkerContract(opts) {
 
   lines.push('## When you finish');
   lines.push('');
+  // The completion call is COMPLETE. It used to name the task and the status
+  // only — the tool requires the task file as well, so a worker that obeyed
+  // the contract exactly was refused on the LAST step of every task
+  // ("tasksYaml is required for set_status"). The path is the one the contract
+  // was built from, and `toolCall` escapes it, so the call is paste-ready.
   lines.push(
-    "1. Call `archgen_tasks { action: 'set_status', taskId: '" +
-      task.id +
-      "', status: 'done' }` — or `status: 'failed'` if you could not complete it. Do this IN THE SAME TURN you finish, before anything else.",
+    `1. Call \`${toolCall('archgen_tasks', { action: 'set_status', tasksYaml, taskId: task.id, status: 'done' })}\` — ` +
+      `or \`${toolCall('archgen_tasks', { action: 'set_status', tasksYaml, taskId: task.id, status: 'failed' })}\` ` +
+      'if you could not complete it. Do this IN THE SAME TURN you finish, before anything else.',
   );
   if (capabilities.length && capabilities[0].installed) {
     lines.push(

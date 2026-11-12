@@ -93,6 +93,29 @@ test('the contract names the finish procedure', () => {
   }
 });
 
+test('the completion call in the contract is COMPLETE — it can be pasted as it stands', () => {
+  // The contract taught workers to call
+  // `archgen_tasks{action:'set_status', taskId, status}` — the call the tool
+  // REFUSED, because it also needs the task file. A worker that obeyed the
+  // contract exactly failed on the last step of every task. The call the
+  // contract prints must name every argument the action requires.
+  const { dir, tasks } = sandbox();
+  try {
+    const c = buildWorkerContract({ tasksYaml: tasks, taskId: 'C', slugDir: dir });
+    const call = c.prompt.match(/archgen_tasks\{action:'set_status'[^}]*\}/);
+    assert.ok(call, 'the contract prints the completion call');
+    assert.match(call[0], /tasksYaml:/, 'the completion call names the task file');
+    assert.match(call[0], /taskId:'C'/, 'the completion call names the task');
+    assert.match(call[0], /status:'done'/, 'the completion call names the status');
+    assert.ok(call[0].includes(tasks), 'the completion call carries the REAL task file path');
+    const failed = c.prompt.match(/archgen_tasks\{action:'set_status'[^}]*status:'failed'[^}]*\}/);
+    assert.ok(failed, 'the failed variant is printed too');
+    assert.match(failed[0], /tasksYaml:/, 'the failed variant names the task file as well');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the contract points at the working state location', () => {
   const { dir, tasks } = sandbox();
   try {

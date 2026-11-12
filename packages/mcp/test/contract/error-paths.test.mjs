@@ -33,6 +33,7 @@ createServer();
 let sandbox;
 let home;
 let ctx;
+let emptyCtx;
 
 const HERMETIC_ENV = { PATH: '/nonexistent-archgen-test-path' };
 
@@ -43,6 +44,18 @@ before(() => {
   ctx = new Context({
     projectRoot: sandbox.root,
     anchorRoot: sandbox.root,
+    home,
+    env: HERMETIC_ENV,
+  });
+  // A project with NO plan: the calls that need a task file fail here, and
+  // they fail TYPED. A call that omits the path used to fail in EVERY
+  // project; it resolves the active artifact space now, so the meaningful
+  // failure is the one in a project that has no plan at all.
+  const emptyRoot = join(sandbox.root, 'empty-project');
+  mkdirSync(emptyRoot, { recursive: true });
+  emptyCtx = new Context({
+    projectRoot: emptyRoot,
+    anchorRoot: emptyRoot,
     home,
     env: HERMETIC_ENV,
   });
@@ -62,11 +75,9 @@ function failingCalls() {
   const p = sandbox.plansDir;
   return [
     // ── archgen_plan ────────────────────────────────────────────────────────
-    ['archgen_plan', 'validate', {}],
     ['archgen_plan', 'verify', { tasksYaml: t }],
     ['archgen_plan', 'coverage', { tasksYaml: t }],
     ['archgen_plan', 'coverage', { tasksYaml: t, planDir: p, taskId: 'NO-SUCH-TASK' }],
-    ['archgen_plan', 'graph', {}],
     ['archgen_plan', 'graph', { tasksYaml: t, node: 'NO-SUCH-TASK' }],
     ['archgen_plan', 'graph', { tasksYaml: t, module: 'x', format: 'mermaid' }],
     ['archgen_plan', 'graph', { tasksYaml: t, status: true }],
@@ -79,13 +90,10 @@ function failingCalls() {
     ['archgen_plan', 'brief', { kind: 'investigate', tasksYaml: t, planDir: p }],
 
     // ── archgen_tasks ───────────────────────────────────────────────────────
-    ['archgen_tasks', 'next', {}],
     ['archgen_tasks', 'next', { tasksYaml: t, taskId: 'NO-SUCH-TASK' }],
-    ['archgen_tasks', 'list', {}],
     ['archgen_tasks', 'list', { tasksYaml: t, taskId: 'NO-SUCH-TASK' }],
     ['archgen_tasks', 'set_status', { tasksYaml: t, taskId: 'API' }],
     ['archgen_tasks', 'set_status', { tasksYaml: t, status: 'running' }],
-    ['archgen_tasks', 'snapshot', {}],
     ['archgen_tasks', 'contract', { tasksYaml: t }],
     ['archgen_tasks', 'contract', { tasksYaml: t, taskId: 'NO-SUCH-TASK' }],
 
@@ -145,6 +153,53 @@ test('every failing call returns a TYPED error, never INTERNAL', async () => {
     // A typed error carries a message the agent can act on.
     if (!envelope.error?.message) {
       failures.push(`${tool}{action:'${action}'} -> ${code} with no message`);
+    }
+  }
+  assert.deepEqual(failures, [], `calls that failed badly:\n  ${failures.join('\n  ')}`);
+});
+
+/**
+ * The calls that need a task file and were given no path.
+ *
+ * They RESOLVE the active artifact space now, so in a project that HAS a
+ * plan they succeed. In a project that has none they must fail — and fail
+ * TYPED, never as a crash.
+ */
+const RESOLVING_CALLS = [
+  ['archgen_plan', 'validate'],
+  ['archgen_plan', 'graph'],
+  ['archgen_tasks', 'next'],
+  ['archgen_tasks', 'list'],
+  ['archgen_tasks', 'snapshot'],
+];
+
+test('a call that omits the task file resolves the ACTIVE artifact space', async () => {
+  // The task file is always `.archgen/<slug>/tasks.yaml` inside the project.
+  // Demanding the path as an argument made the tool unreachable for a caller
+  // that knew the project — and the worker contract's own completion call
+  // failed on it.
+  const spec = getToolSpec('archgen_tasks');
+  const envelope = await guard(spec.handler, ctx, { action: 'list' });
+  assert.ok(envelope.ok, `the list must resolve the plan: ${envelope.error?.message}`);
+  assert.equal(envelope.data.file, sandbox.tasksYaml, 'the resolved file is reported');
+  assert.ok(envelope.data.tasks.length > 0, 'the resolved plan carries its tasks');
+});
+
+test('a project with NO plan fails TYPED, never as a crash', async () => {
+  const failures = [];
+  for (const [tool, action] of RESOLVING_CALLS) {
+    const spec = getToolSpec(tool);
+    const envelope = await guard(spec.handler, emptyCtx, { action });
+    if (envelope.ok) {
+      failures.push(`${tool}{action:'${action}'} unexpectedly SUCCEEDED in a project with no plan`);
+      continue;
+    }
+    if (!envelope.error?.code || envelope.error.code === 'INTERNAL') {
+      failures.push(`${tool}{action:'${action}'} -> ${envelope.error?.code}: ${envelope.error?.message}`);
+      continue;
+    }
+    if (!envelope.error?.message) {
+      failures.push(`${tool}{action:'${action}'} -> ${envelope.error.code} with no message`);
     }
   }
   assert.deepEqual(failures, [], `calls that failed badly:\n  ${failures.join('\n  ')}`);

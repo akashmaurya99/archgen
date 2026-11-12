@@ -17,6 +17,42 @@ import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { resolveSlugInput, ScopeError } from '../core/scope.mjs';
 import { dirname, join } from 'node:path';
 import { ownedPaths } from '../core/graph.mjs';
+import { resolutionWarning, resolveTasksFile } from '../core/tasks-file.mjs';
+
+/**
+ * Resolve the task file an action reads.
+ *
+ * The path is OPTIONAL. It is derived from the project when the caller does
+ * not name it, so a caller that knows the project can act on the plan it is
+ * working in — and the call that failed on a missing path can no longer
+ * happen. The choice is REPORTED: the payload names the file, and a project
+ * with several artifact spaces warns instead of guessing silently.
+ *
+ * @param {any} args
+ * @param {import('../context.mjs').Context} ctx
+ * @param {string} action
+ * @returns {{file: string, warning: string|null}}
+ */
+function resolveTasks(args, ctx, action) {
+  const resolved = resolveTasksFile({
+    tasksYaml: args.tasksYaml ? ctx.contain(args.tasksYaml) : null,
+    slugDir: args.slugDir ? ctx.contain(args.slugDir) : null,
+    projectRoot: ctx.projectRoot,
+    action,
+  });
+  return { file: resolved.file, warning: resolutionWarning(resolved) };
+}
+
+/**
+ * The meta block for a resolved task file: the warning when the file was
+ * chosen rather than named.
+ *
+ * @param {string|null} warning
+ * @returns {object}
+ */
+function resolvedMeta(warning) {
+  return warning ? { warnings: [warning] } : {};
+}
 
 /**
  * The `.archgen/<slug>/` directory a tasks file belongs to.
@@ -62,7 +98,7 @@ const TASKS_ACTION_ARGS = {
 
 const schema = z.object({
   action: z.enum(['next', 'set_status', 'list', 'snapshot', 'contract']).describe(ACTION_DESC),
-  tasksYaml: z.string().optional().describe('tasks.yaml path (all actions).'),
+  tasksYaml: z.string().optional().describe('tasks.yaml path (all actions). Omit → the active .archgen/<slug>/tasks.yaml.'),
   taskId: z.string().optional().describe('Task id (set_status, contract); one task (list, next).'),
   status: z.enum(STATUSES).optional().describe('New status (set_status).'),
   force: z.boolean().optional().describe('Allow reopening a done task (set_status).'),
@@ -96,34 +132,28 @@ export function registerTaskTools(server) {
 
       switch (action) {
         case 'set_status': {
-          if (!args.tasksYaml) throw invalidInput(
-            'tasksYaml is required for set_status',
-            { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: '<tasks.yaml>', taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action },
-          );
+          const { file, warning } = resolveTasks(args, ctx, action);
           if (!args.taskId) throw invalidInput(
             'taskId is required for set_status',
-            { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: '<tasks.yaml>', taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action },
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: file, taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action, file },
           );
           if (!args.status) throw invalidInput(
             'status is required for set_status',
-            { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: '<tasks.yaml>', taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action },
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: file, taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action, file },
           );
-          return setTaskStatus(ctx.contain(args.tasksYaml), args.taskId, args.status, { force: args.force === true });
+          const updated = setTaskStatus(file, args.taskId, args.status, { force: args.force === true });
+          return withMeta(updated, resolvedMeta(warning));
         }
         case 'list': {
-          if (!args.tasksYaml) throw invalidInput(
-            'tasksYaml is required for list',
-            { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list reads the task file." }), action },
-          );
+          const { file, warning } = resolveTasks(args, ctx, action);
           // The schema rejects a bad status, but the handler does NOT rely on
           // that: the CLI facade drives the handlers directly, and a free-text
           // status there returned an EMPTY list for a typo — a silent
           // "these tasks do not exist" answer.
           if (args.filterStatus && !STATUSES.includes(args.filterStatus)) {
             throw invalidInput(
-              `unknown status '${args.filterStatus}' (allowed: ${STATUSES.join('|')})`, { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list carries every status." }), action, filterStatus: args.filterStatus, allowed: STATUSES });
+              `unknown status '${args.filterStatus}' (allowed: ${STATUSES.join('|')})`, { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: file }), reason: "the list carries every status." }), action, filterStatus: args.filterStatus, allowed: STATUSES });
           }
-          const file = ctx.contain(args.tasksYaml);
           const listed = listTasks(file, {
             status: args.filterStatus ?? null,
             module: args.module ?? null,
@@ -139,8 +169,8 @@ export function registerTaskTools(server) {
             const one = (all.tasks ?? []).find((t) => t.id === args.taskId);
             if (!one) {
               throw invalidInput(
-                `no task '${args.taskId}' in ${args.tasksYaml}`,
-                { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list carries every task id." }), action,
+                `no task '${args.taskId}' in ${file}`,
+                { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: file }), reason: "the list carries every task id." }), action,
                 taskId: args.taskId,
                 available: (all.tasks ?? []).map((t) => t.id), },
               );
@@ -151,54 +181,58 @@ export function registerTaskTools(server) {
               const owned = (one.file_ownership ?? []).join(' ');
               if (!owned.includes(args.module)) excludedBy.push(`module:${args.module}`);
             }
-            return {
-              task: one,
-              tasks: [one],
-              ...(excludedBy.length
-                ? { excludedBy, note: `this task exists but does not match ${excludedBy.join(', ')}` }
-                : {}),
-            };
+            return withMeta(
+              {
+                file,
+                task: one,
+                tasks: [one],
+                ...(excludedBy.length
+                  ? { excludedBy, note: `this task exists but does not match ${excludedBy.join(', ')}` }
+                  : {}),
+              },
+              resolvedMeta(warning),
+            );
           }
           const p = project(listed.tasks ?? [], {
             limit: args.limit,
             offset: args.offset,
-            next: toolCall('archgen_tasks', { action: 'list', tasksYaml: args.tasksYaml, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
+            // The continuation carries the RESOLVED path. It used to carry the
+            // caller's own argument — which was undefined when the caller had
+            // not passed one, so the tool published a "next call" that could
+            // not work.
+            next: toolCall('archgen_tasks', { action: 'list', tasksYaml: file, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
           });
           return withMeta(
-            { ...listed, tasks: p.items },
-            moreMeta({
-              total: p.total,
-              returned: p.returned,
-              next: p.next,
-              available: { tasks: p.total },
-              more: toolCall('archgen_tasks', { action: 'list', tasksYaml: args.tasksYaml, taskId: '<one task>' }),
-            }),
+            { ...listed, file, tasks: p.items },
+            {
+              ...moreMeta({
+                total: p.total,
+                returned: p.returned,
+                next: p.next,
+                available: { tasks: p.total },
+                more: toolCall('archgen_tasks', { action: 'list', tasksYaml: file, taskId: '<one task>' }),
+              }),
+              ...resolvedMeta(warning),
+            },
           );
         }
         case 'snapshot': {
-          if (!args.tasksYaml) throw invalidInput(
-            'tasksYaml is required for snapshot',
-            { ...hint({ action: toolCall('archgen_tasks', { action: 'snapshot', tasksYaml: '<tasks.yaml>' }), reason: "the snapshot reads the task file." }), action },
-          );
-          const tasksFile = ctx.contain(args.tasksYaml);
+          const { file: tasksFile, warning } = resolveTasks(args, ctx, action);
           // The snapshot belongs to the artifact space: `<slug>/.agent/`.
           // Deriving it from the tasks file's PARENT wrote it wherever that
           // file happened to be — `<project>/plans/.agent/resume.md`, outside
           // `.archgen/`, which is exactly what the worker contract forbids.
           const slugDir = slugDirFor(tasksFile, action);
           const waves = resolveWaves(tasksFile).waves;
-          return writeResumeSnapshot(slugDir, waves);
+          const snapshot = writeResumeSnapshot(slugDir, waves);
+          return withMeta(snapshot, resolvedMeta(warning));
         }
         case 'contract': {
-          if (!args.tasksYaml) throw invalidInput(
-            'tasksYaml is required for contract',
-            { ...hint({ action: toolCall('archgen_tasks', { action: 'contract', tasksYaml: '<tasks.yaml>', taskId: '<task id>' }), reason: "the contract is built for one task." }), action },
-          );
+          const { file: tasksFile, warning } = resolveTasks(args, ctx, action);
           if (!args.taskId) throw invalidInput(
             'taskId is required for contract',
-            { ...hint({ action: toolCall('archgen_tasks', { action: 'contract', tasksYaml: '<tasks.yaml>', taskId: '<task id>' }), reason: "the contract is built for one task." }), action },
+            { ...hint({ action: toolCall('archgen_tasks', { action: 'contract', tasksYaml: tasksFile, taskId: '<task id>' }), reason: "the contract is built for one task." }), action, file: tasksFile },
           );
-          const tasksFile = ctx.contain(args.tasksYaml);
           const slugDir = args.slugDir ? ctx.contain(args.slugDir) : dirname(tasksFile);
 
           // The capability skills: match the task, resolve the INSTALLED
@@ -315,6 +349,10 @@ export function registerTaskTools(server) {
           });
           return {
             ...contract,
+            // The plan the contract was built from. The agent has to know
+            // WHICH plan it is about when the file was resolved rather than
+            // named.
+            file: tasksFile,
             // The cap is COUNTED, and the failures are named. A contract that
             // silently dropped three of five doc sections, or silently
             // emptied the capability block, was indistinguishable from a
@@ -327,17 +365,20 @@ export function registerTaskTools(server) {
                   docSectionsHint: `read the rest with ${toolCall('archgen_docs', { action: 'map', token: args.taskId })}`,
                 }
               : {}),
-            ...(capabilityWarnings.length
-              ? { warnings: [...(contract.warnings ?? []), ...capabilityWarnings] }
+            ...(capabilityWarnings.length || warning
+              ? {
+                  warnings: [
+                    ...(contract.warnings ?? []),
+                    ...capabilityWarnings,
+                    ...(warning ? [warning] : []),
+                  ],
+                }
               : {}),
           };
         }
         case 'next': {
-          if (!args.tasksYaml) throw invalidInput(
-            'tasksYaml is required for next',
-            { ...hint({ action: toolCall('archgen_tasks', { action: 'next', tasksYaml: '<tasks.yaml>' }), reason: "the frontier reads the task file." }), action },
-          );
-          const resolved = resolveWaves(ctx.contain(args.tasksYaml));
+          const { file, warning } = resolveTasks(args, ctx, action);
+          const resolved = resolveWaves(file);
           // ONE wave, when the caller named a task: "which wave is this in?"
           if (args.taskId) {
             const index = resolved.waves.findIndex((w) => w.some((t) => t.id === args.taskId));
@@ -346,14 +387,14 @@ export function registerTaskTools(server) {
             // reporting "no task 'X'" for a task that exists was a false
             // claim about the plan.
             if (index < 0) {
-              const all = listTasks(ctx.contain(args.tasksYaml), {});
+              const all = listTasks(file, {});
               const one = (all.tasks ?? []).find((t) => t.id === args.taskId);
               if (!one) {
                 throw invalidInput(
-                  `no task '${args.taskId}' in ${args.tasksYaml}`,
+                  `no task '${args.taskId}' in ${file}`,
                   {
                     ...hint({
-                      action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }),
+                      action: toolCall('archgen_tasks', { action: 'list', tasksYaml: file }),
                       reason: 'the list carries every task id.',
                     }),
                     action,
@@ -362,26 +403,34 @@ export function registerTaskTools(server) {
                   },
                 );
               }
-              return {
-                taskId: args.taskId,
-                waveIndex: null,
-                waveCount: resolved.waves.length,
-                wave: [],
-                task: one,
-                note: `task '${args.taskId}' is ${one.status} — it is in no active wave`,
-                blockedByFailure: resolved.blockedByFailure,
-              };
+              return withMeta(
+                {
+                  file,
+                  taskId: args.taskId,
+                  waveIndex: null,
+                  waveCount: resolved.waves.length,
+                  wave: [],
+                  task: one,
+                  note: `task '${args.taskId}' is ${one.status} — it is in no active wave`,
+                  blockedByFailure: resolved.blockedByFailure,
+                },
+                resolvedMeta(warning),
+              );
             }
             // The wave index is 1-BASED, like the snapshot's. It used to be
             // the 0-based array index, so `next{taskId:'T02'}.waveIndex` was
             // 1 (the SECOND wave) while `snapshot.waveIndex` was 1 (the
             // FIRST) — the same field name, opposite meanings.
-            return {
-              waveIndex: index + 1,
-              waveCount: resolved.waves.length,
-              wave: resolved.waves[index],
-              blockedByFailure: resolved.blockedByFailure,
-            };
+            return withMeta(
+              {
+                file,
+                waveIndex: index + 1,
+                waveCount: resolved.waves.length,
+                wave: resolved.waves[index],
+                blockedByFailure: resolved.blockedByFailure,
+              },
+              resolvedMeta(warning),
+            );
           }
           // The waves are the plan's shape; a long plan would dump every task
           // in every wave, so the wave COUNT is reported and the waves
@@ -389,11 +438,12 @@ export function registerTaskTools(server) {
           const p = project(resolved.waves, {
             limit: args.limit,
             offset: args.offset,
-            next: toolCall('archgen_tasks', { action: 'next', tasksYaml: args.tasksYaml, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
+            next: toolCall('archgen_tasks', { action: 'next', tasksYaml: file, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
           });
           return withMeta(
             {
               ...resolved,
+              file,
               waves: p.items,
               // THE FRONTIER — the wave that is executable NOW. The payload
               // listed every remaining wave with nothing marking which one
@@ -404,13 +454,16 @@ export function registerTaskTools(server) {
                 ? { note: 'no waves remain — every task is done or blocked' }
                 : {}),
             },
-            moreMeta({
-              total: p.total,
-              returned: p.returned,
-              next: p.next,
-              available: { waves: p.total, tasks: resolved.waves.flat().length },
-              more: toolCall('archgen_tasks', { action: 'next', tasksYaml: args.tasksYaml, taskId: '<one task>' }),
-            }),
+            {
+              ...moreMeta({
+                total: p.total,
+                returned: p.returned,
+                next: p.next,
+                available: { waves: p.total, tasks: resolved.waves.flat().length },
+                more: toolCall('archgen_tasks', { action: 'next', tasksYaml: file, taskId: '<one task>' }),
+              }),
+              ...resolvedMeta(warning),
+            },
           );
         }
         default:

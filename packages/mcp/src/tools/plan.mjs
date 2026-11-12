@@ -21,6 +21,7 @@ import { assertPathToken } from '../core/slug.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
+import { resolutionWarning, resolveTasksFile } from '../core/tasks-file.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information.
@@ -102,7 +103,7 @@ const schema = z.object({
   tasksYaml: z
     .string()
     .optional()
-    .describe('tasks.yaml path (validate, verify, impact, coverage, graph).'),
+    .describe('tasks.yaml path (validate, verify, impact, coverage, graph). Omit → the active .archgen/<slug>/tasks.yaml.'),
   planDir: z.string().optional().describe('plans/ dir (verify, coverage, brief, graph).'),
   target: z.string().optional().describe('Task id or artifact path (impact).'),
   taskId: z.string().optional().describe('One task (coverage).'),
@@ -167,7 +168,7 @@ export function registerPlanTools(server) {
 
       switch (action) {
         case 'validate': {
-          const file = requireTasksYaml(args, ctx);
+          const { file, warning } = requireTasksYaml(args, ctx);
           const collection = resolveCollection('validate', args.collection, 'errors');
           const report = validateTasksYaml(file, {
             planDir: args.planDir ? ctx.contain(args.planDir) : null,
@@ -179,8 +180,8 @@ export function registerPlanTools(server) {
             // fetch the rest.
             collection,
           });
-          const errNext = nextCall('validate', args, report.errorsOffset + report.errors.length);
-          const warnNext = nextCall('validate', args, report.warningsOffset + report.warnings.length);
+          const errNext = nextCall('validate', args, report.errorsOffset + report.errors.length, file);
+          const warnNext = nextCall('validate', args, report.warningsOffset + report.warnings.length, file);
           // The truncation test is OFFSET-AWARE. Comparing the page length
           // with the total is true at the tail too, so the continuation
           // pointed at the SAME offset and an agent following it spun
@@ -189,7 +190,7 @@ export function registerPlanTools(server) {
           const warnTruncated = report.warningsOmitted > 0;
           return withMeta(
             report,
-            moreMeta({
+            { ...moreMeta({
               total: collection === 'warnings' ? report.warningsTotal : report.errorsTotal,
               returned: collection === 'warnings' ? report.warnings.length : report.errors.length,
               available: { errors: report.errorsTotal, warnings: report.warningsTotal, tasks: report.counts.tasks },
@@ -209,11 +210,11 @@ export function registerPlanTools(server) {
                   : warnTruncated
                     ? warnNext
                     : undefined,
-            }),
+            }), ...resolvedMeta(warning) },
           );
         }
         case 'verify': {
-          const file = requireTasksYaml(args, ctx);
+          const { file, warning } = requireTasksYaml(args, ctx);
           if (!args.planDir) throw invalidInput(
             'verify requires planDir',
             { ...hint({ action: toolCall('archgen_plan', { action: 'verify', tasksYaml: '<tasks.yaml>', planDir: '<planDir>' }), reason: "verify needs the plans directory." }), action },
@@ -230,8 +231,8 @@ export function registerPlanTools(server) {
           // The next call is emitted when EITHER list is truncated — the
           // warnings used to vanish with no pointer at all.
           const effective = out.issues.length || out.warnings.length || args.limit || 40;
-          const issueNext = nextCall('verify', args, out.issuesOffset + out.issues.length);
-          const warningNext = nextCall('verify', args, out.warningsOffset + out.warnings.length);
+          const issueNext = nextCall('verify', args, out.issuesOffset + out.issues.length, file);
+          const warningNext = nextCall('verify', args, out.warningsOffset + out.warnings.length, file);
           // OFFSET-AWARE: `omitted` is what is LEFT after this window. The
           // old test (`page.length < total`) was true at the tail as well,
           // so the continuation pointed at the same offset forever.
@@ -247,7 +248,7 @@ export function registerPlanTools(server) {
             collection === 'warnings' ? (issueTruncated ? issueNext : undefined) : warningTruncated ? warningNext : undefined;
           return withMeta(
             out,
-            moreMeta({
+            { ...moreMeta({
               // The SELECTED collection. It always described the issues, so
               // `verify{collection:'warnings'}` reported the ISSUES total
               // over the warnings' payload — and an empty warnings window
@@ -257,11 +258,11 @@ export function registerPlanTools(server) {
               next,
               more,
               available: { issues: out.issuesTotal, warnings: out.warningsTotal },
-            }),
+            }), ...resolvedMeta(warning) },
           );
         }
         case 'coverage': {
-          const file = requireTasksYaml(args, ctx);
+          const { file, warning } = requireTasksYaml(args, ctx);
           if (!args.planDir) throw invalidInput(
             'coverage requires planDir',
             { ...hint({ action: toolCall('archgen_plan', { action: 'coverage', tasksYaml: '<tasks.yaml>', planDir: '<planDir>' }), reason: "coverage needs the plans directory." }), action },
@@ -279,7 +280,7 @@ export function registerPlanTools(server) {
             limit: args.limit,
             collection,
           });
-          const call = (c, off) => nextCall('coverage', args, off);
+          const call = (c, off) => nextCall('coverage', args, off, file);
           const next = {
             tasks: call('tasks', covered.tasks.offset + covered.tasks.items.length),
             covered: call('covered', covered.covered.offset + covered.covered.items.length),
@@ -360,7 +361,7 @@ export function registerPlanTools(server) {
                 profileRecorded: covered.profileRecorded === true,
               },
             },
-            moreMeta({
+            { ...moreMeta({
               total: selectedTotal,
               returned: selectedShown,
               next: selectedNext,
@@ -373,11 +374,11 @@ export function registerPlanTools(server) {
                 requirements: covered.requirements.uncoveredTotal,
                 edgeCases: covered.edgeCases.unlinkedTotal,
               },
-            }),
+            }), ...resolvedMeta(warning) },
           );
         }
         case 'impact': {
-          const file = requireTasksYaml(args, ctx);
+          const { file, warning } = requireTasksYaml(args, ctx);
           if (!args.target) throw invalidInput(
             'impact requires target (a task id or an artifact path)',
             { ...hint({ action: toolCall('archgen_plan', { action: 'impact', tasksYaml: '<tasks.yaml>', target: '<task id>' }), reason: "impact needs the task to trace." }), action },
@@ -436,7 +437,7 @@ export function registerPlanTools(server) {
               transitiveTotal: transitive.total,
               artifactsTotal: artifacts.total,
             },
-            moreMeta({
+            { ...moreMeta({
               // The total covers EVERY list the payload carries — a `returned`
               // larger than the `total` is impossible to reconcile.
               total: direct.total + transitive.total + artifacts.total,
@@ -448,7 +449,7 @@ export function registerPlanTools(server) {
                 transitive: transitive.total,
                 artifacts: artifacts.total,
               },
-            }),
+            }), ...resolvedMeta(warning) },
           );
         }
         case 'profile': {
@@ -624,25 +625,24 @@ export function registerPlanTools(server) {
         }
         case 'graph': {
           rejectCollection('graph', args.collection);
-          const input = args.tasksYaml ?? args.planDir;
-          if (!input) throw invalidInput(
-            'graph requires tasksYaml (a slug directory or a tasks.yaml path)',
-            { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>' }), reason: "the graph is read from the task file." }), action },
-          );
+          // The task file is resolved the same way every other action
+          // resolves it: the caller's path, the slug, the plans directory, or
+          // the active artifact space.
+          const { file, warning } = requireTasksYaml(args, ctx);
           const format = args.format ?? 'json';
           if (format === 'mermaid' && args.module) {
             throw invalidInput(
               'module cannot combine with mermaid output',
-              { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>', node: '<task id>' }), reason: "scope the graph to one task." }), action },
+              { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: file, node: '<task id>' }), reason: "scope the graph to one task." }), action },
             );
           }
           if (args.status && format !== 'mermaid') {
             throw invalidInput(
               'status requires mermaid output',
-              { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>', format: 'mermaid' }), reason: "status styling applies to the mermaid rendering only." }), action },
+              { ...hint({ action: toolCall('archgen_plan', { action: 'graph', tasksYaml: file, format: 'mermaid' }), reason: "status styling applies to the mermaid rendering only." }), action },
             );
           }
-          const rendered = planGraph(ctx.contain(input), {
+          const rendered = planGraph(file, {
             node: args.node ?? null,
             mermaid: format === 'mermaid',
             status: args.status === true,
@@ -654,7 +654,10 @@ export function registerPlanTools(server) {
           // while every sibling action put its result at `data.waves` — a
           // client reading one shape got `undefined` from the other.
           if (format === 'mermaid' || args.node || args.module) {
-            return { format: rendered.format, ...(typeof rendered.data === 'object' && rendered.data ? rendered.data : { text: rendered.data }) };
+            return withMeta(
+              { format: rendered.format, ...(typeof rendered.data === 'object' && rendered.data ? rendered.data : { text: rendered.data }) },
+              warning ? { warnings: [warning] } : {},
+            );
           }
           // The waves are a collection: they are windowed, and the window's
           // tail is reachable.
@@ -663,15 +666,18 @@ export function registerPlanTools(server) {
             limit: args.limit,
             offset: args.offset,
           });
-          const next = toolCall('archgen_plan', { action: 'graph', tasksYaml: input, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) });
+          const next = toolCall('archgen_plan', { action: 'graph', tasksYaml: file, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) });
           return withMeta(
-            { ...graph, waves: waves.items },
-            moreMeta({
-              total: waves.total,
-              returned: waves.returned,
-              next: waves.truncated ? next : undefined,
-              available: { waves: waves.total, tasks: graph.taskCount ?? 0 },
-            }),
+            { ...graph, file, waves: waves.items },
+            {
+              ...moreMeta({
+                total: waves.total,
+                returned: waves.returned,
+                next: waves.truncated ? next : undefined,
+                available: { waves: waves.total, tasks: graph.taskCount ?? 0 },
+              }),
+              ...(warning ? { warnings: [warning] } : {}),
+            },
           );
         }
         default:
@@ -687,17 +693,40 @@ export function registerPlanTools(server) {
   });
 }
 
+
+/**
+ * The meta block for a resolved task file: the warning when the file was
+ * chosen rather than named.
+ *
+ * @param {string|null} warning
+ * @returns {object}
+ */
+function resolvedMeta(warning) {
+  return warning ? { warnings: [warning] } : {};
+}
+
 /**
  * Resolve the tasks.yaml argument, defaulting to the project's active slug.
+ *
+ * The path is OPTIONAL: the task file is always `.archgen/<slug>/tasks.yaml`
+ * inside the project, so a caller that knows the project can act on the plan
+ * it is working in. The resolution is reported — the payload names the file —
+ * and an ambiguous project (several artifact spaces) warns instead of
+ * guessing silently.
+ *
  * @param {any} args
  * @param {import('../context.mjs').Context} ctx
+ * @returns {{file: string, warning: string|null}}
  */
 function requireTasksYaml(args, ctx) {
-  if (!args.tasksYaml) throw invalidInput(
-    'tasksYaml is required for this action',
-    { ...hint({ action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }), reason: "every action reads the task file." }), action: args.action },
-  );
-  return ctx.contain(args.tasksYaml);
+  const resolved = resolveTasksFile({
+    tasksYaml: args.tasksYaml ? ctx.contain(args.tasksYaml) : null,
+    slug: args.slug ?? null,
+    planDir: args.planDir ? ctx.contain(args.planDir) : null,
+    projectRoot: ctx.projectRoot,
+    action: args.action,
+  });
+  return { file: resolved.file, warning: resolutionWarning(resolved) };
 }
 
 /**
@@ -722,11 +751,16 @@ function requireTasksYaml(args, ctx) {
  * @param {Record<string, unknown>} args the caller's arguments
  * @param {number} offset the offset of the NEXT slice
  */
-function nextCall(action, args, offset) {
+function nextCall(action, args, offset, file = null) {
   const carried = {};
   for (const key of PLAN_ACTION_ARGS[action] ?? []) {
     if (args[key] !== undefined) carried[key] = args[key];
   }
+  // The RESOLVED task file, not the caller's own argument. The continuation
+  // used to carry the caller's argument — which was undefined when the
+  // caller had not passed one — so the tool published a "next call" that
+  // named no plan at all.
+  if (file) carried.tasksYaml = file;
   return toolCall('archgen_plan', {
     action,
     ...carried,

@@ -1,10 +1,11 @@
 // docs.mjs — the `archgen_docs` tool: navigate the markdown artifacts under
 // `.archgen/<slug>/`.
 import { z } from 'zod/v4';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { docIndex } from '../core/doc-navigator.mjs';
+import { activeSlugDir as resolveActiveSlugDir } from '../core/tasks-file.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
 import { toolCall } from '../core/call.mjs';
@@ -269,28 +270,13 @@ export function resolveSlugDir(ctx, explicit) {
 
 /**
  * Find the active `.archgen/<slug>/` directory (most recently modified).
+ *
+ * The rule is the ONE the task-file resolver uses, so the whole server agrees
+ * on which plan is active: the same artifact space, whichever tool asks.
+ *
  * @param {import('../context.mjs').Context} ctx
  * @returns {string|null}
  */
 export function activeSlugDir(ctx) {
-  const archgenDir = join(ctx.projectRoot, '.archgen');
-  if (!existsSync(archgenDir)) return null;
-  let best = null;
-  let bestMtime = -1;
-  for (const ent of readdirSync(archgenDir, { withFileTypes: true })) {
-    if (!ent.isDirectory()) continue;
-    const dir = join(archgenDir, ent.name);
-    if (!existsSync(join(dir, 'tasks.yaml'))) continue;
-    let mtime = 0;
-    try {
-      mtime = statSync(join(dir, 'tasks.yaml')).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (mtime > bestMtime) {
-      bestMtime = mtime;
-      best = dir;
-    }
-  }
-  return best;
+  return resolveActiveSlugDir(ctx.projectRoot);
 }

@@ -53,9 +53,9 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 **Actions**
 | action | what it does | args |
 |---|---|---|
-| \`validate\` | schema, cycles, dangling refs, ownership, acceptance | tasksYaml, planDir? |
-| \`verify\` | the deterministic floor → APPROVE or ISSUES (+ warnings) | tasksYaml, planDir, offset? |
-| \`coverage\` | tasks covered vs missing in the plans | tasksYaml, planDir |
+| \`validate\` | schema, cycles, dangling refs, ownership, acceptance | tasksYaml?, planDir? |
+| \`verify\` | the deterministic floor → APPROVE or ISSUES (+ warnings) | tasksYaml?, planDir, offset? |
+| \`coverage\` | tasks covered vs missing in the plans | tasksYaml?, planDir |
 | \`profile\` | evidence-based scope + per-artifact create/reuse/omit decisions | intent, signals?, modules?, tasks?, slug? |
 | \`scaffold\` | the artifact set + skeletons (with an intent: EXACTLY the create set) | scope, slug?, intent?, signals?, modules?, tasks?, file? |
 | \`brief\` | ready-to-send sub-agent prompt (graph, docs check, evidence map rendered) | kind, tasksYaml?, planDir?, slug?, featureRequest?, topic?, round? |
@@ -70,6 +70,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 - \`verify\` ISSUES = gate failure: fix, re-verify (max 2 automatic rounds, then ask the user).
 
 **Gotchas**
+- \`tasksYaml\` is OPTIONAL: omit it and the active \`.archgen/<slug>/tasks.yaml\` is used; the answer names the file it read.
 - \`status\` only affects mermaid; \`module\` cannot combine with \`node\` or mermaid.
 - Whole-graph mermaid is refused above 250 nodes—scope with \`node\` or \`module\`.
 - \`profile\` takes \`modules\`/\`tasks\` as a COUNT — a number, or the list itself (its length is the count).
@@ -95,11 +96,11 @@ The wave execution loop.
 **Actions**
 | action | what it does | args |
 |---|---|---|
-| \`next\` | dependency frontier → waves | tasksYaml |
-| \`set_status\` | atomically set one task status | tasksYaml, taskId, status, force? |
-| \`list\` | flat task list, filterable | tasksYaml, filterStatus?, module? |
-| \`snapshot\` | write \`.archgen/<slug>/.agent/resume.md\` | tasksYaml |
-| \`contract\` | full worker prompt for one task | tasksYaml, taskId, slugDir? |
+| \`next\` | dependency frontier → waves | tasksYaml? |
+| \`set_status\` | atomically set one task status | tasksYaml?, taskId, status, force? |
+| \`list\` | flat task list, filterable | tasksYaml?, filterStatus?, module? |
+| \`snapshot\` | write \`.archgen/<slug>/.agent/resume.md\` | tasksYaml? |
+| \`contract\` | full worker prompt for one task | tasksYaml?, taskId, slugDir? |
 
 **Status discipline (non-negotiable)**—after EVERY task, same turn:
 1. \`set_status\` done|failed—verify it landed.
@@ -108,6 +109,7 @@ The wave execution loop.
 Never dispatch the next wave while any of those lag.
 
 **Gotchas**
+- \`tasksYaml\` is OPTIONAL: omit it and the active \`.archgen/<slug>/tasks.yaml\` is used; every answer names the file it read. A project with several artifact spaces resolves the most recently changed one and WARNS—pass \`tasksYaml\` to name one.
 - Leaving \`done\` needs \`force:true\`.
 - \`next\` fails CYCLE/OWNERSHIP_CONFLICT on a broken plan—fix tasks.yaml.
 - \`blockedByFailure\` tasks are excluded, not auto-retried.

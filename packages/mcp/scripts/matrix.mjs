@@ -260,6 +260,39 @@ check('validate with a planDir never throws on a malformed task', () => {
   return r.ok === true && codes(r).includes('TASK_ID_INVALID');
 });
 
+check('an action with no task file path resolves the active plan', () => {
+  // The task file is always `.archgen/<slug>/tasks.yaml` inside the project.
+  // Demanding the path made the action unreachable for a caller that knew
+  // the project — and the worker contract's own completion call failed on it.
+  writeFileSync(join(dot, 'tasks.yaml'), OK, 'utf8');
+  const r = call('archgen_tasks', { action: 'set_status', taskId: 'T1', status: 'running' });
+  return r.ok === true && String(r.data?.file ?? '').endsWith(join('.archgen', 'demo', 'tasks.yaml'));
+});
+
+check('the worker contract names the task file in its completion call', () => {
+  const r = call('archgen_tasks', { action: 'contract', taskId: 'T1' });
+  const printed = String(r.data?.prompt ?? '').match(/archgen_tasks\{action:'set_status'[^}]*\}/);
+  return Boolean(printed) && /tasksYaml:/.test(printed[0]);
+});
+
+check('a project with no plan fails TYPED, never as a crash', () => {
+  const bare = mkdtempSync(join(tmpdir(), 'ag-matrix-empty-'));
+  try {
+    const out = execFileSync(
+      'node',
+      [MCP, 'exec', 'archgen_tasks', JSON.stringify({ action: 'list' }), '--project', bare],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const r = JSON.parse(out);
+    return r.ok === false && r.error.code !== 'INTERNAL' && Boolean(r.error.message);
+  } catch (e) {
+    const r = JSON.parse(e.stdout);
+    return r.ok === false && r.error.code !== 'INTERNAL' && Boolean(r.error.message);
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
+  }
+});
+
 rmSync(root, { recursive: true, force: true });
 
 const failed = results.filter(([ok]) => !ok);
