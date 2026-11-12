@@ -73,20 +73,3 @@ export function skillSearchPaths(projectRoot, slug, opts = {}) {
   }
   return out;
 }
-
-/**
- * The first skill directory that actually holds a SKILL.md.
- *
- * @param {string} projectRoot
- * @param {string} slug
- * @param {{home?: string|null}} [opts]
- * @returns {{path: string, scope: 'project'|'global'}|null}
- */
-export function findSkillDir(projectRoot, slug, opts = {}) {
-  for (const candidate of skillSearchPaths(projectRoot, slug, opts)) {
-    if (existsSync(join(candidate.dir, 'SKILL.md'))) {
-      return { path: join(candidate.dir, 'SKILL.md'), scope: candidate.scope };
-    }
-  }
-  return null;
-}

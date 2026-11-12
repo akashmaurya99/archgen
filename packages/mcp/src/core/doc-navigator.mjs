@@ -38,8 +38,6 @@ import { toolCall } from './call.mjs';
 // Overview emits at most this many files (sorted); above it, truncated:true.
 // The cap is a BACKSTOP for a caller that bypasses the tool's own paging —
 // the tool bounds the list itself, so a normal call reaches every file.
-export const OVERVIEW_MAX_FILES = 100;
-
 /**
  * How many section ENTRIES one digest page carries.
  *

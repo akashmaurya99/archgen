@@ -97,22 +97,6 @@ export function noSuchSection(topic, section, available) {
 }
 
 /**
- * "That skill is not installed."
- *
- * @param {string} slug the skill slug
- */
-export function skillNotInstalled(slug) {
-  return invalidInput(
-    teach(
-      `the capability skill '${slug}' is not installed`,
-      'install it before dispatching the worker',
-      toolCall('archgen_skills', { action: 'install', skillId: slug, approve: true }),
-    ),
-    hint({ action: toolCall('archgen_skills', { action: 'install', skillId: slug, approve: true }), reason: 'a required skill must be on disk before dispatch.' }),
-  );
-}
-
-/**
  * "That task id is not in the plan."
  *
  * @param {string} taskId the id that was asked for

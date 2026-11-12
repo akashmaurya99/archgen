@@ -12,7 +12,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { invalidInput } from './core/errors.mjs';
 import { assertWithinRoot, containPath } from './core/fs-safety.mjs';
-import { GLOBAL_SKILL_ROOTS, PROJECT_SKILL_ROOTS, skillSearchPaths } from './core/skill-roots.mjs';
+import { skillSearchPaths } from './core/skill-roots.mjs';
 import { hint } from './core/guidance.mjs';
 import { toolCall } from './core/call.mjs';
 
@@ -38,18 +38,6 @@ export function serverVersion() {
     return '0.0.0';
   }
 }
-
-/**
- * Skill install locations, project-local first.
- *
- * Mirrors references/platforms.md § "Skill install paths". The canonical list
- * lives in core/skill-roots.mjs so the archgen skill and the CAPABILITY
- * skills are resolved against the same roots — one list, one answer.
- */
-export const PROJECT_SKILL_DIRS = PROJECT_SKILL_ROOTS.map((r) => join(r, 'archgen'));
-
-/** User-global skill locations (same shape, under $HOME). */
-export const GLOBAL_SKILL_DIRS = GLOBAL_SKILL_ROOTS.map((r) => join(r, 'archgen'));
 
 /**
  * Locate the installed archgen skill.

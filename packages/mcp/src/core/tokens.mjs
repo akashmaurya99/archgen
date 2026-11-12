@@ -59,20 +59,3 @@ export function estimateTokens(text, opts = {}) {
 
   return Math.max(0, Math.round(tokens * calibration));
 }
-
-/**
- * Estimate the token count of any payload — a string, or anything JSON-able.
- *
- * @param {unknown} value
- * @returns {number}
- */
-export function estimatePayloadTokens(value) {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'string') return estimateTokens(value);
-  if (typeof value === 'number' || typeof value === 'boolean') return estimateTokens(String(value));
-  try {
-    return estimateTokens(JSON.stringify(value) ?? '');
-  } catch {
-    return 0;
-  }
-}
