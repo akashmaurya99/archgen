@@ -276,7 +276,12 @@ try {
       console.log('archgen update — running v' + current + ', checking npm registry…');
       const latest = fetchLatestVersion('archgen-skill');
       if (!latest) {
-        console.log('  ! could not reach the npm registry (offline?). Nothing changed.');
+        // The registry could not be reached: the update did NOT happen. It
+        // exited 0 and said "Nothing changed", which reads like "you are on
+        // the latest version" — the one answer an offline machine must not
+        // give.
+        console.error('  ! could not reach the npm registry (offline?) - the update did NOT run.');
+        process.exitCode = 1;
         break;
       }
       const cmp = compareSemver(latest, current);

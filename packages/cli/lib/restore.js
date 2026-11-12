@@ -209,7 +209,7 @@ export function restoreBackups(projectRoot, options = {}) {
 }
 
 function parseFlags(argv) {
-  const opts = { list: true, snapshot: null, project: null, global: false, yes: false };
+  const opts = { list: true, snapshot: null, project: null, global: false, yes: false, target: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--list') opts.list = true;
@@ -222,6 +222,12 @@ function parseFlags(argv) {
       const next = argv[i + 1];
       const v = next && !next.startsWith('-') ? argv[++i] : process.cwd();
       opts.project = v;
+    } else if (a === '--target') {
+      // The flag was DOCUMENTED and implemented, and the parser refused it —
+      // so the documented command did not exist.
+      const v = argv[++i];
+      if (!v || v.startsWith('-')) return { error: '--target requires a directory argument' };
+      opts.target = resolve(v);
     } else if (a === '--global') opts.global = true;
     else if (a === '--yes') opts.yes = true; // accepted for CLI ergonomics; restore is interactive-free
     else return { error: `unknown flag: ${a}` };
@@ -241,7 +247,7 @@ export async function restoreMain(argv) {
     console.error('archgen restore: ' + parsed.error);
     return 1;
   }
-  const { list, snapshot, project, global: wantGlobal, yes } = parsed;
+  const { list, snapshot, project, global: wantGlobal, yes, target } = parsed;
   void yes;
 
   const scope = {
@@ -261,7 +267,7 @@ export async function restoreMain(argv) {
       return 0;
     }
 
-    const r = restoreBackups(scope.projectRoot ?? '', { snapshot, includeGlobal: scope.includeGlobal });
+    const r = restoreBackups(scope.projectRoot ?? '', { snapshot, includeGlobal: scope.includeGlobal, target });
     console.log(`archgen restore — restoring ${snapshot} [${r.snapshot.origin}]`);
     for (const sb of r.safetyBackups) console.log(`  ~ safety backup of current state: ${sb.abs}`);
     for (const en of r.restored) console.log(`  + restored ${en.to}`);

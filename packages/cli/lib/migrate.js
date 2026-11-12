@@ -78,7 +78,9 @@ export async function migrateMain(argv = []) {
       fileCount += (r.files ?? []).length;
     } catch (e) {
       failed++;
-      console.log(`  [fail] ${p.id} — ${e instanceof Error ? e.message : String(e)}`);
+      // A failure goes to STDERR: stdout carries the report a script reads,
+      // and a failure line in it reads like a successful migration.
+      console.error(`  [fail] ${p.id} — ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

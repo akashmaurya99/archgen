@@ -29,6 +29,11 @@ UNINSTALL=0
 INIT=0
 INIT_DIR=""
 CODEGRAPH=1
+MCP=1
+# The server wiring is GLOBAL by default: the server is one binary for every
+# harness, and a project that carries its own .mcp.json has to be re-wired in
+# every clone. `--location-project` opts into the per-project wiring.
+LOCATION="global"
 
 usage() {
   cat <<EOF
@@ -50,7 +55,10 @@ Usage: install.sh [--copy] [--project <dir>] [--uninstall] [--no-codegraph]
                     into every detected harness, and ensures CodeGraph (its
                     CLI, its MCP entry, and the project index — kept live by
                     the server's file watcher).
-  --no-codegraph    opt out of the CodeGraph bootstrap
+  --no-codegraph    opt out of the CodeGraph bootstrap (the MCP wiring stays)
+  --no-mcp          opt out of the archgen MCP wiring
+  --location-global wire the MCP servers globally (default)
+  --location-project wire the MCP servers into THIS project as well
   -h, --help        show this help
 
 Targets (installed only when the directory already exists):
@@ -105,7 +113,53 @@ refuse_escape() { # $1 = path, $2 = base dir
 
 [ -n "${HOME:-}" ] || die '$HOME is not set; cannot resolve target directories.'
 MANIFEST="$HOME/.archgen-install-manifest.list"
+# The project roots a previous run installed into. The uninstall allowlist is
+# built from THESE, not from the current working directory: an install made
+# from one directory must still be removable from another.
+ROOTS_FILE="$HOME/.archgen-install-roots.list"
 [ -d "$SOURCE" ] || die "skill source not found: $SOURCE"
+
+# The destinations a global install may create. A manifest entry is acted on
+# ONLY when it names one of them.
+#
+# The previous rule was a SUFFIX test (`*/skills/archgen`), so ANY path with
+# that ending was removable — including a directory the installer never
+# touched. The allowlist is EXACT: the four known harness destinations plus
+# the project-local destination of every root this machine recorded.
+allowed_dest() { # $1 = path from the manifest
+  p="${1%/}"
+  for d in "$HOME/.claude/skills/archgen" "$HOME/.agents/skills/archgen" \
+           "$HOME/.config/opencode/skills/archgen" "$HOME/.cursor/skills/archgen"; do
+    [ "$p" = "${d%/}" ] && return 0
+  done
+  if [ -f "$ROOTS_FILE" ]; then
+    while IFS= read -r root; do
+      [ -n "$root" ] || continue
+      [ "$p" = "${root%/}/.github/skills/archgen" ] && return 0
+    done < "$ROOTS_FILE"
+  fi
+  return 1
+}
+
+# Record a destination in the uninstall manifest. A manifest that cannot be
+# written strands the install forever: the next uninstall finds nothing.
+manifest_add() { # $1 = kind, $2 = path
+  have_entry "$(printf '%s\t%s' "$1" "$2")" && return 0
+  if ! printf '%s\t%s\n' "$1" "$2" >> "$MANIFEST"; then
+    printf '%-8s %-5s %s\n' FAILED - "$2 (could not record the uninstall manifest)"
+    failed=$((failed+1))
+    return 1
+  fi
+  return 0
+}
+
+# Record a project root so the uninstall can recognise its project-local
+# destination later — from any working directory.
+roots_add() { # $1 = project root
+  r="${1%/}"
+  grep -Fqx -- "$r" "$ROOTS_FILE" 2>/dev/null && return 0
+  printf '%s\n' "$r" >> "$ROOTS_FILE" 2>/dev/null || return 0
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -113,16 +167,43 @@ while [ $# -gt 0 ]; do
     --project)   [ $# -ge 2 ] || die '--project requires a path argument'; PROJECT_ARG="$2"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
     --no-codegraph) CODEGRAPH=0; shift ;;
-    --init)      INIT=1; if [ $# -ge 2 ] && [ "${2-}" != "--copy" ] && [ "${2-}" != "--uninstall" ]; then INIT_DIR="$2"; shift; fi; shift ;;
+    --no-mcp)    MCP=0; shift ;;
+    --location-project) LOCATION="project"; shift ;;
+    --location-global)  LOCATION="global"; shift ;;
+    --init)
+      INIT=1; shift
+      # The project directory is an OPTIONAL positional argument — and only
+      # when it is not a flag. Consuming the next argument whatever it was
+      # made `--init --no-codegraph` fail with "cannot enter directory".
+      if [ $# -gt 0 ]; then
+        case "$1" in
+          -*) ;;
+          *) INIT_DIR="$1"; shift ;;
+        esac
+      fi
+      ;;
     -h|--help)   usage; exit 0 ;;
     *)           die "unknown option: $1 (try --help)" ;;
   esac
 done
 
+# --init and --uninstall are two different jobs. The --init branch used to
+# win silently: the uninstall request was ignored and the script reported a
+# successful INSTALL.
+if [ "$INIT" -eq 1 ] && [ "$UNINSTALL" -eq 1 ]; then
+  die "--init and --uninstall cannot be combined — run them separately"
+fi
+
 # ---- Uninstall: remove exactly the manifest-recorded entries ----------------
 # ---- --init: project-local canonical store + context pointer files ----------
 if [ "$INIT" -eq 1 ]; then
   ROOT="$(cd -- "${INIT_DIR:-$PWD}" && pwd)" || die "cannot enter directory: ${INIT_DIR:-$PWD}"
+
+  # The version is read BEFORE anything is written. It used to be read after
+  # the store had been replaced: a missing config then left the project with
+  # a NEW store, no pointer blocks, and no summary — the worst possible
+  # half-installed state.
+  read_archgen_version
 
   # Canonical store: ONE real copy at .agents/skills/archgen.
   # Safety (CLI parity): stamp-only differences refresh in place; a divergent
@@ -135,6 +216,11 @@ if [ "$INIT" -eq 1 ]; then
   refuse_escape "$ROOT/.agents" "$ROOT"
   refuse_escape "$ROOT/.agents/skills" "$ROOT"
   refuse_escape "$ROOT/.claude" "$ROOT"
+  # The Claude adapter is created INSIDE .claude/skills, so THAT directory is
+  # the one that must not point outside the project. The check stopped one
+  # level too high: a symlinked `.claude/skills` made the installer create
+  # the link outside the project root.
+  refuse_escape "$ROOT/.claude/skills" "$ROOT"
   mkdir -p -- "$ROOT/.agents/skills"
   BACKUP_NOTE=""
   # The copy lands in a TEMPORARY sibling FIRST. The old store is only moved
@@ -142,9 +228,9 @@ if [ "$INIT" -eq 1 ]; then
   # leaves the project with the store it had — never with none.
   # (The CLI's init does the same: copy → temp → rename old aside → rename
   # temp into place → restore on failure.)
-  STORE_TMP="$ROOT/.agents/skills/.archgen.install.$$"
-  rm -rf -- "$STORE_TMP"
-  if ! cp -R -- "$SOURCE" "$STORE_TMP"; then
+  STORE_TMP="$(mktemp -d "$ROOT/.agents/skills/.archgen-install.XXXXXX" 2>/dev/null)" \
+    || die "could not create a temporary directory next to .agents/skills/archgen"
+  if ! cp -R -- "$SOURCE/." "$STORE_TMP"; then
     rm -rf -- "$STORE_TMP"
     die "could not copy the skill store into .agents/skills/archgen — the existing store was left untouched"
   fi
@@ -199,6 +285,39 @@ if [ "$INIT" -eq 1 ]; then
     LINK_NOTE="could not create symlink at .claude/skills/archgen (skipped; store still works standalone)"
   fi
 
+  # The content BETWEEN two markers, exclusive. Empty when they are absent.
+  extract_between() { # $1 = file, $2 = start marker, $3 = end marker
+    awk -v s="$2" -v e="$3" '
+      index($0, s) { inblock=1; next }
+      inblock && index($0, e) { inblock=0; next }
+      inblock { print }
+    ' "$1"
+  }
+
+  # Replace the content between two markers, in place. Both markers stay.
+  splice_between() { # $1 = file, $2 = start marker, $3 = end marker, $4 = content file
+    awk -v s="$2" -v e="$3" -v cf="$4" '
+      BEGIN { while ((getline l < cf) > 0) c = c l "\n" }
+      !done && index($0, s) { print; printf "%s", c; done=1; inblock=1; next }
+      inblock && index($0, e) { print; inblock=0; next }
+      inblock { next }
+      { print }
+    ' "$1" > "$1.splice" && mv -- "$1.splice" "$1"
+  }
+
+  # Replace ONE managed block with the rendered one, in place. The content
+  # outside the markers is preserved; the block's provenance stamp is
+  # refreshed, so an old block never claims a version the store does not have.
+  replace_block() { # $1 = file, $2 = rendered block file
+    awk -v s="archgen:start" -v e="archgen:end" -v bf="$2" '
+      BEGIN { while ((getline l < bf) > 0) blk = blk l "\n" }
+      !done && index($0, s) { printf "%s", blk; done=1; skip=1; next }
+      skip && index($0, e) { skip=0; next }
+      skip { next }
+      { print }
+    ' "$1"
+  }
+
   strip_managed_blocks() { # stdout = $1 minus every complete managed block
     awk '/archgen:start/ && !skip { skip=1; next } /archgen:end/ && skip { skip=0; next } !skip { print }' "$1"
   }
@@ -208,29 +327,38 @@ if [ "$INIT" -eq 1 ]; then
     starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
     [ "$starts" -gt 1 ] || return 0
     ends=$(grep -c "archgen:end" -- "$f" 2>/dev/null); ends=${ends:-0}
-    [ "$starts" -eq "$ends" ] || die "corrupted archgen markers in $f ($starts start / $ends end) - fix or remove them manually"
+    [ "$starts" -eq "$ends" ] || { warn "corrupted archgen markers in $f ($starts start / $ends end) - fix or remove them manually"; return 1; }
     warn "normalizing $starts duplicated archgen blocks in $f to a single block"
     strip_managed_blocks "$f" > "$f.tmp" && mv "$f.tmp" "$f"
   }
 
-  write_block() { # $1 = target file; idempotent via archgen:start guard
+  write_block() { # $1 = target file; the managed block is REPLACED in place
     f="$1"
     refuse_symlink "$f"
-    if [ -f "$f" ]; then
-      starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
-      if [ "$starts" -eq 1 ]; then return 0; fi
-      normalize_duplicates "$f"
+    if [ -d "$f" ] && [ ! -L "$f" ]; then
+      # `mv "$f.tmp" "$f"` would move the temp file INTO the directory and
+      # the script would report a pointer block that is not there.
+      warn "$f is a directory - the archgen pointer block was NOT written"
+      return 1
     fi
-    {
-      [ -f "$f" ] && cat "$f" && printf '\n'
-      # Content mirrors packages/cli lib/block.js renderManagedBlockText() — regenerate when block format changes.
-      # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
-      # The version is SUBSTITUTED, never written here: the heredoc stays
-      # quoted (so nothing else in it can expand), and the one placeholder is
-      # filled from the canonical config the CLI itself reads. A literal in
-      # this file would be a release chore AND a drift source — the block
-      # would claim one version while the CLI stamps another.
-      sed "s/@@ARCHGEN_VERSION@@/$ARCHGEN_VERSION/g" <<'BLOCK'
+    # The feature registry inside the block is DATA: it is carried across the
+    # refresh instead of being reset to an empty table.
+    rows_tmp="$f.archgen-rows.$$"
+    block_tmp="$f.archgen-block.$$"
+    out_tmp="$f.archgen.$$"
+    refuse_symlink "$rows_tmp"; refuse_symlink "$block_tmp"; refuse_symlink "$out_tmp"
+    : > "$rows_tmp"
+    if [ -f "$f" ]; then
+      extract_between "$f" "archgen:features:start" "archgen:features:end" > "$rows_tmp"
+    fi
+    # Content mirrors packages/cli lib/block.js renderManagedBlockText() - regenerate when block format changes.
+    # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
+    # The version is SUBSTITUTED, never written here: the heredoc stays
+    # quoted (so nothing else in it can expand), and the one placeholder is
+    # filled from the canonical config the CLI itself reads. A literal in
+    # this file would be a release chore AND a drift source - the block
+    # would claim one version while the CLI stamps another.
+    if ! sed "s/@@ARCHGEN_VERSION@@/$ARCHGEN_VERSION/g" > "$block_tmp" <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
 <!-- archgen:block v@@ARCHGEN_VERSION@@ -->
 # ArchGen - Architecture Generation & Autonomous Task Execution
@@ -259,56 +387,126 @@ Rules of the road:
 <!-- archgen:features:end -->
 <!-- archgen:end -->
 BLOCK
-    } > "$f.tmp" && mv "$f.tmp" "$f"
+    then
+      rm -f -- "$rows_tmp" "$block_tmp"
+      warn "could not render the archgen pointer block for $f"
+      return 1
+    fi
+    if [ -s "$rows_tmp" ]; then
+      splice_between "$block_tmp" "archgen:features:start" "archgen:features:end" "$rows_tmp"
+    fi
+    if [ -f "$f" ]; then
+      starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
+      ends=$(grep -c "archgen:end" -- "$f" 2>/dev/null); ends=${ends:-0}
+      if [ "$starts" -gt 1 ] || [ "$ends" -gt 1 ]; then
+        normalize_duplicates "$f" || { rm -f -- "$rows_tmp" "$block_tmp"; return 1; }
+      fi
+      starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
+      if [ "$starts" -eq 1 ]; then
+        replace_block "$f" "$block_tmp" > "$out_tmp" || { rm -f -- "$rows_tmp" "$block_tmp" "$out_tmp"; return 1; }
+      else
+        { [ -f "$f" ] && cat "$f" && printf '\n'; cat "$block_tmp"; } > "$out_tmp"
+      fi
+    else
+      cat "$block_tmp" > "$out_tmp"
+    fi
+    if ! mv -- "$out_tmp" "$f"; then
+      rm -f -- "$out_tmp" "$rows_tmp" "$block_tmp"
+      warn "could not write $f"
+      return 1
+    fi
+    rm -f -- "$rows_tmp" "$block_tmp"
+    return 0
   }
-  read_archgen_version
-  write_block "$ROOT/AGENTS.md"
 
   write_bridge() { # $1 = CLAUDE.md; one-line @AGENTS.md pointer inside markers
     f="$1"
     refuse_symlink "$f"
-    if [ -f "$f" ] && grep -Eq '^[[:space:]]*@AGENTS\.md[[:space:]]*$' "$f"; then return 0; fi
-    if [ -f "$f" ]; then
-      starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
-      if [ "$starts" -eq 1 ]; then return 0; fi
-      normalize_duplicates "$f"
+    if [ -d "$f" ] && [ ! -L "$f" ]; then
+      warn "$f is a directory - the archgen bridge was NOT written"
+      return 1
     fi
-    {
-      [ -f "$f" ] && cat "$f" && printf '\n'
-      # Content mirrors packages/cli lib/block.js renderClaudeBridgeText() — regenerate when block format changes.
-      # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
-      # The version is SUBSTITUTED, never written here: the heredoc stays
-      # quoted (so nothing else in it can expand), and the one placeholder is
-      # filled from the canonical config the CLI itself reads. A literal in
-      # this file would be a release chore AND a drift source — the block
-      # would claim one version while the CLI stamps another.
-      sed "s/@@ARCHGEN_VERSION@@/$ARCHGEN_VERSION/g" <<'BLOCK'
+    if [ -f "$f" ] && grep -Eq '^[[:space:]]*@AGENTS\.md[[:space:]]*$' "$f"; then return 0; fi
+    block_tmp="$f.archgen-block.$$"
+    out_tmp="$f.archgen.$$"
+    refuse_symlink "$block_tmp"; refuse_symlink "$out_tmp"
+    # Content mirrors packages/cli lib/block.js renderClaudeBridgeText() - regenerate when block format changes.
+    # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
+    if ! sed "s/@@ARCHGEN_VERSION@@/$ARCHGEN_VERSION/g" > "$block_tmp" <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
 <!-- archgen:block v@@ARCHGEN_VERSION@@ -->
 @AGENTS.md
 <!-- archgen:end -->
 BLOCK
-    } > "$f.tmp" && mv "$f.tmp" "$f"
+    then
+      rm -f -- "$block_tmp"
+      warn "could not render the archgen bridge for $f"
+      return 1
+    fi
+    if [ -f "$f" ]; then
+      starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
+      if [ "$starts" -gt 1 ]; then
+        normalize_duplicates "$f" || { rm -f -- "$block_tmp"; return 1; }
+      fi
+      starts=$(grep -c "archgen:start" -- "$f" 2>/dev/null); starts=${starts:-0}
+      if [ "$starts" -eq 1 ]; then
+        replace_block "$f" "$block_tmp" > "$out_tmp" || { rm -f -- "$block_tmp" "$out_tmp"; return 1; }
+      else
+        { [ -f "$f" ] && cat "$f" && printf '\n'; cat "$block_tmp"; } > "$out_tmp"
+      fi
+    else
+      cat "$block_tmp" > "$out_tmp"
+    fi
+    if ! mv -- "$out_tmp" "$f"; then
+      rm -f -- "$out_tmp" "$block_tmp"
+      warn "could not write $f"
+      return 1
+    fi
+    rm -f -- "$block_tmp"
+    return 0
   }
-  write_bridge "$ROOT/CLAUDE.md"
+
+  write_bridge "$ROOT/CLAUDE.md" || BLOCK_FAILED=1
+
+  # The pointer blocks. A failure is REPORTED, not fatal: the store is
+  # installed, and the summary must say what is missing instead of exiting
+  # with no explanation at all.
+  BLOCK_FAILED=0
+  write_block "$ROOT/AGENTS.md" || BLOCK_FAILED=1
+  write_bridge "$ROOT/CLAUDE.md" || BLOCK_FAILED=1
 
   # Server bootstrap (mirrors packages/cli --init): wire the archgen MCP server
   # into every DETECTED harness AND ensure CodeGraph (its CLI, its MCP entry,
   # the project index). Non-fatal by design: an offline machine still gets the
   # skill installed.
-  if [ "$CODEGRAPH" -eq 1 ]; then
+  if [ "$CODEGRAPH" -eq 1 ] || [ "$MCP" -eq 1 ]; then
     if command -v node >/dev/null 2>&1; then
       echo 'archgen: bootstrapping servers (archgen MCP + CodeGraph)…'
       # The MCP server owns every deterministic capability now — the skill
       # ships no scripts. `npx -y archgen-mcp` resolves it from the registry
       # (and is cached by npx after the first run); a locally installed
       # archgen-mcp on PATH is preferred by the server itself.
-      if ! npx -y archgen-mcp bootstrap --project "$ROOT" --location both --yes; then
+      #
+      # The wiring is GLOBAL by default: the server is one binary for every
+      # harness, and a project that carries its own .mcp.json has to be
+      # re-wired in every clone. `--location-project` opts into the
+      # per-project wiring.
+      #
+      # The two halves are skipped INDEPENDENTLY: `--no-codegraph` used to
+      # switch the whole bootstrap off, so opting out of CodeGraph also
+      # unwired the MCP server.
+      BOOT_ARGS="--project $ROOT --location $LOCATION --yes"
+      [ "$CODEGRAPH" -eq 0 ] && BOOT_ARGS="$BOOT_ARGS --no-codegraph"
+      [ "$MCP" -eq 0 ] && BOOT_ARGS="$BOOT_ARGS --no-mcp"
+      # shellcheck disable=SC2086
+      if ! npx -y archgen-mcp bootstrap $BOOT_ARGS; then
         warn "server bootstrap incomplete — run: npx archgen-mcp bootstrap --project . --yes"
       fi
     else
       warn "node not found on PATH — skipping the server bootstrap (the skill needs Node >= 20 for its MCP server)"
     fi
+  else
+    warn "server bootstrap skipped (--no-codegraph --no-mcp)"
   fi
 
 
@@ -322,9 +520,13 @@ BLOCK
   elif [ -L "$CLAUDE_LINK" ]; then
     echo '  + .claude/skills/archgen -> ../../.agents/skills/archgen'
   fi
-  echo '  + AGENTS.md / CLAUDE.md pointer blocks'
+  if [ "$BLOCK_FAILED" -eq 0 ]; then
+    echo '  + AGENTS.md / CLAUDE.md pointer blocks'
+  else
+    echo '  ! AGENTS.md / CLAUDE.md pointer blocks were NOT written (see the warnings above)'
+  fi
   echo 'Next: commit these files, then say "generate architecture" or "start work" in your agent.'
-  exit 0
+  [ "$BLOCK_FAILED" -eq 0 ] && exit 0 || exit 1
 fi
 
 if [ "$UNINSTALL" -eq 1 ]; then
@@ -332,24 +534,55 @@ if [ "$UNINSTALL" -eq 1 ]; then
     printf 'Nothing to uninstall: no manifest at %s\n' "$MANIFEST"
     exit 0
   fi
-  removed=0; failed=0
-  while IFS=$'\t' read -r kind path; do
+  removed=0; failed=0; kept=""
+  # `|| [ -n "$path" ]` — a manifest whose LAST line has no newline ends the
+  # read with a non-zero status, and the body never ran for that line: the
+  # entry was silently dropped and the manifest then deleted.
+  while IFS=$'\t' read -r kind path || [ -n "${path:-}" ]; do
     [ -n "${path:-}" ] || continue
-    case "$path" in
-      */skills/archgen) ;;
-      *) warn "skipping unexpected manifest entry: $path"; failed=$((failed+1)); continue ;;
-    esac
+    if ! allowed_dest "$path"; then
+      warn "skipping unexpected manifest entry: $path"
+      failed=$((failed+1))
+      kept="${kept}${kind}	${path}
+"
+      continue
+    fi
     if [ -e "$path" ] || [ -L "$path" ]; then
+      # An EDITED copy is moved into the backup vault before it is removed:
+      # the uninstall must never be the last place those edits exist.
+      if [ "$kind" = "copy" ] && [ -d "$path" ] && [ ! -L "$path" ]; then
+        if ! diff -rq -- "$SOURCE" "$path" >/dev/null 2>&1; then
+          TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          BACKUP="$(dirname -- "$path")/.archgen-backups/$TS/archgen"
+          if mkdir -p -- "$(dirname -- "$BACKUP")" && mv -- "$path" "$BACKUP" 2>/dev/null; then
+            printf '  backed up %s -> %s\n' "$path" "$BACKUP"
+          else
+            warn "could not back up $path - refusing to remove it"
+            failed=$((failed+1))
+            kept="${kept}${kind}	${path}
+"
+            continue
+          fi
+        fi
+      fi
       if rm -rf -- "$path"; then
         printf '  removed  %s (%s)\n' "$path" "$kind"; removed=$((removed+1))
       else
         warn "could not remove: $path"; failed=$((failed+1))
+        kept="${kept}${kind}	${path}
+"
       fi
     else
       printf '  absent   %s (already gone)\n' "$path"
     fi
   done < "$MANIFEST"
-  rm -f -- "$MANIFEST"
+  # The manifest is the ONLY record of what was not removed. It is deleted
+  # only when nothing was left behind.
+  if [ -z "$kept" ]; then
+    rm -f -- "$MANIFEST"
+  else
+    printf '%s' "$kept" > "$MANIFEST" || warn "could not rewrite $MANIFEST — the skipped entries are lost"
+  fi
   printf 'Uninstall finished: %s removed, %s problem(s).\n' "$removed" "$failed"
   [ "$failed" -eq 0 ] && exit 0 || exit 1
 fi
@@ -371,6 +604,7 @@ if [ -n "$PROJECT_ARG" ]; then
   CREATABLE="$PROJ/.github/skills"
 else
   CREATABLE=""
+  PROJ="$(pwd)"
   add "$(pwd)/.github/skills"
 fi
 [ -z "$CREATABLE" ] || add "$CREATABLE"
@@ -387,6 +621,7 @@ changed=0; same=0; skipped=0; failed=0
 while IFS= read -r tdir; do
   [ -n "$tdir" ] || continue
   dest="$tdir/archgen"
+  [ "$tdir" = "$CREATABLE" ] && roots_add "${PROJ:-$PWD}"
 
   if [ ! -d "$tdir" ]; then
     if [ "$tdir" = "$CREATABLE" ]; then
@@ -429,7 +664,7 @@ while IFS= read -r tdir; do
         # Dangling link (npx cache eviction): recreate against current source.
         if rm -f -- "$dest" && ln -s -- "$SOURCE" "$dest"; then
           printf '%-8s %-5s %s -> %s\n' REPAIRED link "$dest" "$SOURCE"; changed=$((changed+1))
-          have_entry "$(printf 'link\t%s' "$dest")" || printf 'link\t%s\n' "$dest" >> "$MANIFEST"
+          manifest_add link "$dest"
         else
           printf '%-8s %-5s %s\n' FAILED link "$dest (symlink repair failed)"; failed=$((failed+1))
         fi
@@ -442,7 +677,7 @@ while IFS= read -r tdir; do
     fi
     if ln -s -- "$SOURCE" "$dest"; then
       printf '%-8s %-5s %s -> %s\n' OK link "$dest" "$SOURCE"; changed=$((changed+1))
-      have_entry "$(printf 'link\t%s' "$dest")" || printf 'link\t%s\n' "$dest" >> "$MANIFEST"
+      manifest_add link "$dest"
     else
       printf '%-8s %-5s %s\n' FAILED link "$dest (symlink failed)"; failed=$((failed+1))
     fi
@@ -470,7 +705,7 @@ while IFS= read -r tdir; do
     if cp -R -- "$SOURCE" "$dest"; then
       prune_dev_only "$dest"
       printf '%-8s %-5s %s\n' OK copy "$dest"; changed=$((changed+1))
-      have_entry "$(printf 'copy\t%s' "$dest")" || printf 'copy\t%s\n' "$dest" >> "$MANIFEST"
+      manifest_add copy "$dest"
     else
       printf '%-8s %-5s %s\n' FAILED copy "$dest (copy failed)"; failed=$((failed+1))
     fi

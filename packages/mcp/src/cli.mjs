@@ -33,8 +33,10 @@ Usage:
 
 Options:
   --project <dir>   project root (default: current directory)
-  --location <s>    project | global | both (default: both)
+  --location <s>    project | global | both (default: both; uninstall-mcp honours it)
   --yes             approve MCP-config writes
+  --no-codegraph    skip the CodeGraph half of the bootstrap
+  --no-mcp          skip the MCP wiring half of the bootstrap
   --json            machine-readable output
   --tool <name>     list a tool's schema
   --fail-on <p>:<v> exit 3 when the tool result matches (e.g. verdict:ISSUES) — a build gate
@@ -56,6 +58,8 @@ export function parseArgs(argv) {
     project: null,
     location: 'both',
     yes: false,
+    noCodegraph: false,
+    noMcp: false,
     json: false,
     list: false,
     catalog: false,
@@ -71,6 +75,8 @@ export function parseArgs(argv) {
     if (a === '--project') opts.project = rest[++i];
     else if (a === '--location') opts.location = rest[++i];
     else if (a === '--yes') opts.yes = true;
+    else if (a === '--no-codegraph') opts.noCodegraph = true;
+    else if (a === '--no-mcp') opts.noMcp = true;
     else if (a === '--json') opts.json = true;
     else if (a === '--list') opts.list = true;
     else if (a === '--catalog') opts.catalog = true;
@@ -229,6 +235,8 @@ export async function runCli(argv, io = {}) {
       action: 'bootstrap',
       location,
       approve: opts.yes,
+      noCodegraph: opts.noCodegraph,
+      noMcp: opts.noMcp,
     });
     const report = envelope.data ?? { ok: false, detail: envelope.error?.message ?? 'bootstrap failed' };
     if (opts.json) {
@@ -297,7 +305,10 @@ export async function runCli(argv, io = {}) {
       err('uninstall-mcp needs --yes (nothing was removed)');
       return 2;
     }
-    const res = uninstallArchgenMcp(ctx.projectRoot, ctx.home, 'both', ctx.env);
+    // The scope is explicit. It was hard-coded to 'both', so a caller that
+    // asked to remove ONE project's wiring also tore down the global wiring
+    // every other project shares.
+    const res = uninstallArchgenMcp(ctx.projectRoot, ctx.home, assertLocation(opts.location), ctx.env);
     if (opts.json) out(JSON.stringify(res, null, 2));
     else {
       out(`removed ${res.removed.length} config(s)`);

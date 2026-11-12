@@ -34,6 +34,7 @@ NO_CODEGRAPH=0
 CHECK_ONLY=0
 
 die() { printf '\033[31minstall-local:\033[0m %s\n' "$1" >&2; exit 1; }
+warn() { printf '\033[33minstall-local:\033[0m %s\n' "$1" >&2; }
 step() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 
 while [ $# -gt 0 ]; do
@@ -70,12 +71,21 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
   else
     printf '   skill  NOT INSTALLED\n'
   fi
-  printf '   mcp    %s\n' "$(node "$SERVER" exec archgen_help '{"topic":"all"}' >/dev/null && echo "local server reachable")"
+  # A server that does not answer is a FAILURE: the line used to be empty
+  # and the script exited 0, so a broken build read as a healthy one.
+  if node "$SERVER" exec archgen_help '{"topic":"all"}' >/dev/null 2>&1; then
+    printf '   mcp    local server reachable\n'
+  else
+    die "the local server did not answer - the build under test is broken"
+  fi
   exit 0
 fi
 
-step "keeping the vendored skill identical to skill/"
-( cd "$REPO" && npm run sync >/dev/null ) || die "npm run sync failed"
+step "checking the vendored skill is identical to skill/"
+# `npm run sync` REWRITES tracked files. A local test that silently rewrote
+# the working tree changed the thing it was supposed to be testing. The
+# check-only form proves the tree is already in sync and leaves it alone.
+( cd "$REPO" && npm run sync:check >/dev/null ) || die "the vendored skill is out of sync with skill/ - run 'npm run sync' in the repository and review the diff"
 
 step "installing into $TARGET"
 # ARCHGEN_MCP_BIN is the override the server's own resolver honours: the
@@ -95,7 +105,9 @@ step "verifying"
 # written THROUGH it — and two runs would race over the same path.
 DOCTOR_REPORT="$(mktemp "${TMPDIR:-/tmp}/archgen-local-doctor.XXXXXX")"
 trap 'rm -f -- "$DOCTOR_REPORT"' EXIT
-( cd "$TARGET" && node "$SERVER" exec archgen_setup '{"action":"doctor"}' ) > "$DOCTOR_REPORT" 2>/dev/null || true
+if ! ( cd "$TARGET" && node "$SERVER" exec archgen_setup '{"action":"doctor"}' ) > "$DOCTOR_REPORT" 2>/dev/null; then
+  warn "the doctor did not answer - the install may be broken"
+fi
 DOCTOR_REPORT="$DOCTOR_REPORT" node - <<'NODE'
 const fs = require('fs');
 const out = JSON.parse(fs.readFileSync(process.env.DOCTOR_REPORT, 'utf8'));

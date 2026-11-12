@@ -276,6 +276,12 @@ export function mcpDoctor(opts) {
 export function uninstallMcp(opts) {
   const { env = process.env } = opts;
   const projectRoot = requireProjectRoot(opts.projectRoot, 'uninstallMcp');
-  const r = runMcp(['uninstall-mcp', '--project', projectRoot, '--yes', '--json'], { projectRoot, env, timeout: 60000 });
+  // The scope is explicit: 'project' removes THIS project's wiring and
+  // leaves the global wiring every other project shares alone.
+  const location = opts.location ?? 'both';
+  const r = runMcp(
+    ['uninstall-mcp', '--project', projectRoot, '--location', location, '--yes', '--json'],
+    { projectRoot, env, timeout: 60000 },
+  );
   return { ok: r.ok, report: r.data, detail: r.detail };
 }

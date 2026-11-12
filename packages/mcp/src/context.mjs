@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { invalidInput } from './core/errors.mjs';
 import { assertWithinRoot, containPath } from './core/fs-safety.mjs';
 import { skillSearchPaths } from './core/skill-roots.mjs';
+import { readSkillRequirements } from './core/compat.mjs';
 import { hint } from './core/guidance.mjs';
 import { toolCall } from './core/call.mjs';
 
@@ -73,14 +74,28 @@ export function resolveSkill(projectRoot, home = homedir(), env = process.env) {
 }
 
 /**
- * Read the `.archgen-version` stamp written by the installer.
+ * The version of an installed skill.
+ *
+ * ONE source, and it is the SKILL itself: the `metadata.version` in the
+ * frontmatter of SKILL.md. It is there in every install mode — a copied
+ * store, a symlink to the packaged skill, a git checkout — and it cannot
+ * disagree with the skill it describes.
+ *
+ * The `.archgen-version` stamp is the FALLBACK, for a store from before the
+ * frontmatter carried a version. The stamp is validated as plain semver:
+ * the CLI's reader rejects a non-semver stamp, and this one used to accept
+ * any text, so the same file answered "dev" here and "missing" there.
+ *
  * @param {string} skillDir
  * @returns {string|null}
  */
 export function readSkillVersion(skillDir) {
+  if (!skillDir) return null;
+  const fromSkill = readSkillRequirements(skillDir).version;
+  if (fromSkill && /^\d+\.\d+\.\d+/.test(fromSkill)) return fromSkill;
   try {
     const v = readFileSync(join(skillDir, '.archgen-version'), 'utf8').trim();
-    return v || null;
+    return /^\d+\.\d+\.\d+$/.test(v) ? v : null;
   } catch {
     return null;
   }

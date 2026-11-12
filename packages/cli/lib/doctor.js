@@ -172,6 +172,16 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
   }
 
   // 3. Claude link resolution.
+  //
+  // The doctor REPAIRS an install — it does not create one. In a project
+  // with no store it used to create the claude link, AGENTS.md and
+  // CLAUDE.md anyway, so a project that had never been installed ended up
+  // advertising an install that does not exist (and then reported FAIL for
+  // the missing store).
+  const installed = existsSync(storeAbs);
+  if (!installed) {
+    add('WARN', 'this project has no archgen install - run `archgen init` (nothing was created)');
+  }
   const repairLink = () => {
     if (checkOnly) {
       add('WOULD-FIX', 'claude link missing/dangling -> ../../.agents/skills/archgen');
@@ -200,13 +210,33 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
     add('WARN', '.claude/skills/archgen is a real directory (not managed) - inspect manually');
   } else if (st) {
     add('WARN', '.claude/skills/archgen is a regular file - left untouched');
-  } else {
+  } else if (installed) {
     repairLink();
   }
 
   // 4. AGENTS.md — managed block exactly once, features registry inside.
+  //
+  // A file that EXISTS is always inspected (a dangling symlink must be
+  // reported, not silently skipped). A file that is MISSING is only created
+  // in an installed project: the doctor repairs an install, it does not
+  // create one.
+  const mayCreate = installed;
+  // A symlinked managed file is REFUSED, never written through — and the
+  // refusal is REPORTED whether or not the project has an install. A
+  // dangling symlink does not "exist" (existsSync follows it), so the
+  // symlink is detected with lstat.
+  const agentsLink = lstatSafe(agentsAbs);
+  if (agentsLink && agentsLink.isSymbolicLink()) {
+    try {
+      assertNotSymlink(agentsAbs);
+    } catch (e) {
+      add('FAIL', e.message);
+    }
+  }
   if (!existsSync(agentsAbs)) {
-    if (checkOnly) add('WOULD-FIX', 'AGENTS.md missing -> created with managed block');
+    if (!mayCreate) {
+      add('WARN', 'AGENTS.md missing - not created (this project has no archgen install)');
+    } else if (checkOnly) add('WOULD-FIX', 'AGENTS.md missing -> created with managed block');
     else {
       // Through the guarded upsert (not raw writeFileSync): existsSync follows
       // symlinks, so a dangling symlink would otherwise be written through.
@@ -278,8 +308,18 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
   }
 
   // 5. CLAUDE.md — @AGENTS.md bridge present exactly once.
+  const claudeLink = lstatSafe(claudeMdAbs);
+  if (claudeLink && claudeLink.isSymbolicLink()) {
+    try {
+      assertNotSymlink(claudeMdAbs);
+    } catch (e) {
+      add('FAIL', e.message);
+    }
+  }
   if (!existsSync(claudeMdAbs)) {
-    if (checkOnly) add('WOULD-FIX', 'CLAUDE.md missing -> created with @AGENTS.md bridge');
+    if (!mayCreate) {
+      add('WARN', 'CLAUDE.md missing - not created (this project has no archgen install)');
+    } else if (checkOnly) add('WOULD-FIX', 'CLAUDE.md missing -> created with @AGENTS.md bridge');
     else {
       attempt(() => upsertManagedFile(claudeMdAbs, [START, '@AGENTS.md', END]), 'FIXED',
         'CLAUDE.md created with @AGENTS.md bridge', 'cannot create CLAUDE.md bridge');

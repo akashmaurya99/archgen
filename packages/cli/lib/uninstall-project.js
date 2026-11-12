@@ -112,7 +112,10 @@ export function uninstallProject(projectDir, packageRoot) {
   //    wrote (the MCP server keeps a manifest of exactly what it created, so
   //    unrelated servers in the same config are never touched).
   let mcpRemoved = [];
-  const mcp = uninstallMcp({ projectRoot: root });
+  // PROJECT scope only. The call defaulted to 'both', so removing one
+  // project's archgen also tore down the global wiring that every other
+  // project on the machine shares.
+  const mcp = uninstallMcp({ projectRoot: root, location: 'project' });
   if (mcp.report?.removed?.length) {
     mcpRemoved = mcp.report.removed;
   } else if (mcp.detail) {

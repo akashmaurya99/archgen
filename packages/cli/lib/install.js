@@ -46,6 +46,45 @@ function record(manifest, kind, path) {
   if (!dup) writeFileSync(manifest, (existsSync(manifest) ? readFileSync(manifest, 'utf8').replace(/\n*$/, '\n') : '') + line + '\n');
 }
 
+/**
+ * The project roots a global install touched.
+ *
+ * The uninstall allowlist is built from the KNOWN harness destinations plus
+ * the project-local destination of every root this machine recorded. It was
+ * built from the CURRENT working directory, so an install made in one
+ * directory could never be removed from another.
+ */
+export const ROOTS_NAME = '.archgen-install-roots.list';
+
+/**
+ * Record a project root so its project-local destination is removable later.
+ *
+ * @param {string} home
+ * @param {string} root
+ */
+export function recordRoot(home, root) {
+  const file = join(home, ROOTS_NAME);
+  const r = resolve(root);
+  let existing = [];
+  try { existing = readFileSync(file, 'utf8').split('\n').filter(Boolean); } catch { /* no roots yet */ }
+  if (existing.includes(r)) return;
+  try { writeFileSync(file, existing.concat(r).join('\n') + '\n', 'utf8'); } catch { /* best effort */ }
+}
+
+/**
+ * Every project root this machine recorded.
+ *
+ * @param {string} home
+ * @returns {string[]}
+ */
+export function recordedRoots(home) {
+  try {
+    return readFileSync(join(home, ROOTS_NAME), 'utf8').split('\n').filter(Boolean).map((r) => resolve(r));
+  } catch {
+    return [];
+  }
+}
+
 function lstatSafe(p) {
   try { return lstatSync(p); } catch { return null; }
 }
@@ -75,13 +114,19 @@ export function installGlobal(opts = {}) {
   const backups = [];
   let failures = 0;
 
+  // The project-local target is the CURRENT directory's `.github/skills` —
+  // and only when it already exists (the user opted into project-local
+  // Copilot skills by creating it). A GLOBAL install must never create a
+  // directory in whatever directory the user happened to run it from.
+  const projectRoot = resolve(opts.projectRoot ?? process.cwd());
   const targets = [
     ...globalTargets(home).map((d) => [d, home]),
-    [join(process.cwd(), '.github', 'skills'), process.cwd()],
+    [join(projectRoot, '.github', 'skills'), projectRoot],
   ];
   for (const [tdir, base] of targets) {
     const dest = join(tdir, 'archgen');
     if (!existsSync(tdir)) { rows.push(['SKIP', '-', tdir + ' (does not exist)']); continue; }
+    if (base === projectRoot) recordRoot(home, projectRoot);
     try {
       // Realpath-escape guard: a symlinked harness dir (e.g. ~/.claude -> /etc)
       // must not redirect the install outside the base it belongs to.
@@ -153,11 +198,10 @@ export function installGlobal(opts = {}) {
           // with EEXIST and surfaces as FAILED below (historical behavior).
           symlinkSync(source, dest, 'dir');
         }
-        // The link itself holds no bytes: the stamp must live INSIDE the real
-        // directory the link resolves to (the shared copy) so a read of
-        // <link>/.archgen-version sees it — true for symlinks and Windows
-        // junctions alike.
-        stampNote(rows, dest, () => writeStamp(source, version));
+        // The link itself holds no bytes, and the thing it points at is the
+        // PACKAGED skill — writing a stamp there mutated the npm package and
+        // shared one stamp across every link target. The version lives in
+        // the skill's own frontmatter, so a link needs no stamp at all.
         record(manifest, 'link', dest);
         rows.push([status, 'link', dest]);
       }
@@ -172,7 +216,10 @@ export function installGlobal(opts = {}) {
   // installed.
   if (opts.codegraph !== false || opts.mcp !== false) {
     const r = bootstrapServers({
-      projectDir: process.cwd(),
+      // The wiring manifest belongs to the GLOBAL scope, so it lives under
+      // the HOME. It used to be written under the current directory, so a
+      // global install littered the user's project with .archgen/.
+      projectDir: home,
       location: 'global',
       log: opts.log ?? console.log,
       env: opts.env,
@@ -205,6 +252,9 @@ function stampNote(rows, dest, write) {
  */
 function allowedGlobalDestinations(home) {
   const set = new Set(globalTargets(home).map((d) => resolve(join(d, 'archgen'))));
+  // Every recorded project root, plus the current one (a manifest written by
+  // an older version recorded only the directory the install ran in).
+  for (const root of recordedRoots(home)) set.add(resolve(join(root, '.github', 'skills', 'archgen')));
   set.add(resolve(join(process.cwd(), '.github', 'skills', 'archgen')));
   return set;
 }

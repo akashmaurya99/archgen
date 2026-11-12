@@ -22,7 +22,7 @@ const ACTION_DESC = 'doctor|bootstrap|install_mcp|uninstall_mcp|harnesses|harnes
  */
 const SETUP_ACTION_ARGS = {
   doctor: ['location', 'approve', 'limit', 'offset'],
-  bootstrap: ['location', 'approve', 'telemetry', 'limit', 'offset'],
+  bootstrap: ['location', 'approve', 'telemetry', 'noCodegraph', 'noMcp', 'limit', 'offset'],
   install_mcp: ['location', 'approve', 'telemetry', 'limit', 'offset'],
   uninstall_mcp: ['location', 'approve', 'limit', 'offset'],
   harnesses: ['location', 'approve', 'harness', 'limit', 'offset'],
@@ -34,6 +34,8 @@ const schema = z.object({
   location: z.enum(['project', 'global', 'both']).optional().describe(LOCATION_DESC),
   approve: z.boolean().optional().describe(APPROVE_DESC),
   telemetry: z.enum(['keep', 'off', 'on']).optional().describe('keep|off|on (bootstrap).'),
+  noCodegraph: z.boolean().optional().describe('Skip the CodeGraph half of bootstrap.'),
+  noMcp: z.boolean().optional().describe('Skip the MCP wiring half of bootstrap.'),
   harness: z.string().optional().describe('Harness id (harnesses, harness_info).'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
@@ -339,28 +341,37 @@ export function registerSetupTools(server) {
       // bootstrap — wire archgen MCP AND ensure CodeGraph, in one report.
       // A capability mismatch is reported, never silently ignored: wiring a
       // skill to an incompatible server is how a broken install is born.
+      //
+      // The two halves are OPTIONAL, independently. One flag used to switch
+      // the whole bootstrap off, so a project that did not want CodeGraph
+      // also lost the MCP wiring — and the installer and the CLI disagreed
+      // about what the same flag meant.
+      const wantMcp = args.noMcp !== true;
+      const wantCodegraph = args.noCodegraph !== true;
       const compat = checkCapability({ skillDir: ctx.skill?.path ?? null, serverVersion: ctx.serverVersion });
 
       // An already-wired install is a NO-OP, not a rewrite. "Wired" must mean
       // the config carries the EXACT entry this server would write — a stale
       // absolute path is present but broken. A dry run asks the real writer,
       // so the no-op decision cannot drift from the write it skips.
-      const mcpCheck = wireArchgenMcp({
-        projectRoot: ctx.projectRoot,
-        registry,
-        home: ctx.home,
-        location,
-        approved: false,
-        dryRun: true,
-        env: ctx.env,
-      });
+      const mcpCheck = wantMcp
+        ? wireArchgenMcp({
+            projectRoot: ctx.projectRoot,
+            registry,
+            home: ctx.home,
+            location,
+            approved: false,
+            dryRun: true,
+            env: ctx.env,
+          })
+        : { detected: [], wired: [], binary: { bin: null, source: null } };
       const mcpReady = mcpCheck.wired.length > 0 && mcpCheck.wired.every((t) => t.status === 'unchanged');
 
       // CodeGraph is probed only when the MCP side needs no work: the probe
       // reads configs and runs local status commands, and there is no reason
       // to pay for it on an install that is going to write anyway.
       const cgCheck =
-        mcpReady && (args.telemetry ?? 'keep') === 'keep'
+        wantCodegraph && mcpReady && (args.telemetry ?? 'keep') === 'keep'
           ? await manageCodegraph({
               mode: 'ensure',
               projectRoot: ctx.projectRoot,
@@ -373,7 +384,7 @@ export function registerSetupTools(server) {
               env: ctx.env,
             })
           : null;
-      if (mcpReady && cgCheck?.alreadyConfigured === true) {
+      if (wantMcp && wantCodegraph && mcpReady && cgCheck?.alreadyConfigured === true) {
         const cgState = codegraphState({ registry, projectRoot: ctx.projectRoot, home: ctx.home, env: ctx.env, location });
         // The fast path returns the SAME codegraph shape as the slow path. It
         // used to return a third shape (installed/version/indexed/wired),
@@ -399,24 +410,28 @@ export function registerSetupTools(server) {
         };
       }
 
-      const mcp = wireArchgenMcp({
-        projectRoot: ctx.projectRoot,
-        registry,
-        home: ctx.home,
-        location,
-        approved,
-        env: ctx.env,
-      });
-      const codegraph = await manageCodegraph({
-        mode: 'ensure',
-        projectRoot: ctx.projectRoot,
-        registry,
-        location,
-        approved,
-        telemetry: args.telemetry ?? 'keep',
-        home: ctx.home,
-        env: ctx.env,
-      });
+      const mcp = wantMcp
+        ? wireArchgenMcp({
+            projectRoot: ctx.projectRoot,
+            registry,
+            home: ctx.home,
+            location,
+            approved,
+            env: ctx.env,
+          })
+        : { detected: [], wired: [], binary: { bin: null, source: null } };
+      const codegraph = wantCodegraph
+        ? await manageCodegraph({
+            mode: 'ensure',
+            projectRoot: ctx.projectRoot,
+            registry,
+            location,
+            approved,
+            telemetry: args.telemetry ?? 'keep',
+            home: ctx.home,
+            env: ctx.env,
+          })
+        : { ok: true, skipped: 'noCodegraph', changed: false, cli: { present: false, version: null }, telemetry: { state: 'unknown', action: 'none' }, index: { action: 'none', initialized: false }, wiring: { manual: [], manualTotal: 0 } };
       const mcpSummary = summarizeWiring(mcp);
       // The codegraph report is SHAPED, exactly like archgen_codegraph's.
       // It used to be passed through raw — 11 keys against the other tool's
