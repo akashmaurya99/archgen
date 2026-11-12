@@ -1,3 +1,49 @@
+
+/**
+ * Read the skill's declared capability requirement from its frontmatter:
+ * `metadata.requires.archgen_mcp` (e.g. ">=x.y.z"). Returns null when the
+ * skill declares none.
+ *
+ * WHY A SECOND READER. The MCP server's `core/compat.mjs` reads the same
+ * block, and this script cannot import it: the CLI package is published and
+ * must work when it is copied ALONE, with no server beside it. So the two
+ * readers exist — and a parity test in internal/test/ holds them to the same
+ * answers, so the drift that duplication invites cannot ship.
+ */
+export function readRequiresMcp(raw) {
+  const bom = raw.charCodeAt(0) === 0xfeff;
+  const body = bom ? raw.slice(1) : raw;
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(body);
+  if (!fm) return null;
+  const m = /^[ \t]+archgen_mcp:[ \t]*["']?([^"'\r\n]+?)["']?\s*$/m.exec(fm[1]);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * Does `version` satisfy the requirement `spec`? Supports `>=`, `>`, `<=`, `<`,
+ * `=`, `^` and `~` over MAJOR.MINOR.PATCH — the same forms the MCP server's
+ * `core/compat.mjs` accepts. An unparseable requirement is treated as NOT
+ * satisfied: it must never pass vacuously.
+ */
+export function serverSatisfies(version, spec) {
+  const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)/.exec(String(spec ?? '').trim());
+  if (!m) return false;
+  const op = m[1] ?? '=';
+  const want = { major: +m[2], minor: +m[3], patch: +m[4] };
+  const hm = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(version ?? '').trim());
+  if (!hm) return false;
+  const have = { major: +hm[1], minor: +hm[2], patch: +hm[3] };
+  const cmp = (a, b) => (a.major !== b.major ? a.major - b.major : a.minor !== b.minor ? a.minor - b.minor : a.patch - b.patch);
+  switch (op) {
+    case '>=': return cmp(have, want) >= 0;
+    case '>': return cmp(have, want) > 0;
+    case '<=': return cmp(have, want) <= 0;
+    case '<': return cmp(have, want) < 0;
+    case '^': return have.major === want.major && cmp(have, want) >= 0;
+    case '~': return have.major === want.major && have.minor === want.minor && cmp(have, want) >= 0;
+    default: return cmp(have, want) === 0;
+  }
+}
 // sync-config.mjs — propagate the canonical archgen.config.json into every
 // derived location so the version can never drift again.
 //
@@ -59,45 +105,6 @@ export function setFrontmatterVersion(raw, version) {
  * @param {string} version MAJOR.MINOR.PATCH to set
  * @returns {string} new contents
  */
-/**
- * Read the skill's declared capability requirement from its frontmatter:
- * `metadata.requires.archgen_mcp` (e.g. ">=x.y.z"). Returns null when the
- * skill declares none.
- */
-export function readRequiresMcp(raw) {
-  const bom = raw.charCodeAt(0) === 0xfeff;
-  const body = bom ? raw.slice(1) : raw;
-  const fm = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(body);
-  if (!fm) return null;
-  const m = /^[ \t]+archgen_mcp:[ \t]*["']?([^"'\r\n]+?)["']?\s*$/m.exec(fm[1]);
-  return m ? m[1].trim() : null;
-}
-
-/**
- * Does `version` satisfy the requirement `spec`? Supports `>=`, `>`, `<=`, `<`,
- * `=`, `^` and `~` over MAJOR.MINOR.PATCH — the same forms the MCP server's
- * `core/compat.mjs` accepts. An unparseable requirement is treated as NOT
- * satisfied: it must never pass vacuously.
- */
-export function serverSatisfies(version, spec) {
-  const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)/.exec(String(spec ?? '').trim());
-  if (!m) return false;
-  const op = m[1] ?? '=';
-  const want = { major: +m[2], minor: +m[3], patch: +m[4] };
-  const hm = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(version ?? '').trim());
-  if (!hm) return false;
-  const have = { major: +hm[1], minor: +hm[2], patch: +hm[3] };
-  const cmp = (a, b) => (a.major !== b.major ? a.major - b.major : a.minor !== b.minor ? a.minor - b.minor : a.patch - b.patch);
-  switch (op) {
-    case '>=': return cmp(have, want) >= 0;
-    case '>': return cmp(have, want) > 0;
-    case '<=': return cmp(have, want) <= 0;
-    case '<': return cmp(have, want) < 0;
-    case '^': return have.major === want.major && cmp(have, want) >= 0;
-    case '~': return have.major === want.major && have.minor === want.minor && cmp(have, want) >= 0;
-    default: return cmp(have, want) === 0;
-  }
-}
 
 export function setPackageVersion(raw, version) {  const lines = raw.split('\n');
   let base = null;

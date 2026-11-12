@@ -42,6 +42,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseSkillFrontmatter } from '../../packages/mcp/src/core/compat.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = resolve(HERE, '..', '..');
@@ -74,9 +75,11 @@ function frontmatterVersion(text) {
   return /^ {2}version:\s*(\S+)\s*$/m.exec(text)?.[1] ?? '';
 }
 
-/** A frontmatter `archgen_mcp:` requirement. */
+/** A frontmatter `archgen_mcp:` requirement — read by the SHARED reader, so
+ * this gate and the sync script cannot disagree about what the skill
+ * declares. */
 function requiresMcp(text) {
-  return /archgen_mcp:\s*"([^"]+)"/.exec(text)?.[1] ?? '';
+  return parseSkillFrontmatter(text).requires.archgen_mcp ?? '';
 }
 
 /** The managed-block version stamps in install.sh. */

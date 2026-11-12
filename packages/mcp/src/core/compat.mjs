@@ -97,33 +97,31 @@ export function satisfies(version, spec) {
 }
 
 /**
- * Read the `metadata.requires` block out of an installed skill's SKILL.md.
+ * Read the `metadata.requires` block out of a skill's frontmatter TEXT.
  *
- * @param {string} skillDir the installed skill root
+ * The frontmatter is not a YAML DOCUMENT, so it is parsed line-wise:
+ * indentation defines the block. `requires:` opens it and every MORE-indented
+ * line below it is a member.
+ *
+ * ONE reader: the CLI's sync script and the repository's version gate each
+ * had their own regex, and they disagreed — one accepted an unquoted value,
+ * the other required double quotes, so a requirement written either way was
+ * visible to one gate and invisible to the other.
+ *
+ * @param {string} text the file's contents
  * @returns {{requires: Record<string, string>, version: string|null}}
  */
-export function readSkillRequirements(skillDir) {
+export function parseSkillFrontmatter(text) {
   const result = { requires: {}, version: null };
-  if (!skillDir) return result;
-  const skillMd = join(skillDir, 'SKILL.md');
-  if (!existsSync(skillMd)) return result;
-  let text;
-  try {
-    text = readFileSync(skillMd, 'utf8');
-  } catch {
-    return result;
-  }
-  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!text) return result;
+  const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(body);
   if (!fm) return result;
   const front = fm[1];
 
   const version = /^\s*version:\s*(\S+)\s*$/m.exec(front);
   if (version) result.version = version[1].replace(/^["']|["']$/g, '');
 
-  // The `requires:` block lives under `metadata:` — a flat YAML subset, so it
-  // is parsed line-wise rather than with the YAML parser (the frontmatter is
-  // not a document). Indentation defines the block: `requires:` opens it, and
-  // every MORE-indented line below it is a member.
   const lines = front.split(/\r?\n/);
   const indentOf = (l) => l.length - l.trimStart().length;
   let inMetadata = false;
@@ -160,6 +158,23 @@ export function readSkillRequirements(skillDir) {
     }
   }
   return result;
+}
+
+/**
+ * Read the `metadata.requires` block out of an installed skill's SKILL.md.
+ *
+ * @param {string} skillDir the installed skill root
+ * @returns {{requires: Record<string, string>, version: string|null}}
+ */
+export function readSkillRequirements(skillDir) {
+  if (!skillDir) return { requires: {}, version: null };
+  const skillMd = join(skillDir, 'SKILL.md');
+  if (!existsSync(skillMd)) return { requires: {}, version: null };
+  try {
+    return parseSkillFrontmatter(readFileSync(skillMd, 'utf8'));
+  } catch {
+    return { requires: {}, version: null };
+  }
 }
 
 /**

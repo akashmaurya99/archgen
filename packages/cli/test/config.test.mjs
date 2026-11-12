@@ -15,7 +15,8 @@ import { configCandidates, loadConfig, loadConfigFrom, parseConfig } from '../li
 import { START, END, FEATURES_START, FEATURES_END, renderManagedBlockText, renderClaudeBridgeText } from '../lib/block.js';
 import { VERSION_FILE, MANIFEST_REL, BACKUP_ROOT_REL } from '../lib/store.js';
 import { MANIFEST_NAME } from '../lib/install.js';
-import { syncConfig, setFrontmatterVersion, setPackageVersion, readRequiresMcp, serverSatisfies } from '../scripts/sync-config.mjs';
+import { syncConfig, setFrontmatterVersion, setPackageVersion } from '../scripts/sync-config.mjs';
+import { parseSkillFrontmatter, satisfies } from '../../mcp/src/core/compat.mjs';
 import { syncVendor } from '../scripts/sync-vendor.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -105,15 +106,23 @@ test('sync-config accepts a requirement the release satisfies', () => {
   assert.doesNotThrow(() => syncConfig({ root: fx }));
 });
 
-test('readRequiresMcp + serverSatisfies implement the declared forms', () => {
+test('the shared reader and comparator implement the declared forms', () => {
+  // ONE implementation: the sync script, the version gate and the server all
+  // read the requirement and compare it through these two functions. They each
+  // had their own regex and their own comparator, and they disagreed.
   const fm = ['---', 'metadata:', '  requires:', '    archgen_mcp: ">=1.2.3"', '---'].join('\n');
-  assert.equal(readRequiresMcp(fm), '>=1.2.3');
-  assert.equal(readRequiresMcp('---\nmetadata:\n  version: 1\n---\n'), null);
-  assert.equal(serverSatisfies('1.2.3', '>=1.2.3'), true);
-  assert.equal(serverSatisfies('1.2.2', '>=1.2.3'), false);
-  assert.equal(serverSatisfies('1.2.3', '^1.0.0'), true);
-  assert.equal(serverSatisfies('2.0.0', '^1.0.0'), false);
-  assert.equal(serverSatisfies('1.2.3', 'not-a-version'), false, 'an unparseable requirement must never pass vacuously');
+  assert.equal(parseSkillFrontmatter(fm).requires.archgen_mcp, '>=1.2.3');
+  assert.equal(parseSkillFrontmatter('---\nmetadata:\n  version: 1\n---\n').requires.archgen_mcp, undefined);
+  // An UNQUOTED requirement is read too — the old CLI regex accepted one and
+  // the version gate's regex did not, so a requirement written either way was
+  // visible to one gate and invisible to the other.
+  const bare = ['---', 'metadata:', '  requires:', '    archgen_mcp: >=1.2.3', '---'].join('\n');
+  assert.equal(parseSkillFrontmatter(bare).requires.archgen_mcp, '>=1.2.3');
+  assert.equal(satisfies('1.2.3', '>=1.2.3'), true);
+  assert.equal(satisfies('1.2.2', '>=1.2.3'), false);
+  assert.equal(satisfies('1.2.3', '^1.0.0'), true);
+  assert.equal(satisfies('2.0.0', '^1.0.0'), false);
+  assert.throws(() => satisfies('1.2.3', 'not-a-version'), /unparseable version requirement/);
 });
 
 test('loadConfig resolves the monorepo layout and matches the exact literals hardcoded in consumers', () => {  const cfg = loadConfig();

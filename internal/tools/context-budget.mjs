@@ -460,8 +460,15 @@ const overBudget = opts.budget !== null ? scenarios.filter((s) => s.tokens > opt
 // The ALWAYS-ON gate: what the agent pays before it does anything (the
 // skill prompt + the MCP tool catalog) is the number that actually decides
 // whether this design is token-efficient. It has a hard ceiling.
+//
+// The catalog is the LARGER of the two terms, so a catalog that cannot be
+// measured leaves the number unknown — and an unknown number must NOT pass a
+// ceiling. The gate failed open: a missing dependency or a broken server
+// import turned the largest always-on term into zero and the budget job
+// went green.
 const alwaysOn = scenarios.find((s) => s.id === 'always-on');
 const alwaysOnOver = opts.maxAlwaysOn !== null && alwaysOn !== undefined && alwaysOn.tokens > opts.maxAlwaysOn;
+const alwaysOnUnmeasured = opts.maxAlwaysOn !== null && alwaysOn === undefined;
 
 const report = {
   generator: 'archgen context-budget',
@@ -572,6 +579,16 @@ if (opts.json) {
     } else {
       line(`within budget (${fmtTokens(opts.budget)}).`);
     }
+  }
+
+  if (alwaysOnUnmeasured) {
+    console.error(
+      'context-budget: the ALWAYS-ON cost could not be measured, so the ceiling cannot be checked.\n' +
+      '  The MCP tool catalog is the larger of the two always-on terms; without it the\n' +
+      '  number is unknown, and an unknown number must not pass a ceiling.\n' +
+      `  ${catalog.reason ?? 'the catalog was not measured'}`,
+    );
+    process.exit(1);
   }
 }
 

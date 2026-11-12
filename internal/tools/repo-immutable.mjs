@@ -19,32 +19,38 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 
-/** The tracked-file state: path -> blob hash (missing files are absent). */
+/**
+ * The working-tree state: path -> content hash (null when the file is gone).
+ *
+ * The state is the WORKING TREE, not the index: a suite that deletes a
+ * tracked file, or writes a new one, mutates the repository even though the
+ * index never moved. The previous snapshot listed only the tracked paths
+ * and fell back to the INDEX hash for a file that had been deleted, so
+ * exactly the mutations this gate exists to catch were invisible to it.
+ */
 function snapshot() {
-  const out = execFileSync('git', ['ls-files', '-s'], { cwd: ROOT, encoding: 'utf8' });
   const state = new Map();
-  for (const line of out.split('\n')) {
-    if (!line.trim()) continue;
-    const [meta, path] = line.split('\t');
-    if (!path) continue;
-    state.set(path, meta.split(/\s+/)[1] ?? '');
-  }
-  // Include the working-tree hash, not the index hash: a suite that modifies
-  // a file in place must be caught even though `git ls-files` still lists the
-  // ORIGINAL blob.
-  for (const path of state.keys()) {
-    state.set(path, currentHash(path) || state.get(path));
+  const tracked = gitLines(['ls-files', '-z']);
+  const untracked = gitLines(['ls-files', '--others', '--exclude-standard', '-z']);
+  for (const path of [...tracked, ...untracked]) {
+    state.set(path, currentHash(path));
   }
   return state;
 }
 
-/** The current content hash of a tracked path ('' when absent). */
+/** The paths git reports, one per line. */
+function gitLines(args) {
+  const out = execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+  return out.split('\0').filter(Boolean);
+}
+
+/** The current content hash of a path (null when it does not exist). */
 function currentHash(path) {
-  if (!existsSync(join(ROOT, path))) return '';
+  if (!existsSync(join(ROOT, path))) return null;
   try {
     return execFileSync('git', ['hash-object', '--', path], { cwd: ROOT, encoding: 'utf8' }).trim();
   } catch {
-    return '';
+    return null;
   }
 }
 
@@ -53,7 +59,7 @@ function diff(before, after) {
   const problems = [];
   for (const [path, hash] of before) {
     const now = after.get(path);
-    if (now === undefined) problems.push(`deleted: ${path}`);
+    if (now === undefined || now === null) problems.push(`deleted: ${path}`);
     else if (now !== hash) problems.push(`modified: ${path}`);
   }
   for (const path of after.keys()) {
