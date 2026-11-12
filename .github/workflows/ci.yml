@@ -134,11 +134,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node internal/tools/check-capability-contract.mjs
+      - run: node internal/tools/lint/check-capability-contract.mjs
       # The contract EXAMPLE must stay version-agnostic, so no release ever
       # has to go and update a comment. The real declaration keeps a concrete
       # version and is checked by the step above.
-      - run: node internal/tools/version-lint.mjs
+      - run: node internal/tools/lint/version-lint.mjs
 
   # Repo immutability: the suites must never mutate the repository (a suite
   # that silently deletes a tracked file looks like a green run).
@@ -154,7 +154,7 @@ jobs:
       # The fixture suites run here too: they are the part of the test story
       # that drives the REAL binary, and a suite that mutates the repository
       # while doing it must fail the gate.
-      - run: node internal/tools/repo-immutable.mjs -- sh -c 'npm test && npm run test:fixtures'
+      - run: node internal/tools/safety/repo-immutable.mjs -- sh -c 'npm test && npm run test:fixtures'
 
   # Version single-source + vendor-freshness gate: every derived version
   # field (skill config, SKILL.md frontmatter, cli + mcp package.json)
@@ -178,7 +178,7 @@ jobs:
       # The umbrella check: every version surface — derived, hand-edited and
       # lockfile — must agree with archgen.config.json. It reports them all
       # together, each with the command that fixes it.
-      - run: node internal/tools/version-consistency.mjs
+      - run: node internal/tools/lint/version-consistency.mjs
       # A lockfile whose version disagrees with its package.json makes
       # `npm ci` REFUSE to install ("can only install packages when your
       # package.json and package-lock.json are in sync"). That is a release

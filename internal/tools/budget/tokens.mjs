@@ -6,7 +6,7 @@
 // server reports are the same number — and adds the optional exact-tokenizer
 // path the QA tool can use when a tokenizer is installed.
 
-export { estimateTokens } from '../../packages/mcp/src/core/protocol/tokens.mjs';
+export { estimateTokens } from '../../../packages/mcp/src/core/protocol/tokens.mjs';
 
 /**
  * Exact count from an installed tokenizer (gpt-tokenizer / js-tiktoken);

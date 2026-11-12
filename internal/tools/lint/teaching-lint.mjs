@@ -16,7 +16,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(HERE, '..', '..');
+const ROOT = resolve(HERE, '..', '..', '..');
 const SRC = join(ROOT, 'packages', 'mcp', 'src');
 
 /**

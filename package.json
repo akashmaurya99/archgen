@@ -16,20 +16,20 @@
   "scripts": {
     "setup": "npm ci --prefix packages/mcp",
     "test": "npm run test:internal && npm run test:mcp && npm run test:cli && npm run test:teaching",
-    "test:internal": "node --test internal/test/*.test.mjs",
+    "test:internal": "node --test internal/test/",
     "test:cli": "npm --prefix packages/cli test",
-    "test:teaching": "node internal/tools/teaching-lint.mjs",
+    "test:teaching": "node internal/tools/lint/teaching-lint.mjs",
     "test:fixtures": "npm --prefix packages/mcp ci --no-audit --no-fund && bash fixtures/greenfield-demo/run.sh && bash fixtures/brownfield-demo/run.sh && bash fixtures/verifier-negative/run.sh && bash fixtures/tool-matrix/run.sh && node packages/mcp/scripts/matrix.mjs",
     "test:matrix": "node packages/mcp/scripts/matrix.mjs",
     "sync": "node packages/mcp/scripts/gen-catalog.mjs && npm --prefix packages/cli run sync",
     "sync:check": "node packages/mcp/scripts/gen-catalog.mjs --check && npm --prefix packages/cli run sync:check",
     "test:mcp": "npm --prefix packages/mcp test",
-    "test:immutable": "node internal/tools/repo-immutable.mjs -- npm test",
-    "test:budget": "node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13000",
-    "test:contract": "node internal/tools/check-capability-contract.mjs",
-    "test:versions": "node internal/tools/version-lint.mjs && node internal/tools/version-consistency.mjs",
-    "release:prepare": "node internal/tools/release-prepare.mjs",
-    "measure": "node internal/tools/measure-outputs.mjs"
+    "test:immutable": "node internal/tools/safety/repo-immutable.mjs -- npm test",
+    "test:budget": "node internal/tools/budget/context-budget.mjs --skill-dir skill --project . --max-always-on 13000",
+    "test:contract": "node internal/tools/lint/check-capability-contract.mjs",
+    "test:versions": "node internal/tools/lint/version-lint.mjs && node internal/tools/lint/version-consistency.mjs",
+    "release:prepare": "node internal/tools/release/release-prepare.mjs",
+    "measure": "node internal/tools/budget/measure-outputs.mjs"
   },
   "engines": {
     "node": ">=20"

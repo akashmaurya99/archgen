@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { buildBriefContext } from '../../src/core/docs/brief-context.mjs';
 import { renderBriefContext } from '../../src/core/docs/briefs.mjs';
 import { Context } from '../../src/context.mjs';
-import { estimateTokens } from '../../../../internal/tools/tokens.mjs';
+import { estimateTokens } from '../../../../internal/tools/budget/tokens.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

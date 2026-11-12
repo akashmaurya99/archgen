@@ -7,10 +7,10 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { estimateTokens, exactTokens, pctOf } from '../tools/tokens.mjs';
+import { estimateTokens, exactTokens, pctOf } from '../tools/budget/tokens.mjs';
 
 const INTERNAL = join(dirname(fileURLToPath(import.meta.url)), '..');
-const TOOLS = join(INTERNAL, 'tools');
+const TOOLS = join(INTERNAL, 'tools', 'budget');
 const SKILL = join(INTERNAL, '..', 'skill');
 
 function run(args, cwd) {

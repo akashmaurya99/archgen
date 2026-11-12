@@ -402,7 +402,7 @@ function statusFor(pct) {
   return 'OK';
 }
 
-const mcpDir = resolve(opts.mcpDir ?? join(SCRIPT_DIR, '..', '..', 'packages', 'mcp'));
+const mcpDir = resolve(opts.mcpDir ?? join(SCRIPT_DIR, '..', '..', '..', 'packages', 'mcp'));
 const skill = skillDir ? await auditSkill(mcpDir) : null;
 const catalog = await auditCatalog(mcpDir);
 const onDemand = auditOnDemand(mcpDir);

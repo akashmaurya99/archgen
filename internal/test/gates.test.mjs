@@ -55,7 +55,7 @@ test('teaching-lint fails when a failure site loses its hint', () => {
     );
 
     const lint = join(dir, 'teaching-lint.mjs');
-    cpSync(join(ROOT, 'internal', 'tools', 'teaching-lint.mjs'), lint);
+    cpSync(join(ROOT, 'internal', 'tools', 'lint', 'teaching-lint.mjs'), lint);
     assert.notEqual(
       status(process.execPath, [lint]),
       0,
@@ -67,13 +67,13 @@ test('teaching-lint fails when a failure site loses its hint', () => {
 });
 
 test('teaching-lint passes on the repository as it stands', () => {
-  assert.equal(status(process.execPath, [join(ROOT, 'internal', 'tools', 'teaching-lint.mjs')]), 0);
+  assert.equal(status(process.execPath, [join(ROOT, 'internal', 'tools', 'lint', 'teaching-lint.mjs')]), 0);
 });
 
 test('repo-immutable catches a file that appears during the run', () => {
   // The gate compares BEFORE with AFTER, so the mutation must happen INSIDE
   // the command it runs — a file that was already there is in both snapshots.
-  const gate = join(ROOT, 'internal', 'tools', 'repo-immutable.mjs');
+  const gate = join(ROOT, 'internal', 'tools', 'safety', 'repo-immutable.mjs');
   const marker = join(ROOT, 'UNTRACKED-BY-THE-GATE.txt');
   assert.equal(status(process.execPath, [gate, '--', 'true']), 0, 'a clean tree passes');
 

@@ -40,7 +40,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_ROOT = resolve(HERE, '..', '..');
+const DEFAULT_ROOT = resolve(HERE, '..', '..', '..');
 
 /** File types that can carry prose or comments. */
 const SCANNED = /\.(md|mjs|js|ts|tsx|json|ya?ml|sh|css)$/;

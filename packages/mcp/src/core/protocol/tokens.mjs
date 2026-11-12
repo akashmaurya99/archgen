@@ -6,7 +6,7 @@
 // the orchestrator can see the price of its own behaviour instead of
 // discovering it at the end of a run.
 //
-// The repo's QA tool (`internal/tools/context-budget.mjs`) imports THIS one,
+// The repo's QA tool (`internal/tools/budget/context-budget.mjs`) imports THIS one,
 // so the number the CI gate reports and the number the server reports are
 // the same number.
 //

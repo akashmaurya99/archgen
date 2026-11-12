@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, '..', '..');
+const ROOT = join(HERE, '..', '..', '..');
 
 /**
  * The working-tree state: path -> content hash (null when the file is gone).

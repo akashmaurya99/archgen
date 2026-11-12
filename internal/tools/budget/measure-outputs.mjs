@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { estimateTokens } from './tokens.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(HERE, '..', '..');
+const REPO = resolve(HERE, '..', '..', '..');
 const MCP = join(REPO, 'packages', 'mcp', 'bin', 'archgen-mcp.mjs');
 const FIXTURE = join(REPO, 'fixtures', 'greenfield-demo');
 
