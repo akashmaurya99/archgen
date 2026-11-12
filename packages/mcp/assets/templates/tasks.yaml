@@ -19,7 +19,7 @@ tasks:
   # Wave 2 — feature
   - id: "TASK-02"
     title: "<feature behavior>"
-    depends_on: [TASK-01]
+    depends_on: ["TASK-01"]
     file_ownership: ["<source-root>/<feature>/**", "<test-root>/<feature>/**"]
     acceptance:
       - "<test command> passes with <sample size or threshold>"
@@ -28,9 +28,12 @@ tasks:
   # Final integration — its own wave, so its parallel_group matches
   - id: "TASK-03"
     title: "<integration outcome>"
-    depends_on: [TASK-02]
+    depends_on: ["TASK-02"]
     parallel_group: "wave-3"
-    file_ownership: ["<source-root>/<integration>/**", "<test-root>/integration/<feature>/**", "docs/**"]
+    # Its docs path is the ONE file it writes. A `docs/**` glob would sit
+    # INSIDE every other task's docs glob, and the floor reports that
+    # (OWNERSHIP_CONTAINED) — the shipped skeleton must not teach a defect.
+    file_ownership: ["<source-root>/<integration>/**", "<test-root>/integration/<feature>/**", "docs/<feature>.md"]
     artifacts: ["docs/<feature>.md"] # must be covered by file_ownership
     acceptance:
       - "<integration command> completes <journey> against <test double or environment>"
@@ -40,12 +43,12 @@ tasks:
   # file inside another task's glob.
   - id: "TASK-04"
     title: "<failure-sensitive operation with retry>"
-    depends_on: [TASK-03]
+    depends_on: ["TASK-03"]
     parallel_group: "wave-4"
     file_ownership:
       - "<source-root>/<recovery>/<implementation file>"          # per naming_conventions.dir_layout
       - "<test-root>/<recovery>/<mirrored test file>"             # the mirrored test tree
-      - "docs/**"
+      - "docs/<feature>-recovery.md"                              # its OWN doc, disjoint from TASK-03's
     artifacts: ["docs/<feature>-recovery.md"]
     acceptance:
       - "duplicate submission performs the operation once (covers E1)"

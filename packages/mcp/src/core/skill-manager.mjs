@@ -21,8 +21,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { skillSearchPaths } from './skill-roots.mjs';
 import { invalidInput } from './errors.mjs';
-import { hint } from './guidance.mjs';
+import { hint, teach } from './guidance.mjs';
 import { toolCall } from './call.mjs';
+import { satisfies } from './compat.mjs';
 
 /**
  * Registry shape (see assets/skill-registry.json).
@@ -269,6 +270,39 @@ export async function installSkill(opts) {
     '--json',
   ];
   if (global) args.push('--global');
+
+  // The capability-skill installer is a THIRD-PARTY package with its own Node
+  // requirement — `skills` needs a newer Node than the server does. On an
+  // older Node the install died inside npx with a message about the
+  // installer, not about what to do. The requirement is in the registry, so
+  // it is checked HERE, before anything is spawned.
+  const nodeEngine = registry?.installer?.nodeEngine ?? null;
+  if (nodeEngine) {
+    let ok = true;
+    try {
+      ok = satisfies(process.versions.node, nodeEngine);
+    } catch {
+      ok = true; // an unparseable requirement must not block the install
+    }
+    if (!ok) {
+      throw invalidInput(
+        teach(
+          `the capability-skill installer needs Node ${nodeEngine}; this server runs on Node ${process.versions.node}`,
+          'every other capability works on this Node — only installing a capability skill needs the newer one',
+          'upgrade Node, then install the skill',
+        ),
+        {
+          ...hint({
+            action: 'upgrade Node, then install the skill',
+            reason: `the \`skills\` installer package declares node ${nodeEngine}.`,
+          }),
+          required: nodeEngine,
+          running: process.versions.node,
+          skill: entry.slug,
+        },
+      );
+    }
+  }
 
   const r = runSkillsCli(args, { cwd: projectRoot, env });
 

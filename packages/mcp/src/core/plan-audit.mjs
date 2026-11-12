@@ -51,7 +51,7 @@ import {
   readYaml,
   sourceAndTestRoots,
 } from './artifact-space.mjs';
-import { readWaivers, waiverCovers } from './waivers.mjs';
+import { readWaivers } from './waivers.mjs';
 
 /** A requirement id: FR-<MODULE>-nn. */
 const FR_ID = /\bFR-[A-Z0-9]+(?:-[A-Z0-9]+)*\b/g;
@@ -606,19 +606,17 @@ export function auditPlan({ slugDir, tasks }) {
     validWaivers.push(w);
   }
 
-  // Suppress the covered findings.
-  const waivedFindings = [];
-  const remaining = [];
-  for (const issue of issues) {
-    const w = validWaivers.find((v) => waiverCovers(v, issue));
-    if (w) {
-      waivedFindings.push({ waiver: w.id, finding: issue });
-      continue;
-    }
-    remaining.push(issue);
-  }
-  issues.length = 0;
-  issues.push(...remaining, ...waiverIssues);
+  // The SUPPRESSION happens in the verifier, over EVERY finding the floor
+  // reports — the task file's own defects included. It used to happen HERE,
+  // over the audit's findings only: a waiver naming a task-file code
+  // (NO_ACCEPTANCE, TASK_FIELD_MISSING) suppressed nothing and the plan
+  // still failed, while the skill promised that "a waived finding never
+  // blocks the gate".
+  //
+  // The ledger is still VALIDATED here — a waiver missing a field, or
+  // carrying a blanket scope, is a WAIVER_INVALID finding, and an invalid
+  // waiver suppresses nothing.
+  issues.push(...waiverIssues);
 
   // The gate record. THREE PLACES, ONE SHAPE: `answers.yaml` →
   // `plan_profile.gate`, `answers.yaml` → `gate`, or the plan's own Profile
@@ -679,9 +677,12 @@ export function auditPlan({ slugDir, tasks }) {
     issueCodes: countCodes(issues),
     warningCodes: countCodes(warnings),
     // The findings a waiver approved. They are NOT issues — but they are
-    // reported, so the deviation stays visible to the next reviewer.
-    waivedFindings,
-    waivedCodes: countCodes(waivedFindings.map((w) => w.finding)),
+    // reported, so the deviation stays visible to the next reviewer. The
+    // verifier fills them in: it applies the ledger to every finding.
+    waivedFindings: [],
+    waivedCodes: {},
+    // The VALIDATED ledger, for the verifier to apply.
+    validWaivers,
     maps,
     waivers,
     profile,

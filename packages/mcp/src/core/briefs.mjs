@@ -193,7 +193,10 @@ export function renderBriefContext(ctx = {}) {
     out.push(`- warnings: ${warned}`);
     if (broken > 0) {
       out.push('');
-      out.push('Broken references (each BLOCKS approval):');
+      out.push(
+      "Broken references (reported by `archgen_docs{action:'validate'}`; the deterministic floor does NOT gate " +
+        'on them — judge them here):',
+    );
       for (const b of ctx.docsValidation.broken) {
         out.push(`- ${b.file ?? ''}${b.line ? `:${b.line}` : ''} — ${b.kind ?? 'broken'}: ${b.ref ?? ''}`);
       }

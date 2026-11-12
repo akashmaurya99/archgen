@@ -19,6 +19,7 @@ import { auditPlan } from './plan-audit.mjs';
 import { validateTasks } from './validator.mjs';
 import { readPlanFile } from './plan-file.mjs';
 import { formatFindings } from './diagnostics.mjs';
+import { waiverCovers } from './waivers.mjs';
 import { issueCode, graphIssueCode } from './codes.mjs';
 import { invalidInput } from './errors.mjs';
 import { hint } from './guidance.mjs';
@@ -164,6 +165,47 @@ export function verifyPlan(file, planDir, opts = {}) {
     // the task file's rules. What lands here is a failure of the CHECKS, not
     // of the plan.
     issues.push(`INTERNAL: internal check failure: ${e?.message ?? String(e)}`);
+  }
+
+  // ── the waiver ledger ────────────────────────────────────────────────────
+  //
+  // A waiver is an APPROVED DEVIATION, and the skill promises that "a waived
+  // finding never blocks the gate". The suppression used to happen inside the
+  // audit, over the audit's findings only — so a waiver naming a task-file
+  // defect (NO_ACCEPTANCE, TASK_FIELD_MISSING, CYCLE) suppressed NOTHING and
+  // the plan still failed. The ledger is applied here, over every finding the
+  // floor reports.
+  //
+  // Two findings are never suppressed: a WAIVER_INVALID (a waiver cannot
+  // approve its own invalidity) and a CYCLE (a dependency cycle is not a
+  // deviation anyone may sign off — the plan cannot be executed at all).
+  const waivedFindings = [];
+  const validWaivers = lastAudit?.validWaivers ?? [];
+  if (validWaivers.length && issues.length) {
+    const remaining = [];
+    for (const issue of issues) {
+      const code = String(issue).split(':')[0];
+      if (code === 'WAIVER_INVALID' || code === 'CYCLE') {
+        remaining.push(issue);
+        continue;
+      }
+      const w = validWaivers.find((v) => waiverCovers(v, issue));
+      if (w) {
+        waivedFindings.push({ waiver: w.id, finding: issue });
+        continue;
+      }
+      remaining.push(issue);
+    }
+    issues.length = 0;
+    issues.push(...remaining);
+  }
+  if (lastAudit) {
+    lastAudit.waivedFindings = waivedFindings;
+    lastAudit.waivedCodes = {};
+    for (const w of waivedFindings) {
+      const code = String(w.finding).split(':')[0];
+      lastAudit.waivedCodes[code] = (lastAudit.waivedCodes[code] ?? 0) + 1;
+    }
   }
 
   // The two lists are SEPARATE collections with separate windows.

@@ -8,9 +8,10 @@ COVERAGE:
 | area | status | reason |
 | --- | --- | --- |
 | edge cases per module | PASS | matrices cover empty, boundary, authz, concurrency, retry, and i18n states, within the profile budget |
+| task ordering & parallelization | PASS | waves follow depends_on; parallel groups are disjoint |
 | cross-module contracts | FAIL | response type differs between client and server |
 | scope fit & minimalism | PASS | every artifact has a consumer; omissions and reuse decisions are recorded |
-| ... all 5 areas below, PASS / FAIL / N/A, 1-line reason ... |
+| documentation completeness | PASS | every task has a plan section |
 FINDINGS:   (present when VERDICT: ISSUES)
 1. plans/demo.md § API — response type named inconsistently — client/server contract mismatch — standardize on ApiResponse
 2. docs/prd.md § Grades — FR-GRADE-02 has no owning task — requirement will not be built — add a task owning the grade-read endpoint

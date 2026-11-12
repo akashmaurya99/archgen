@@ -19,7 +19,7 @@ implementation:
    and ensure CodeGraph. The CLI itself stays zero-dependency.
 
 Both read the same artifacts and the same task-file schema
-(`schemas/tasks.schema.json`); the frozen YAML corpus (`fixtures/yaml-corpus/`)
+(`packages/mcp/schemas/tasks.schema.json`); the frozen YAML corpus (`fixtures/yaml-corpus/`)
 plus its corpus test keep the MCP core's parser pinned to a known contract.
 
 ## The containment model

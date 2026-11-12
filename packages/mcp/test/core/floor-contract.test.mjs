@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { auditPlan } from '../../src/core/plan-audit.mjs';
+import { verifyPlan } from '../../src/core/verifier.mjs';
 import { waiverCovers } from '../../src/core/waivers.mjs';
 
 function fixture({ architecture = null, prd = null, plans = {}, waivers = null, answers = null, decisions = {}, tasksYaml = false, docs = {}, outside = false } = {}) {
@@ -105,16 +106,63 @@ test('a valid waiver suppresses the finding it covers, and the plan can approve'
     ].join('\n'),
   });
   try {
-    const audit = auditPlan({ slugDir: f.slugDir, tasks: TASKS_UNCLAIMED });
+    writeFileSync(
+      join(f.slugDir, 'tasks.yaml'),
+      'tasks:\n  - id: T1\n    title: api\n    depends_on: []\n    file_ownership: ["src/core/**", "tests/unit/core/**"]\n' +
+        '    acceptance:\n      - "the probe result is persisted"\n',
+      'utf8',
+    );
+    // The ledger is applied by the VERIFIER — over every finding the floor
+    // reports. It used to be applied inside the audit, over the audit's
+    // findings only, so a waiver naming a task-file defect suppressed
+    // nothing.
+    const report = verifyPlan(join(f.slugDir, 'tasks.yaml'), join(f.slugDir, 'plans'), {});
     assert.ok(
-      !audit.issues.some((i) => i.startsWith('MATRIX_CLAIMS_UNDECLARED')),
-      `the waived finding must not remain an issue: ${audit.issues.join(' | ')}`,
+      !report.issues.some((i) => i.startsWith('MATRIX_CLAIMS_UNDECLARED')),
+      `the waived finding must not remain an issue: ${report.issues.join(' | ')}`,
     );
     assert.ok(
-      audit.waivedFindings.some((w) => w.finding.includes('MATRIX_CLAIMS_UNDECLARED')),
+      report.audit.waivedFindings.some((w) => w.finding.includes('MATRIX_CLAIMS_UNDECLARED')),
       'the waived finding must still be REPORTED — a deviation stays visible',
     );
-    assert.equal(audit.waivedFindings[0].waiver, 'W1', 'the waiver that covered it is named');
+    assert.equal(report.audit.waivedFindings[0].waiver, 'W1', 'the waiver that covered it is named');
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a waiver covers a TASK-FILE defect too, not only an audit finding', () => {
+  // The skill promises that "a waived finding never blocks the gate". A
+  // waiver naming NO_ACCEPTANCE used to suppress NOTHING — the ledger was
+  // applied to the audit's findings alone — so the plan still failed and
+  // the agent was told to fix a defect the user had already signed off.
+  const f = fixture({
+    waivers: [
+      'waivers:',
+      '  - id: W2',
+      '    scope: ["NO_ACCEPTANCE"]',
+      '    finding: "the task has no acceptance criteria"',
+      '    reason: "the acceptance is verified manually in review"',
+      '    approved_by: user',
+      '    approved_at: 2026-11-10',
+    ].join('\n'),
+  });
+  try {
+    // An EMPTY acceptance list — the validator's NO_ACCEPTANCE.
+    writeFileSync(
+      join(f.slugDir, 'tasks.yaml'),
+      'tasks:\n  - id: T1\n    title: api\n    depends_on: []\n    file_ownership: ["src/core/**"]\n    acceptance: []\n',
+      'utf8',
+    );
+    const report = verifyPlan(join(f.slugDir, 'tasks.yaml'), join(f.slugDir, 'plans'), {});
+    assert.ok(
+      !report.issues.some((i) => i.startsWith('NO_ACCEPTANCE')),
+      `the waived task-file finding must not remain an issue: ${report.issues.join(' | ')}`,
+    );
+    assert.ok(
+      report.audit.waivedFindings.some((w) => w.finding.includes('NO_ACCEPTANCE')),
+      `the waiver is recorded against the finding it covered: ${JSON.stringify(report.audit.waivedFindings)}`,
+    );
   } finally {
     f.cleanup();
   }

@@ -366,6 +366,7 @@ plan_profile:
   artifacts:
     - path: ""
       decision: create | reuse | omit
+      host_path: "" # a reuse decision MUST name the host document it reuses
       reason: ""
   escalate_if: []
   gate: # recorded after the gate; the floor compares it with waivers.yaml

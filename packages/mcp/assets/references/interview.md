@@ -19,7 +19,7 @@ Goal: complete, conflict-free requirements in minimal round-trips. Infer from co
 
 ## Round 0 — scope calibration (not a questionnaire)
 
-1. **Profile first:** run `archgen_plan{action:'profile'}` with the intent and the signals the prompt/repo evidence supports (`SKILL.md` Step 2).
+1. **Profile first:** run `archgen_plan{action:'profile', intent, signals, slug}` with the intent and the signals the prompt/repo evidence supports (`SKILL.md` Step 2). `intent` is required—one of `GREENFIELD-SYSTEM`, `GREENFIELD-MODULE`, `BROWNFIELD-FEATURE`, `BROWNFIELD-CHANGE`.
 2. **State one sentence:** scope class, the evidence, the artifact create/reuse/omit list. Ask the user to confirm or correct it. `[wait for user]`
 3. **Ask at most ONE question** when `confidence` is low — the profile's `question`. Do not run a calibration interview when `confidence` is high.
 4. **Record** the confirmed profile in `answers.yaml` (`plan_profile:`) or the plan's `## Profile` section. Keep `escalateIf` so a later signal can move the class.
@@ -115,7 +115,7 @@ Surface contradictions (scale vs budget, feature vs constraint, requirement vs `
 
 ## Answers-file format (machine-readable, enables non-interactive runs)
 
-When `.archgen/<slug>/answers.yaml` is present and valid, treat it as authoritative and skip conversational rounds. Generate the skeleton via `archgen_plan{action:'scaffold'}`:
+When `.archgen/<slug>/answers.yaml` is present and valid, treat it as authoritative and skip conversational rounds. Generate the skeleton via `archgen_plan{action:'scaffold', scope, intent, signals, modules, tasks, slug}` (`scope` is required; passing the profile's `intent` makes the scaffold serve exactly the profile's create set):
 
 ```yaml
 scope_class: MEDIUM              # SMALL | MEDIUM | LARGE (from the profile)

@@ -39,7 +39,7 @@ Normative shape of `.archgen/<slug>/architecture.yaml` — the architecture cont
 
 ## Relationship to the task contract
 
-`tasks.yaml` (see `schemas/tasks.schema.json`) consumes this document:
+`tasks.yaml` (see `packages/mcp/schemas/tasks.schema.json`) consumes this document:
 
 - Every task's `depends_on` ordering must respect module boundaries implied by `owns[]`.
 - Task `file_ownership` globs must be subsets of some module's `owns[]` (or explicitly marked infra/tooling).

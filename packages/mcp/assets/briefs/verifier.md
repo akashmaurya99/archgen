@@ -5,7 +5,7 @@ PLAN: tasks `<tasks.yaml>` · plans `<plans dir>` · artifacts `<slug dir>`
 ROUND 1 — EXHAUSTIVE, ONE PASS. ROUND 2 — DELTA ONLY (see ROUNDS).
 
 STEP 1 — THE FLOOR IS ALREADY COMPUTED FOR YOU
-The CONTEXT block carries a "Mechanical floor" section: the deterministic checks (ownership overlap, mirrored test tree, matrix citations, requirement coverage, profile decisions, decision files, declared paths, wave labels) with a stable CODE each. It came from `archgen_plan { action: 'verify' }`; the reference-integrity result beside it from `archgen_docs { action: 'validate' }`. Do NOT re-derive those facts and do NOT re-run the archgen suite for them.
+The CONTEXT block carries a "Mechanical floor" section: the floor's VERDICT, the counts per finding class, and the codes it reported (ownership overlap, mirrored test tree, matrix citations, requirement coverage, profile decisions, decision files, declared paths, wave labels). It came from `archgen_plan { action: 'verify' }`; the reference-integrity result beside it from `archgen_docs { action: 'validate' }`. The checks that found nothing are NOT listed — a class with a count of zero is a class that passed. Do NOT re-derive those facts and do NOT re-run the archgen suite for them.
 
 THE COUNTS ARE COMPLETE; THE LIST IS A SAMPLE. The floor lists its findings up to a bound, but the COUNTS per class are exact. Report a class ONCE with its count ("MIRROR_MISSING x120 — every task owns source without its mirrored test path; add the mirrored path to each") instead of one line per instance. That is the fix the orchestrator needs.
 

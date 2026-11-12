@@ -108,7 +108,7 @@ The task file's own defects carry their own codes: `UNPARSEABLE`, `NO_TASKS`, `C
 ### Waivers and gate metrics — the audit trail
 
 - **A waiver is a file, not a sentence.** When the user accepts a residual finding, write it to `.archgen/<slug>/waivers.yaml` **before** proceeding, and say so in the completion report. Every field is required — `id`, `scope`, `finding`, `reason`, `approved_by`, `approved_at` — and the floor **enforces** it: a waiver missing one is `WAIVER_INVALID` and suppresses nothing.
-- **The floor honours the waiver.** `scope` names what is approved: a CODE (`MIRROR_MISSING` — every finding of that class) or a SUBJECT — a task id (`T19`), an acceptance (`T19#2`) or a path glob (`src/features/catalog/**`). A subject matches THAT subject only: it is matched against the paths and ids the finding names, never against the prose between them, so a waiver can never approve an unrelated finding by sharing a word with it. A covered finding stops being an issue, so the plan can reach `APPROVE`; the floor reports it separately as a **waived** finding, and the gate brief lists it. Do not re-raise a waived finding unless it regressed.
+- **The floor honours the waiver.** It applies to EVERY finding the floor reports — the task file's own defects (`NO_ACCEPTANCE`, `TASK_FIELD_MISSING`) included — so a signed-off deviation never blocks the gate. `scope` names what is approved: a CODE (`MIRROR_MISSING` — every finding of that class) or a SUBJECT — a task id (`T19`), an acceptance (`T19#2`) or a path glob (`src/features/catalog/**`). Two findings are never waived: `WAIVER_INVALID` (a waiver cannot approve its own invalidity) and `CYCLE` (a plan with a dependency cycle cannot be executed at all). A subject matches THAT subject only: it is matched against the paths and ids the finding names, never against the prose between them, so a waiver can never approve an unrelated finding by sharing a word with it. A covered finding stops being an issue, so the plan can reach `APPROVE`; the floor reports it separately as a **waived** finding, and the gate brief lists it. Do not re-raise a waived finding unless it regressed.
 - **The gate measures itself, and it names its subject.** After the gate, record `plan_profile.gate` in `answers.yaml` (MEDIUM/LARGE) or the plan's `## Profile` (SMALL). The canonical block — one shape, used everywhere — is in `§artifact-templates/gate-metrics`. The floor checks the recorded waived count against the ledger and warns when no verifier is recorded: an approval without a subject is not an approval.
 
 ### Gate protocol — ONE protocol, TWO stages, TWO rounds each
@@ -151,10 +151,10 @@ The dispatch ledger (§dispatch) reuses a worker's session for a follow-up. **Ga
 The deterministic floor is a build gate, not only an agent step:
 
 ```bash
-npx archgen-mcp exec archgen_plan '{"action":"verify","tasksYaml":".archgen/<slug>/tasks.yaml","planDir":".archgen/<slug>/plans"}' --fail-on verdict:ISSUES
+npx archgen-mcp exec archgen_plan '{"action":"verify","tasksYaml":".archgen/<slug>/tasks.yaml","planDir":".archgen/<slug>/plans"}' --project . --fail-on verdict:ISSUES
 ```
 
-Exit 3 when the verdict is ISSUES, 0 when it is APPROVE. Warnings never fail the build — that is what keeps the gate from being bypassed.
+Exit 3 when the verdict is ISSUES, 0 when it is APPROVE. The relative paths resolve against the SERVER's project root, so run it from the repo root or pass `--project <repo-root>` — from another directory the same paths name a different tree. Warnings never fail the build — that is what keeps the gate from being bypassed.
 
 ## §plan-review — post-plan review stage
 
@@ -218,7 +218,7 @@ git worktree add ".worktrees/$id" -b "task-$id"
 
 ### Worker prompt contract
 
-Generate via `archgen_tasks{action:'contract', tasksYaml, taskId}`. It bundles task ID/title, verbatim acceptance, `file_ownership`, dependency neighborhood, `references/code-standards.md` path, inline normative rules + paths for matched skills, pre-located plan sections, `.agent/` paths, the completion protocol (`set_status`, `Skill compliance:` line, commit scope), prohibitions, the CodeGraph directive, and `dispatchKey`.
+Generate via `archgen_tasks{action:'contract', tasksYaml, taskId}`. It bundles task ID/title, verbatim acceptance, `file_ownership`, dependency neighborhood, the ABSOLUTE path of the installed skill's `references/code-standards.md` (or none, when the skill is not installed — pass `codeStandardsPath` to supply one), inline normative rules + paths for matched skills, pre-located plan sections, `.agent/` paths, the completion protocol (`set_status`, `Skill compliance:` line, commit scope), prohibitions, the CodeGraph directive, and `dispatchKey`.
 
 **Pre-dispatch:** inspect `contract.warnings`. Never dispatch with missing acceptance criteria, empty `file_ownership`, or an uninstalled required skill.
 

@@ -2,7 +2,7 @@
 
 ## Provenance header (every NEW tasks.yaml / architecture.yaml)
 
-Begin `tasks.yaml` and `architecture.yaml` with the three YAML comment lines returned by `archgen_plan{action:'scaffold'}`:
+Begin `tasks.yaml`, `architecture.yaml` and `answers.yaml` with the three YAML comment lines returned by `archgen_plan{action:'scaffold'}`:
 
 ```yaml
 # schema_version: 1
@@ -66,7 +66,7 @@ Artifacts are executed by sub-agents with zero conversation history. Enforce str
 5. **Cross-reference, do not restate:** point at contracts (`../architecture.yaml data_contracts.orders`).
 6. **How a reference resolves:** a target starting with `./` or `../` is relative to the **document's own directory** and must land inside the artifact space; any other target is relative to the **project root**. A project-root path that names an artifact of the artifact space must exist; one outside it is a repository path or an **output declaration** — a file the plan will create — and is not broken for not existing yet. `archgen_docs{action:'validate'}` judges every reference by this rule and carries it with each finding.
 7. **GitHub-exact anchors:** lowercase, strip punctuation except `-` and `_`, and convert every whitespace character to `-` without collapsing runs (`## TASK-02 — Auth API` → `#task-02--auth-api`).
-8. **Verifier-compatible IDs:** `verify` rejects unknown `UPPERCASE-NN` tokens in `plans/*.md`. Define `FR-<MODULE>-nn` in `docs/prd.md`, cite them in `tasks.yaml` acceptance, link via anchors inside plans, and keep every task ID present in `plans/*.md`.
+8. **Verifier-compatible IDs:** `verify` rejects a task-style id in `plans/*.md` that it cannot place — an unknown `TASK-NN`-style token whose prefix matches this plan's own task ids (or the generic `TASK-`/`T-`/`STEP-` prefixes) and is not an `FR-`/`REQ-`/`NFR-` id or a known technical constant such as `SHA-256` or `HTTP-404`. A bare `FOO-01` is not a task reference and is never rejected. Define `FR-<MODULE>-nn` in `docs/prd.md`, cite them in `tasks.yaml` acceptance, link via anchors inside plans, and keep every task ID present in `plans/*.md`.
 
 ## Mechanical invariants — proven by the floor, so make them true the first time
 
@@ -76,9 +76,9 @@ Artifacts are executed by sub-agents with zero conversation history. Enforce str
 2. **Disjoint ownership:** no two tasks' globs overlap, and no glob CONTAINS another task's glob (a later wave can overwrite the earlier task's files).
 3. **Matrix citations resolve:** every edge-case row's `Covered by` cell names a task and an acceptance index that exists — and the acceptance it names must verify the stated case.
 4. **Requirements are cited:** every `FR-<MODULE>-nn` defined in `docs/prd.md` is cited by at least one acceptance; every FR id an acceptance cites exists in the PRD.
-5. **Declared things exist and are owned:** every path in `architecture.yaml` `structure:` and every module `owns[]` glob has a task that owns it; every `decisions[].id` has its `decisions/NNNN-*.md` file.
+5. **Declared things exist and are owned:** every path in `architecture.yaml` `structure:` and every module `owns[]` glob has a task that owns it; every `decisions[].id` has its `decisions/0001-*.md` file (the decision's number, zero-padded to four digits).
 6. **Wave labels match the DAG:** a `parallel_group` labeled `wave-N` must equal the task's computed wave, and every task in one group shares a wave.
-7. **Acceptance is runnable:** an acceptance a worker cannot run (live credentials, an unwritten script, an undefined fixture) is a defect — mark it manual and record the artifact, or make it runnable.
+7. **Acceptance is runnable (reviewer judgement, not a floor check):** an acceptance a worker cannot run — live credentials, an unwritten script, an undefined fixture — is not a defect the floor reports. Mark it manual, record the artifact, or make it runnable.
 
 ### Traceability claims — the link, written down
 
@@ -100,7 +100,7 @@ The profile is recorded, not remembered, and the floor checks it against the fil
 - **MEDIUM / LARGE** → `answers.yaml` → `plan_profile.artifacts[]`.
 - **SMALL** → the plan's `## Profile` section, as the fenced YAML block the scaffold writes.
 
-Every entry is `{path, decision, reason}`, and a **`reuse` decision also carries `host_path`** — the existing repository file it cites. A reuse without a `host_path` is `PROFILE_DECISION_INVALID`: it names no file, so nothing can be checked and the reader cannot find what the plan reused.
+Every entry is `{path, decision, reason}` — and a **`reuse` decision also carries `host_path`** — the existing repository file it cites. A reuse without a `host_path` is `PROFILE_DECISION_INVALID`: it names no file, so nothing can be checked and the reader cannot find what the plan reused.
 
 ```yaml
 plan_profile:
@@ -117,7 +117,7 @@ plan_profile:
       host_path: docs/product-requirements.md
 ```
 
-The floor then proves, per **family** (not per literal filename): every `create` family has a file on disk, every `omit`/`reuse` family does NOT, every `reuse` cites a host file that exists, and every artifact on disk belongs to a recorded family. An artifact with no recorded decision is `PROFILE_UNRECORDED` — the defect this whole mechanism exists to prevent.
+The floor then checks, per **family** (not per literal filename): every `create` family has a file on disk, every `omit`/`reuse` family does NOT, every `reuse` cites a host file that exists, and every artifact on disk belongs to a recorded family. An artifact with no recorded decision is `PROFILE_UNRECORDED` — the defect this whole mechanism exists to prevent. **The check runs only when a profile is recorded**: with none it reports `PROFILE_NOT_RECORDED`, and with no `toolchain.source_root`/`test_root` it reports `CONFIG_NOT_ENFORCED`. Both are warnings — the plan still reaches `APPROVE`, so the decisions are simply unchecked.
 
 A family is a path pattern (`plans/*.md`, `decisions/*.md`, `docs/prd.md`): the plan may name its files as it likes, and the decision still proves.
 
@@ -202,12 +202,12 @@ Two habits remove every failure this subset can cause: **quote every acceptance 
 
 ## Agent workspace & artifact location — the two-tier rule
 
-- **INSIDE `.archgen/<slug>/`:** `tasks.yaml`, `plans/`, `architecture.yaml`, `answers.yaml`, `codebase-map.md`, `docs/prd.md`, `decisions/NNNN-title.md`, `waivers.yaml` (the approved-deviation ledger), and `.agent/`:
+- **INSIDE `.archgen/<slug>/`:** `tasks.yaml`, `plans/`, `architecture.yaml`, `answers.yaml`, `codebase-map.md`, `docs/prd.md`, `decisions/0001-title.md`, `waivers.yaml` (the approved-deviation ledger), and `.agent/`:
   - `.agent/decisions/NNNN-<slug>.md` — runtime implementation decisions.
   - `.agent/learnings.md` — append-only discovered repo conventions.
   - `.agent/notes/<task-id-or-topic>.md` — working notes.
   - `.agent/reports/<verifier|reviewer|investigate>-<round>.md` — gate/investigation reports.
-  - `.agent/resume.md` — ≤10-line compaction snapshot, updated after every wave.
+  - `.agent/resume.md` — the compaction snapshot written by `archgen_tasks{action:'snapshot'}` after every wave. Its length grows with the number of remaining tasks (a fixed header plus a few lines per task), so it is not a fixed line count.
 - **OUTSIDE `.archgen/`:** product deliverables at their `file_ownership` paths (`src/...`, `README.md`, API docs, runbooks). Promote durable decisions from `.archgen/<slug>/decisions/` to the project's canonical ADR directory (`docs/adr/`); supersede rather than delete or renumber accepted ADRs.
 
 Every path under `.archgen/<slug>/` is committed, `.agent/` included — it is the audit trail (`§artifact-tracking`).
@@ -244,7 +244,7 @@ Generated only when the profile marks it create. Author it BEFORE `tasks.yaml` (
 
 ## tasks.yaml
 
-Generated via `scaffold` (`schemas/tasks.schema.json`, `schema_version: 1`):
+Generated via `scaffold` (the provenance header carries `# schema_version: 1`; the task contract itself is defined by the server's validator):
 - `depends_on` lists prerequisites only.
 - Same-wave `file_ownership` globs are strictly disjoint.
 - `acceptance` is objectively checkable; cite edge rows (`E1`–`En`) and PRD IDs where the profile created a PRD.
@@ -258,7 +258,7 @@ Generated via `scaffold`, placed in each MEDIUM/LARGE task's plan section (≤10
 
 ## ADR & diagrams
 
-Generated via `scaffold` only when the profile's trigger fired (`decisions/NNNN-title.md`, `docs/mermaid-snippets.md`). An ADR records an irreversible or hard-to-reverse decision — never a routine choice.
+Generated via `scaffold` only when the profile's trigger fired (`decisions/0001-title.md`, `docs/mermaid-snippets.md`). An ADR records an irreversible or hard-to-reverse decision — never a routine choice.
 
 - **The file name IS the link.** `architecture.yaml` `decisions[].id` `D1` matches `decisions/0001-<title>.md` (zero-padded, then the title slug). The floor looks for a file whose name starts with the decision's number, and falls back to the title slug for a non-numeric id.
 - One flowchart per `modules:` entry showing internals (≤6 nodes) plus inbound `depends_on_modules` edges; one integration diagram with modules as atomic nodes.

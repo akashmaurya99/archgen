@@ -108,7 +108,7 @@
         "purpose": "the contract source of truth for cross-module work"
       },
       {
-        "path": ".archgen/<slug>/decisions/NNNN-<title>.md",
+        "path": ".archgen/<slug>/decisions/0001-<title>.md",
         "pattern": "decisions/*.md",
         "signalSome": ["irreversible", "regulated", "data-migration"],
         "max": 3,

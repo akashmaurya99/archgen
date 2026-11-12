@@ -11,9 +11,10 @@
 // `verify` could disagree about what a valid plan is. The floor now calls
 // this module, so "valid" means exactly one thing.
 //
-// The rules enforced here are the rules `schemas/tasks.schema.json` publishes.
-// The parity test pins the two together, so the published contract and the
-// enforcement cannot drift.
+// The rules enforced here are the rules `schemas/tasks.schema.json`
+// publishes — and the schema SHIPS with this package, so the published
+// server carries the contract it enforces. The parity test pins the two
+// together, so the contract and the enforcement cannot drift.
 import { findCycle, graphMaps, isTaskMapping } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { readPlanFile } from './plan-file.mjs';

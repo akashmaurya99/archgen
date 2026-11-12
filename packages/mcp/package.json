@@ -11,6 +11,7 @@
     "bin/",
     "src/",
     "assets/",
+    "schemas/",
     "README.md"
   ],
   "engines": {

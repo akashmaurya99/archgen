@@ -33,7 +33,7 @@ test('a localized brownfield change is SMALL and does not create heavyweight doc
   assert.equal(artifact(p, 'plans/demo.md').decision, 'create');
   assert.equal(artifact(p, 'docs/prd.md').decision, 'omit');
   assert.equal(artifact(p, 'architecture.yaml').decision, 'omit');
-  assert.equal(artifact(p, 'decisions/NNNN-<title>.md').decision, 'omit');
+  assert.equal(artifact(p, 'decisions/0001-<title>.md').decision, 'omit');
   assert.equal(artifact(p, 'docs/<module>.md').decision, 'omit');
 });
 
@@ -83,7 +83,7 @@ test('ADRs and diagrams stay conditional even at LARGE', () => {
     slug: 'demo',
   });
   assert.equal(p.scopeClass, 'LARGE');
-  assert.equal(artifact(p, 'decisions/NNNN-<title>.md').decision, 'omit');
+  assert.equal(artifact(p, 'decisions/0001-<title>.md').decision, 'omit');
   assert.equal(artifact(p, 'docs/<module>.md').decision, 'omit');
   assert.equal(artifact(p, 'docs/mermaid-snippets.md').decision, 'omit');
 });
@@ -95,7 +95,7 @@ test('an irreversible decision creates an ADR', () => {
     modules: 4,
     slug: 'demo',
   });
-  assert.equal(artifact(p, 'decisions/NNNN-<title>.md').decision, 'create');
+  assert.equal(artifact(p, 'decisions/0001-<title>.md').decision, 'create');
 });
 
 test('existing host documents are REUSED, never regenerated', () => {
@@ -107,7 +107,7 @@ test('existing host documents are REUSED, never regenerated', () => {
   });
   assert.equal(artifact(p, 'docs/prd.md').decision, 'reuse');
   assert.equal(artifact(p, 'architecture.yaml').decision, 'reuse');
-  assert.equal(artifact(p, 'decisions/NNNN-<title>.md').decision, 'reuse');
+  assert.equal(artifact(p, 'decisions/0001-<title>.md').decision, 'reuse');
   assert.equal(artifact(p, 'docs/prd.md').recordPath, true);
 });
 
