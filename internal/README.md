@@ -37,8 +37,8 @@ tools/
     as BINARY to grep, `file` and every editor
   - **S2** no `node_modules` inside a package's source — the CLI is
     zero-dependency, so one can only be a stray install, and it sits FIRST
-    on Node's module-resolution path (a stale v0.1.3 copy of the server
-    once sat under `packages/cli/lib/`)
+    on Node's module-resolution path (a stale copy of the server once sat
+    under `packages/cli/lib/`)
   - **S3** every source file has a header comment
   - **S4** no helper copied VERBATIM into two files of one package
   - **S5** every relative import resolves to a file that exists
