@@ -1,6 +1,17 @@
 # Dependencies
 node_modules/
 
+# A nested node_modules INSIDE a package is never legitimate. The CLI is
+# zero-dependency and the MCP server resolves its own deps from its own
+# package.json, so a nested copy can only be a stray `npm install` run in the
+# wrong directory. It is worse than clutter: Node resolves it BEFORE the
+# package's real node_modules, so a stale copy of archgen-mcp silently wins
+# over the current one. (A v0.1.3 copy sat under packages/cli/lib/ while the
+# repo was at v0.1.7.) structure-lint fails the build if one appears.
+packages/*/lib/node_modules/
+packages/*/src/node_modules/
+packages/*/bin/node_modules/
+
 # Logs
 *.log
 
