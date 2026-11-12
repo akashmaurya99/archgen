@@ -35,11 +35,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseYaml, stringifyYaml } from '../../src/core/fs/yaml.mjs';
-import { inRepo, requireCorpus } from '../repo-root.mjs';
+import { REPO_ROOT, inRepo, requireCorpus } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // packages/mcp/test/core -> repo root (four levels up).
-const REPO = join(HERE, '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 const CORPUS_DIR = join(REPO, 'fixtures', 'yaml-corpus');
 
 /** @typedef {{ok: true, data: unknown, comments: unknown[]}} ExpectedOk */

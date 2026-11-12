@@ -17,9 +17,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { failOnMatches } from '../../src/cli.mjs';
+import { REPO_ROOT } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 const BIN = join(REPO, 'packages', 'mcp', 'bin', 'archgen-mcp.mjs');
 
 test('the rule matches a dotted path inside the result', () => {

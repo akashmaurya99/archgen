@@ -12,9 +12,10 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { REPO_ROOT } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 const SKILL = join(REPO, 'skill', 'SKILL.md');
 const INTERVIEW = join(REPO, 'packages', 'mcp', 'assets', 'references', 'interview.md');
 const ARTIFACTS = join(REPO, 'packages', 'mcp', 'assets', 'references', 'artifact-templates.md');

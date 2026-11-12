@@ -21,9 +21,10 @@ import { fileURLToPath } from 'node:url';
 
 import { BRIEFS_DIR } from '../../src/context.mjs';
 import { loadBrief } from '../../src/core/docs/briefs.mjs';
+import { REPO_ROOT } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 const SKILL = join(REPO, 'skill', 'SKILL.md');
 const ORCH = join(REPO, 'packages', 'mcp', 'assets', 'references', 'orchestration.md');
 

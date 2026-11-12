@@ -29,9 +29,10 @@ import { ISSUE_CODES, WARNING_CODES, BASE_CODES, KNOWN_CODES } from '../../src/c
 import { buildPlanProfile } from '../../src/core/plan/plan-profile.mjs';
 import { buildScaffold } from '../../src/core/plan/scaffold.mjs';
 import { readWaivers } from '../../src/core/plan/waivers.mjs';
+import { REPO_ROOT } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 const REFS = join(REPO, 'packages', 'mcp', 'assets', 'references');
 const SKILL = join(REPO, 'skill', 'SKILL.md');
 const BRIEFS = join(REPO, 'packages', 'mcp', 'assets', 'briefs');

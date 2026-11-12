@@ -14,10 +14,10 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inRepo } from '../repo-root.mjs';
+import { REPO_ROOT, inRepo } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 const SKILL = join(REPO, 'skill', 'SKILL.md');
 const STANDARDS = join(REPO, 'skill', 'references', 'code-standards.md');
 const TEMPLATES = join(REPO, 'packages', 'mcp', 'assets', 'templates');

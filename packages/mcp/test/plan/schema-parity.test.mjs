@@ -14,9 +14,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { STATUSES, REQUIRED, KNOWN_KEYS, ID_PATTERN } from '../../src/core/plan/validator.mjs';
+import { REPO_ROOT } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCHEMA_PATH = join(HERE, '..', '..', 'schemas', 'tasks.schema.json');
+const SCHEMA_PATH = join(REPO_ROOT, 'packages', 'mcp', 'schemas', 'tasks.schema.json');
 
 const schema = existsSync(SCHEMA_PATH) ? JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) : null;
 

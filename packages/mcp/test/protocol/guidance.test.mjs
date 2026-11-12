@@ -17,17 +17,17 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { createServer } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
 import { Context } from '../../src/context.mjs';
 import { guard } from '../../src/envelope.mjs';
+import { REPO_ROOT } from '../support/repo-root.mjs';
 
 createServer();
 
-const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 
 let root;
 let ctx;

@@ -28,7 +28,7 @@ import { createServer } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
 import { Context } from '../../src/context.mjs';
 import { guard } from '../../src/envelope.mjs';
-import { buildSandbox } from '../sandbox.mjs';
+import { buildSandbox } from '../support/sandbox.mjs';
 
 createServer();
 

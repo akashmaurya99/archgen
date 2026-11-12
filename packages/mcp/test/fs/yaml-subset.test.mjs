@@ -18,10 +18,10 @@ import { fileURLToPath } from 'node:url';
 
 import { parseYaml } from '../../src/core/fs/yaml.mjs';
 import { YAML_SUBSET } from '../../src/core/fs/yaml-subset.mjs';
-import { inRepo } from '../repo-root.mjs';
+import { REPO_ROOT, inRepo } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REFS = join(HERE, '..', '..', 'assets', 'references');
+const REFS = join(REPO_ROOT, 'packages', 'mcp', 'assets', 'references');
 
 test('the subset contract is not empty', () => {
   assert.ok(YAML_SUBSET.length >= 10, `the subset must document its rules (found ${YAML_SUBSET.length})`);

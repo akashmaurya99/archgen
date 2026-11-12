@@ -27,11 +27,12 @@ import { fileURLToPath } from 'node:url';
 
 import { createServer } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
+import { REPO_ROOT } from '../support/repo-root.mjs';
 
 createServer();
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 const SKILL = join(REPO, 'skill', 'SKILL.md');
 
 /**

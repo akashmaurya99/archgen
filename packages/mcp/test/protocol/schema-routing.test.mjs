@@ -37,12 +37,12 @@ import { z } from 'zod/v4';
 import { createServer, TOOL_NAMES } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
 import { routingSentence } from '../../src/core/protocol/routing.mjs';
-import { inRepo } from '../repo-root.mjs';
+import { REPO_ROOT, inRepo } from '../support/repo-root.mjs';
 
 createServer();
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, '..', '..', '..', '..');
+const REPO = REPO_ROOT;
 const CONTRACT = join(REPO, 'internal', 'contracts', 'schema-contract.json');
 
 const contract = existsSync(CONTRACT) ? JSON.parse(readFileSync(CONTRACT, 'utf8')) : null;
