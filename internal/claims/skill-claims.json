@@ -10,7 +10,7 @@
     "",
     "So the obligations are extracted ONCE, as ATOMIC claims with a stable id,",
     "and every one of them is checked by",
-    "packages/mcp/test/core/skill-claim-ledger.test.mjs. A claim may be",
+    "packages/mcp/test/skill/skill-claim-ledger.test.mjs. A claim may be",
     "REWORDED \u2014 the matcher is written against the obligation, not the wording",
     "\u2014 but it may not DISAPPEAR, and it may not WEAKEN.",
     "",

@@ -24,7 +24,7 @@
     "structurally impossible: the hand-written ones had already drifted",
     "(`archgen_docs.collection` claimed one action and belongs to six).",
     "",
-    "packages/mcp/test/core/schema-routing.test.mjs checks all of it."
+    "packages/mcp/test/protocol/schema-routing.test.mjs checks all of it."
   ],
   "version": 1,
   "universalArgs": [

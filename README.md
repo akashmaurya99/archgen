@@ -183,12 +183,47 @@ complete does not.
 | --- | --- | --- |
 | [`skill/`](skill/) | The agent skill — `SKILL.md` + `references/code-standards.md` (guidance only; the server owns every capability) | vendored into npm |
 | [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `doctor` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
-| [`packages/mcp/`](packages/mcp/) | The `archgen-mcp` server — every deterministic capability | npm: [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp) |
-| [`packages/mcp/schemas/`](packages/mcp/schemas/) | The task-file JSON schema (`tasks.schema.json`) — ships with the server | npm: `archgen-mcp` |
-| [`schemas/`](schemas/) | The architecture.yaml conventions (normative shape, repo contract) | repo-only |
+| [`packages/mcp/`](packages/mcp/) | `archgen-mcp` — the server that owns every deterministic capability | npm: [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp) |
+| [`packages/mcp/schemas/`](packages/mcp/schemas/) | The task-file JSON schema (`tasks.schema.json`) | npm: `archgen-mcp` |
+| [`schemas/`](schemas/) | The architecture.yaml conventions (normative shape) | repo-only |
 | [`fixtures/`](fixtures/) | Deterministic E2E drivers + shared YAML corpus | repo-only |
-| [`internal/`](internal/) | QA tooling (token budget, version gates) — never shipped | repo-only |
+| [`internal/`](internal/) | QA tooling (the gates) — never shipped | repo-only |
 | [`docs/`](docs/) | Architecture walkthrough · agent setup prompt · release process | repo-only |
+
+### Inside the two packages
+
+Both packages split their source **by domain**, and both split their tests
+the same way, so a test lives in the folder of the code it tests.
+
+```
+packages/mcp/src/core/            packages/cli/lib/
+├── protocol/  the vocabulary      ├── fs-paths.js   lstatSafe · relJoin
+│              every tool speaks   ├── block.js     the managed-block format
+├── plan/      the plan of record  ├── store.js     the store layout
+├── docs/      briefs + contracts  └── …            one command each
+├── skill/     capability skills
+├── harness/   MCP + platform wiring
+└── fs/        the only layer that touches disk
+```
+
+`protocol/` and `fs/` are the bottom layers: neither imports anything
+above it. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full map.
+
+### The gates
+
+`internal/tools/` holds the repository's own gates, grouped by what they
+are for — `lint/` (a defect fails the build), `release/`, `budget/`,
+`safety/`. They are repo-only and never shipped.
+
+| Gate | What it proves |
+| --- | --- |
+| `test:versions` | The version lives in exactly one place, and every derived surface agrees |
+| `test:contract` | The skill's declared minimum server version is satisfiable by this release |
+| `test:teaching` | Every failure site teaches the agent its next call |
+| `test:structure` | The repository's shape is clean — no binary files, no nested dependencies, no headerless sources, no duplicated helpers, no broken imports |
+| `test:budget` | The always-on context (skill + tool catalog) fits its ceiling |
+| `test:immutable` | The suites never mutate the repository |
+
 
 ## Development
 

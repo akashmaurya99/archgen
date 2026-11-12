@@ -22,6 +22,52 @@ Both read the same artifacts and the same task-file schema
 (`packages/mcp/schemas/tasks.schema.json`); the frozen YAML corpus (`fixtures/yaml-corpus/`)
 plus its corpus test keep the MCP core's parser pinned to a known contract.
 
+## The repository's own shape
+
+This section describes the repository that ships archgen, not the system
+archgen installs. It matters for a reason beyond tidiness: the two
+packages split their source **by domain**, and both split their tests the
+same way, so a reader can find the code and its test from one name.
+
+```
+packages/mcp/src/core/       the server's implementations
+├── protocol/   the vocabulary every tool speaks — error codes, the
+│               envelope contract, the teaching hints, argument routing
+├── plan/       the plan of record — audit, coverage, graph, waves,
+│               profile, verification
+├── docs/       prose artifacts, briefs, worker contracts
+├── skill/      capability-skill discovery, install, registry
+├── harness/    MCP wiring, platform capability tables, CodeGraph
+└── fs/         the only layer that touches disk — containment, YAML,
+                JSONC, the tasks-file resolver
+```
+
+**`protocol/` and `fs/` are bottom layers.** Neither imports anything
+above it. `protocol` is what every tool imports (23 of the 46 core files
+do), and `fs` is the only code that reads or writes a file. The four
+domains above them — `plan`, `docs`, `skill`, `harness` — are the
+capabilities themselves.
+
+The boundary is not decoration; it is checked. `structure-lint` asserts
+that no directory grows past the size it was laid out for, so the flat
+46-file row this replaced cannot come back.
+
+The CLI is flatter by design: `packages/cli/lib/` holds one file per
+command plus the shared primitives (`fs-paths.js`, `store.js`,
+`block.js`). A deeper tree would buy nothing in a package with fifteen
+files, and the CLI's zero-dependency rule means every import is one the
+reader can follow without a resolver.
+
+The tests mirror both: `packages/mcp/test/{protocol,plan,docs,skill,harness,fs}/`
+and `packages/cli/test/{blocks,cli,doctor,install,…}/`. A test lives in the
+folder of the code it tests, and both trees read the repository root from
+a shared helper rather than climbing a fixed number of directories — so
+moving a test never silently changes what it resolves.
+
+`internal/tools/` holds the repository's own gates, grouped by what they
+are for: `lint/` (a defect fails the build), `release/`, `budget/`,
+`safety/`. They are repo-only and never shipped.
+
 ## The containment model
 
 The server takes paths from a model, and a model can be talked into reading a
@@ -241,7 +287,7 @@ tools they describe, and so they are not copied into every project that runs
 tools and may have no MCP server at all.
 
 The references point at the tools; they never restate a tool's output. A drift
-test (`packages/mcp/test/core/reference-drift.test.mjs`) pins the two together,
+test (`packages/mcp/test/protocol/reference-drift.test.mjs`) pins the two together,
 so a number that appears in both can never disagree.
 
 ## The capability contract
@@ -257,7 +303,7 @@ metadata:
 ```
 
 `archgen_setup{action:'doctor'}` reports a mismatch, `bootstrap` warns before
-wiring, and a CI gate (`internal/tools/check-capability-contract.mjs`) refuses
+wiring, and a CI gate (`internal/tools/lint/check-capability-contract.mjs`) refuses
 to ship a skill whose declared minimum exceeds the server's version.
 
 | Tool output | Replaces hand-assembly in |

@@ -352,7 +352,7 @@ if [ "$INIT" -eq 1 ]; then
       extract_between "$f" "archgen:features:start" "archgen:features:end" > "$rows_tmp"
     fi
     # Content mirrors packages/cli lib/block.js renderManagedBlockText() - regenerate when block format changes.
-    # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
+    # Byte-for-byte parity is enforced by packages/cli/test/config/config.test.mjs (install.sh managed-block parity).
     # The version is SUBSTITUTED, never written here: the heredoc stays
     # quoted (so nothing else in it can expand), and the one placeholder is
     # filled from the canonical config the CLI itself reads. A literal in
@@ -431,7 +431,7 @@ BLOCK
     out_tmp="$f.archgen.$$"
     refuse_symlink "$block_tmp"; refuse_symlink "$out_tmp"
     # Content mirrors packages/cli lib/block.js renderClaudeBridgeText() - regenerate when block format changes.
-    # Byte-for-byte parity is enforced by packages/cli/test/config.test.mjs (install.sh managed-block parity).
+    # Byte-for-byte parity is enforced by packages/cli/test/config/config.test.mjs (install.sh managed-block parity).
     if ! sed "s/@@ARCHGEN_VERSION@@/$ARCHGEN_VERSION/g" > "$block_tmp" <<'BLOCK'
 <!-- archgen:start (managed block - do not edit between markers) -->
 <!-- archgen:block v@@ARCHGEN_VERSION@@ -->

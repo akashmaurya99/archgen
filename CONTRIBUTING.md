@@ -107,7 +107,7 @@ bash fixtures/tool-matrix/run.sh
 `fixtures/yaml-corpus/` is the frozen contract for archgen's YAML subset: each
 `*.yaml` has a committed `*.expected.json` sibling holding the parsed data, the
 comment ledger, or the expected error. The corpus is pinned against the
-CANONICAL parser by `packages/mcp/test/core/yaml-corpus.test.mjs` — if a corpus
+CANONICAL parser by `packages/mcp/test/fs/yaml-corpus.test.mjs` — if a corpus
 test fails, the parser drifted: fix the parser and never adjust an expected
 output unilaterally.
 
@@ -130,6 +130,15 @@ output unilaterally.
 - `internal/` is import territory: shipped code never imports from it.
 - Everything in `packages/mcp/src/core/` ships — keep comments minimal (WHY
   only), output lean, and runtime deterministic.
+- **A new core file goes in its domain folder** (`protocol/`, `plan/`,
+  `docs/`, `skill/`, `harness/`, `fs/`). `npm run test:structure` fails when
+  a directory grows past the size it was laid out for, so the flat row this
+  replaced cannot come back.
+- **One implementation per rule.** If a helper is needed in two files, it
+  lives in one place and is imported. `structure-lint` reports a helper
+  copied VERBATIM into two files — the shape a copy-paste takes.
+- **A source file opens with a header comment** saying what it owns and why
+  it exists. `structure-lint` fails a file that has none.
 - One implementation per capability: the MCP server owns it, and the CLI
   reaches it through the server — never a second copy.
 - **The skill declares what the server it needs** (`metadata.requires.archgen_mcp`

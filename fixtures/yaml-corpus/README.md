@@ -2,7 +2,7 @@
 
 `*.yaml` files here are parsed by the CANONICAL parser
 (`packages/mcp/src/core/fs/yaml.mjs`) and asserted against their committed
-`*.expected.json` siblings by `packages/mcp/test/core/yaml-corpus.test.mjs`
+`*.expected.json` siblings by `packages/mcp/test/fs/yaml-corpus.test.mjs`
 (node:test).
 
 There is exactly ONE implementation of this format. That is the point: a
