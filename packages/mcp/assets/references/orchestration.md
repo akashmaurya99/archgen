@@ -33,6 +33,8 @@ Only then dispatch the gate agent. Its brief carries the floor's result and the 
 
 ### Gate sizing — proportional, never skipped
 
+> How much gate each scope class gets: the deterministic floor always runs; the judgment verifier, the plan review and the user gate scale with it.
+
 | Scope | Deterministic floor | Judgment verifier | Plan review | User gate |
 |---|---|---|---|---|
 | SMALL | MAIN agent, local loop | MAIN agent audits the same dimensions | MAIN agent | required |

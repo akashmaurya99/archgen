@@ -25,7 +25,7 @@
     "sync:check": "node packages/mcp/scripts/gen-catalog.mjs --check && npm --prefix packages/cli run sync:check",
     "test:mcp": "npm --prefix packages/mcp test",
     "test:immutable": "node internal/tools/repo-immutable.mjs -- npm test",
-    "test:budget": "node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13800",
+    "test:budget": "node internal/tools/context-budget.mjs --skill-dir skill --project . --max-always-on 13000",
     "test:contract": "node internal/tools/check-capability-contract.mjs",
     "test:versions": "node internal/tools/version-lint.mjs && node internal/tools/version-consistency.mjs",
     "release:prepare": "node internal/tools/release-prepare.mjs",

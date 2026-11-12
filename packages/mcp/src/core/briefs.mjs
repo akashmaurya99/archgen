@@ -4,13 +4,51 @@
 // references/orchestration.md and were copy-pasted into every sub-agent
 // dispatch. A brief IS a template — a machine-shaped output — so the tool owns
 // it and the reference keeps only the policy around it.
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { invalidInput, notFound } from './errors.mjs';
 import { hint } from './guidance.mjs';
 import { toolCall } from './call.mjs';
 
 export const BRIEF_KINDS = ['verifier', 'review', 'survey', 'investigate'];
+
+/**
+ * The include directive: `<!-- include: name.md -->`.
+ *
+ * WHY IT EXISTS. The two gate briefs each restated the SAME protocol — the
+ * three finding classes, the three-part BLOCKING test, the two-round cap.
+ * Two copies of a protocol is a protocol that drifts: they had already
+ * begun to differ in wording, and the next edit would have made them differ
+ * in MEANING.
+ *
+ * So the shared rules live in ONE file and both briefs include it. The
+ * rendered brief is still SELF-CONTAINED — the fragment is pasted in — so
+ * the gate agent never has to know that a fragment exists.
+ *
+ * It is a comment directive rather than a `<placeholder>` on purpose: a
+ * placeholder is a value the CALLER supplies, and the fragment is not one.
+ */
+const INCLUDE_RE = /<!--\s*include:\s*([A-Za-z0-9._-]+\.md)\s*-->/g;
+
+/**
+ * Resolve every include directive in a brief template.
+ *
+ * @param {string} text the template
+ * @param {string} briefsDir the directory the fragments live in
+ * @returns {string}
+ */
+function resolveIncludes(text, briefsDir) {
+  return text.replace(INCLUDE_RE, (_m, name) => {
+    const path = join(briefsDir, name);
+    if (!existsSync(path)) {
+      throw invalidInput(
+        `brief fragment '${name}' is missing`,
+        { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete — reinstall archgen-mcp." }), fragment: name },
+      );
+    }
+    return readFileSync(path, 'utf8').trim();
+  });
+}
 
 /**
  * Load one dispatch brief.
@@ -34,6 +72,9 @@ export function loadBrief(briefsDir, kind, vars = {}) {
   } catch {
     throw notFound(`brief template '${key}.md' is missing`, { kind, path });
   }
+  // The shared fragments are pasted in BEFORE the placeholder check, so a
+  // fragment's own text can never be mistaken for a missing value.
+  text = resolveIncludes(text, briefsDir);
   // The placeholders the TEMPLATE carries are checked BEFORE the
   // substitution, and a placeholder counts as missing only when the caller
   // supplied nothing for it. Checking the FILLED brief read the agent's own
@@ -146,9 +187,10 @@ export function renderBriefContext(ctx = {}) {
   if (ctx.scope) {
     out.push('## EVIDENCE — the plan under review');
     out.push('');
-    if (ctx.scope.tasksYaml) out.push(`- tasks: ${ctx.scope.tasksYaml}`);
-    if (ctx.scope.plansDir) out.push(`- plans: ${ctx.scope.plansDir}`);
-    if (ctx.scope.slugDir) out.push(`- artifacts: ${ctx.scope.slugDir}`);
+    // The paths are NOT repeated here: each brief names its own scope in its
+    // first lines, and the tool's payload carries them as structured data.
+    // Listing them a third time cost the reader 300 bytes per brief for no
+    // fact.
     out.push('');
   }
 

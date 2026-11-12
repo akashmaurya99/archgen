@@ -1,5 +1,6 @@
 TASK: Survey this repository to prepare a feature plan for: `<feature request>`
 SCOPE: Read-only exploration. Writes EXACTLY ONE file: `<slug dir>/codebase-map.md`. Nothing else.
+PLAN: tasks `<tasks.yaml>` · plans `<plans dir>` · artifacts `<slug dir>`
 
 DELIVERABLE: Write `<slug dir>/codebase-map.md` containing these six non-empty sections:
 ## Structure — Top 2 directory levels with 1-line purpose per folder; name the source and test roots.

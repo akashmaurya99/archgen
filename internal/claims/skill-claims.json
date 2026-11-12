@@ -1,0 +1,1714 @@
+{
+  "$readme": [
+    "THE CLAIM LEDGER \u2014 every obligation the shipped guidance owes the agent.",
+    "",
+    "WHY THIS FILE EXISTS. The skill, the five protocol references, the four",
+    "dispatch briefs and the worker code standards are PROSE: an obligation",
+    "lives in a sentence, and a sentence can be reworded, merged, or deleted",
+    "without anything failing. A compression pass that drops one prohibition",
+    "looks exactly like a compression pass that dropped a filler word.",
+    "",
+    "So the obligations are extracted ONCE, as ATOMIC claims with a stable id,",
+    "and every one of them is checked by",
+    "packages/mcp/test/core/skill-claim-ledger.test.mjs. A claim may be",
+    "REWORDED \u2014 the matcher is written against the obligation, not the wording",
+    "\u2014 but it may not DISAPPEAR, and it may not WEAKEN.",
+    "",
+    "HOW TO USE IT:",
+    "  - compression: reword freely, then run the ledger; if a matcher stops",
+    "    matching, either the obligation was lost (fix the text) or the",
+    "    obligation MOVED to another file (move the claim too, and say so in",
+    "    the same commit).",
+    "  - a NEW obligation: add a claim with the next free id. The ledger",
+    "    grows when the system grows, and never shrinks silently.",
+    "  - a DELETED obligation: delete the claim in the same commit. The diff",
+    "    is the record. CI shows it; a reviewer sees it.",
+    "",
+    "MATCHER: a regular expression, tested against the file's text. It is",
+    "written to match the obligation's LOAD-BEARING WORDS, not a whole",
+    "sentence, so a reword that preserves the rule still passes."
+  ],
+  "version": 1,
+  "claims": [
+    {
+      "id": "skill.boot.doctor",
+      "file": "skill/SKILL.md",
+      "match": "archgen_setup\\{action:'doctor'\\}",
+      "obligation": "the doctor is how a misconfigured server is diagnosed"
+    },
+    {
+      "id": "skill.boot.init",
+      "file": "skill/SKILL.md",
+      "match": "npx archgen-skill init",
+      "obligation": "the installer is the remedy for missing tools"
+    },
+    {
+      "id": "skill.boot.reload",
+      "file": "skill/SKILL.md",
+      "match": "reload",
+      "obligation": "the harness must be reloaded after wiring"
+    },
+    {
+      "id": "skill.boot.nobypass",
+      "file": "skill/SKILL.md",
+      "match": "Never bypass missing tools with scripts",
+      "obligation": "missing tools are never worked around with scripts"
+    },
+    {
+      "id": "skill.boot.global",
+      "file": "skill/SKILL.md",
+      "match": "location-project|wires the harnesses \\*\\*globally\\*\\*",
+      "obligation": "the global-by-default install and its project-local override are stated"
+    },
+    {
+      "id": "skill.rule1.isolation",
+      "file": "skill/SKILL.md",
+      "match": "\\.archgen/<slug>/",
+      "obligation": "generated files live inside the artifact space"
+    },
+    {
+      "id": "skill.rule1.agent",
+      "file": "skill/SKILL.md",
+      "match": "\\.agent/",
+      "obligation": "sub-agent state lives under .agent/"
+    },
+    {
+      "id": "skill.rule2.floor",
+      "file": "skill/SKILL.md",
+      "match": "archgen_plan\\{action:'verify'",
+      "obligation": "the deterministic floor is named"
+    },
+    {
+      "id": "skill.rule2.approve",
+      "file": "skill/SKILL.md",
+      "match": "APPROVE",
+      "obligation": "the floor must reach APPROVE before any gate agent"
+    },
+    {
+      "id": "skill.rule2.threegates",
+      "file": "skill/SKILL.md",
+      "match": "Three gates|three gates",
+      "obligation": "there are three gates and none is skipped"
+    },
+    {
+      "id": "skill.rule2.user",
+      "file": "skill/SKILL.md",
+      "match": "user approval|User gate|USER GATE",
+      "obligation": "user approval is a gate"
+    },
+    {
+      "id": "skill.rule2.depth",
+      "file": "skill/SKILL.md",
+      "match": "Depth scales with scope|depth scales",
+      "obligation": "gate depth scales with scope while the floor never shrinks"
+    },
+    {
+      "id": "skill.rule2.rounds",
+      "file": "skill/SKILL.md",
+      "match": "at most two rounds|two rounds|TWO rounds",
+      "obligation": "a gate stage runs at most two rounds"
+    },
+    {
+      "id": "skill.rule2.waiver",
+      "file": "skill/SKILL.md",
+      "match": "waivers\\.yaml",
+      "obligation": "a waiver is a file, not a sentence"
+    },
+    {
+      "id": "skill.rule2.escalate",
+      "file": "skill/SKILL.md",
+      "match": "escalat",
+      "obligation": "what remains after the last round escalates to the user as a decision"
+    },
+    {
+      "id": "skill.rule2.gatemetrics",
+      "file": "skill/SKILL.md",
+      "match": "gate-metrics",
+      "obligation": "the gate records its cost in the plan profile"
+    },
+    {
+      "id": "skill.rule3.profile",
+      "file": "skill/SKILL.md",
+      "match": "archgen_plan\\{action:'profile'",
+      "obligation": "the profile runs before files are created"
+    },
+    {
+      "id": "skill.rule3.scaffold",
+      "file": "skill/SKILL.md",
+      "match": "archgen_plan\\{action:'scaffold'",
+      "obligation": "the scaffold serves exactly the create set"
+    },
+    {
+      "id": "skill.rule3.create",
+      "file": "skill/SKILL.md",
+      "match": "create",
+      "obligation": "the create decision is honoured"
+    },
+    {
+      "id": "skill.rule3.reuse",
+      "file": "skill/SKILL.md",
+      "match": "host_path",
+      "obligation": "a reuse names its host path"
+    },
+    {
+      "id": "skill.rule3.omit",
+      "file": "skill/SKILL.md",
+      "match": "omit",
+      "obligation": "an omission records its reason"
+    },
+    {
+      "id": "skill.rule3.same",
+      "file": "skill/SKILL.md",
+      "match": "the profile's own inputs|same .{0,40}intent.{0,40}signals",
+      "obligation": "the scaffold is called with the profile's own inputs"
+    },
+    {
+      "id": "skill.rule4.selfcontain",
+      "file": "skill/SKILL.md",
+      "match": "Self-containment|self-contained",
+      "obligation": "artifacts execute with zero chat history"
+    },
+    {
+      "id": "skill.rule4.relative",
+      "file": "skill/SKILL.md",
+      "match": "repo-root-relative",
+      "obligation": "paths are repo-root-relative"
+    },
+    {
+      "id": "skill.rule4.forbidden",
+      "file": "skill/SKILL.md",
+      "match": "as discussed",
+      "obligation": "the forbidden chat-dependency phrases are named"
+    },
+    {
+      "id": "skill.rule5.partial",
+      "file": "skill/SKILL.md",
+      "match": "no partial feature ships as done|partial",
+      "obligation": "no partial feature ships as done"
+    },
+    {
+      "id": "skill.rule5.stubs",
+      "file": "skill/SKILL.md",
+      "match": "stub|Stub|TO ?DO",
+      "obligation": "stubs and mock-only paths are failures"
+    },
+    {
+      "id": "skill.rule5.checklist",
+      "file": "skill/SKILL.md",
+      "match": "completeness checklist",
+      "obligation": "the final report carries a completeness checklist"
+    },
+    {
+      "id": "skill.rule6.setstatus",
+      "file": "skill/SKILL.md",
+      "match": "archgen_tasks\\{action:'set_status'",
+      "obligation": "status is set through the tool"
+    },
+    {
+      "id": "skill.rule6.registry",
+      "file": "skill/SKILL.md",
+      "match": "archgen_registry\\{action:'update'",
+      "obligation": "the registry is updated on every task completion"
+    },
+    {
+      "id": "skill.rule6.snapshot",
+      "file": "skill/SKILL.md",
+      "match": "archgen_tasks\\{action:'snapshot'",
+      "obligation": "a snapshot is written after each wave"
+    },
+    {
+      "id": "skill.rule6.forbid",
+      "file": "skill/SKILL.md",
+      "match": "lag",
+      "obligation": "dispatching while status updates lag is forbidden"
+    },
+    {
+      "id": "skill.rule7.platform",
+      "file": "skill/SKILL.md",
+      "match": "archgen_setup\\{action:'harness_info'\\}",
+      "obligation": "platform capabilities are read before editing configs"
+    },
+    {
+      "id": "skill.rule7.websearch",
+      "file": "skill/SKILL.md",
+      "match": "web-search|web search",
+      "obligation": "an unknown platform is resolved from official docs with approval"
+    },
+    {
+      "id": "skill.rule8.standards",
+      "file": "skill/SKILL.md",
+      "match": "references/code-standards\\.md",
+      "obligation": "workers obey the code standards reference"
+    },
+    {
+      "id": "skill.rule8.strict",
+      "file": "skill/SKILL.md",
+      "match": "strict",
+      "obligation": "strict checking is the floor"
+    },
+    {
+      "id": "skill.rule8.loc",
+      "file": "skill/SKILL.md",
+      "match": "1000 LOC",
+      "obligation": "the file-size ceiling is stated"
+    },
+    {
+      "id": "skill.rule8.why",
+      "file": "skill/SKILL.md",
+      "match": "why-comment|why comment",
+      "obligation": "comments explain why"
+    },
+    {
+      "id": "skill.rule8.trees",
+      "file": "skill/SKILL.md",
+      "match": "sibling of the source tree|separate trees",
+      "obligation": "source and test trees are separate"
+    },
+    {
+      "id": "skill.rule8.toolchain",
+      "file": "skill/SKILL.md",
+      "match": "toolchain\\.source_root|toolchain\\.test_root",
+      "obligation": "the mirrored tree is proven only when the roots are declared"
+    },
+    {
+      "id": "skill.rule9.compaction",
+      "file": "skill/SKILL.md",
+      "match": "Compaction recovery|compaction",
+      "obligation": "compaction recovery restores ground truth"
+    },
+    {
+      "id": "skill.rule9.next",
+      "file": "skill/SKILL.md",
+      "match": "archgen_tasks\\{action:'next'",
+      "obligation": "recovery starts from the tool, not memory"
+    },
+    {
+      "id": "skill.rule10.committed",
+      "file": "skill/SKILL.md",
+      "match": "COMMITTED|committed",
+      "obligation": "every archgen artifact is committed"
+    },
+    {
+      "id": "skill.rule10.gitignore",
+      "file": "skill/SKILL.md",
+      "match": "gitignore",
+      "obligation": "an artifact is never gitignored"
+    },
+    {
+      "id": "skill.rule10.tracking",
+      "file": "skill/SKILL.md",
+      "match": "artifact-tracking",
+      "obligation": "the tracking rules are pointed at"
+    },
+    {
+      "id": "skill.codegraph.use",
+      "file": "skill/SKILL.md",
+      "match": "CodeGraph",
+      "obligation": "CodeGraph is preferred over grep when the index exists"
+    },
+    {
+      "id": "skill.codegraph.never",
+      "file": "skill/SKILL.md",
+      "match": "never re-index|never reindex|Never re-index",
+      "obligation": "the index is never rebuilt by hand"
+    },
+    {
+      "id": "skill.codegraph.ensure",
+      "file": "skill/SKILL.md",
+      "match": "archgen_codegraph\\{action:'ensure'",
+      "obligation": "the bootstrap command is named"
+    },
+    {
+      "id": "skill.codegraph.approve",
+      "file": "skill/SKILL.md",
+      "match": "approve:true",
+      "obligation": "the bootstrap needs explicit approval"
+    },
+    {
+      "id": "skill.envelope.ok",
+      "file": "skill/SKILL.md",
+      "match": "\\{ ok, data, error, meta \\}|ok,data,error,meta",
+      "obligation": "the envelope shape is stated"
+    },
+    {
+      "id": "skill.envelope.codes",
+      "file": "skill/SKILL.md",
+      "match": "INVALID_INPUT",
+      "obligation": "the typed error codes are named"
+    },
+    {
+      "id": "skill.envelope.notfound",
+      "file": "skill/SKILL.md",
+      "match": "NOT_FOUND",
+      "obligation": "NOT_FOUND is a known code"
+    },
+    {
+      "id": "skill.envelope.cycle",
+      "file": "skill/SKILL.md",
+      "match": "CYCLE",
+      "obligation": "CYCLE is a known code"
+    },
+    {
+      "id": "skill.envelope.conflict",
+      "file": "skill/SKILL.md",
+      "match": "OWNERSHIP_CONFLICT",
+      "obligation": "OWNERSHIP_CONFLICT is a known code"
+    },
+    {
+      "id": "skill.envelope.denied",
+      "file": "skill/SKILL.md",
+      "match": "PERMISSION_DENIED",
+      "obligation": "PERMISSION_DENIED is a known code"
+    },
+    {
+      "id": "skill.envelope.valid",
+      "file": "skill/SKILL.md",
+      "match": "data\\.valid",
+      "obligation": "plan health is read from data.valid"
+    },
+    {
+      "id": "skill.envelope.verdict",
+      "file": "skill/SKILL.md",
+      "match": "data\\.verdict",
+      "obligation": "gate health is read from data.verdict"
+    },
+    {
+      "id": "skill.tokens.sections",
+      "file": "skill/SKILL.md",
+      "match": "archgen_docs\\{action:'digest'\\}|digest",
+      "obligation": "sections are fetched, never whole files"
+    },
+    {
+      "id": "skill.tokens.allsettled",
+      "file": "skill/SKILL.md",
+      "match": "allSettled",
+      "obligation": "batches settle with allSettled"
+    },
+    {
+      "id": "skill.tokens.next",
+      "file": "skill/SKILL.md",
+      "match": "meta\\.next",
+      "obligation": "meta.next continues the collection asked for"
+    },
+    {
+      "id": "skill.tokens.more",
+      "file": "skill/SKILL.md",
+      "match": "meta\\.more",
+      "obligation": "meta.more names the other collections"
+    },
+    {
+      "id": "skill.tokens.norestate",
+      "file": "skill/SKILL.md",
+      "match": "Never restate|never restate",
+      "obligation": "a loaded reference is never restated in chat"
+    },
+    {
+      "id": "skill.tokens.summary",
+      "file": "skill/SKILL.md",
+      "match": "one-line decision summary|decision summary",
+      "obligation": "the scope decision is summarised in one line for the user"
+    },
+    {
+      "id": "skill.refs.mandatory",
+      "file": "skill/SKILL.md",
+      "match": "MANDATORY|mandatory pre-load",
+      "obligation": "a \u00a7 marker is a mandatory pre-action load"
+    },
+    {
+      "id": "skill.refs.prefix",
+      "file": "skill/SKILL.md",
+      "match": "prefix",
+      "obligation": "a \u00a7 name is a slug prefix"
+    },
+    {
+      "id": "skill.refs.reload",
+      "file": "skill/SKILL.md",
+      "match": "Reload after compaction|reload",
+      "obligation": "the mode's sections are reloaded after compaction"
+    },
+    {
+      "id": "skill.refs.noguess",
+      "file": "skill/SKILL.md",
+      "match": "Never guess a protocol|never guess",
+      "obligation": "a protocol is never guessed"
+    },
+    {
+      "id": "skill.refs.local",
+      "file": "skill/SKILL.md",
+      "match": "code-standards\\.md stays local|stays local",
+      "obligation": "code-standards stays a plain file for workers"
+    },
+    {
+      "id": "skill.mode.generate",
+      "file": "skill/SKILL.md",
+      "match": "GENERATE",
+      "obligation": "the GENERATE mode exists"
+    },
+    {
+      "id": "skill.mode.brownfield",
+      "file": "skill/SKILL.md",
+      "match": "BROWNFIELD",
+      "obligation": "the BROWNFIELD mode exists"
+    },
+    {
+      "id": "skill.mode.startwork",
+      "file": "skill/SKILL.md",
+      "match": "START-WORK",
+      "obligation": "the START-WORK mode exists"
+    },
+    {
+      "id": "skill.mode.update",
+      "file": "skill/SKILL.md",
+      "match": "UPDATE",
+      "obligation": "the UPDATE mode exists"
+    },
+    {
+      "id": "skill.mode.rollback",
+      "file": "skill/SKILL.md",
+      "match": "ROLLBACK",
+      "obligation": "the ROLLBACK mode exists"
+    },
+    {
+      "id": "skill.mode.investigate",
+      "file": "skill/SKILL.md",
+      "match": "INVESTIGATE",
+      "obligation": "the INVESTIGIGATE mode exists"
+    },
+    {
+      "id": "skill.mode.installmcp",
+      "file": "skill/SKILL.md",
+      "match": "INSTALL-MCP",
+      "obligation": "the INSTALL-MCP mode exists"
+    },
+    {
+      "id": "skill.mode.fetchskill",
+      "file": "skill/SKILL.md",
+      "match": "FETCH-SKILL",
+      "obligation": "the FETCH-SKILL mode exists"
+    },
+    {
+      "id": "skill.step2.evidence",
+      "file": "skill/SKILL.md",
+      "match": "GREENFIELD-SYSTEM",
+      "obligation": "the intent classes are named"
+    },
+    {
+      "id": "skill.step2.signals",
+      "file": "skill/SKILL.md",
+      "match": "new-module",
+      "obligation": "the evidence signals are named"
+    },
+    {
+      "id": "skill.step2.defaultdown",
+      "file": "skill/SKILL.md",
+      "match": "[Dd]efault down",
+      "obligation": "missing evidence defaults down"
+    },
+    {
+      "id": "skill.step2.lowconf",
+      "file": "skill/SKILL.md",
+      "match": "confidence:low|confidence: low",
+      "obligation": "a low-confidence profile asks one question"
+    },
+    {
+      "id": "skill.step2.medconf",
+      "file": "skill/SKILL.md",
+      "match": "missingSignals",
+      "obligation": "a medium-confidence profile is read through missingSignals"
+    },
+    {
+      "id": "skill.step2.confirm",
+      "file": "skill/SKILL.md",
+      "match": "recommendation first|recommendation-first|Confirm in one sentence",
+      "obligation": "the recommendation comes first and the user confirms"
+    },
+    {
+      "id": "skill.step2.record",
+      "file": "skill/SKILL.md",
+      "match": "answers\\.yaml",
+      "obligation": "the profile is recorded in answers.yaml"
+    },
+    {
+      "id": "skill.step2.stoplist",
+      "file": "skill/SKILL.md",
+      "match": "[Ss]top list",
+      "obligation": "the stop list of unnecessary artifacts is stated"
+    },
+    {
+      "id": "skill.step2.budget",
+      "file": "skill/SKILL.md",
+      "match": "depth-budgets|Depth budgets",
+      "obligation": "depth budgets are ceilings"
+    },
+    {
+      "id": "skill.generate.interview",
+      "file": "skill/SKILL.md",
+      "match": "Round 0",
+      "obligation": "Round 0 is scope calibration"
+    },
+    {
+      "id": "skill.generate.collision",
+      "file": "skill/SKILL.md",
+      "match": "<slug>-2",
+      "obligation": "a slug collision gets a suffix, never an overwrite"
+    },
+    {
+      "id": "skill.generate.quote",
+      "file": "skill/SKILL.md",
+      "match": "[Qq]uote every value",
+      "obligation": "every YAML value is quoted"
+    },
+    {
+      "id": "skill.generate.mirror",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Mirrored test tree",
+      "obligation": "a source-owning task owns its mirrored test path"
+    },
+    {
+      "id": "skill.generate.covers",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "covers E4",
+      "obligation": "an acceptance says which edge row it covers"
+    },
+    {
+      "id": "skill.generate.cite",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Requirements are cited",
+      "obligation": "every PRD requirement is cited by an acceptance"
+    },
+    {
+      "id": "skill.generate.waves",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Wave labels match the DAG",
+      "obligation": "wave labels match the DAG"
+    },
+    {
+      "id": "skill.generate.validate",
+      "file": "skill/SKILL.md",
+      "match": "archgen_plan\\{action:'validate'",
+      "obligation": "the plan is validated"
+    },
+    {
+      "id": "skill.generate.codes",
+      "file": "skill/SKILL.md",
+      "match": "issueCodes|warningCodes",
+      "obligation": "findings are counted by class"
+    },
+    {
+      "id": "skill.generate.brief",
+      "file": "skill/SKILL.md",
+      "match": "archgen_plan\\{action:'brief', kind:'verifier'",
+      "obligation": "the gate brief is dispatched verbatim"
+    },
+    {
+      "id": "skill.generate.review",
+      "file": "skill/SKILL.md",
+      "match": "archgen_plan\\{action:'brief', kind:'review'",
+      "obligation": "the review brief is dispatched verbatim"
+    },
+    {
+      "id": "skill.generate.usergate",
+      "file": "skill/SKILL.md",
+      "match": "Approve to start work",
+      "obligation": "the user gate asks for approval to start work"
+    },
+    {
+      "id": "skill.startwork.max3",
+      "file": "skill/SKILL.md",
+      "match": "Max 3 parallel|at most 3|3 parallel",
+      "obligation": "at most three sub-agents run in parallel"
+    },
+    {
+      "id": "skill.startwork.contract",
+      "file": "skill/SKILL.md",
+      "match": "archgen_tasks\\{action:'contract'",
+      "obligation": "the worker prompt is the tool's contract"
+    },
+    {
+      "id": "skill.startwork.selfexec",
+      "file": "skill/SKILL.md",
+      "match": "self-execute",
+      "obligation": "without sub-agents the orchestrator self-executes sequentially"
+    },
+    {
+      "id": "skill.startwork.noretry",
+      "file": "skill/SKILL.md",
+      "match": "never auto-retry|Never auto-retry",
+      "obligation": "a failure is never auto-retried"
+    },
+    {
+      "id": "skill.startwork.report",
+      "file": "skill/SKILL.md",
+      "match": "Final report",
+      "obligation": "a final report closes the run"
+    },
+    {
+      "id": "skill.update.impact",
+      "file": "skill/SKILL.md",
+      "match": "archgen_plan\\{action:'impact'",
+      "obligation": "an update starts from the blast radius"
+    },
+    {
+      "id": "skill.rollback.revert",
+      "file": "skill/SKILL.md",
+      "match": "git revert",
+      "obligation": "a rollback reverts commits"
+    },
+    {
+      "id": "skill.rollback.force",
+      "file": "skill/SKILL.md",
+      "match": "force:true",
+      "obligation": "a status rewind uses force"
+    },
+    {
+      "id": "skill.investigate.brief",
+      "file": "skill/SKILL.md",
+      "match": "kind:'investigate'",
+      "obligation": "an investigation uses the investigate brief"
+    },
+    {
+      "id": "skill.investigate.rootcause",
+      "file": "skill/SKILL.md",
+      "match": "root cause|root-cause",
+      "obligation": "patch-fixing without a root cause is forbidden"
+    },
+    {
+      "id": "skill.fetch.match",
+      "file": "skill/SKILL.md",
+      "match": "archgen_skills\\{action:'match'",
+      "obligation": "capability skills are matched before planning"
+    },
+    {
+      "id": "skill.fetch.install",
+      "file": "skill/SKILL.md",
+      "match": "archgen_skills\\{action:'install'",
+      "obligation": "one matched skill is installed"
+    },
+    {
+      "id": "skill.fetch.compliance",
+      "file": "skill/SKILL.md",
+      "match": "Skill compliance",
+      "obligation": "every worker report carries a skill-compliance line"
+    },
+    {
+      "id": "skill.installmcp.approval",
+      "file": "skill/SKILL.md",
+      "match": "explicit approval|wait for explicit approval",
+      "obligation": "an MCP install waits for explicit approval"
+    },
+    {
+      "id": "skill.never.rules",
+      "file": "skill/SKILL.md",
+      "match": "violate Hard Rules",
+      "obligation": "the hard rules are never violated"
+    },
+    {
+      "id": "skill.never.overwrite",
+      "file": "skill/SKILL.md",
+      "match": "NEVER.{0,60}overwrite|never overwrite",
+      "obligation": "an existing artifact space is never overwritten"
+    },
+    {
+      "id": "skill.never.omit",
+      "file": "skill/SKILL.md",
+      "match": "NEVER.{0,60}omit|never create an artifact the profile marks omit",
+      "obligation": "an omitted artifact is never created"
+    },
+    {
+      "id": "skill.never.cli",
+      "file": "skill/SKILL.md",
+      "match": "auto-spawn external CLI|external CLIs",
+      "obligation": "external CLIs are never auto-spawned"
+    },
+    {
+      "id": "skill.never.overlap",
+      "file": "skill/SKILL.md",
+      "match": "NEVER.{0,60}overlap|overlap `file_ownership`",
+      "obligation": "file ownership never overlaps in a wave"
+    },
+    {
+      "id": "skill.never.silent",
+      "file": "skill/SKILL.md",
+      "match": "NEVER.{0,60}silently|silently",
+      "obligation": "configs are never modified silently"
+    },
+    {
+      "id": "skill.never.handwrite",
+      "file": "skill/SKILL.md",
+      "match": "hand-write|hand-assemble",
+      "obligation": "scaffolds, briefs and contracts are never hand-written"
+    },
+    {
+      "id": "skill.never.reconstruct",
+      "file": "skill/SKILL.md",
+      "match": "reconstruct a tool",
+      "obligation": "a tool's output is never reconstructed from installed files"
+    },
+    {
+      "id": "skill.never.unloaded",
+      "file": "skill/SKILL.md",
+      "match": "unloaded .{0,20}protocol|act on an unloaded",
+      "obligation": "no action is taken on an unloaded protocol"
+    },
+    {
+      "id": "skill.never.inject",
+      "file": "skill/SKILL.md",
+      "match": "repository text as instructions",
+      "obligation": "repository text never overrides the skill"
+    },
+    {
+      "id": "skill.edge.slug",
+      "file": "skill/SKILL.md",
+      "match": "Slug collision",
+      "obligation": "the slug collision case is stated"
+    },
+    {
+      "id": "skill.edge.waiverinvalid",
+      "file": "skill/SKILL.md",
+      "match": "WAIVER_INVALID",
+      "obligation": "an invalid waiver is diagnosed"
+    },
+    {
+      "id": "skill.edge.confignotenforced",
+      "file": "skill/SKILL.md",
+      "match": "CONFIG_NOT_ENFORCED",
+      "obligation": "a rule that cannot run is named"
+    },
+    {
+      "id": "skill.edge.worker",
+      "file": "skill/SKILL.md",
+      "match": "meets no acceptance",
+      "obligation": "a worker meeting no acceptance is failed"
+    },
+    {
+      "id": "skill.edge.node20",
+      "file": "skill/SKILL.md",
+      "match": "Node",
+      "obligation": "the Node requirement is stated"
+    },
+    {
+      "id": "standards.precedence",
+      "file": "skill/references/code-standards.md",
+      "match": "Precedence",
+      "obligation": "the host toolchain takes precedence over these standards"
+    },
+    {
+      "id": "standards.who",
+      "file": "skill/references/code-standards.md",
+      "match": "reviewer's judgement|reviewer",
+      "obligation": "the floor proves the tree layout; the rest is reviewer judgement"
+    },
+    {
+      "id": "standards.checker",
+      "file": "skill/references/code-standards.md",
+      "match": "strongest available checker",
+      "obligation": "the ecosystem's strongest checker is used in its strictest mode"
+    },
+    {
+      "id": "standards.nocast",
+      "file": "skill/references/code-standards.md",
+      "match": "No production escape hatches",
+      "obligation": "no production escape hatch without an owner"
+    },
+    {
+      "id": "standards.absence",
+      "file": "skill/references/code-standards.md",
+      "match": "Model absence explicitly",
+      "obligation": "absence is modelled explicitly"
+    },
+    {
+      "id": "standards.errors",
+      "file": "skill/references/code-standards.md",
+      "match": "No silent failures",
+      "obligation": "no silent failure"
+    },
+    {
+      "id": "standards.structured",
+      "file": "skill/references/code-standards.md",
+      "match": "structured error",
+      "obligation": "a failure is a structured error with a stable code"
+    },
+    {
+      "id": "standards.loc",
+      "file": "skill/references/code-standards.md",
+      "match": "1000 LOC",
+      "obligation": "the file-size ceiling"
+    },
+    {
+      "id": "standards.responsibility",
+      "file": "skill/references/code-standards.md",
+      "match": "Single responsibility",
+      "obligation": "one public purpose per module"
+    },
+    {
+      "id": "standards.inward",
+      "file": "skill/references/code-standards.md",
+      "match": "point inward",
+      "obligation": "dependencies point inward"
+    },
+    {
+      "id": "standards.sibling",
+      "file": "skill/references/code-standards.md",
+      "match": "sibling",
+      "obligation": "the test tree is a sibling of the source tree"
+    },
+    {
+      "id": "standards.mirror",
+      "file": "skill/references/code-standards.md",
+      "match": "mirror",
+      "obligation": "the mirror preserves the path under the source root"
+    },
+    {
+      "id": "standards.filename",
+      "file": "skill/references/code-standards.md",
+      "match": "FILE NAME is the language",
+      "obligation": "the file name is the language's business"
+    },
+    {
+      "id": "standards.exception",
+      "file": "skill/references/code-standards.md",
+      "match": "waiver",
+      "obligation": "the in-package test exception needs a waiver"
+    },
+    {
+      "id": "standards.naming",
+      "file": "skill/references/code-standards.md",
+      "match": "BANNED names",
+      "obligation": "the banned names are listed"
+    },
+    {
+      "id": "standards.why",
+      "file": "skill/references/code-standards.md",
+      "match": "Document WHY",
+      "obligation": "comments document why"
+    },
+    {
+      "id": "standards.noise",
+      "file": "skill/references/code-standards.md",
+      "match": "Zero noise",
+      "obligation": "no comment noise"
+    },
+    {
+      "id": "standards.verifiable",
+      "file": "skill/references/code-standards.md",
+      "match": "objectively verifiable",
+      "obligation": "every acceptance carries an objectively verifiable check"
+    },
+    {
+      "id": "ref.orch.floorfirst",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "The floor comes FIRST",
+      "obligation": "the floor runs before any gate agent"
+    },
+    {
+      "id": "ref.orch.oneagent",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "ONE agent, the WHOLE plan, ONE pass|ONE agent",
+      "obligation": "one agent judges the whole plan in one pass"
+    },
+    {
+      "id": "ref.orch.exhaustive",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "Exhaustive single pass|exhaustive",
+      "obligation": "round 1 is exhaustive"
+    },
+    {
+      "id": "ref.orch.cheapforbidden",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "FORBIDDEN",
+      "obligation": "cheap-tier gate models are forbidden"
+    },
+    {
+      "id": "ref.orch.noinvent",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "does not invent requirements|never invent|DO NOT INVENT",
+      "obligation": "the verifier never invents requirements"
+    },
+    {
+      "id": "ref.orch.nit",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "NIT",
+      "obligation": "a NIT is cosmetic and never blocks"
+    },
+    {
+      "id": "ref.orch.observation",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "OBSERVATION",
+      "obligation": "an OBSERVATION never blocks"
+    },
+    {
+      "id": "ref.orch.blocking3",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "the artifact",
+      "obligation": "a BLOCKING finding names the artifact"
+    },
+    {
+      "id": "ref.orch.rule",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "the rule it violates",
+      "obligation": "a BLOCKING finding names the violated rule"
+    },
+    {
+      "id": "ref.orch.fix",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "the change that satisfies it|the fix",
+      "obligation": "a BLOCKING finding names the fix"
+    },
+    {
+      "id": "ref.orch.noround3",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "No Round 3|no third pass|There is no round 3",
+      "obligation": "there is no third round"
+    },
+    {
+      "id": "ref.orch.batchfix",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "batch per file|ONE pass, per file",
+      "obligation": "fixes are batched per file and per code"
+    },
+    {
+      "id": "ref.orch.codegroup",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "group fixes by code",
+      "obligation": "fixes are grouped by code, not by sentence"
+    },
+    {
+      "id": "ref.orch.counts",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "issueCodes|warningCodes",
+      "obligation": "the counts are exact and the list is a sample"
+    },
+    {
+      "id": "ref.orch.waiverfile",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "A waiver is a file, not a sentence",
+      "obligation": "a waiver is a file"
+    },
+    {
+      "id": "ref.orch.waiverfields",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "approved_by",
+      "obligation": "a waiver records who approved it"
+    },
+    {
+      "id": "ref.orch.freshsession",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "NEVER reused|fresh session",
+      "obligation": "gate sessions are never reused"
+    },
+    {
+      "id": "ref.orch.ci",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "fail-on",
+      "obligation": "the floor is a CI build gate"
+    },
+    {
+      "id": "ref.orch.dispatcher",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "MAIN AGENT",
+      "obligation": "the main agent owns the orchestration calls"
+    },
+    {
+      "id": "ref.orch.cap3",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "HARD CAP: 3|3 live parallel",
+      "obligation": "three is the hard parallel cap"
+    },
+    {
+      "id": "ref.orch.disjoint",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "Disjoint write globs|disjoint write globs",
+      "obligation": "parallel workers own disjoint globs"
+    },
+    {
+      "id": "ref.orch.ledger",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "dispatch ledger|dispatchKey",
+      "obligation": "a dispatch ledger maps a task to its session"
+    },
+    {
+      "id": "ref.orch.changedcontract",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "changed contract invalidates",
+      "obligation": "a changed contract invalidates the session"
+    },
+    {
+      "id": "ref.orch.noretry",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "never auto-retry",
+      "obligation": "a task failure is never auto-retried"
+    },
+    {
+      "id": "ref.orch.blockedbyfailure",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "blockedByFailure",
+      "obligation": "dependents are held by a failure"
+    },
+    {
+      "id": "ref.orch.survey6",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "Existing docs",
+      "obligation": "the survey inventories the host documents"
+    },
+    {
+      "id": "ref.orch.surveytoolchain",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "Toolchain",
+      "obligation": "the survey records the toolchain and the roots"
+    },
+    {
+      "id": "ref.orch.investigate4",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "root cause",
+      "obligation": "an investigation delivers a root cause"
+    },
+    {
+      "id": "ref.art.necessity",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Consumer",
+      "obligation": "an artifact needs a consumer"
+    },
+    {
+      "id": "ref.art.decision",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Decision",
+      "obligation": "an artifact changes a decision"
+    },
+    {
+      "id": "ref.art.source",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Source",
+      "obligation": "an existing source is cited, not duplicated"
+    },
+    {
+      "id": "ref.art.risk",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Risk",
+      "obligation": "the risk of omitting is weighed"
+    },
+    {
+      "id": "ref.art.duplicate",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "duplicate of an existing PRD|copy of an existing PRD",
+      "obligation": "a copy of a host document is a defect"
+    },
+    {
+      "id": "ref.art.depth",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "depth` block is the authority",
+      "obligation": "the profile's depth block is the authority and the reference does not restate the ceilings"
+    },
+    {
+      "id": "ref.art.mirror",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Mirrored test tree",
+      "obligation": "the mirrored test tree is a proven invariant"
+    },
+    {
+      "id": "ref.art.disjoint",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Disjoint ownership",
+      "obligation": "ownership is disjoint"
+    },
+    {
+      "id": "ref.art.matrix",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Matrix citations resolve",
+      "obligation": "every matrix citation resolves"
+    },
+    {
+      "id": "ref.art.requirements",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Requirements are cited",
+      "obligation": "every requirement is cited"
+    },
+    {
+      "id": "ref.art.decisions",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Declared things exist and are owned",
+      "obligation": "declared paths are owned and decisions have files"
+    },
+    {
+      "id": "ref.art.waves",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Wave labels match the DAG",
+      "obligation": "wave labels match the DAG"
+    },
+    {
+      "id": "ref.art.runnable",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Acceptance is runnable",
+      "obligation": "an acceptance is runnable"
+    },
+    {
+      "id": "ref.art.claims",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "covers E4",
+      "obligation": "an acceptance says which edge row it covers"
+    },
+    {
+      "id": "ref.art.profile",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "plan_profile",
+      "obligation": "the profile is recorded where the floor can read it"
+    },
+    {
+      "id": "ref.art.hostpath",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "host_path",
+      "obligation": "a reuse carries its host path"
+    },
+    {
+      "id": "ref.art.yamlquote",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "quote every acceptance criterion",
+      "obligation": "acceptance criteria are quoted"
+    },
+    {
+      "id": "ref.art.yamlplain",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "plain value MAY contain",
+      "obligation": "a plain value may contain a colon"
+    },
+    {
+      "id": "ref.art.yamlblockscalar",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "block-scalars-banned|Block scalars",
+      "obligation": "block scalars are refused"
+    },
+    {
+      "id": "ref.art.anchor",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "GitHub-exact anchors|anchor",
+      "obligation": "anchors follow the GitHub rule"
+    },
+    {
+      "id": "ref.art.frids",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "FR-<MODULE>-nn",
+      "obligation": "the FR id convention is stated"
+    },
+    {
+      "id": "ref.art.tracking",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "NEVER gitignore",
+      "obligation": "an archgen artifact is never gitignored"
+    },
+    {
+      "id": "ref.art.workspace",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Agent workspace",
+      "obligation": "the artifact location is stated"
+    },
+    {
+      "id": "ref.art.provenance",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "schema_version",
+      "obligation": "generated files carry a provenance header"
+    },
+    {
+      "id": "ref.art.gatemetrics",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "waived:",
+      "obligation": "the canonical gate-metrics block is stated"
+    },
+    {
+      "id": "ref.art.waiverledger",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "waivers:",
+      "obligation": "the waiver ledger shape is stated"
+    },
+    {
+      "id": "ref.art.diagramlimit",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "15 nodes",
+      "obligation": "a diagram has a node limit"
+    },
+    {
+      "id": "ref.art.adr",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "irreversible",
+      "obligation": "an ADR records only an irreversible decision"
+    },
+    {
+      "id": "ref.interview.toolfirst",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "Tool-first, inline-fallback",
+      "obligation": "the question tool is preferred"
+    },
+    {
+      "id": "ref.interview.recommend",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "Recommendation-first",
+      "obligation": "every question leads with a recommendation"
+    },
+    {
+      "id": "ref.interview.forks",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "material decision-forks|forks",
+      "obligation": "only material forks are asked"
+    },
+    {
+      "id": "ref.interview.noask",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "Never re-ask",
+      "obligation": "an answered question is never re-asked"
+    },
+    {
+      "id": "ref.interview.round0",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "Round 0",
+      "obligation": "Round 0 is scope calibration"
+    },
+    {
+      "id": "ref.interview.caps",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "Max rounds|interviewRoundCap",
+      "obligation": "the round cap comes from the profile"
+    },
+    {
+      "id": "ref.interview.feeds",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "feeds:",
+      "obligation": "answers carry feeds targets"
+    },
+    {
+      "id": "ref.interview.nfr",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "numeric|NFR",
+      "obligation": "NFRs carry numbers"
+    },
+    {
+      "id": "ref.interview.conflict",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "Conflict detection|tension",
+      "obligation": "contradictions are surfaced one at a time"
+    },
+    {
+      "id": "ref.interview.answers",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "answers\\.yaml",
+      "obligation": "the answers file is machine-readable"
+    },
+    {
+      "id": "ref.interview.complete",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "Completion test",
+      "obligation": "the completion test is stated"
+    },
+    {
+      "id": "ref.platform.harnessinfo",
+      "file": "packages/mcp/assets/references/platforms.md",
+      "match": "archgen_setup\\{action:'harness_info'\\}",
+      "obligation": "the runtime authority for a harness is the tool"
+    },
+    {
+      "id": "ref.platform.unknown",
+      "file": "packages/mcp/assets/references/platforms.md",
+      "match": "Unknown platform",
+      "obligation": "the unknown-platform procedure exists"
+    },
+    {
+      "id": "ref.platform.keys",
+      "file": "packages/mcp/assets/references/platforms.md",
+      "match": "Never assume one key across harnesses|harness_info",
+      "obligation": "the top-level key vocabulary is owned by the registry and served by harness_info, never restated"
+    },
+    {
+      "id": "ref.platform.urlkeys",
+      "file": "packages/mcp/assets/references/platforms.md",
+      "match": "serverUrl",
+      "obligation": "the remote URL key varies by harness"
+    },
+    {
+      "id": "ref.platform.indexonce",
+      "file": "packages/mcp/assets/references/platforms.md",
+      "match": "Index once|never re-index",
+      "obligation": "the index is built once and kept live"
+    },
+    {
+      "id": "ref.platform.telemetry",
+      "file": "packages/mcp/assets/references/platforms.md",
+      "match": "telemetry",
+      "obligation": "the telemetry default is disclosed"
+    },
+    {
+      "id": "ref.platform.scope",
+      "file": "packages/mcp/assets/references/platforms.md",
+      "match": "Source navigation|Task dependency graphs",
+      "obligation": "each tool has its own navigation scope"
+    },
+    {
+      "id": "ref.mcpskills.installmcp",
+      "file": "packages/mcp/assets/references/mcp-and-skills.md",
+      "match": "INSTALL-MCP procedure",
+      "obligation": "the external MCP install procedure exists"
+    },
+    {
+      "id": "ref.mcpskills.fetch",
+      "file": "packages/mcp/assets/references/mcp-and-skills.md",
+      "match": "FETCH-SKILL procedure",
+      "obligation": "the capability-skill procedure exists"
+    },
+    {
+      "id": "ref.mcpskills.match",
+      "file": "packages/mcp/assets/references/mcp-and-skills.md",
+      "match": "whole-word",
+      "obligation": "matching is whole-word over all three inputs"
+    },
+    {
+      "id": "ref.mcpskills.one",
+      "file": "packages/mcp/assets/references/mcp-and-skills.md",
+      "match": "Never install a whole family|never a family|ONE matched skill",
+      "obligation": "one skill is installed, never a family"
+    },
+    {
+      "id": "ref.mcpskills.compliance",
+      "file": "packages/mcp/assets/references/mcp-and-skills.md",
+      "match": "Skill compliance",
+      "obligation": "the worker reports skill compliance"
+    },
+    {
+      "id": "ref.mcpskills.policy",
+      "file": "packages/mcp/assets/references/mcp-and-skills.md",
+      "match": "policy",
+      "obligation": "the registry policy is stated"
+    },
+    {
+      "id": "ref.mcpskills.ownserver",
+      "file": "packages/mcp/assets/references/mcp-and-skills.md",
+      "match": "Never configure them manually|never configure",
+      "obligation": "archgen's own server is never configured by hand"
+    },
+    {
+      "id": "brief.verifier.round1",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "ROUND 1 \u2014 EXHAUSTIVE",
+      "obligation": "round 1 is exhaustive"
+    },
+    {
+      "id": "brief.verifier.round2",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "ROUND 2 \u2014 DELTA|ROUND 2 \u2014 DELTA ONLY",
+      "obligation": "round 2 is a delta"
+    },
+    {
+      "id": "gate.noround3",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "There is no Round 3",
+      "obligation": "there is no round 3"
+    },
+    {
+      "id": "brief.verifier.nine",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "THE NINE DIMENSIONS|nine",
+      "obligation": "all nine dimensions are marked"
+    },
+    {
+      "id": "gate.class",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "\\*\\*BLOCKING\\*\\*",
+      "obligation": "every finding carries exactly one class"
+    },
+    {
+      "id": "gate.nit",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "\\*\\*NIT\\*\\*",
+      "obligation": "a NIT never blocks"
+    },
+    {
+      "id": "gate.obs",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "\\*\\*OBSERVATION\\*\\*",
+      "obligation": "an OBSERVATION never blocks"
+    },
+    {
+      "id": "gate.blocking3",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "the change that satisfies it",
+      "obligation": "a BLOCKING finding names the artifact, the rule and the fix"
+    },
+    {
+      "id": "brief.verifier.floor",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "Mechanical floor",
+      "obligation": "the floor result is handed to the agent"
+    },
+    {
+      "id": "brief.verifier.snapshot",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "SNAPSHOT|snapshot",
+      "obligation": "the plan snapshot guards against judging stale content"
+    },
+    {
+      "id": "brief.verifier.counts",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "COUNTS ARE COMPLETE|counts",
+      "obligation": "the counts are complete and the list is a sample"
+    },
+    {
+      "id": "brief.verifier.necessity",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "ARTIFACT NECESSITY|artifact necessity",
+      "obligation": "scope and artifact necessity are judged"
+    },
+    {
+      "id": "brief.verifier.verdict",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "VERDICT:",
+      "obligation": "the report has an exact verdict line"
+    },
+    {
+      "id": "brief.verifier.nowrite",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "NEVER edit files",
+      "obligation": "the verifier never edits"
+    },
+    {
+      "id": "gate.waived",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "A WAIVED finding",
+      "obligation": "a waived finding is not re-raised"
+    },
+    {
+      "id": "gate.round1",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "Round 1 is exhaustive",
+      "obligation": "round 1 is exhaustive"
+    },
+    {
+      "id": "gate.round2",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "Round 2 is a DELTA",
+      "obligation": "round 2 is a delta"
+    },
+    {
+      "id": "brief.review.areas",
+      "file": "packages/mcp/assets/briefs/review.md",
+      "match": "ALL 5 AREAS|5 AREAS",
+      "obligation": "all five review areas are examined"
+    },
+    {
+      "id": "brief.review.minimalism",
+      "file": "packages/mcp/assets/briefs/review.md",
+      "match": "scope fit & minimalism",
+      "obligation": "scope fit and minimalism is a review area"
+    },
+    {
+      "id": "brief.review.nowrite",
+      "file": "packages/mcp/assets/briefs/review.md",
+      "match": "NEVER edit files",
+      "obligation": "the reviewer never edits"
+    },
+    {
+      "id": "brief.review.fresh",
+      "file": "packages/mcp/assets/briefs/review.md",
+      "match": "independent|FRESH|never continues",
+      "obligation": "the reviewer is independent"
+    },
+    {
+      "id": "brief.review.coverage",
+      "file": "packages/mcp/assets/briefs/review.md",
+      "match": "MANDATORY COVERAGE TABLE",
+      "obligation": "the coverage table is mandatory"
+    },
+    {
+      "id": "brief.survey.six",
+      "file": "packages/mcp/assets/briefs/survey.md",
+      "match": "six non-empty sections|six",
+      "obligation": "the survey delivers six sections"
+    },
+    {
+      "id": "brief.survey.structure",
+      "file": "packages/mcp/assets/briefs/survey.md",
+      "match": "## Structure",
+      "obligation": "the structure section is required"
+    },
+    {
+      "id": "brief.survey.existing",
+      "file": "packages/mcp/assets/briefs/survey.md",
+      "match": "## Existing docs",
+      "obligation": "the existing-docs section is required"
+    },
+    {
+      "id": "brief.survey.toolchain",
+      "file": "packages/mcp/assets/briefs/survey.md",
+      "match": "## Toolchain",
+      "obligation": "the toolchain section is required"
+    },
+    {
+      "id": "brief.survey.cite",
+      "file": "packages/mcp/assets/briefs/survey.md",
+      "match": "MUST cite a real repository file path",
+      "obligation": "every claim cites a real path"
+    },
+    {
+      "id": "brief.survey.onefile",
+      "file": "packages/mcp/assets/briefs/survey.md",
+      "match": "EXACTLY ONE file",
+      "obligation": "the survey writes exactly one file"
+    },
+    {
+      "id": "brief.investigate.four",
+      "file": "packages/mcp/assets/briefs/investigate.md",
+      "match": "all four sections are MANDATORY|four sections",
+      "obligation": "the investigation delivers four sections"
+    },
+    {
+      "id": "brief.investigate.rootcause",
+      "file": "packages/mcp/assets/briefs/investigate.md",
+      "match": "ROOT CAUSE",
+      "obligation": "the root cause is stated"
+    },
+    {
+      "id": "brief.investigate.evidence",
+      "file": "packages/mcp/assets/briefs/investigate.md",
+      "match": "EVIDENCE",
+      "obligation": "the evidence is stated"
+    },
+    {
+      "id": "brief.investigate.blast",
+      "file": "packages/mcp/assets/briefs/investigate.md",
+      "match": "BLAST RADIUS",
+      "obligation": "the blast radius is stated"
+    },
+    {
+      "id": "brief.investigate.remediation",
+      "file": "packages/mcp/assets/briefs/investigate.md",
+      "match": "REMEDIATION",
+      "obligation": "the remediation is stated"
+    },
+    {
+      "id": "brief.investigate.nopatch",
+      "file": "packages/mcp/assets/briefs/investigate.md",
+      "match": "Patch-fixing without a verified root-cause statement is FORBIDDEN",
+      "obligation": "patch-fixing without a root cause is forbidden"
+    },
+    {
+      "id": "skill.rule2.waiver.suppresses",
+      "file": "skill/SKILL.md",
+      "match": "task-file defects included|suppresses the findings it covers",
+      "obligation": "a waiver suppresses the findings it covers, task-file defects included"
+    },
+    {
+      "id": "skill.rule3.checkconditions",
+      "file": "skill/SKILL.md",
+      "match": "PROFILE_NOT_RECORDED",
+      "obligation": "the profile decisions are checked only when a profile is recorded and the roots are declared"
+    },
+    {
+      "id": "ref.art.runnable.reviewer",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Acceptance is runnable \\(reviewer judgement",
+      "obligation": "a non-runnable acceptance is reviewer judgement, not a floor defect"
+    },
+    {
+      "id": "ref.art.provenance.answers",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "answers\\.yaml` with the three YAML comment lines|three YAML comment lines",
+      "obligation": "the provenance header also opens answers.yaml"
+    },
+    {
+      "id": "ref.art.verifierids",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "Verifier-compatible IDs",
+      "obligation": "a task-style id in a plan that cannot be placed is rejected"
+    },
+    {
+      "id": "ref.art.decisions.filename",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "decisions/0001-\\*\\.md",
+      "obligation": "a decision file is zero-padded: decisions/0001-*.md"
+    },
+    {
+      "id": "ref.art.snapshot.tool",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "archgen_tasks\\{action:'snapshot'\\}",
+      "obligation": "the resume snapshot is written by the snapshot action, and its length grows with the remaining tasks"
+    },
+    {
+      "id": "ref.art.template.schema",
+      "file": "packages/mcp/assets/references/artifact-templates.md",
+      "match": "provenance header carries `# schema_version: 1`",
+      "obligation": "the task contract is defined by the server's validator, not by a shipped schema file"
+    },
+    {
+      "id": "ref.orch.ci.project",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "--project \\.|--project <repo-root>",
+      "obligation": "the floor in CI resolves relative paths against the server's project root"
+    },
+    {
+      "id": "ref.orch.contract.absolute",
+      "file": "packages/mcp/assets/references/orchestration.md",
+      "match": "ABSOLUTE path of the installed skill",
+      "obligation": "the worker contract carries the absolute path of the installed skill"
+    },
+    {
+      "id": "ref.interview.profileintent",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "`intent` is required",
+      "obligation": "the profile requires an intent"
+    },
+    {
+      "id": "ref.interview.answers.scaffold",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "archgen_plan\\{action:'scaffold', scope, intent, signals",
+      "obligation": "the answers skeleton is generated by scaffold with the profile's inputs"
+    },
+    {
+      "id": "brief.verifier.floorverdict",
+      "file": "packages/mcp/assets/briefs/verifier.md",
+      "match": "floor's VERDICT",
+      "obligation": "the context block carries the floor's verdict, the counts and the codes"
+    },
+    {
+      "id": "brief.investigate.blastpath",
+      "file": "packages/mcp/assets/briefs/investigate.md",
+      "match": "absolute tasks\\.yaml path from the CONTEXT",
+      "obligation": "the blast radius uses the absolute tasks.yaml path from the context block"
+    },
+    {
+      "id": "brief.review.areas.list",
+      "file": "packages/mcp/assets/briefs/review.md",
+      "match": "documentation completeness",
+      "obligation": "the review coverage table lists all five areas"
+    },
+    {
+      "id": "brief.review.ordering",
+      "file": "packages/mcp/assets/briefs/review.md",
+      "match": "task ordering & parallelization",
+      "obligation": "task ordering and parallelization is a review area"
+    },
+    {
+      "id": "ref.interview.gateblock",
+      "file": "packages/mcp/assets/references/interview.md",
+      "match": "the canonical block, in `\u00a7artifact-templates/gate-metrics`",
+      "obligation": "interview.md points at the canonical gate block instead of restating it"
+    },
+    {
+      "id": "gate.onepass",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "EXACTLY ONE additional pass",
+      "obligation": "one user approval grants exactly one extra pass"
+    },
+    {
+      "id": "gate.orchestratorfixes",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "The ORCHESTRATOR applies all fixes",
+      "obligation": "the orchestrator applies the fixes and re-runs the floor"
+    },
+    {
+      "id": "gate.norereopen",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "does not re-open the verifier stage",
+      "obligation": "the review stage does not re-open the verifier stage"
+    },
+    {
+      "id": "gate.nothingoutranks",
+      "file": "packages/mcp/assets/briefs/_gate-protocol.md",
+      "match": "the rule it violates",
+      "obligation": "the blocked rule must be named by the finding"
+    }
+  ]
+}

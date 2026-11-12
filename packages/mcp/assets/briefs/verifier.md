@@ -28,16 +28,7 @@ Then judge:
 - **Code standards:** source and test trees are separate — no test tree inside the source tree, and every source-owning task owns the mirrored test path.
 - **Artifact tracking:** no `.gitignore` rule covers `.archgen/`, `.agents/skills/archgen`, `.claude/skills/archgen`, `AGENTS.md` or `CLAUDE.md`.
 
-CLASSIFICATION — every finding carries exactly one class:
-- **BLOCKING** — the plan contradicts an agreed requirement, an accepted decision, or a stated invariant; or a required artifact, task, or acceptance is missing. Blocks approval.
-- **NIT** — cosmetic only (wording, spacing, punctuation, ordering). NEVER blocks, NEVER justifies another round. At most five, one line each.
-- **OBSERVATION** — a capability nobody asked for (extra resilience, extra monitoring, a new policy). NEVER blocks; one line, no fix demand.
-
-A finding is BLOCKING only when it names ALL THREE: the artifact (file and section), the rule it violates (a requirement, decision, recorded profile decision, code standard, or another task's contract), and the change that satisfies it. A finding that cannot name the violated rule is a NIT or an OBSERVATION. "This acceptance could also mention the non-finite case" is a NIT unless a requirement or matrix row demands it — state it once and move on.
-
-DO NOT INVENT REQUIREMENTS: audit the plan against what was agreed. A missing capability no PRD, decision, `answers.yaml` or code-standard asked for is an OBSERVATION.
-
-A WAIVED finding (the brief lists them) is not a defect: do not re-raise it unless it regressed.
+<!-- include: _gate-protocol.md -->
 
 DELIVERABLE — ONE message in this exact format:
 
@@ -75,11 +66,6 @@ THE NINE DIMENSIONS — every report marks all nine, `PASS` / `FAIL` / `N/A`, wi
 9. **scope & artifact necessity** — every artifact has a consumer; every omission a reason
 
 `N/A` needs a reason too ("internal CLI with no auth or sensitive data"), not a blank cell.
-
-ROUNDS — THE GATE RUNS AT MOST TWICE
-- **Round 1:** exhaustive — report every defect you can find in this pass.
-- **Round 2:** DELTA. Re-check ONLY the Round 1 findings (fixed / still open / regressed) and the floor. Do NOT restate what is fixed. Anything new must be marked `NEW` and must meet the BLOCKING test.
-- **There is no Round 3.** If Round 2 still reports open findings, the orchestrator escalates them to the user. Never run a third pass on your own initiative.
 
 RULES
 - **MANDATORY COVERAGE TABLE:** every report (even `APPROVE`) includes all 9 dimensions marked `PASS`, `FAIL`, or `N/A` with a one-line reason. Missing rows = INCOMPLETE (treated as `ISSUES`).

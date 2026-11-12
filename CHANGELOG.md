@@ -1,3 +1,136 @@
+## [0.1.7] - 2026-11-12
+
+A context release: the catalog is smaller AND correct, every section says
+what it is FOR, and "no quality loss" is a CI fact instead of a promise.
+
+**Publish order: `archgen-mcp` FIRST, then `archgen-skill`.**
+
+| Artifact | Published as | Tag |
+|---|---|---|
+| `packages/mcp` | `archgen-mcp` | `vmcp-0.1.7` |
+| `packages/cli` | `archgen-skill` | `vcli-0.1.7` |
+
+### Fixed — the catalog's routing was WRONG in six places
+
+Every argument in the schema carried a hand-written parenthesis naming the
+actions that read it, and six of them were wrong:
+
+- `archgen_plan.collection` claimed four actions and belongs to **eight**;
+- `archgen_docs.collection` claimed **one** and belongs to **six**;
+- `archgen_plan.tasksYaml` and `.planDir` each omitted an action;
+- `archgen_tasks.taskId` omitted two;
+- `archgen_setup.telemetry` omitted one.
+
+A model that trusted the parenthesis passed an argument the handler never
+reads — and the handler IGNORES an unread argument, so the call SUCCEEDED and
+the agent believed it had done something it had not.
+
+The routing is now **generated** from the same per-action tables the handlers
+use, and rendered once — in the tool description and in `archgen_help`. A
+hand-written copy of a table is a copy that drifts; a generated one cannot.
+
+### Added — every reference section says what it is FOR
+
+`archgen_refs{action:'index'}` and `archgen_docs{action:'digest'}` now carry
+a one-line **purpose** per section. The index used to carry a slug and a
+title — enough to identify a section, not enough to CHOOSE one — so an agent
+had to pull a section to learn what it held, and paid for every wrong guess.
+
+The purpose is resolved in two steps: an authored one (a blockquote under the
+heading) wins, and otherwise the section's first prose line is used, so a
+section NEVER lacks one.
+
+### Added — `archgen_refs` can return a whole subtree
+
+`archgen_refs{action:'read', topic, section, include:'all'}` returns the
+section AND its nested subsections in one call — the parity
+`archgen_docs{action:'section', include:'all'}` has always had.
+
+It mattered: `§orchestration/verifier` returned 71 tokens and named ten
+children, and the agent had to make ten more calls to read the protocol it
+had already been told to load.
+
+### Fixed — the verify payload carried every finding twice
+
+`archgen_plan{action:'verify'}` returned the findings at the top level AND
+inside `audit`, because the audit's findings are pushed into both. On a
+broken 120-task plan that was 40 findings, twice, in one payload, for nothing.
+
+The audit now carries the MAPS, the waivers and the snapshot; the counts and
+the per-class codes stay, because they are exact while the lists are a sample.
+
+### Fixed — the two gate briefs could not disagree, because there is only one
+
+The verifier and the review briefs each restated the same protocol — the
+three finding classes, the three-part BLOCKING test, the two-round cap. They
+had already begun to differ in wording, and the next edit would have made
+them differ in MEANING.
+
+The shared rules now live in ONE file (`assets/briefs/_gate-protocol.md`)
+and are pasted into each brief at load time. The rendered brief is still
+self-contained — the gate agent never has to know a fragment exists.
+
+### Changed — the references point at the tools instead of restating them
+
+The repo's own rule — *"the references point at the tools; they never restate
+a tool's output"* — was not fully applied. Four sections restated what the
+agent already had from a tool:
+
+- the depth budgets restated the `depth` block `profile` returns;
+- the answers-file format restated the skeleton `scaffold` serves;
+- the MCP key vocabulary restated the registry `harness_info` reads;
+- the skill registry restated the entries `archgen_skills{action:'list'}` returns.
+
+Each is now a pointer to the tool that owns the fact. The drift gate that
+watched the key vocabulary was **inverted and strengthened**: the registry
+owns the keys, and the reference must not carry a second copy.
+
+### Added — the claim ledger: "no quality loss" as a CI fact
+
+`internal/claims/skill-claims.json` records ~280 atomic obligations the
+shipped guidance owes the agent — every hard-rule title, prohibition, `§`
+marker, error code, coverage dimension, BLOCKING clause, YAML rule and gate
+rule — with a stable id and a matcher written against the obligation's
+load-bearing WORDS, not a whole sentence.
+
+`packages/mcp/test/core/skill-claim-ledger.test.mjs` checks every one of
+them. A claim may be REWORDED freely; it may not DISAPPEAR, and it may not
+WEAKEN. Deleting an obligation deletes its claim in the same commit, and
+that diff is the record.
+
+`packages/mcp/test/core/schema-routing.test.mjs` does the same for the
+catalog: the property list, the enum values, the required arguments, the
+annotations and the per-action routing tables are pinned exactly, and every
+argument's description must still carry the facts it carried.
+
+### Changed — the always-on payload is smaller
+
+| | before | after |
+|---|---|---|
+| `SKILL.md` | 7,916 | 7,459 |
+| MCP tool catalog | 5,587 | 5,538 |
+| **ALWAYS-ON** (both) | **13,503** | **12,997** |
+| protocol references | 19,168 | 18,966 |
+| dispatch briefs | 4,236 | 4,069 |
+
+The catalog barely moved because it is at its floor: 86% of it is the JSON
+Schema of 92 arguments, and the flat shape is load-bearing (the
+`ARG_IGNORED` warning is what catches a wrong-action call). What changed is
+that the schema is now CORRECT, and the SKILL.md no longer restates
+protocols its references already own.
+
+The budget ceiling moves with it: `--max-always-on` 13,800 → **13,000**. It
+is a ratchet at the achieved value, not a target — the saving cannot creep
+back.
+
+### Changed — the skill teaches what the tools can do
+
+`archgen_plan{action:'scaffold'}` returns every skeleton at once — 6,631
+tokens. The tool already served ONE file per call; the skill never said so.
+It does now, and the mode table names `§artifact-templates/mechanical-invariants`
+— the section that owns the checklist the skill used to restate — so the
+invariants are loaded before the tasks are written, not after.
+
 ## [0.1.6] - 2026-11-11
 
 A contract release: the reference rule is the skill's path rule, every

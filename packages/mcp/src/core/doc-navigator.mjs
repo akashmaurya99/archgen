@@ -639,6 +639,11 @@ export function docIndex(input, opts = {}) {
         sections: take.map((s) => ({
           slug: s.slug,
           title: s.title,
+          // WHAT the section covers. The digest used to carry a slug and a
+          // title — enough to identify a section, not enough to CHOOSE one —
+          // so an agent had to pull a section to learn what it held, and paid
+          // for every wrong guess.
+          purpose: s.purpose ?? '',
           level: s.level,
           line: s.line,
           // The section's SIZE, not its end line: the caller needs to know

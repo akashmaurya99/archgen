@@ -1,6 +1,7 @@
 TASK: Investigate a recurring post-execution defect in this repository.
 TRIGGER: User reports repetitive/recurring issues AFTER implementation waves completed. This is NOT a patch-fix task.
 SCOPE: Read-only analysis and reporting (unless the brief explicitly authorizes edits).
+PLAN: tasks `<tasks.yaml>` · plans `<plans dir>` · artifacts `<slug dir>`
 
 DELIVERABLE — all four sections are MANDATORY:
 1. ROOT CAUSE: One sentence identifying the underlying defect (never merely the symptom).

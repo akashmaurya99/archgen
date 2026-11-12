@@ -45,13 +45,9 @@ Run `archgen_plan{action:'profile'}` first; fetch skeletons with `archgen_plan{a
 
 ## Depth budgets
 
-**The profile's `depth` block is the authority** — `archgen_plan{action:'profile'}` returns the ceilings for the class it computed. These are the ceilings it serves:
+**The profile's `depth` block is the authority** — `archgen_plan{action:'profile'}` returns the ceilings for the class it computed, and they are the same numbers the floor enforces. Read them from that answer; do not copy them from here, because a copy is a second source that can disagree with the first.
 
-| Scope | Plan context | Edge cases/task | PRD | Architecture | Diagrams | ADRs | Tasks | Plan lines |
-|---|---|---|---|---|---|---|---|---|
-| SMALL | 1 paragraph | 0 | none | none | none | none | ≤5 | ≤60 |
-| MEDIUM | ≤4 paragraphs | 3 | none | ≤20 lines/module, only for contracts | none | ≤1, only if irreversible | ≤12 | ≤180 |
-| LARGE | ≤4 paragraphs | 7 | ≤1 page/module, when created | ≤20 lines/module | ≤15 nodes each, when created | ≤3 total | ≤30 | ≤400 |
+Each ceiling is a limit per artifact: the plan context length, the edge cases per task, the PRD, the architecture, the diagrams, the ADRs, the task count and the plan length.
 
 Stop when the consumer is satisfied; "complete" means the required decisions are covered, not that every possible document exists.
 

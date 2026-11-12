@@ -6,12 +6,11 @@
 // archgen MCP and the CodeGraph MCP are wired by the same code.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, APPROVE_DESC } from './_register.mjs';
+import { routingSentence } from '../core/routing.mjs';
 import { loadAsset } from '../context.mjs';
 import { manageCodegraph, assertLocation, shapeReport } from '../core/codegraph-manager.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
-const ACTION_DESC = 'ensure|status|wire';
-
 
 /**
  * The arguments each action takes. An argument that belongs to another
@@ -24,10 +23,10 @@ const CODEGRAPH_ACTION_ARGS = {
 };
 
 const schema = z.object({
-  action: z.enum(['ensure', 'status', 'wire']).describe(ACTION_DESC),
+  action: z.enum(['ensure', 'status', 'wire']),
   location: z.enum(['project', 'global', 'both']).optional().describe(LOCATION_DESC),
   approve: z.boolean().optional().describe(APPROVE_DESC),
-  telemetry: z.enum(['keep', 'off', 'on']).optional().describe('keep|off|on (default keep).'),
+  telemetry: z.enum(['keep', 'off', 'on']).optional().describe('CodeGraph anonymous telemetry; off is machine-wide.'),
   noInstall: z.boolean().optional().describe('Do not install the CLI; use npx in configs.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
@@ -43,7 +42,8 @@ export function registerCodegraphTools(server) {
     title: 'ArchGen CodeGraph',
     description:
       'Install, wire, or inspect CodeGraph (source-symbol index + MCP) and its project index. ' +
-      'Run once per project; the watcher keeps the index live.',
+      'Run once per project; the watcher keeps the index live. ' +
+      routingSentence(CODEGRAPH_ACTION_ARGS),
     inputSchema: schema,
     readOnly: false,
     destructive: false,

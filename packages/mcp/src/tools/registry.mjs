@@ -5,6 +5,7 @@
 // feature map. This tool is the only sanctioned writer.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
+import { routingSentence } from '../core/routing.mjs';
 import { updateRegistry, showRegistry, DISPLAY_STATUSES } from '../core/registry-updater.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
@@ -19,10 +20,10 @@ const REGISTRY_ACTION_ARGS = {
 };
 
 const schema = z.object({
-  action: z.enum(['update', 'show']).describe('update|show'),
+  action: z.enum(['update', 'show']),
   projectRoot: projectRootArg,
-  slug: z.string().optional().describe('Upsert one feature row (update; needs status).'),
-  status: z.enum(DISPLAY_STATUSES).optional().describe('Status for the upserted row (update).'),
+  slug: z.string().optional().describe('Upsert one feature row; needs status.'),
+  status: z.enum(DISPLAY_STATUSES).optional().describe('Status for the upserted row.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
 });
@@ -34,7 +35,7 @@ export function registerRegistryTools(server) {
   registerTool(server, 'archgen_registry', {
     actionArgs: REGISTRY_ACTION_ARGS,
     title: 'ArchGen registry',
-    description: 'Read or rewrite the AGENTS.md features registry from .archgen/.',
+    description: 'Read or rewrite the AGENTS.md features registry from .archgen/. ' + routingSentence(REGISTRY_ACTION_ARGS),
     inputSchema: schema,
     readOnly: false,
     destructive: false,

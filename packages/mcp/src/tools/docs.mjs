@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
+import { routingSentence } from '../core/routing.mjs';
 import { docIndex } from '../core/doc-navigator.mjs';
 import { activeSlugDir as resolveActiveSlugDir } from '../core/tasks-file.mjs';
 import { invalidInput } from '../core/errors.mjs';
@@ -11,7 +12,6 @@ import { hint, teach } from '../core/guidance.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
-const ACTION_DESC = 'index|digest|section|refs|map|validate';
 
 /** The collections each action pages. A mismatch is a typed error. */
 const COLLECTIONS = {
@@ -36,16 +36,16 @@ const DOCS_ACTION_ARGS = {
 };
 
 const schema = z.object({
-  action: z.enum(['index', 'digest', 'section', 'refs', 'map', 'validate']).describe(ACTION_DESC),
+  action: z.enum(['index', 'digest', 'section', 'refs', 'map', 'validate']),
   slugDir: z.string().optional().describe('Absolute .archgen/<slug>/ dir; defaults to the active slug.'),
   token: z.string().optional().describe('Token to find (refs, map).'),
   section: z.string().optional().describe('Section slug, path, or path#anchor.'),
   file: z.string().optional().describe('Scope to one document.'),
-  include: z.enum(['own', 'all']).optional().describe("section: 'own' (default) = the section's own text; 'all' = its nested subsections too."),
+  include: z.enum(['own', 'all']).optional().describe("'own' (default) = the section's own text; 'all' = its nested subsections too."),
   collection: z
     .enum(['files', 'matches', 'sections', 'broken', 'warnings'])
     .optional()
-    .describe('Which collection `limit`/`offset` window (validate).'),
+    .describe('Which collection the limit/offset window walks.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -90,7 +90,8 @@ export function registerDocTools(server) {
     description:
       'Navigate an archgen plan\'s markdown by section — digest, section, map, refs, index, validate — ' +
       'without loading whole files. A section returns its OWN content and names its nested subsections; ' +
-      'include:\'all\' returns the whole subtree.',
+      'include:\'all\' returns the whole subtree. ' +
+      routingSentence(DOCS_ACTION_ARGS),
     inputSchema: schema,
     readOnly: true,
     idempotent: true,

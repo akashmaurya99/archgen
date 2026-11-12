@@ -28,12 +28,12 @@ Never hand-edit the registry table (`| Feature | Status | Updated |`); use `arch
 
 ## MCP configuration
 
-`archgen_setup{action:'harness_info'}` is the **runtime** authority: it returns the exact config path, the URL field and the restart semantics for the harness you are on. This file documents the **key vocabulary** once, so you can read a config file by eye — `harness_info` confirms which one applies.
+`archgen_setup{action:'harness_info'}` is the **runtime** authority: it returns the exact config path, the URL field and the restart semantics for the harness you are on. It also returns the **key vocabulary** for that harness — the top-level key its config uses, and the field its server entry takes.
 
-- **Top-level keys:** `mcpServers` (Claude Code, Cursor, Windsurf, Gemini CLI, Antigravity, Kiro, Trae) · `servers` (VS Code `.vscode/mcp.json`) · `mcp.servers.<id>` (OpenCode — nested, never flat `mcp.<id>`) · `context_servers` (Zed) · `[mcp_servers.<id>]` (Codex TOML).
-- **Remote URL keys vary:** `url`, `serverUrl`, or `httpUrl` — check `harness_info`.
-- **VS Code reads two formats.** `.vscode/mcp.json` uses `servers`; the portable `mcp-config.json` uses `mcpServers` and lives at `$COPILOT_HOME/mcp-config.json` (or `~/.copilot/mcp-config.json`). `COPILOT_HOME` replaces the default. Global wiring uses the portable format so VS Code stable/Insiders, the Copilot CLI, and every workspace see one server.
+This file does not repeat that vocabulary, because a repeated list is a second source that can disagree with the one the writer uses: the keys differ per harness, and the writer reads them from the registry. **Never assume one key across harnesses** — read the harness you are on. The URL field varies with it (`url`, `serverUrl` or `httpUrl`), so read that too rather than assume one.
+
 - **Automated wiring:** `archgen_setup{action:'install_mcp', approve:true}`—do not hand-edit.
+- **VS Code reads two formats.** It has a project config and a portable global one, and the global path is `$COPILOT_HOME`-relative — `harness_info` returns both. Global wiring uses the portable format so VS Code stable/Insiders, the Copilot CLI, and every workspace see one server.
 
 ## Sub-agent dispatch
 

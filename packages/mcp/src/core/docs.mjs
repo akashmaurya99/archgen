@@ -96,6 +96,110 @@ export function headingSlugs(doc) {
 }
 
 /**
+ * The first USABLE line in a span — prose first, then a list item, then a
+ * table row.
+ *
+ * WHY: a purpose is a sentence a reader can act on. The first line of a
+ * section is often a heading, a table header, or a code fence, and a purpose
+ * that begins "## Provenance header" or "| Scope | Deterministic floor |"
+ * says nothing the title did not already say.
+ *
+ * The order matters: prose carries the most meaning, a list item carries
+ * the section's first rule, and a table row carries its first subject. A
+ * section that begins with a table still gets a purpose.
+ *
+ * @param {string[]} lines
+ * @param {number} from 0-based start (inclusive)
+ * @param {number} to 0-based end (exclusive)
+ * @returns {string}
+ */
+export function firstProse(lines, from, to) {
+  let inFence = false;
+  let tableHeaderSeen = false;
+  for (let i = from; i < to; i++) {
+    const line = (lines[i] ?? '').trim();
+    if (/^ {0,3}```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (!line) continue;
+    if (line.startsWith('#')) continue; // a heading, not prose
+    if (line.startsWith('>')) continue; // a quote — the authored purpose path
+    if (line.startsWith('|')) {
+      // A table: the FIRST row is the header, the second is the separator.
+      if (!tableHeaderSeen) {
+        tableHeaderSeen = true;
+        continue;
+      }
+      if (/^\|[\s:|-]+\|$/.test(line)) continue; // the separator row
+      const cell = line.replace(/^\|/, '').split('|')[0].trim();
+      if (cell) return cell;
+      continue;
+    }
+    return line;
+  }
+  return '';
+}
+
+/**
+ * A one-line purpose from a block of prose.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function toPurpose(text) {
+  const flat = String(text ?? '')
+    // A leading list marker is not part of the sentence.
+    .replace(/^([-*+]\s+|\d+[.)]\s+)/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!flat) return '';
+  const sentence = flat.split(/(?<=[.!?])\s/)[0] ?? flat;
+  // A purpose is a ONE-LINER. The index carries one per section, so a
+  // purpose that runs on is a purpose the reader has to skip past.
+  return sentence.length > 120 ? `${sentence.slice(0, 117)}…` : sentence;
+}
+
+/**
+ * A section's PURPOSE — one line that says what the section is FOR.
+ *
+ * WHY THIS EXISTS. The index returned slug, title, level and line — enough
+ * to identify a section, not enough to CHOOSE one. An agent that had to pull
+ * a section to learn what it covered paid for every wrong guess, and the
+ * sections it did not pull were the ones it had to guess about.
+ *
+ * So every section carries a purpose, and the index shows it. The purpose is
+ * resolved in two steps:
+ *
+ *   1. an AUTHORED purpose — the first non-empty line after the heading,
+ *      when it is a blockquote. It wins, because it was written for this;
+ *   2. otherwise the section's first PROSE line, trimmed to one sentence.
+ *
+ * Step 2 means a section NEVER lacks a purpose, so the index is complete
+ * without every reference file being edited first.
+ *
+ * @param {any} doc
+ * @param {object} section
+ * @returns {string}
+ */
+export function sectionPurpose(doc, section) {
+  const lines = doc?.lines ?? [];
+  const start = section.line; // 0-based index of the line AFTER the heading
+  // The authored purpose: the first non-empty line, when it is a quote.
+  for (let i = start; i < Math.min(start + 6, section.endLine); i++) {
+    const line = (lines[i] ?? '').trim();
+    if (!line) continue;
+    if (!line.startsWith('>')) break;
+    const text = line.replace(/^>+\s*/, '').replace(/^PURPOSE:\s*/i, '').trim();
+    if (text) return toPurpose(text);
+    break;
+  }
+  // The fallback: the section's first prose line.
+  return toPurpose(firstProse(lines, start, section.endLine));
+}
+
+/**
  * Sections: a heading owns everything up to the next same-or-shallower
  * heading (nested subsections included).
  */
@@ -117,14 +221,16 @@ export function buildSections(doc) {
       if (headings[j].level <= h.level) { endLine = headings[j].line - 1; break; }
     }
     const body = lines.slice(h.line - 1, endLine).join('\n');
-    sections.push({
+    const section = {
       level: h.level,
       title: h.text,
       slug,
       line: h.line,
       endLine,
       body,
-    });
+    };
+    section.purpose = sectionPurpose(doc, section);
+    sections.push(section);
   }
   return sections;
 }

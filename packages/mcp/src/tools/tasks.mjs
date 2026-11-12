@@ -1,6 +1,7 @@
 // tasks.mjs — the `archgen_tasks` tool: the wave execution loop.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
+import { routingSentence } from '../core/routing.mjs';
 import { resolveWaves, listTasks } from '../core/wave-resolver.mjs';
 import { buildWorkerContract } from '../core/worker-contract.mjs';
 import { matchSkills, findInstalledSkill, skillRules, skillSections } from '../core/skill-manager.mjs';
@@ -82,7 +83,6 @@ function slugDirFor(tasksFile, action) {
   }
 }
 
-const ACTION_DESC = 'next|set_status|list|snapshot|contract';
 
 /**
  * The arguments each action takes. An argument that belongs to another
@@ -97,18 +97,18 @@ const TASKS_ACTION_ARGS = {
 };
 
 const schema = z.object({
-  action: z.enum(['next', 'set_status', 'list', 'snapshot', 'contract']).describe(ACTION_DESC),
-  tasksYaml: z.string().optional().describe('tasks.yaml path (all actions). Omit → the active .archgen/<slug>/tasks.yaml.'),
-  taskId: z.string().optional().describe('Task id (set_status, contract); one task (list, next).'),
-  status: z.enum(STATUSES).optional().describe('New status (set_status).'),
-  force: z.boolean().optional().describe('Allow reopening a done task (set_status).'),
+  action: z.enum(['next', 'set_status', 'list', 'snapshot', 'contract']),
+  tasksYaml: z.string().optional().describe('tasks.yaml path; omit → the active .archgen/<slug>/tasks.yaml.'),
+  taskId: z.string().optional().describe('Task id; one task only.'),
+  status: z.enum(STATUSES).optional().describe('New task status.'),
+  force: z.boolean().optional().describe('Allow reopening a done task.'),
   filterStatus: z
     .enum(STATUSES)
     .optional()
-    .describe('Filter by status (list). One of the task statuses — a typo is rejected, not ignored.'),
-  slugDir: z.string().optional().describe('.archgen/<slug>/ dir (contract).'),
-  codeStandardsPath: z.string().optional().describe('Code-standards path (contract).'),
-  module: z.string().optional().describe('Module path fragment (list).'),
+    .describe('Filter by status — a typo is rejected, not ignored.'),
+  slugDir: z.string().optional().describe('.archgen/<slug>/ dir.'),
+  codeStandardsPath: z.string().optional().describe('Code-standards path.'),
+  module: z.string().optional().describe('Module path fragment.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -123,7 +123,8 @@ export function registerTaskTools(server) {
     title: 'ArchGen tasks',
     description:
       'Execute an archgen plan: next dependency-safe wave, atomic status updates, task listing, ' +
-      'resume snapshot, and the assembled worker contract.',
+      'resume snapshot, and the assembled worker contract. ' +
+      routingSentence(TASKS_ACTION_ARGS),
     inputSchema: schema,
     readOnly: false,
     destructive: true,

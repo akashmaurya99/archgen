@@ -115,54 +115,17 @@ Surface contradictions (scale vs budget, feature vs constraint, requirement vs `
 
 ## Answers-file format (machine-readable, enables non-interactive runs)
 
-When `.archgen/<slug>/answers.yaml` is present and valid, treat it as authoritative and skip conversational rounds. Generate the skeleton via `archgen_plan{action:'scaffold', scope, intent, signals, modules, tasks, slug}` (`scope` is required; passing the profile's `intent` makes the scaffold serve exactly the profile's create set):
+When `.archgen/<slug>/answers.yaml` is present and valid, treat it as authoritative and skip conversational rounds.
 
-```yaml
-scope_class: MEDIUM              # SMALL | MEDIUM | LARGE (from the profile)
-intent_class: GREENFIELD-SYSTEM  # optional
-calibration:                     # optional
-  scale: production              # prototype | mvp | production
-  teamConstraints: solo dev, repo lint rules apply
-  pressure: medium               # low | medium | high
-plan_profile:                    # REQUIRED for MEDIUM/LARGE — the floor reads it
-  confidence: high
-  signals: [new-module, public-contract]
-  artifacts:                    # one entry per artifact family the profile decided
-    - path: .archgen/acme/architecture.yaml
-      decision: create
-      reason: cross-module contract
-    - path: .archgen/acme/docs/prd.md
-      decision: omit
-      reason: internal tool; no product personas
-  escalate_if: [data-migration]
-  gate:                          # the canonical block, filled in after the gate
-    verifier: ""                 # who approved it
-    rounds: 0
-    findings:
-      blocking: 0
-      nit: 0
-      observation: 0
-    waived: 0
-    residual: 0
-    at: ""
-problem: one-line problem statement
-success_criteria:
-  - text: measurable outcome
-    feeds: prd.metrics
-constraints:
-  - must-not-change item # feeds: prd.constraints
-non_goals: []                    # optional
-personas: []                     # optional
-nfrs: []                         # numeric for GREENFIELD-SYSTEM
-out_of_scope: []
-stack:
-  language: ""
-  runtime: ""
-  hosting: ""
-integrations: []
-compliance: []
-risks: []
-```
+**The skeleton is GENERATED, not written here.** `archgen_plan{action:'scaffold', scope, intent, signals, modules, tasks, slug}` serves it (`scope` is required; passing the profile's `intent` makes the scaffold serve exactly the profile's create set), so the field list you get is the one the floor reads. Copy it from that answer — a hand-written copy is a second source that can disagree with the one the floor parses.
+
+What each field is FOR:
+
+- `scope_class` — SMALL | MEDIUM | LARGE, from the profile.
+- `intent_class` — the intent the profile classified.
+- `calibration` — `scale` (prototype | mvp | production), `teamConstraints`, `pressure` (low | medium | high).
+- `plan_profile` — **REQUIRED for MEDIUM/LARGE**; the floor reads it. It carries `confidence`, `signals`, `artifacts[]` (one entry per artifact family: `path`, `decision`, `reason`, and `host_path` for a reuse), `escalate_if`, and the `gate` block — the canonical block, in `§artifact-templates/gate-metrics`.
+- `problem`, `success_criteria[]`, `constraints[]`, `stack`, `integrations[]`, `compliance[]`, `risks[]` — the elicited answers; `non_goals[]`, `personas[]`, `nfrs[]` and `out_of_scope[]` are optional.
 
 `plan_profile` is **required for MEDIUM and LARGE** — the floor checks every artifact decision against the files on disk, and without it there is nothing to check (it warns `PROFILE_NOT_RECORDED`). For SMALL, put the same block in the plan's `## Profile` fence instead. Every other field beyond `scope_class`, `problem`, `success_criteria`, `constraints`, `stack`, `integrations`, `compliance` and `risks` is optional and backward-compatible. `feeds:` tags may be object keys or trailing `# feeds:` comments.
 

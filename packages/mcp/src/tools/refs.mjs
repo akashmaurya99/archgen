@@ -11,6 +11,7 @@
 import { z } from 'zod/v4';
 import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
+import { routingSentence } from '../core/routing.mjs';
 import { ASSETS_DIR } from '../context.mjs';
 import { indexTopic, readTopic, searchTopic, listTopics, REF_TOPICS } from '../core/refs.mjs';
 import { invalidInput } from '../core/errors.mjs';
@@ -18,7 +19,6 @@ import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
 
-const ACTION_DESC = 'list|index|read|search';
 
 /**
  * The arguments each action takes. An argument that belongs to another
@@ -27,14 +27,15 @@ const ACTION_DESC = 'list|index|read|search';
 const REFS_ACTION_ARGS = {
   list: ['limit', 'offset'],
   index: ['topic', 'section', 'limit', 'offset'],
-  read: ['topic', 'section', 'limit', 'offset'],
+  read: ['topic', 'section', 'include', 'limit', 'offset'],
   search: ['topic', 'token', 'limit', 'offset'],
 };
 
 const schema = z.object({
-  action: z.enum(['list', 'index', 'read', 'search']).describe(ACTION_DESC),
-  topic: z.enum(REF_TOPICS).optional().describe('Reference topic (index, read, search).'),
+  action: z.enum(['list', 'index', 'read', 'search']),
+  topic: z.enum(REF_TOPICS).optional().describe('Reference topic.'),
   section: z.string().optional().describe('One section; "*" = whole topic; omit for the index.'),
+  include: z.enum(['own', 'all']).optional().describe("'own' (default) = the section's own text; 'all' = the whole subtree."),
   token: z.string().optional().describe('Token to find (search).'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
@@ -50,7 +51,8 @@ export function registerRefTools(server) {
     title: 'ArchGen references',
     description:
       "Read archgen's protocol references (interview, artifacts, orchestration, platforms, MCP/skills) " +
-      'by section, never whole files.',
+      'by section, never whole files. ' +
+      routingSentence(REFS_ACTION_ARGS),
     inputSchema: schema,
     readOnly: true,
     idempotent: true,
@@ -140,7 +142,7 @@ export function registerRefTools(server) {
 
       // read — ONE section by default; the index when no section is named;
       // the whole topic only when the caller says '*'.
-      const read = readTopic(args.topic, { ...roots, section: args.section ?? null });
+      const read = readTopic(args.topic, { ...roots, section: args.section ?? null, include: args.include ?? null });
       if (read.whole || read.text !== undefined) return read;
       const p = project(read.sections, {
         limit: args.limit,

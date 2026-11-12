@@ -21,7 +21,7 @@
 //      worker sub-agents may have no MCP tools.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd } from './docs.mjs';
+import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd, sectionPurpose, firstProse, toPurpose } from './docs.mjs';
 import { notFound } from './errors.mjs';
 import { noSuchSection } from './guidance.mjs';
 import { toolCall } from './call.mjs';
@@ -104,6 +104,11 @@ export function indexTopic(topic, opts) {
     .map((s) => ({
       slug: s.slug,
       title: s.title,
+      // WHAT the section is FOR. The index used to carry a slug and a title
+      // — enough to identify a section, not enough to CHOOSE one — so an
+      // agent had to pull a section to learn what it covered, and paid for
+      // every wrong guess.
+      purpose: s.purpose ?? '',
       level: s.level,
       line: s.line,
       endLine: s.endLine,
@@ -141,8 +146,17 @@ export function indexTopic(topic, opts) {
  * So: no section → the INDEX (the map) plus the exact next call. The whole
  * topic is `section: '*'` — deliberate, never the default.
  *
+ * WHY `include` EXISTS: a section returns its OWN content and NAMES its
+ * nested subsections, so pulling a parent like `§orchestration/verifier`
+ * returned 71 tokens and ten child slugs — and the agent had to make ten
+ * more calls to read the protocol it had already been told to load.
+ *
+ * `include: 'all'` returns the WHOLE subtree in one call, which is the
+ * parity `archgen_docs{action:'section', include:'all'}` has always had.
+ * `include: 'own'` (the default) is unchanged.
+ *
  * @param {string} topic
- * @param {{assetsDir: string, skillDir: string|null, section?: string|null}} opts
+ * @param {{assetsDir: string, skillDir: string|null, section?: string|null, include?: string|null}} opts
  */
 export function readTopic(topic, opts) {
   const resolved = resolveTopic(topic, opts);
@@ -184,25 +198,31 @@ export function readTopic(topic, opts) {
   // its children, exactly like archgen_docs{action:'section'}.
   const children = sectionChildren(doc, section).map((c) => ({ slug: c.slug, title: c.title, line: c.line }));
   const ownEnd = sectionOwnEnd(doc, section);
-  const text = doc.lines.slice(section.line - 1, ownEnd).join('\n');
+  const whole = opts.include === 'all';
+  const text = doc.lines.slice(section.line - 1, whole ? section.endLine : ownEnd).join('\n');
   const out = {
     topic: resolved.topic,
     root: resolved.root,
     section: section.slug,
     title: section.title,
+    purpose: section.purpose ?? '',
     level: section.level,
     line: section.line,
-    endLine: ownEnd,
+    endLine: whole ? section.endLine : ownEnd,
     text,
     lines: text.split('\n').length,
     bytes: text.length,
     children,
   };
-  if (ownEnd !== section.endLine) out.sectionEndLine = section.endLine;
-  if (children.length) {
-    out.next =
-      `${toolCall('archgen_refs', { action: 'read', topic: resolved.topic, section: '<child slug>' })} — ` +
-      `${children.length} nested subsection(s) were not included`;
+  if (whole) {
+    out.subtree = true;
+  } else {
+    if (ownEnd !== section.endLine) out.sectionEndLine = section.endLine;
+    if (children.length) {
+      out.next =
+        `${toolCall('archgen_refs', { action: 'read', topic: resolved.topic, section: '<child slug>' })} — ` +
+        `${children.length} nested subsection(s) were not included`;
+    }
   }
   return out;
 }
@@ -305,11 +325,17 @@ export function listTopics(opts) {
     const resolved = resolveTopic(topic, opts);
     if (!resolved) continue;
     const doc = parseMarkdown(readFileSync(resolved.path, 'utf8'));
+    const sections = buildSections(doc);
+    // The topic's purpose: the document's first PROSE line under its H1. The
+    // list is the DISCOVERY surface — an agent must know which topic exists
+    // AND what it covers without reading a file.
+    const h1 = doc.headings.find((h) => h.level === 1);
+    const afterH1 = h1 ? h1.line : 0;
     out.push({
       topic,
       root: resolved.root,
-      title: doc.headings.find((h) => h.level === 1)?.text ?? topic,
-      sections: buildSections(doc).length,
+      title: h1?.text ?? topic,
+      purpose: toPurpose(firstProse(doc.lines, afterH1, doc.lines.length)),      sections: sections.length,
     });
   }
   return out;

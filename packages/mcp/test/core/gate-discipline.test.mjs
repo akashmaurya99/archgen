@@ -19,14 +19,28 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { BRIEFS_DIR } from '../../src/context.mjs';
+import { loadBrief } from '../../src/core/briefs.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..', '..');
 const SKILL = join(REPO, 'skill', 'SKILL.md');
 const ORCH = join(REPO, 'packages', 'mcp', 'assets', 'references', 'orchestration.md');
-const VERIFIER = join(REPO, 'packages', 'mcp', 'assets', 'briefs', 'verifier.md');
-const REVIEW = join(REPO, 'packages', 'mcp', 'assets', 'briefs', 'review.md');
 
 const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : null);
+
+/**
+ * The brief AS THE AGENT RECEIVES IT.
+ *
+ * The two gate briefs share one protocol file: the classes, the BLOCKING
+ * test and the round cap live in `_gate-protocol.md` and are pasted into
+ * each brief at load time. So the template file is an implementation
+ * detail — what the contract is about is the RENDERED brief.
+ *
+ * Reading the raw file would test the wrong thing: it would pass while the
+ * agent received a brief with no protocol in it.
+ */
+const renderedBrief = (kind) => loadBrief(BRIEFS_DIR, kind).brief;
 
 test('the skill runs the deterministic floor BEFORE dispatching a gate agent', () => {
   const text = read(SKILL);
@@ -74,16 +88,15 @@ test('BOTH gate stages run the SAME protocol — the review stage has no third p
 });
 
 test('a BLOCKING finding must name the artifact, the violated rule, and the fix', () => {
-  for (const [label, path] of [['verifier', VERIFIER], ['review', REVIEW]]) {
-    const text = read(path);
-    if (!text) continue;
-    assert.match(text, /the artifact/i, `${label}: the rule must name the artifact`);
-    assert.match(text, /the rule it violates/i, `${label}: the rule must name the violated rule`);
-    assert.match(text, /the change that satisfies it/i, `${label}: the rule must name the fix`);
+  for (const kind of ['verifier', 'review']) {
+    const text = renderedBrief(kind);
+    assert.match(text, /the artifact/i, `${kind}: the rule must name the artifact`);
+    assert.match(text, /the rule it violates/i, `${kind}: the rule must name the violated rule`);
+    assert.match(text, /the change that satisfies it/i, `${kind}: the rule must name the fix`);
     assert.match(
       text,
       /could also mention|NIT/i,
-      `${label}: the wording-preference case must be classified`,
+      `${kind}: the wording-preference case must be classified`,
     );
   }
 });
@@ -103,8 +116,7 @@ test('gate agents never reuse a worker session', () => {
 });
 
 test('the verifier brief classifies findings and forbids inventing requirements', () => {
-  const text = read(VERIFIER);
-  if (!text) return;
+  const text = renderedBrief('verifier');
   assert.match(text, /\*\*BLOCKING\*\*/);
   assert.match(text, /\*\*NIT\*\*/);
   assert.match(text, /\*\*OBSERVATION\*\*/);
@@ -115,12 +127,37 @@ test('the verifier brief classifies findings and forbids inventing requirements'
 });
 
 test('the review brief classifies findings too', () => {
-  const text = read(REVIEW);
-  if (!text) return;
+  const text = renderedBrief('review');
   assert.match(text, /BLOCKING/);
   assert.match(text, /NIT/);
   assert.match(text, /OBSERVATION/);
   assert.match(text, /scope fit & minimalism/i);
   assert.match(text, /Round 2 is a DELTA/i);
   assert.match(text, /no Round 3/i);
+});
+
+test('both gate briefs carry the SAME shared protocol — one source, no drift', () => {
+  // The protocol lives in ONE file and is pasted into both briefs. This gate
+  // is what makes that true rather than hopeful: it compares the shared
+  // rules in the two DELIVERED briefs, so a change to one that is not
+  // mirrored in the other fails here instead of reaching an agent.
+  const verifier = renderedBrief('verifier');
+  const review = renderedBrief('review');
+  const SHARED = [
+    /\*\*BLOCKING\*\*/,
+    /\*\*NIT\*\*/,
+    /\*\*OBSERVATION\*\*/,
+    /the artifact/i,
+    /the rule it violates/i,
+    /the change that satisfies it/i,
+    /DO NOT INVENT REQUIREMENTS/i,
+    /Round 1 is exhaustive/i,
+    /Round 2 is a DELTA/i,
+    /There is no Round 3/i,
+    /EXACTLY ONE additional pass/i,
+  ];
+  for (const pattern of SHARED) {
+    assert.match(verifier, pattern, `the verifier brief must carry ${pattern}`);
+    assert.match(review, pattern, `the review brief must carry ${pattern}`);
+  }
 });

@@ -147,16 +147,16 @@ export function resetServerContext() {
 /**
  * A common argument for every tool that touches the project.
  * Optional: when omitted the server's own project root (cwd) applies.
+ *
+ * The shared schema words live in core/universal-args.mjs — the routing map
+ * needs the same list, and two copies of a list is a list that drifts. They
+ * are re-exported here because every tool already imports them from this
+ * module.
  */
-export const projectRootArg = z
-  .string()
-  .optional()
-  .describe('Absolute project root; defaults to the server cwd.');
-
-// Shared schema words. The catalog is injected into every request, so a
-// description that repeats across nine tools is nine times the cost. One
-// definition keeps the wording identical everywhere and impossible to drift.
-export const LIMIT_DESC = 'Max items to return. Default 50.';
-export const OFFSET_DESC = 'Skip this many items.';
-export const LOCATION_DESC = 'project | global | both. Default both.';
-export const APPROVE_DESC = 'Required to write; without it returns the plan.';
+export {
+  projectRootArg,
+  LIMIT_DESC,
+  OFFSET_DESC,
+  LOCATION_DESC,
+  APPROVE_DESC,
+} from '../core/universal-args.mjs';

@@ -106,7 +106,7 @@ test('the platform registry and platforms.md agree on the universal install root
   assert.match(ref, /\.agents\/skills/, 'the reference must state the universal install root');
 });
 
-test('the four known MCP top-level keys are the same in the registry and the reference', () => {
+test('the MCP top-level keys live in the registry — the reference points at the tool, never a second copy', () => {
   const ref = read('platforms.md');
   if (!ref) return;
   const KNOWN = ['mcpServers', 'servers', 'mcp', 'context_servers'];
@@ -120,8 +120,27 @@ test('the four known MCP top-level keys are the same in the registry and the ref
   }
   for (const key of KNOWN) {
     assert.ok(registryKeys.has(key), `the registry must use the '${key}' key`);
-    assert.ok(ref.includes(key), `platforms.md must document the '${key}' key`);
   }
+  // The reference must NOT restate the vocabulary. It used to, and the gate
+  // that watched it agree with the registry was watching a SECOND SOURCE —
+  // a list in prose that had to be kept in step by hand, for a table the
+  // writer reads from the registry anyway.
+  //
+  // So the invariant is inverted and it is STRONGER: the registry owns the
+  // keys, the reference points at the tool that serves them, and there is no
+  // second copy to drift. The check is on the QUOTED key names — the form
+  // the reference used to list them in — so an incidental mention of a
+  // server name is not mistaken for a vocabulary.
+  const restated = KNOWN.filter((key) => ref.includes('`' + key + '`'));
+  assert.deepEqual(
+    restated,
+    [],
+    `platforms.md must not restate the top-level key vocabulary (found: ${restated.join(', ')}) — harness_info serves it`,
+  );
+  assert.ok(
+    /harness_info/.test(ref),
+    'platforms.md must point at the tool that serves the key vocabulary',
+  );
 });
 
 test('the references never point at a deleted script', () => {

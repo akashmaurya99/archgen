@@ -1,0 +1,1009 @@
+{
+  "$readme": [
+    "THE SCHEMA CONTRACT \u2014 what every tool's schema must keep KNOWABLE.",
+    "",
+    "The catalog is injected into every request, so its schema is a permanent",
+    "cost \u2014 and a permanent instruction. Compressing it is right; losing a",
+    "fact in it is not.",
+    "",
+    "This file separates the two:",
+    "",
+    "  - the STRUCTURE (properties, enums, required, annotations, and the",
+    "    per-action routing tables) is pinned EXACTLY. A change there is a",
+    "    contract change, and it must be made deliberately.",
+    "",
+    "  - the FACTS are pinned SEMANTICALLY. Each is a regex that must still",
+    "    match the argument's description, so a description can be reworded",
+    "    or shortened as long as the fact it carried survives. A fact that",
+    "    disappears, or a description that does without it, fails here.",
+    "",
+    "THE ROUTING MAP IS GENERATED, NOT WRITTEN. The tool description carries",
+    "one `Args by action \u2014 ...` line built from the SAME `*_ACTION_ARGS`",
+    "tables the handlers use. It replaces ~50 hand-written parentheticals",
+    "scattered across the arguments, and it makes a class of drift",
+    "structurally impossible: the hand-written ones had already drifted",
+    "(`archgen_docs.collection` claimed one action and belongs to six).",
+    "",
+    "packages/mcp/test/core/schema-routing.test.mjs checks all of it."
+  ],
+  "version": 1,
+  "universalArgs": [
+    "limit",
+    "offset",
+    "projectRoot"
+  ],
+  "tools": {
+    "archgen_plan": {
+      "annotations": {
+        "readOnly": true,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "action",
+        "tasksYaml",
+        "planDir",
+        "target",
+        "taskId",
+        "node",
+        "format",
+        "status",
+        "module",
+        "scope",
+        "slug",
+        "intent",
+        "signals",
+        "modules",
+        "tasks",
+        "file",
+        "kind",
+        "featureRequest",
+        "topic",
+        "round",
+        "collection",
+        "limit",
+        "offset",
+        "projectRoot"
+      ],
+      "required": [
+        "action"
+      ],
+      "enums": {
+        "action": [
+          "validate",
+          "verify",
+          "graph",
+          "impact",
+          "coverage",
+          "profile",
+          "scaffold",
+          "brief"
+        ],
+        "format": [
+          "json",
+          "mermaid"
+        ],
+        "scope": [
+          "SMALL",
+          "MEDIUM",
+          "LARGE"
+        ],
+        "intent": [
+          "GREENFIELD-SYSTEM",
+          "GREENFIELD-MODULE",
+          "BROWNFIELD-FEATURE",
+          "BROWNFIELD-CHANGE"
+        ],
+        "signals": [
+          "new-module",
+          "multi-module",
+          "public-contract",
+          "data-migration",
+          "security-sensitive",
+          "multi-service",
+          "external-integration",
+          "cross-team",
+          "regulated",
+          "irreversible",
+          "product-facing",
+          "production",
+          "prototype",
+          "existing-prd",
+          "existing-architecture",
+          "existing-adr"
+        ],
+        "kind": [
+          "verifier",
+          "review",
+          "survey",
+          "investigate"
+        ],
+        "collection": [
+          "errors",
+          "issues",
+          "warnings",
+          "tasks",
+          "covered",
+          "uncovered",
+          "findings",
+          "requirements",
+          "edgeCases",
+          "direct",
+          "transitive",
+          "artifacts"
+        ]
+      },
+      "actionArgs": {
+        "validate": [
+          "tasksYaml",
+          "planDir",
+          "collection",
+          "limit",
+          "offset"
+        ],
+        "verify": [
+          "tasksYaml",
+          "planDir",
+          "collection",
+          "limit",
+          "offset"
+        ],
+        "graph": [
+          "tasksYaml",
+          "planDir",
+          "node",
+          "module",
+          "format",
+          "status",
+          "collection",
+          "limit",
+          "offset"
+        ],
+        "impact": [
+          "tasksYaml",
+          "target",
+          "collection",
+          "limit",
+          "offset"
+        ],
+        "coverage": [
+          "tasksYaml",
+          "planDir",
+          "taskId",
+          "collection",
+          "limit",
+          "offset"
+        ],
+        "profile": [
+          "intent",
+          "signals",
+          "modules",
+          "tasks",
+          "slug",
+          "collection"
+        ],
+        "scaffold": [
+          "scope",
+          "intent",
+          "signals",
+          "modules",
+          "tasks",
+          "slug",
+          "file",
+          "collection"
+        ],
+        "brief": [
+          "kind",
+          "tasksYaml",
+          "planDir",
+          "slug",
+          "featureRequest",
+          "topic",
+          "round",
+          "collection"
+        ]
+      },
+      "facts": {
+        "tasksYaml": [
+          "tasks\\.yaml",
+          "active"
+        ],
+        "planDir": [
+          "plans/"
+        ],
+        "target": [
+          "task id|artifact path"
+        ],
+        "taskId": [
+          "one task"
+        ],
+        "node": [
+          "neighborhood"
+        ],
+        "status": [
+          "status"
+        ],
+        "module": [
+          "one module"
+        ],
+        "slug": [
+          "slug"
+        ],
+        "modules": [
+          "count",
+          "list"
+        ],
+        "tasks": [
+          "count",
+          "list"
+        ],
+        "file": [
+          "one artifact file|artifact file"
+        ],
+        "featureRequest": [
+          "feature request"
+        ],
+        "topic": [
+          "investigation topic"
+        ],
+        "round": [
+          "investigation round"
+        ],
+        "collection": [
+          "collection"
+        ],
+        "limit": [
+          "50"
+        ],
+        "offset": [
+          "skip"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    },
+    "archgen_tasks": {
+      "annotations": {
+        "readOnly": false,
+        "destructive": true,
+        "idempotent": false
+      },
+      "properties": [
+        "action",
+        "tasksYaml",
+        "taskId",
+        "status",
+        "force",
+        "filterStatus",
+        "slugDir",
+        "codeStandardsPath",
+        "module",
+        "limit",
+        "offset",
+        "projectRoot"
+      ],
+      "required": [
+        "action"
+      ],
+      "enums": {
+        "action": [
+          "next",
+          "set_status",
+          "list",
+          "snapshot",
+          "contract"
+        ],
+        "status": [
+          "pending",
+          "ready",
+          "running",
+          "blocked",
+          "done",
+          "failed"
+        ],
+        "filterStatus": [
+          "pending",
+          "ready",
+          "running",
+          "blocked",
+          "done",
+          "failed"
+        ]
+      },
+      "actionArgs": {
+        "next": [
+          "tasksYaml",
+          "taskId",
+          "limit",
+          "offset"
+        ],
+        "set_status": [
+          "tasksYaml",
+          "taskId",
+          "status",
+          "force"
+        ],
+        "list": [
+          "tasksYaml",
+          "taskId",
+          "filterStatus",
+          "module",
+          "limit",
+          "offset"
+        ],
+        "snapshot": [
+          "tasksYaml"
+        ],
+        "contract": [
+          "tasksYaml",
+          "taskId",
+          "slugDir",
+          "codeStandardsPath"
+        ]
+      },
+      "facts": {
+        "tasksYaml": [
+          "tasks\\.yaml",
+          "active"
+        ],
+        "taskId": [
+          "task id"
+        ],
+        "force": [
+          "reopen|done"
+        ],
+        "filterStatus": [
+          "status"
+        ],
+        "slugDir": [
+          "slug"
+        ],
+        "codeStandardsPath": [
+          "code-standards|code standards"
+        ],
+        "module": [
+          "module"
+        ],
+        "limit": [
+          "50"
+        ],
+        "offset": [
+          "skip"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    },
+    "archgen_docs": {
+      "annotations": {
+        "readOnly": true,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "action",
+        "slugDir",
+        "token",
+        "section",
+        "file",
+        "include",
+        "collection",
+        "limit",
+        "offset",
+        "projectRoot"
+      ],
+      "required": [
+        "action"
+      ],
+      "enums": {
+        "action": [
+          "index",
+          "digest",
+          "section",
+          "refs",
+          "map",
+          "validate"
+        ],
+        "include": [
+          "own",
+          "all"
+        ],
+        "collection": [
+          "files",
+          "matches",
+          "sections",
+          "broken",
+          "warnings"
+        ]
+      },
+      "actionArgs": {
+        "index": [
+          "slugDir",
+          "file",
+          "collection"
+        ],
+        "digest": [
+          "slugDir",
+          "file",
+          "collection"
+        ],
+        "validate": [
+          "slugDir",
+          "file",
+          "collection",
+          "limit",
+          "offset"
+        ],
+        "refs": [
+          "slugDir",
+          "token",
+          "file",
+          "collection",
+          "limit",
+          "offset"
+        ],
+        "map": [
+          "slugDir",
+          "token",
+          "file",
+          "collection",
+          "limit",
+          "offset"
+        ],
+        "section": [
+          "slugDir",
+          "section",
+          "file",
+          "include",
+          "collection",
+          "limit",
+          "offset"
+        ]
+      },
+      "facts": {
+        "slugDir": [
+          "slug"
+        ],
+        "token": [
+          "token"
+        ],
+        "section": [
+          "section"
+        ],
+        "file": [
+          "one document|document"
+        ],
+        "include": [
+          "own",
+          "all"
+        ],
+        "collection": [
+          "collection"
+        ],
+        "limit": [
+          "50"
+        ],
+        "offset": [
+          "skip"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    },
+    "archgen_registry": {
+      "annotations": {
+        "readOnly": false,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "action",
+        "projectRoot",
+        "slug",
+        "status",
+        "limit",
+        "offset"
+      ],
+      "required": [
+        "action"
+      ],
+      "enums": {
+        "action": [
+          "update",
+          "show"
+        ],
+        "status": [
+          "planned",
+          "in progress",
+          "done",
+          "blocked",
+          "unknown"
+        ]
+      },
+      "actionArgs": {
+        "show": [
+          "limit",
+          "offset"
+        ],
+        "update": [
+          "slug",
+          "status",
+          "limit",
+          "offset"
+        ]
+      },
+      "facts": {
+        "slug": [
+          "feature row"
+        ],
+        "status": [
+          "status"
+        ],
+        "limit": [
+          "50"
+        ],
+        "offset": [
+          "skip"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    },
+    "archgen_codegraph": {
+      "annotations": {
+        "readOnly": false,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "action",
+        "location",
+        "approve",
+        "telemetry",
+        "noInstall",
+        "limit",
+        "offset",
+        "projectRoot"
+      ],
+      "required": [
+        "action"
+      ],
+      "enums": {
+        "action": [
+          "ensure",
+          "status",
+          "wire"
+        ],
+        "location": [
+          "project",
+          "global",
+          "both"
+        ],
+        "telemetry": [
+          "keep",
+          "off",
+          "on"
+        ]
+      },
+      "actionArgs": {
+        "ensure": [
+          "location",
+          "approve",
+          "telemetry",
+          "noInstall",
+          "limit",
+          "offset"
+        ],
+        "status": [
+          "location",
+          "approve",
+          "telemetry",
+          "noInstall",
+          "limit",
+          "offset"
+        ],
+        "wire": [
+          "location",
+          "approve",
+          "telemetry",
+          "noInstall",
+          "limit",
+          "offset"
+        ]
+      },
+      "facts": {
+        "location": [
+          "project",
+          "global",
+          "both"
+        ],
+        "approve": [
+          "plan",
+          "write"
+        ],
+        "telemetry": [
+          "keep|off|on",
+          "telemetry"
+        ],
+        "noInstall": [
+          "install"
+        ],
+        "limit": [
+          "50"
+        ],
+        "offset": [
+          "skip"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    },
+    "archgen_setup": {
+      "annotations": {
+        "readOnly": false,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "action",
+        "location",
+        "approve",
+        "telemetry",
+        "noCodegraph",
+        "noMcp",
+        "harness",
+        "limit",
+        "offset",
+        "projectRoot"
+      ],
+      "required": [
+        "action"
+      ],
+      "enums": {
+        "action": [
+          "doctor",
+          "bootstrap",
+          "install_mcp",
+          "uninstall_mcp",
+          "harnesses",
+          "harness_info"
+        ],
+        "location": [
+          "project",
+          "global",
+          "both"
+        ],
+        "telemetry": [
+          "keep",
+          "off",
+          "on"
+        ]
+      },
+      "actionArgs": {
+        "doctor": [
+          "location",
+          "approve",
+          "limit",
+          "offset"
+        ],
+        "bootstrap": [
+          "location",
+          "approve",
+          "telemetry",
+          "noCodegraph",
+          "noMcp",
+          "limit",
+          "offset"
+        ],
+        "install_mcp": [
+          "location",
+          "approve",
+          "telemetry",
+          "limit",
+          "offset"
+        ],
+        "uninstall_mcp": [
+          "location",
+          "approve",
+          "limit",
+          "offset"
+        ],
+        "harnesses": [
+          "location",
+          "approve",
+          "harness",
+          "limit",
+          "offset"
+        ],
+        "harness_info": [
+          "location",
+          "approve",
+          "harness",
+          "limit",
+          "offset"
+        ]
+      },
+      "facts": {
+        "location": [
+          "project",
+          "global",
+          "both"
+        ],
+        "approve": [
+          "plan",
+          "write"
+        ],
+        "telemetry": [
+          "keep|off|on",
+          "telemetry"
+        ],
+        "noCodegraph": [
+          "CodeGraph"
+        ],
+        "noMcp": [
+          "MCP"
+        ],
+        "harness": [
+          "harness"
+        ],
+        "limit": [
+          "50"
+        ],
+        "offset": [
+          "skip"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    },
+    "archgen_skills": {
+      "annotations": {
+        "readOnly": false,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "action",
+        "title",
+        "summary",
+        "fileOwnership",
+        "skillId",
+        "section",
+        "harness",
+        "global",
+        "approve",
+        "limit",
+        "offset",
+        "projectRoot"
+      ],
+      "required": [
+        "action"
+      ],
+      "enums": {
+        "action": [
+          "match",
+          "install",
+          "installed",
+          "load",
+          "digest",
+          "list"
+        ]
+      },
+      "actionArgs": {
+        "match": [
+          "title",
+          "summary",
+          "fileOwnership",
+          "limit",
+          "offset"
+        ],
+        "install": [
+          "skillId",
+          "harness",
+          "global",
+          "approve",
+          "limit",
+          "offset"
+        ],
+        "installed": [
+          "limit",
+          "offset"
+        ],
+        "load": [
+          "skillId",
+          "section",
+          "limit",
+          "offset"
+        ],
+        "digest": [
+          "skillId",
+          "section",
+          "limit",
+          "offset"
+        ],
+        "list": [
+          "skillId",
+          "limit",
+          "offset"
+        ]
+      },
+      "facts": {
+        "title": [
+          "title"
+        ],
+        "summary": [
+          "summary"
+        ],
+        "fileOwnership": [
+          "glob|file"
+        ],
+        "skillId": [
+          "skill id|slug"
+        ],
+        "section": [
+          "section"
+        ],
+        "harness": [
+          "harness"
+        ],
+        "global": [
+          "user|project"
+        ],
+        "approve": [
+          "plan",
+          "install"
+        ],
+        "limit": [
+          "50"
+        ],
+        "offset": [
+          "skip"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    },
+    "archgen_refs": {
+      "annotations": {
+        "readOnly": true,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "action",
+        "topic",
+        "section",
+        "include",
+        "token",
+        "limit",
+        "offset",
+        "projectRoot"
+      ],
+      "required": [
+        "action"
+      ],
+      "enums": {
+        "action": [
+          "list",
+          "index",
+          "read",
+          "search"
+        ],
+        "topic": [
+          "interview",
+          "orchestration",
+          "artifact-templates",
+          "platforms",
+          "mcp-and-skills",
+          "code-standards"
+        ],
+        "include": [
+          "own",
+          "all"
+        ]
+      },
+      "actionArgs": {
+        "list": [
+          "limit",
+          "offset"
+        ],
+        "index": [
+          "topic",
+          "section",
+          "limit",
+          "offset"
+        ],
+        "read": [
+          "topic",
+          "section",
+          "include",
+          "limit",
+          "offset"
+        ],
+        "search": [
+          "topic",
+          "token",
+          "limit",
+          "offset"
+        ]
+      },
+      "facts": {
+        "topic": [
+          "topic"
+        ],
+        "section": [
+          "section"
+        ],
+        "token": [
+          "token"
+        ],
+        "limit": [
+          "50"
+        ],
+        "offset": [
+          "skip"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ],
+        "include": [
+          "own",
+          "all"
+        ]
+      }
+    },
+    "archgen_help": {
+      "annotations": {
+        "readOnly": true,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "topic",
+        "projectRoot"
+      ],
+      "required": [
+        "topic"
+      ],
+      "enums": {
+        "topic": [
+          "plan",
+          "tasks",
+          "docs",
+          "registry",
+          "codegraph",
+          "setup",
+          "skills",
+          "refs",
+          "yaml",
+          "all"
+        ]
+      },
+      "actionArgs": null,
+      "facts": {
+        "topic": [
+          "domain"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    }
+  }
+}

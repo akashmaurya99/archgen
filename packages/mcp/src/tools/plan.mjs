@@ -6,6 +6,7 @@
 // "which one do I call?" confusion the whole MCP exercise exists to fix.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
+import { routingSentence } from '../core/routing.mjs';
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
 import { buildScaffold, skeletonKeyForPath } from '../core/scaffold.mjs';
 import { buildPlanProfile, INTENTS, SCOPE_SIGNALS } from '../core/plan-profile.mjs';
@@ -24,8 +25,11 @@ import { hint } from '../core/guidance.mjs';
 import { resolutionWarning, resolveTasksFile } from '../core/tasks-file.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
-// would tax every request's context for no extra information.
-const ACTION_DESC = 'validate|verify|graph|impact|coverage|profile|scaffold|brief';
+// would tax every request's context for no extra information. What DOES
+// live here is the GENERATED routing map: one line built from the tables
+// below, so a model can see which arguments an action reads without
+// guessing — and without the hand-written parentheticals that used to
+// disagree with these very tables.
 
 /**
  * The collections a bounded action can walk.
@@ -99,35 +103,35 @@ const PLAN_ACTION_ARGS = {
 };
 
 const schema = z.object({
-  action: z.enum(['validate', 'verify', 'graph', 'impact', 'coverage', 'profile', 'scaffold', 'brief']).describe(ACTION_DESC),
+  action: z.enum(['validate', 'verify', 'graph', 'impact', 'coverage', 'profile', 'scaffold', 'brief']),
   tasksYaml: z
     .string()
     .optional()
-    .describe('tasks.yaml path (validate, verify, impact, coverage, graph). Omit → the active .archgen/<slug>/tasks.yaml.'),
-  planDir: z.string().optional().describe('plans/ dir (verify, coverage, brief, graph).'),
-  target: z.string().optional().describe('Task id or artifact path (impact).'),
-  taskId: z.string().optional().describe('One task (coverage).'),
-  node: z.string().optional().describe('One task neighborhood (graph).'),
-  format: z.enum(['json', 'mermaid']).optional().describe('json|mermaid (graph).'),
-  status: z.boolean().optional().describe('Status styling (graph, mermaid).'),
-  module: z.string().optional().describe('One module (graph).'),
-  scope: z.enum(['SMALL', 'MEDIUM', 'LARGE']).optional().describe('SMALL|MEDIUM|LARGE (scaffold).'),
-  slug: z.string().optional().describe('Project slug (profile, scaffold, brief).'),
-  intent: z.enum(INTENTS).optional().describe('Scope intent (profile, scaffold).'),
-  signals: z.array(z.enum(SCOPE_SIGNALS)).optional().describe('Evidence signals (profile, scaffold).'),
+    .describe('tasks.yaml path; omit → the active .archgen/<slug>/tasks.yaml.'),
+  planDir: z.string().optional().describe('plans/ dir.'),
+  target: z.string().optional().describe('Task id or artifact path.'),
+  taskId: z.string().optional().describe('One task.'),
+  node: z.string().optional().describe('One task neighborhood.'),
+  format: z.enum(['json', 'mermaid']).optional(),
+  status: z.boolean().optional().describe('Status styling.'),
+  module: z.string().optional().describe('One module.'),
+  scope: z.enum(['SMALL', 'MEDIUM', 'LARGE']).optional(),
+  slug: z.string().optional().describe('Project slug.'),
+  intent: z.enum(INTENTS).optional(),
+  signals: z.array(z.enum(SCOPE_SIGNALS)).optional().describe('Evidence signals.'),
   modules: z
     .union([z.number().int().positive(), z.array(z.unknown()).min(1)])
     .optional()
-    .describe('Modules touched/created: a count, or the list itself (profile, scaffold).'),
+    .describe('Modules touched/created: a count, or the list itself.'),
   tasks: z
     .union([z.number().int().positive(), z.array(z.unknown()).min(1)])
     .optional()
-    .describe('Planned tasks: a count, or the list itself (profile, scaffold).'),
-  file: z.string().optional().describe('One artifact file (scaffold).'),
-  kind: z.enum(BRIEF_KINDS).optional().describe('verifier|review|survey|investigate (brief).'),
-  featureRequest: z.string().optional().describe('One-line feature request (brief).'),
-  topic: z.string().optional().describe('Investigation topic (brief).'),
-  round: z.number().int().positive().optional().describe('Investigation round (brief).'),
+    .describe('Planned tasks: a count, or the list itself.'),
+  file: z.string().optional().describe('One artifact file.'),
+  kind: z.enum(BRIEF_KINDS).optional(),
+  featureRequest: z.string().optional().describe('One-line feature request.'),
+  topic: z.string().optional().describe('Investigation topic.'),
+  round: z.number().int().positive().optional().describe('Investigation round.'),
   collection: z
     .enum([
       'errors',
@@ -144,7 +148,7 @@ const schema = z.object({
       'artifacts',
     ])
     .optional()
-    .describe('Which collection `limit`/`offset` window (validate, verify, coverage, impact).'),
+    .describe('Which collection the limit/offset window walks.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -158,8 +162,9 @@ export function registerPlanTools(server) {
     actionArgs: PLAN_ACTION_ARGS,
     title: 'ArchGen plan',
     description:
-      'Validate and analyze an archgen plan: schema validation, verifier gate, dependency graph, ' +
-      'blast radius, coverage, evidence-based scope profile, artifact scaffold, and dispatch brief.',
+      'Validate and analyze an archgen plan: schema validation, the deterministic floor, dependency graph, ' +
+      'blast radius, coverage, evidence-based scope profile, artifact scaffold, and dispatch brief. ' +
+      routingSentence(PLAN_ACTION_ARGS),
     inputSchema: schema,
     readOnly: true,
     idempotent: true,

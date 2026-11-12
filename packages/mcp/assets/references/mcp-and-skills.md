@@ -35,22 +35,12 @@ Capability loading is **MANDATORY** whenever planned work matches a registry dom
 
 ## The registry
 
-Managed by `archgen_skills` at `packages/mcp/assets/skill-registry.json` (never edit directly):
+Managed by `archgen_skills` at `packages/mcp/assets/skill-registry.json` (never edit directly). **The registry is data, and the tool owns it** — `archgen_skills{action:'list'}` returns every entry, so read it there rather than from a copy. A copy here is a second source that can disagree with the one the tool matches against.
 
-```json
-{
-  "id": "ui-motion",
-  "slug": "fixing-motion-performance",
-  "domain": "Motion",
-  "family": "ui-skills",
-  "repo": "ibelick/ui-skills",
-  "purpose": "Motion and animation performance — jank-free transitions.",
-  "matches": ["animation", "motion", "transition"],
-  "policy": "required"
-}
-```
+Each entry carries:
 
-- `domain`: label injected into the worker contract.
-- `matches[]`: whole-word tokens matched against task `title`, `summary`, and `file_ownership`.
-- `policy`: `"required"` (pre-planning + pre-dispatch) or `"on-demand"`.
+- `id` / `slug` — the identity and the directory the skill lands in.
+- `domain` — the label injected into the worker contract.
+- `matches[]` — whole-word tokens matched against task `title`, `summary`, and `file_ownership`.
+- `policy` — `"required"` (pre-planning + pre-dispatch) or `"on-demand"`.
 - **Granular install:** one skill (`--skill <slug>`) per domain, never a family.

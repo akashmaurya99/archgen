@@ -1,6 +1,7 @@
 // setup.mjs — the `archgen_setup` tool: install, MCP wiring, health.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, APPROVE_DESC } from './_register.mjs';
+import { routingSentence } from '../core/routing.mjs';
 import { loadAsset } from '../context.mjs';
 import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary, uninstallArchgenMcp } from '../core/mcp-server-manager.mjs';
 import { manageCodegraph, assertLocation, findCodegraph, codegraphState } from '../core/codegraph-manager.mjs';
@@ -13,8 +14,6 @@ import { invalidInput } from '../core/errors.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
-
-const ACTION_DESC = 'doctor|bootstrap|install_mcp|uninstall_mcp|harnesses|harness_info';
 
 /**
  * The arguments each action takes. An argument that belongs to another
@@ -30,13 +29,13 @@ const SETUP_ACTION_ARGS = {
 };
 
 const schema = z.object({
-  action: z.enum(['doctor', 'bootstrap', 'install_mcp', 'uninstall_mcp', 'harnesses', 'harness_info']).describe(ACTION_DESC),
+  action: z.enum(['doctor', 'bootstrap', 'install_mcp', 'uninstall_mcp', 'harnesses', 'harness_info']),
   location: z.enum(['project', 'global', 'both']).optional().describe(LOCATION_DESC),
   approve: z.boolean().optional().describe(APPROVE_DESC),
-  telemetry: z.enum(['keep', 'off', 'on']).optional().describe('keep|off|on (bootstrap).'),
+  telemetry: z.enum(['keep', 'off', 'on']).optional().describe('CodeGraph anonymous telemetry; off is machine-wide.'),
   noCodegraph: z.boolean().optional().describe('Skip the CodeGraph half of bootstrap.'),
   noMcp: z.boolean().optional().describe('Skip the MCP wiring half of bootstrap.'),
-  harness: z.string().optional().describe('Harness id (harnesses, harness_info).'),
+  harness: z.string().optional().describe('Harness id.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -106,7 +105,8 @@ export function registerSetupTools(server) {
     title: 'ArchGen setup',
     description:
       'ArchGen install health and wiring: doctor, bootstrap, install/uninstall MCP, ' +
-      'detected harnesses, and harness capabilities.',
+      'detected harnesses, and harness capabilities. ' +
+      routingSentence(SETUP_ACTION_ARGS),
     inputSchema: schema,
     readOnly: false,
     destructive: false,

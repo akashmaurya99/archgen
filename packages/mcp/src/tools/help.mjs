@@ -9,7 +9,27 @@
 // arrives on demand.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
+import { getToolSpec } from './_register.mjs';
+import { routingMap } from '../core/routing.mjs';
 import { YAML_SUBSET } from '../core/yaml-subset.mjs';
+
+/**
+ * Which tool each help topic describes.
+ *
+ * The routing map is generated from that tool's per-action tables, so the
+ * briefing and the schema cannot disagree about which action reads which
+ * argument.
+ */
+const HELP_TOOL_FOR_TOPIC = {
+  plan: 'archgen_plan',
+  tasks: 'archgen_tasks',
+  docs: 'archgen_docs',
+  registry: 'archgen_registry',
+  codegraph: 'archgen_codegraph',
+  setup: 'archgen_setup',
+  skills: 'archgen_skills',
+  refs: 'archgen_refs',
+};
 
 /**
  * The YAML subset briefing, rendered from the contract the tests check.
@@ -51,16 +71,16 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 - Before the verifier gate (\`verify\`); for the dependency graph (\`graph\`) or blast radius (\`impact\`).
 
 **Actions**
-| action | what it does | args |
+| action | what it does |
 |---|---|---|
-| \`validate\` | schema, cycles, dangling refs, ownership, acceptance | tasksYaml?, planDir? |
-| \`verify\` | the deterministic floor → APPROVE or ISSUES (+ warnings) | tasksYaml?, planDir, offset? |
-| \`coverage\` | tasks covered vs missing in the plans | tasksYaml?, planDir |
-| \`profile\` | evidence-based scope + per-artifact create/reuse/omit decisions | intent, signals?, modules?, tasks?, slug? |
-| \`scaffold\` | the artifact set + skeletons (with an intent: EXACTLY the create set) | scope, slug?, intent?, signals?, modules?, tasks?, file? |
-| \`brief\` | ready-to-send sub-agent prompt (graph, docs check, evidence map rendered) | kind, tasksYaml?, planDir?, slug?, featureRequest?, topic?, round? |
-| \`graph\` | dependency graph; \`format:'mermaid'\` for a diagram | tasksYaml, node?, module?, format?, status? |
-| \`impact\` | direct + transitive dependents of a task id or path | tasksYaml, target |
+| \`validate\` | schema, cycles, dangling refs, ownership, acceptance |
+| \`verify\` | the deterministic floor → APPROVE or ISSUES (+ warnings) |
+| \`coverage\` | tasks covered vs missing in the plans |
+| \`profile\` | evidence-based scope + per-artifact create/reuse/omit decisions |
+| \`scaffold\` | the artifact set + skeletons (with an intent: EXACTLY the create set) |
+| \`brief\` | ready-to-send sub-agent prompt (graph, docs check, evidence map rendered) |
+| \`graph\` | dependency graph; \`format:'mermaid'\` for a diagram |
+| \`impact\` | direct + transitive dependents of a task id or path |
 
 **Reading the result**
 - \`ok\` = the CALL succeeded; plan health is \`data.valid\` (\`data.verdict\` for verify). A broken plan is still \`ok:true\`.
@@ -94,13 +114,13 @@ The wave execution loop.
 - \`snapshot\` after each wave: writes the compaction-safe resume file.
 
 **Actions**
-| action | what it does | args |
+| action | what it does |
 |---|---|---|
-| \`next\` | dependency frontier → waves | tasksYaml? |
-| \`set_status\` | atomically set one task status | tasksYaml?, taskId, status, force? |
-| \`list\` | flat task list, filterable | tasksYaml?, filterStatus?, module? |
-| \`snapshot\` | write \`.archgen/<slug>/.agent/resume.md\` | tasksYaml? |
-| \`contract\` | full worker prompt for one task | tasksYaml?, taskId, slugDir? |
+| \`next\` | dependency frontier → waves |
+| \`set_status\` | atomically set one task status |
+| \`list\` | flat task list, filterable |
+| \`snapshot\` | write \`.archgen/<slug>/.agent/resume.md\` |
+| \`contract\` | full worker prompt for one task |
 
 **Status discipline (non-negotiable)**—after EVERY task, same turn:
 1. \`set_status\` done|failed—verify it landed.
@@ -126,14 +146,14 @@ Navigates markdown artifacts under \`.archgen/<slug>/\`.
 **Read sections, not files.** A plan can be 20k tokens; the needed section is usually a few hundred. \`digest\` gives the section index; \`section\` fetches one.
 
 **Actions**
-| action | what it does | args |
+| action | what it does |
 |---|---|---|
-| \`digest\` | compact section index per document—start here | slugDir? |
-| \`section\` | one section by bare slug, \`path\`, or \`path#anchor\` | section, slugDir?, include? |
-| \`map\` | sections mentioning a token | token, slugDir? |
-| \`refs\` | every line mentioning a token | token, slugDir? |
-| \`index\` | file map: path, title, section count | slugDir? |
-| \`validate\` | reference-integrity gate | slugDir? |
+| \`digest\` | compact section index per document—start here |
+| \`section\` | one section by bare slug, \`path\`, or \`path#anchor\` |
+| \`map\` | sections mentioning a token |
+| \`refs\` | every line mentioning a token |
+| \`index\` | file map: path, title, section count |
+| \`validate\` | reference-integrity gate |
 
 **Gotchas**
 - A section resolves by exact slug, title, or unambiguous PREFIX (\`plan-depth\` → \`plan-depth-by-scope-class\`).
@@ -158,10 +178,10 @@ Keeps the \`AGENTS.md\` features registry in sync with \`.archgen/\`.
 - After generating a plan and after any artifact change.
 
 **Actions**
-| action | what it does | args |
+| action | what it does |
 |---|---|---|
-| \`update\` | rewrite the registry table from \`.archgen/\` | slug?, status? |
-| \`show\` | read the registry without writing | — |
+| \`update\` | rewrite the registry table from \`.archgen/\` |
+| \`show\` | read the registry without writing |
 
 **Gotchas**
 - Machine-maintained: never hand-edit—change \`.archgen/\` state and call \`update\`.
@@ -177,11 +197,11 @@ Installs, wires, or inspects CodeGraph (source-symbol index) and its MCP server.
 - Check state: \`status\`. Wire configs only: \`wire\`.
 
 **Actions**
-| action | what it does | args |
+| action | what it does |
 |---|---|---|
-| \`ensure\` | install missing CLI + wire MCPs + build index | projectRoot?, approve? |
-| \`status\` | installed / wired / indexed (read-only, offline) | projectRoot? |
-| \`wire\` | wire the MCP into detected harnesses only | projectRoot?, approve?, location? |
+| \`ensure\` | install missing CLI + wire MCPs + build index |
+| \`status\` | installed / wired / indexed (read-only, offline) |
+| \`wire\` | wire the MCP into detected harnesses only |
 
 **Gotchas**
 - The index is built ONCE per project; the server watcher keeps it live—never re-index by hand.
@@ -198,14 +218,14 @@ Installation, MCP wiring, and health.
 - Install into other harnesses: \`install_mcp\`. Check an install: \`doctor\`.
 
 **Actions**
-| action | what it does | args |
+| action | what it does |
 |---|---|---|
-| \`doctor\` | issues only (WARN/FAIL) + status/summary/versions + \`serverActions\` | projectRoot? |
-| \`bootstrap\` | wire archgen MCP + ensure CodeGraph in one call; a no-op when already configured | projectRoot?, location?, approve?, telemetry? |
-| \`install_mcp\` | write ONLY the archgen MCP entry into detected harnesses | projectRoot?, location?, approve? |
-| \`uninstall_mcp\` | remove the archgen MCP entries this server wrote | projectRoot?, location?, approve? |
-| \`harnesses\` | detected harnesses + exact config path/key | projectRoot?, harness? |
-| \`harness_info\` | platform capabilities; no argument = detect current | harness? |
+| \`doctor\` | issues only (WARN/FAIL) + status/summary/versions + \`serverActions\` |
+| \`bootstrap\` | wire archgen MCP + ensure CodeGraph in one call; a no-op when already configured |
+| \`install_mcp\` | write ONLY the archgen MCP entry into detected harnesses |
+| \`uninstall_mcp\` | remove the archgen MCP entries this server wrote |
+| \`harnesses\` | detected harnesses + exact config path/key |
+| \`harness_info\` | platform capabilities; no argument = detect current |
 
 **Gotchas**
 - Every config write needs \`approve:true\`; without it you get the PLAN, nothing is written.
@@ -223,14 +243,14 @@ Matches a task against the capability-skill registry, installs exactly the match
 - To install a missing match, or to read the rules a worker must follow.
 
 **Actions**
-| action | what it does | args |
+| action | what it does |
 |---|---|---|
-| \`match\` | skills a task needs (title + summary + file_ownership) | title?, summary?, fileOwnership? |
-| \`install\` | install ONE capability skill | skillId, harness?, global?, approve? |
-| \`installed\` | what is installed for this project | — |
-| \`load\` | a skill's RULES or ONE section | skillId, section? |
-| \`digest\` | section index of an installed skill | skillId |
-| \`list\` | the registry | — |
+| \`match\` | skills a task needs (title + summary + file_ownership) |
+| \`install\` | install ONE capability skill |
+| \`installed\` | what is installed for this project |
+| \`load\` | a skill's RULES or ONE section |
+| \`digest\` | section index of an installed skill |
+| \`list\` | the registry |
 
 **Gotchas**
 - \`install\` needs \`approve:true\`; without it you get the PLAN, nothing is written.
@@ -251,12 +271,12 @@ Loads archgen's own protocol documents—the judgment layer: interviewing, artif
 - Before guessing protocol details—don't; load it.
 
 **Actions**
-| action | what it does | args |
+| action | what it does |
 |---|---|---|
-| \`list\` | every topic + section count | — |
-| \`index\` | section list of one topic | topic |
-| \`read\` | ONE section (index when no section; whole topic only with \`'*'\`) | topic, section? |
-| \`search\` | sections mentioning a token | topic, token |
+| \`list\` | every topic + section count |
+| \`index\` | section list of one topic |
+| \`read\` | ONE section (index when no section; whole topic only with \`'*'\`) |
+| \`search\` | sections mentioning a token |
 
 **Gotchas**
 - Load the SECTION, not the topic: ~1–2 KB vs ~11 KB.
@@ -309,11 +329,43 @@ export function registerHelpTools(server) {
     inputSchema: schema,
     readOnly: true,
     idempotent: true,
-    handler: (ctx, args) => ({
-      topic: args.topic,
-      briefing: TOPICS[args.topic] ?? TOPICS.all,
-    }),
+    handler: (ctx, args) => {
+      const topic = args.topic;
+      const briefing = TOPICS[topic] ?? TOPICS.all;
+      // The ROUTING MAP — which arguments each action reads — is GENERATED
+      // from the same per-action tables the handlers use, and it is appended
+      // to the briefing here.
+      //
+      // It used to be a hand-written column in each action table, and a
+      // hand-written copy of a table is a copy that drifts: the schema and
+      // the briefing disagreed about which action read `collection`. One
+      // generated rendering, used by both the tool description and this
+      // briefing, cannot disagree with itself.
+      const map = routingMapFor(topic);
+      return {
+        topic,
+        briefing: map ? `${briefing}\n\n**Args by action**\n\n${map}` : briefing,
+      };
+    },
   });
+}
+
+/**
+ * The generated routing map for one help topic.
+ *
+ * It is built from the LIVE tool specs, so it cannot drift from the
+ * handlers — and it is the same rendering the tool descriptions carry.
+ *
+ * It is resolved at CALL time, not at import time: the specs are registered
+ * when the server is created, and a map built before that would be empty.
+ */
+function routingMapFor(topic) {
+  const tool = HELP_TOOL_FOR_TOPIC[topic];
+  if (!tool) return '';
+  const spec = getToolSpec(tool);
+  if (!spec) return '';
+  const map = routingMap(spec.actionArgs);
+  return map ? `Args — ${map}.` : '';
 }
 
 export { TOPICS };

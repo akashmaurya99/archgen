@@ -8,6 +8,7 @@
 import { z } from 'zod/v4';
 import { readFileSync } from 'node:fs';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
+import { routingSentence } from '../core/routing.mjs';
 import { loadAsset } from '../context.mjs';
 import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
@@ -25,8 +26,6 @@ import {
   HARNESS_AGENT_IDS,
 } from '../core/skill-manager.mjs';
 
-const ACTION_DESC = 'match|install|installed|load|digest|list';
-
 /**
  * The arguments each action takes. An argument that belongs to another
  * action is a typed error, not a silent no-op.
@@ -41,14 +40,14 @@ const SKILLS_ACTION_ARGS = {
 };
 
 const schema = z.object({
-  action: z.enum(['match', 'install', 'installed', 'load', 'digest', 'list']).describe(ACTION_DESC),
-  title: z.string().optional().describe('Task title (match).'),
-  summary: z.string().optional().describe('Task summary (match).'),
-  fileOwnership: z.array(z.string()).optional().describe('Task file globs (match).'),
+  action: z.enum(['match', 'install', 'installed', 'load', 'digest', 'list']),
+  title: z.string().optional().describe('Task title.'),
+  summary: z.string().optional().describe('Task summary.'),
+  fileOwnership: z.array(z.string()).optional().describe('Task file globs.'),
   skillId: z.string().optional().describe('Skill id or slug.'),
-  section: z.string().optional().describe('One skill section (load, digest).'),
-  harness: z.string().optional().describe('Target harness (install; default universal).'),
-  global: z.boolean().optional().describe('Install for the user, not the project (install).'),
+  section: z.string().optional().describe('One skill section.'),
+  harness: z.string().optional().describe('Target harness; default universal.'),
+  global: z.boolean().optional().describe('Install for the user, not the project.'),
   approve: z.boolean().optional().describe('Required to install; without it returns the plan.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
@@ -64,7 +63,8 @@ export function registerSkillTools(server) {
     title: 'ArchGen skills',
     description:
       'Match, install, load, and inspect capability skills (UI, accessibility, motion) from the registry; ' +
-      'one skill is installed per call.',
+      'one skill is installed per call. ' +
+      routingSentence(SKILLS_ACTION_ARGS),
     inputSchema: schema,
     readOnly: false,
     destructive: false,

@@ -234,10 +234,30 @@ export function verifyPlan(file, planDir, opts = {}) {
     issuesOffset: cappedIssues.offset,
     warningsOffset: cappedWarnings.offset,
     omitted: { issues: cappedIssues.omitted, warnings: cappedWarnings.omitted },
-    // The audit's maps, waivers and snapshot, so a caller that needs the
+    // The audit's MAPS, waivers and snapshot, so a caller that needs the
     // EVIDENCE does not have to run the audit a second time — and cannot
     // end up with a DIFFERENT set of findings than the ones reported here.
-    audit: lastAudit,
+    //
+    // The audit's own `issues` and `warnings` lists are NOT carried here:
+    // they are the SAME findings the two lists above already carry (the
+    // audit's findings are pushed into both), so shipping them again cost
+    // the caller a second copy of every finding — on a broken 120-task plan
+    // with 40 findings in the window, that was 40 findings twice, in one
+    // payload, for nothing.
+    //
+    // The counts and the codes stay, because they are EXACT while the lists
+    // are a sample: `issueCodes`/`warningCodes` count every finding by class.
+    audit: lastAudit
+      ? {
+        ...lastAudit,
+        issues: undefined,
+        warnings: undefined,
+        issuesTotal: undefined,
+        warningsTotal: undefined,
+        issueCodes: undefined,
+        warningCodes: undefined,
+      }
+      : null,
   };
 }
 
