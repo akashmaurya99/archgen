@@ -475,6 +475,27 @@ BLOCK
   write_block "$ROOT/AGENTS.md" || BLOCK_FAILED=1
   write_bridge "$ROOT/CLAUDE.md" || BLOCK_FAILED=1
 
+  # The project install manifest (CLI parity): the record of what this
+  # install created, so `archgen uninstall <dir>` can remove it. The CLI
+  # wrote one and install.sh did not, so an install made by the shell
+  # installer was invisible to the CLI's uninstaller.
+  PROJECT_MANIFEST="$ROOT/.archgen/.install-manifest.json"
+  if mkdir -p -- "$ROOT/.archgen" 2>/dev/null && [ ! -L "$ROOT/.archgen" ]; then
+    NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    LINK_ENTRY=""
+    if [ -L "$CLAUDE_LINK" ] && [ "$(readlink -- "$CLAUDE_LINK")" = "../../.agents/skills/archgen" ]; then
+      LINK_ENTRY="    { \"kind\": \"link\", \"path\": \".claude/skills/archgen\", \"createdAt\": \"$NOW\" },"
+    fi
+    {
+      printf '{\n  "version": 1,\n  "createdAt": "%s",\n  "entries": [\n' "$NOW"
+      printf '    { "kind": "dir", "path": ".agents/skills/archgen", "createdAt": "%s" },\n' "$NOW"
+      printf '%s\n' "$LINK_ENTRY"
+      printf '    { "kind": "block", "path": "AGENTS.md", "createdAt": "%s" },\n' "$NOW"
+      printf '    { "kind": "block", "path": "CLAUDE.md", "createdAt": "%s" }\n' "$NOW"
+      printf '  ]\n}\n'
+    } > "$PROJECT_MANIFEST" 2>/dev/null || warn "could not write $PROJECT_MANIFEST"
+  fi
+
   # Server bootstrap (mirrors packages/cli --init): wire the archgen MCP server
   # into every DETECTED harness AND ensure CodeGraph (its CLI, its MCP entry,
   # the project index). Non-fatal by design: an offline machine still gets the

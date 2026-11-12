@@ -152,6 +152,29 @@ node_modules/.bin/archgen-skill uninstall "$PROJECT" > "$WORK/uninstall.log" 2>&
 [ ! -e "$PROJECT/.agents/skills/archgen" ] || fail "the skill store survived the uninstall"
 pass "the project uninstall removed the store"
 
+step "11b. install.sh round-trips (init -> uninstall)"
+# install.sh is the installer most people run, and it is a SHELL script: no
+# node:test suite executed a line of it. The round-trip proves the store is
+# created, the pointer blocks are written, and the global uninstall removes
+# exactly what it recorded — and nothing else.
+SH_HOME="$WORK/sh-home"
+SH_PROJECT="$WORK/sh-project"
+mkdir -p "$SH_HOME" "$SH_PROJECT"
+HOME="$SH_HOME" bash "$REPO/install.sh" --init "$SH_PROJECT" > "$WORK/sh-init.log" 2>&1 \
+  || fail "install.sh --init failed: $(cat "$WORK/sh-init.log")"
+[ -f "$SH_PROJECT/.agents/skills/archgen/SKILL.md" ] || fail "install.sh --init created no store"
+[ -f "$SH_PROJECT/AGENTS.md" ] || fail "install.sh --init wrote no AGENTS.md"
+pass "install.sh --init created the store and the pointer blocks"
+
+# The global uninstall removes the recorded destination and NOTHING else: a
+# directory that merely ends in /skills/archgen is not a destination.
+mkdir -p "$SH_HOME/victim/skills/archgen"
+printf 'victim\n' > "$SH_HOME/victim/skills/archgen/keep.txt"
+printf 'copy\t%s\n' "$SH_HOME/victim/skills/archgen" >> "$SH_HOME/.archgen-install-manifest.list"
+HOME="$SH_HOME" bash "$REPO/install.sh" --uninstall > "$WORK/sh-uninstall.log" 2>&1
+[ -f "$SH_HOME/victim/skills/archgen/keep.txt" ] || fail "install.sh --uninstall deleted a path it never installed"
+pass "install.sh --uninstall removed only what it recorded"
+
 printf "\n════════════════════════════════════════════\n"
 printf "  SMOKE TEST PASSED — the release is ready to publish\n"
 printf "════════════════════════════════════════════\n"

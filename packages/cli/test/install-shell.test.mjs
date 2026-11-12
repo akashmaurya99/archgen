@@ -119,6 +119,23 @@ test('install.sh --init refuses a directory AGENTS.md and says so', () => {
   }
 });
 
+test('install.sh --init writes the PROJECT install manifest (CLI parity)', () => {
+  const m = machine();
+  try {
+    assert.equal(run(['--init'], m).status, 0);
+    const manifest = join(m.project, '.archgen', '.install-manifest.json');
+    assert.ok(existsSync(manifest), 'the project manifest exists');
+    const parsed = JSON.parse(readFileSync(manifest, 'utf8'));
+    assert.equal(parsed.version, 1);
+    const paths = parsed.entries.map((e) => `${e.kind}:${e.path}`);
+    assert.ok(paths.includes('dir:.agents/skills/archgen'), 'the store is recorded');
+    assert.ok(paths.includes('block:AGENTS.md'), 'the pointer block is recorded');
+    assert.ok(paths.includes('block:CLAUDE.md'), 'the bridge is recorded');
+  } finally {
+    m.cleanup();
+  }
+});
+
 test('install.sh --uninstall removes ONLY the recorded, allowed destinations', () => {
   const m = machine();
   try {
