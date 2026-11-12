@@ -5,9 +5,9 @@
 // feature map. This tool is the only sanctioned writer.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
-import { routingSentence } from '../core/routing.mjs';
-import { updateRegistry, showRegistry, DISPLAY_STATUSES } from '../core/registry-updater.mjs';
-import { toolCall } from '../core/call.mjs';
+import { routingSentence } from '../core/protocol/routing.mjs';
+import { updateRegistry, showRegistry, DISPLAY_STATUSES } from '../core/skill/registry-updater.mjs';
+import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 /**

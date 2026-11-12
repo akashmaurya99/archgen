@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { STATUSES, REQUIRED, KNOWN_KEYS, ID_PATTERN } from '../../src/core/validator.mjs';
+import { STATUSES, REQUIRED, KNOWN_KEYS, ID_PATTERN } from '../../src/core/plan/validator.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = join(HERE, '..', '..', 'schemas', 'tasks.schema.json');

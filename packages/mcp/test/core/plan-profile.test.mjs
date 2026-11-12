@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadAsset } from '../../src/context.mjs';
-import { buildPlanProfile, INTENTS, SCOPE_SIGNALS } from '../../src/core/plan-profile.mjs';
+import { buildPlanProfile, INTENTS, SCOPE_SIGNALS } from '../../src/core/plan/plan-profile.mjs';
 
 const ladder = loadAsset('depth-ladder.json');
 

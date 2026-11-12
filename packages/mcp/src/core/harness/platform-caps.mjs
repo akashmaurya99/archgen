@@ -9,9 +9,9 @@
 // (detection order, the unknown-platform procedure, the CodeGraph indexing
 // scope); the data lives in assets/platform-capabilities.json.
 import { existsSync } from 'node:fs';
-import { invalidInput, notFound } from './errors.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { invalidInput, notFound } from '../protocol/errors.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 /**
  * The capability row for one harness (or every harness).

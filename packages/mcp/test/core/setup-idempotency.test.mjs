@@ -23,9 +23,9 @@ import { createServer } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
 import { Context, loadAsset } from '../../src/context.mjs';
 import { guard } from '../../src/envelope.mjs';
-import { configHasServer } from '../../src/core/harness-wiring.mjs';
-import { archgenMcpStatus } from '../../src/core/mcp-server-manager.mjs';
-import { manageCodegraph } from '../../src/core/codegraph-manager.mjs';
+import { configHasServer } from '../../src/core/harness/harness-wiring.mjs';
+import { archgenMcpStatus } from '../../src/core/harness/mcp-server-manager.mjs';
+import { manageCodegraph } from '../../src/core/harness/codegraph-manager.mjs';
 import { summarizeWiring } from '../../src/tools/setup.mjs';
 
 createServer();

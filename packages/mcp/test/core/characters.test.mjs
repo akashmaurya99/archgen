@@ -18,8 +18,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { parseYaml, stringifyYaml } from '../../src/core/yaml.mjs';
-import { validateTasksYaml } from '../../src/core/validator.mjs';
+import { parseYaml, stringifyYaml } from '../../src/core/fs/yaml.mjs';
+import { validateTasksYaml } from '../../src/core/plan/validator.mjs';
 
 /** Every printable ASCII character, plus the ones that break a quoted string. */
 const CHARACTERS = [

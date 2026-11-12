@@ -18,8 +18,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildBriefContext } from '../../src/core/brief-context.mjs';
-import { renderBriefContext } from '../../src/core/briefs.mjs';
+import { buildBriefContext } from '../../src/core/docs/brief-context.mjs';
+import { renderBriefContext } from '../../src/core/docs/briefs.mjs';
 import { Context } from '../../src/context.mjs';
 import { estimateTokens } from '../../../../internal/tools/tokens.mjs';
 

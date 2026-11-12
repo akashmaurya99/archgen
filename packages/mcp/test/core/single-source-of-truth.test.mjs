@@ -25,10 +25,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadAsset } from '../../src/context.mjs';
-import { ISSUE_CODES, WARNING_CODES, BASE_CODES, KNOWN_CODES } from '../../src/core/codes.mjs';
-import { buildPlanProfile } from '../../src/core/plan-profile.mjs';
-import { buildScaffold } from '../../src/core/scaffold.mjs';
-import { readWaivers } from '../../src/core/waivers.mjs';
+import { ISSUE_CODES, WARNING_CODES, BASE_CODES, KNOWN_CODES } from '../../src/core/protocol/codes.mjs';
+import { buildPlanProfile } from '../../src/core/plan/plan-profile.mjs';
+import { buildScaffold } from '../../src/core/plan/scaffold.mjs';
+import { readWaivers } from '../../src/core/plan/waivers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..', '..');

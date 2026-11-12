@@ -9,12 +9,12 @@
 // are pruned. Writes atomically via temp + rename.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseYaml } from './yaml.mjs';
-import { invalidInput } from './errors.mjs';
-import { isSlug } from './slug.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
-import { writeFileAtomic } from './fs-safety.mjs';
+import { parseYaml } from '../fs/yaml.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { isSlug } from '../protocol/slug.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
+import { writeFileAtomic } from '../fs/fs-safety.mjs';
 
 export const START_MARKER = '<!-- archgen:features:start -->';
 export const END_MARKER = '<!-- archgen:features:end -->';

@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadAsset, TEMPLATES_DIR, serverVersion } from '../../src/context.mjs';
-import { buildScaffold } from '../../src/core/scaffold.mjs';
-import { parseYaml } from '../../src/core/yaml.mjs';
+import { buildScaffold } from '../../src/core/plan/scaffold.mjs';
+import { parseYaml } from '../../src/core/fs/yaml.mjs';
 
 const ladder = loadAsset('depth-ladder.json');
 

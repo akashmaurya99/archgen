@@ -22,7 +22,7 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync, rmSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { assertWithinRoot as mcpAssertWithinRoot } from '../../src/core/fs-safety.mjs';
+import { assertWithinRoot as mcpAssertWithinRoot } from '../../src/core/fs/fs-safety.mjs';
 import { assertWithinRoot as cliAssertWithinRoot } from '../../../cli/lib/store.js';
 
 const GUARDS = [

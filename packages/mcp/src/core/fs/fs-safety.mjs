@@ -19,7 +19,7 @@
 // scripts it replaces.
 import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
-import { conflict, permissionDenied } from './errors.mjs';
+import { conflict, permissionDenied } from '../protocol/errors.mjs';
 
 /** Canonical refusal message — identical wording to the CLI's. */
 export function refuseSymlinkMessage(absPath) {

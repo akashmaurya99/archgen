@@ -15,12 +15,12 @@
 // ANY transition out of 'done' requires explicit intent (force): reopening
 // completed work — directly or via a failed/blocked hop — is refused without it.
 import { readFileSync } from 'node:fs';
-import { stringifyYaml } from './yaml.mjs';
+import { stringifyYaml } from '../fs/yaml.mjs';
 import { readParsedPlanFile } from './plan-file.mjs';
-import { conflict, invalidInput } from './errors.mjs';
-import { writeFileAtomic, withFileLock } from './fs-safety.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { conflict, invalidInput } from '../protocol/errors.mjs';
+import { writeFileAtomic, withFileLock } from '../fs/fs-safety.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 

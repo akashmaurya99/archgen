@@ -8,11 +8,11 @@
 import { z } from 'zod/v4';
 import { readFileSync } from 'node:fs';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
-import { routingSentence } from '../core/routing.mjs';
+import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset } from '../context.mjs';
-import { invalidInput } from '../core/errors.mjs';
-import { hint, teach } from '../core/guidance.mjs';
-import { toolCall } from '../core/call.mjs';
+import { invalidInput } from '../core/protocol/errors.mjs';
+import { hint, teach } from '../core/protocol/guidance.mjs';
+import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import {
   matchSkills,
@@ -24,7 +24,7 @@ import {
   skillRules,
   skillSections,
   HARNESS_AGENT_IDS,
-} from '../core/skill-manager.mjs';
+} from '../core/skill/skill-manager.mjs';
 
 /**
  * The arguments each action takes. An argument that belongs to another

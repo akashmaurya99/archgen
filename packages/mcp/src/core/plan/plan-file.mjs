@@ -8,11 +8,11 @@
 // One reader, one shape: the cause, the line, the fix and the next call.
 
 import { readFileSync, realpathSync } from 'node:fs';
-import { parseYaml } from './yaml.mjs';
-import { invalidInput, ArchgenError } from './errors.mjs';
-import { teach, hint } from './guidance.mjs';
-import { finding } from './diagnostics.mjs';
-import { toolCall } from './call.mjs';
+import { parseYaml } from '../fs/yaml.mjs';
+import { invalidInput, ArchgenError } from '../protocol/errors.mjs';
+import { teach, hint } from '../protocol/guidance.mjs';
+import { finding } from '../protocol/diagnostics.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 /**
  * Read and parse a plan file.

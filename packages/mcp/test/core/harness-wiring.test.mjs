@@ -8,8 +8,8 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, exist
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { wireServer, writeJsonConfig, writeTomlConfig, detectHarnesses, removeWiring } from '../../src/core/harness-wiring.mjs';
-import { wireArchgenMcp } from '../../src/core/mcp-server-manager.mjs';
+import { wireServer, writeJsonConfig, writeTomlConfig, detectHarnesses, removeWiring } from '../../src/core/harness/harness-wiring.mjs';
+import { wireArchgenMcp } from '../../src/core/harness/mcp-server-manager.mjs';
 import { loadAsset } from '../../src/context.mjs';
 
 const registry = loadAsset('harness-mcp.json');

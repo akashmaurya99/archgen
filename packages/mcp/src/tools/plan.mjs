@@ -6,23 +6,23 @@
 // "which one do I call?" confusion the whole MCP exercise exists to fix.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
-import { routingSentence } from '../core/routing.mjs';
+import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
-import { buildScaffold, skeletonKeyForPath } from '../core/scaffold.mjs';
-import { buildPlanProfile, INTENTS, SCOPE_SIGNALS } from '../core/plan-profile.mjs';
-import { loadBrief, renderBriefContext, BRIEF_KINDS } from '../core/briefs.mjs';
-import { resolveBriefScope, briefVars } from '../core/brief-scope.mjs';
-import { buildBriefContext } from '../core/brief-context.mjs';
-import { validateTasksYaml } from '../core/validator.mjs';
-import { verifyPlan, planCoverage } from '../core/verifier.mjs';
-import { planGraph } from '../core/plan-grapher.mjs';
-import { analyzeImpact } from '../core/impact-analyzer.mjs';
-import { invalidInput } from '../core/errors.mjs';
-import { assertPathToken } from '../core/slug.mjs';
-import { toolCall } from '../core/call.mjs';
+import { buildScaffold, skeletonKeyForPath } from '../core/plan/scaffold.mjs';
+import { buildPlanProfile, INTENTS, SCOPE_SIGNALS } from '../core/plan/plan-profile.mjs';
+import { loadBrief, renderBriefContext, BRIEF_KINDS } from '../core/docs/briefs.mjs';
+import { resolveBriefScope, briefVars } from '../core/docs/brief-scope.mjs';
+import { buildBriefContext } from '../core/docs/brief-context.mjs';
+import { validateTasksYaml } from '../core/plan/validator.mjs';
+import { verifyPlan, planCoverage } from '../core/plan/verifier.mjs';
+import { planGraph } from '../core/plan/plan-grapher.mjs';
+import { analyzeImpact } from '../core/plan/impact-analyzer.mjs';
+import { invalidInput } from '../core/protocol/errors.mjs';
+import { assertPathToken } from '../core/protocol/slug.mjs';
+import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
-import { hint } from '../core/guidance.mjs';
-import { resolutionWarning, resolveTasksFile } from '../core/tasks-file.mjs';
+import { hint } from '../core/protocol/guidance.mjs';
+import { resolutionWarning, resolveTasksFile } from '../core/fs/tasks-file.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information. What DOES

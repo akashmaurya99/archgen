@@ -20,10 +20,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { skillSearchPaths } from './skill-roots.mjs';
-import { invalidInput } from './errors.mjs';
-import { hint, teach } from './guidance.mjs';
-import { toolCall } from './call.mjs';
-import { satisfies } from './compat.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { hint, teach } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
+import { satisfies } from '../protocol/compat.mjs';
 
 /**
  * Registry shape (see assets/skill-registry.json).

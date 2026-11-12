@@ -16,8 +16,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTaskStatus, sameId } from '../../src/core/status-mutator.mjs';
-import { parseYaml } from '../../src/core/yaml.mjs';
+import { setTaskStatus, sameId } from '../../src/core/plan/status-mutator.mjs';
+import { parseYaml } from '../../src/core/fs/yaml.mjs';
 
 let dir;
 let file;

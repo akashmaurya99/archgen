@@ -20,8 +20,8 @@ import { createServer } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
 import { Context } from '../../src/context.mjs';
 import { guard } from '../../src/envelope.mjs';
-import { verifyPlan, planCoverage, MAX_FINDINGS } from '../../src/core/verifier.mjs';
-import { docIndex } from '../../src/core/doc-navigator.mjs';
+import { verifyPlan, planCoverage, MAX_FINDINGS } from '../../src/core/plan/verifier.mjs';
+import { docIndex } from '../../src/core/docs/doc-navigator.mjs';
 
 createServer();
 

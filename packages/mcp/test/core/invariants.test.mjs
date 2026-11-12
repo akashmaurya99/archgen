@@ -10,13 +10,13 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { validateTasksYaml } from '../../src/core/validator.mjs';
-import { verifyPlan } from '../../src/core/verifier.mjs';
-import { resolveWaves } from '../../src/core/wave-resolver.mjs';
-import { setTaskStatus, detectEol } from '../../src/core/status-mutator.mjs';
-import { analyzeImpact } from '../../src/core/impact-analyzer.mjs';
-import { updateRegistry } from '../../src/core/registry-updater.mjs';
-import { ArchgenError } from '../../src/core/errors.mjs';
+import { validateTasksYaml } from '../../src/core/plan/validator.mjs';
+import { verifyPlan } from '../../src/core/plan/verifier.mjs';
+import { resolveWaves } from '../../src/core/plan/wave-resolver.mjs';
+import { setTaskStatus, detectEol } from '../../src/core/plan/status-mutator.mjs';
+import { analyzeImpact } from '../../src/core/plan/impact-analyzer.mjs';
+import { updateRegistry } from '../../src/core/skill/registry-updater.mjs';
+import { ArchgenError } from '../../src/core/protocol/errors.mjs';
 
 const work = mkdtempSync(join(tmpdir(), 'archgen-core-'));
 

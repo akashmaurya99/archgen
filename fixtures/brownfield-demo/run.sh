@@ -9,7 +9,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARCHGEN_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 MCP="$ARCHGEN_ROOT/packages/mcp/bin/archgen-mcp.mjs"
-YAML="$ARCHGEN_ROOT/packages/mcp/src/core/yaml.mjs"
+YAML="$ARCHGEN_ROOT/packages/mcp/src/core/fs/yaml.mjs"
 SLUG="demo-brownfield"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }

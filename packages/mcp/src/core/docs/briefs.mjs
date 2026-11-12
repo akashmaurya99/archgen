@@ -6,9 +6,9 @@
 // it and the reference keeps only the policy around it.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { invalidInput, notFound } from './errors.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { invalidInput, notFound } from '../protocol/errors.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 export const BRIEF_KINDS = ['verifier', 'review', 'survey', 'investigate'];
 

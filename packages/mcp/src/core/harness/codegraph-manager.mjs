@@ -20,10 +20,10 @@ import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { detectHarnesses, wireServer, recordWiring, configHasServer, configTargetFor } from './harness-wiring.mjs';
-import { invalidInput } from './errors.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
-import { project } from '../envelope.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
+import { project } from '../../envelope.mjs';
 
 export const CODEGRAPH_PACKAGE = '@colbymchenry/codegraph';
 

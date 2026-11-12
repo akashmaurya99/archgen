@@ -27,13 +27,13 @@
 // cost of a dispatch is measured where it belongs (the server, the CI gate,
 // the report to the user), and paid for by making the first answer complete.
 import { dirname, join } from 'node:path';
-import { buildGraph, GraphError, ownedPaths } from './graph.mjs';
-import { readParsedPlanFile } from './plan-file.mjs';
-import { toolCall } from './call.mjs';
-import { skillDirective } from './skill-manager.mjs';
-import { parseEdgeMatrix, readPlans } from './artifact-space.mjs';
-import { invalidInput } from './errors.mjs';
-import { noSuchTask, hint } from './guidance.mjs';
+import { buildGraph, GraphError, ownedPaths } from '../plan/graph.mjs';
+import { readParsedPlanFile } from '../plan/plan-file.mjs';
+import { toolCall } from '../protocol/call.mjs';
+import { skillDirective } from '../skill/skill-manager.mjs';
+import { parseEdgeMatrix, readPlans } from '../fs/artifact-space.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { noSuchTask, hint } from '../protocol/guidance.mjs';
 
 /**
  * The read-only archgen actions.

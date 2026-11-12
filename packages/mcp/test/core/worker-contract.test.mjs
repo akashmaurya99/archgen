@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { buildWorkerContract } from '../../src/core/worker-contract.mjs';
+import { buildWorkerContract } from '../../src/core/docs/worker-contract.mjs';
 
 const TASKS = `# schema_version: 1
 tasks:

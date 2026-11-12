@@ -10,8 +10,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { parseJsonc, mergeEntry, removeEntry } from '../../src/core/jsonc-config.mjs';
-import { readJsonConfig, writeJsonConfig } from '../../src/core/harness-wiring.mjs';
+import { parseJsonc, mergeEntry, removeEntry } from '../../src/core/fs/jsonc-config.mjs';
+import { readJsonConfig, writeJsonConfig } from '../../src/core/harness/harness-wiring.mjs';
 
 const ENTRY = { type: 'local', command: ['archgen-mcp'], enabled: true };
 

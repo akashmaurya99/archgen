@@ -1,7 +1,7 @@
 # The YAML corpus — archgen's frozen artifact-format contract.
 
 `*.yaml` files here are parsed by the CANONICAL parser
-(`packages/mcp/src/core/yaml.mjs`) and asserted against their committed
+(`packages/mcp/src/core/fs/yaml.mjs`) and asserted against their committed
 `*.expected.json` siblings by `packages/mcp/test/core/yaml-corpus.test.mjs`
 (node:test).
 

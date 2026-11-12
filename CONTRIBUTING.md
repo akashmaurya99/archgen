@@ -5,12 +5,18 @@ Thanks for your interest in contributing! This repository is a small monorepo:
 ```
 skill/              the archgen agent skill — orchestration guidance, NO code
 packages/mcp/       `archgen-mcp` — the MCP server (owns every capability)
-  src/core/         the implementations + the canonical assets they read
+  src/core/         the implementations, grouped by domain:
+    protocol/       the vocabulary every tool speaks (errors, codes, hints)
+    plan/           the plan of record — audit, coverage, graph, waves
+    docs/           prose artifacts, briefs, worker contracts
+    skill/          capability-skill discovery, install, registry
+    harness/        MCP wiring, platform capability tables, CodeGraph
+    fs/             the only layer that touches disk — containment, YAML, JSONC
   assets/           registries · templates · briefs · the protocol references
 packages/cli/       `archgen-skill` npm CLI (init / install / uninstall) — zero-dep
 internal/           repo-only QA tooling (token budget, estimators) — never shipped
 fixtures/           deterministic end-to-end drivers + shared YAML corpus
-schemas/            JSON schema + architecture conventions
+schemas/            the architecture.yaml conventions (the task schema ships in packages/mcp/schemas/)
 ```
 
 ### Where things live
@@ -22,6 +28,27 @@ schemas/            JSON schema + architecture conventions
 | The orchestrator protocols | `packages/mcp/assets/references/` | served by `archgen_refs`; always the same version as the tools they describe |
 | Every registry, template and brief | `packages/mcp/assets/` | the tool and its data ship together |
 | All capability logic | `packages/mcp/src/core/` | one implementation, reached by the agent and the CLI |
+
+### The layers inside `src/core/`
+
+`core/` is split by DOMAIN, not by size. The dependency direction is
+deliberate and one-way:
+
+```
+protocol/  ←  fs/  ←  plan/  docs/  skill/  harness/
+```
+
+- **protocol** — the vocabulary: error codes, the envelope contract, the
+  teaching hints, argument routing. Everything else imports it; it imports
+  nothing but itself.
+- **fs** — the only layer that touches disk: containment, YAML, JSONC. Like
+  protocol, it imports nothing above it.
+- **plan / docs / skill / harness** — the four domains that use the two
+  bottom layers.
+
+A new file goes in the domain it belongs to. If it fits none of them, that
+is a signal about the design, not about the folders — ask before adding a
+seventh.
 
 ## Setup
 

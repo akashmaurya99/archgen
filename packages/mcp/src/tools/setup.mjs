@@ -1,19 +1,19 @@
 // setup.mjs — the `archgen_setup` tool: install, MCP wiring, health.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, APPROVE_DESC } from './_register.mjs';
-import { routingSentence } from '../core/routing.mjs';
+import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset } from '../context.mjs';
-import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary, uninstallArchgenMcp } from '../core/mcp-server-manager.mjs';
-import { manageCodegraph, assertLocation, findCodegraph, codegraphState } from '../core/codegraph-manager.mjs';
-import { shapeReport } from '../core/codegraph-manager.mjs';
+import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary, uninstallArchgenMcp } from '../core/harness/mcp-server-manager.mjs';
+import { manageCodegraph, assertLocation, findCodegraph, codegraphState } from '../core/harness/codegraph-manager.mjs';
+import { shapeReport } from '../core/harness/codegraph-manager.mjs';
 import { getToolSpec, registeredToolNames } from './_register.mjs';
-import { detectHarnesses } from '../core/harness-wiring.mjs';
-import { platformCapabilities, detectHarness } from '../core/platform-caps.mjs';
-import { checkCapability } from '../core/compat.mjs';
-import { invalidInput } from '../core/errors.mjs';
-import { toolCall } from '../core/call.mjs';
+import { detectHarnesses } from '../core/harness/harness-wiring.mjs';
+import { platformCapabilities, detectHarness } from '../core/harness/platform-caps.mjs';
+import { checkCapability } from '../core/protocol/compat.mjs';
+import { invalidInput } from '../core/protocol/errors.mjs';
+import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
-import { hint } from '../core/guidance.mjs';
+import { hint } from '../core/protocol/guidance.mjs';
 
 /**
  * The arguments each action takes. An argument that belongs to another

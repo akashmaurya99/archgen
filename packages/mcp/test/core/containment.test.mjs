@@ -14,9 +14,9 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Context } from '../../src/context.mjs';
-import { assertWithinRoot } from '../../src/core/fs-safety.mjs';
-import { docIndex } from '../../src/core/doc-navigator.mjs';
-import { resolveSlugInput } from '../../src/core/scope.mjs';
+import { assertWithinRoot } from '../../src/core/fs/fs-safety.mjs';
+import { docIndex } from '../../src/core/docs/doc-navigator.mjs';
+import { resolveSlugInput } from '../../src/core/plan/scope.mjs';
 
 let root;
 let outside;

@@ -4,12 +4,12 @@ import { z } from 'zod/v4';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
-import { routingSentence } from '../core/routing.mjs';
-import { docIndex } from '../core/doc-navigator.mjs';
-import { activeSlugDir as resolveActiveSlugDir } from '../core/tasks-file.mjs';
-import { invalidInput } from '../core/errors.mjs';
-import { hint, teach } from '../core/guidance.mjs';
-import { toolCall } from '../core/call.mjs';
+import { routingSentence } from '../core/protocol/routing.mjs';
+import { docIndex } from '../core/docs/doc-navigator.mjs';
+import { activeSlugDir as resolveActiveSlugDir } from '../core/fs/tasks-file.mjs';
+import { invalidInput } from '../core/protocol/errors.mjs';
+import { hint, teach } from '../core/protocol/guidance.mjs';
+import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 

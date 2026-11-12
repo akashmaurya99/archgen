@@ -11,7 +11,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { indexTopic, readTopic, searchTopic, listTopics, resolveTopic, REF_TOPICS } from '../../src/core/refs.mjs';
+import { indexTopic, readTopic, searchTopic, listTopics, resolveTopic, REF_TOPICS } from '../../src/core/docs/refs.mjs';
 import { TEMPLATES_DIR } from '../../src/context.mjs';
 import { ASSETS_DIR } from '../../src/context.mjs';
 

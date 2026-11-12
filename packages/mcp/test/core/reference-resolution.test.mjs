@@ -22,7 +22,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { docIndex, REFERENCE_RULE } from '../../src/core/doc-navigator.mjs';
+import { docIndex, REFERENCE_RULE } from '../../src/core/docs/doc-navigator.mjs';
 
 function fixture({ plan = '', artifacts = {}, product = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'archgen-refs-'));

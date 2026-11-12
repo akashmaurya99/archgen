@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseSkillFrontmatter, satisfies } from '../../packages/mcp/src/core/compat.mjs';
+import { parseSkillFrontmatter, satisfies } from '../../packages/mcp/src/core/protocol/compat.mjs';
 import { readRequiresMcp, serverSatisfies } from '../../packages/cli/scripts/sync-config.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

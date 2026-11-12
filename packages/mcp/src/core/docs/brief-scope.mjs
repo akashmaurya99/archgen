@@ -23,11 +23,11 @@
 // single scope resolved here.
 import { realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { resolveSlugInput, ScopeError } from './scope.mjs';
-import { invalidInput } from './errors.mjs';
-import { isSlug } from './slug.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { resolveSlugInput, ScopeError } from '../plan/scope.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { isSlug } from '../protocol/slug.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 // The slug is a directory name, never a path: a slug of "../../etc" must not
 // be able to steer the brief's paths out of the artifact space.

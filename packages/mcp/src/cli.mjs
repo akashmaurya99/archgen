@@ -18,9 +18,9 @@ import { Context } from './context.mjs';
 import { createServer } from './server.mjs';
 import { getToolSpec, registeredToolNames, runTool } from './tools/_register.mjs';
 import { loadAsset } from './context.mjs';
-import { uninstallArchgenMcp, archgenMcpStatus } from './core/mcp-server-manager.mjs';
-import { assertLocation, findCodegraph } from './core/codegraph-manager.mjs';
-import { detectHarnesses } from './core/harness-wiring.mjs';
+import { uninstallArchgenMcp, archgenMcpStatus } from './core/harness/mcp-server-manager.mjs';
+import { assertLocation, findCodegraph } from './core/harness/codegraph-manager.mjs';
+import { detectHarnesses } from './core/harness/harness-wiring.mjs';
 
 const USAGE = `archgen-mcp — MCP server for archgen
 

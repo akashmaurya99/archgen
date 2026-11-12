@@ -28,9 +28,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { auditPlan } from '../../src/core/plan-audit.mjs';
-import { verifyPlan } from '../../src/core/verifier.mjs';
-import { waiverCovers } from '../../src/core/waivers.mjs';
+import { auditPlan } from '../../src/core/plan/plan-audit.mjs';
+import { verifyPlan } from '../../src/core/plan/verifier.mjs';
+import { waiverCovers } from '../../src/core/plan/waivers.mjs';
 
 function fixture({ architecture = null, prd = null, plans = {}, waivers = null, answers = null, decisions = {}, tasksYaml = false, docs = {}, outside = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'archgen-floor-'));

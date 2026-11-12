@@ -16,8 +16,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseYaml } from '../../src/core/yaml.mjs';
-import { verifyPlan, issueCode } from '../../src/core/verifier.mjs';
+import { parseYaml } from '../../src/core/fs/yaml.mjs';
+import { verifyPlan, issueCode } from '../../src/core/plan/verifier.mjs';
 import { inRepo, requireCorpus } from '../repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

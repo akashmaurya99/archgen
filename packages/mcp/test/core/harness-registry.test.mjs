@@ -13,7 +13,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { loadAsset } from '../../src/context.mjs';
-import { buildEntry, wireServer, entryToToml } from '../../src/core/harness-wiring.mjs';
+import { buildEntry, wireServer, entryToToml } from '../../src/core/harness/harness-wiring.mjs';
 
 const registry = loadAsset('harness-mcp.json');
 

@@ -20,11 +20,11 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { assertNotSymlink, assertWithinRoot, withFileLock, writeFileAtomic } from './fs-safety.mjs';
-import { mergeEntry, parseJsonc, removeEntry } from './jsonc-config.mjs';
-import { invalidInput } from './errors.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { assertNotSymlink, assertWithinRoot, withFileLock, writeFileAtomic } from '../fs/fs-safety.mjs';
+import { mergeEntry, parseJsonc, removeEntry } from '../fs/jsonc-config.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 /**
  * The Copilot home: `$COPILOT_HOME`, or `~/.copilot`.

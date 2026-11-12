@@ -14,8 +14,8 @@
 // dependency.
 import { existsSync } from 'node:fs';
 import { docIndex } from './doc-navigator.mjs';
-import { planGraph } from './plan-grapher.mjs';
-import { verifyPlan } from './verifier.mjs';
+import { planGraph } from '../plan/plan-grapher.mjs';
+import { verifyPlan } from '../plan/verifier.mjs';
 
 /**
  * The archgen calls each brief kind is ALLOWED to make.

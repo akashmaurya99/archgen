@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { BRIEFS_DIR } from '../../src/context.mjs';
-import { loadBrief, remainingPlaceholders, BRIEF_KINDS } from '../../src/core/briefs.mjs';
+import { loadBrief, remainingPlaceholders, BRIEF_KINDS } from '../../src/core/docs/briefs.mjs';
 
 const SLUG = 'checkout';
 

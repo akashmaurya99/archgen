@@ -16,8 +16,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseYaml } from '../../src/core/yaml.mjs';
-import { YAML_SUBSET } from '../../src/core/yaml-subset.mjs';
+import { parseYaml } from '../../src/core/fs/yaml.mjs';
+import { YAML_SUBSET } from '../../src/core/fs/yaml-subset.mjs';
 import { inRepo } from '../repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

@@ -42,7 +42,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSkillFrontmatter } from '../../packages/mcp/src/core/compat.mjs';
+import { parseSkillFrontmatter } from '../../packages/mcp/src/core/protocol/compat.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = resolve(HERE, '..', '..');

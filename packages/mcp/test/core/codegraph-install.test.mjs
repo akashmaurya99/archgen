@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { manageCodegraph } from '../../src/core/codegraph-manager.mjs';
+import { manageCodegraph } from '../../src/core/harness/codegraph-manager.mjs';
 import { loadAsset } from '../../src/context.mjs';
 
 const registry = loadAsset('harness-mcp.json');

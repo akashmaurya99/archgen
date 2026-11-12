@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { BRIEFS_DIR } from '../../src/context.mjs';
-import { loadBrief } from '../../src/core/briefs.mjs';
+import { loadBrief } from '../../src/core/docs/briefs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..', '..');

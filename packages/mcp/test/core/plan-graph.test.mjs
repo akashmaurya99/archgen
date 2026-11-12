@@ -18,8 +18,8 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { planGraph, resolvePlanScope } from '../../src/core/plan-grapher.mjs';
-import { ArchgenError } from '../../src/core/errors.mjs';
+import { planGraph, resolvePlanScope } from '../../src/core/plan/plan-grapher.mjs';
+import { ArchgenError } from '../../src/core/protocol/errors.mjs';
 
 const TASKS = `tasks:
   - id: SCAFFOLD

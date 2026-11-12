@@ -25,7 +25,7 @@ import {
   resolutionWarning,
   resolveTasksFile,
   taskFileCandidates,
-} from '../../src/core/tasks-file.mjs';
+} from '../../src/core/fs/tasks-file.mjs';
 
 const TASKS = `tasks:
   - id: T1

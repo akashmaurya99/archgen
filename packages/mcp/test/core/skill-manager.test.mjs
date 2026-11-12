@@ -21,7 +21,7 @@ import {
   skillSections,
   wholeWordSource,
   HARNESS_AGENT_IDS,
-} from '../../src/core/skill-manager.mjs';
+} from '../../src/core/skill/skill-manager.mjs';
 import { loadAsset } from '../../src/context.mjs';
 
 const registry = loadAsset('skill-registry.json');

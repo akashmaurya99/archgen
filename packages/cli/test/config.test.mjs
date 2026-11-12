@@ -16,7 +16,7 @@ import { START, END, FEATURES_START, FEATURES_END, renderManagedBlockText, rende
 import { VERSION_FILE, MANIFEST_REL, BACKUP_ROOT_REL } from '../lib/store.js';
 import { MANIFEST_NAME } from '../lib/install.js';
 import { syncConfig, setFrontmatterVersion, setPackageVersion } from '../scripts/sync-config.mjs';
-import { parseSkillFrontmatter, satisfies } from '../../mcp/src/core/compat.mjs';
+import { parseSkillFrontmatter, satisfies } from '../../mcp/src/core/protocol/compat.mjs';
 import { syncVendor } from '../scripts/sync-vendor.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');

@@ -6,10 +6,10 @@
 // archgen MCP and the CodeGraph MCP are wired by the same code.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, APPROVE_DESC } from './_register.mjs';
-import { routingSentence } from '../core/routing.mjs';
+import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset } from '../context.mjs';
-import { manageCodegraph, assertLocation, shapeReport } from '../core/codegraph-manager.mjs';
-import { toolCall } from '../core/call.mjs';
+import { manageCodegraph, assertLocation, shapeReport } from '../core/harness/codegraph-manager.mjs';
+import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 /**

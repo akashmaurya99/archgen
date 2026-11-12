@@ -18,12 +18,12 @@ import { checkPlanCoverage } from './plan-coverage.mjs';
 import { auditPlan } from './plan-audit.mjs';
 import { validateTasks } from './validator.mjs';
 import { readPlanFile } from './plan-file.mjs';
-import { formatFindings } from './diagnostics.mjs';
+import { formatFindings } from '../protocol/diagnostics.mjs';
 import { waiverCovers } from './waivers.mjs';
-import { issueCode, graphIssueCode } from './codes.mjs';
-import { invalidInput } from './errors.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { issueCode, graphIssueCode } from '../protocol/codes.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 /**
  * The stable code for a finding.

@@ -17,10 +17,10 @@
 //
 // The rules live in assets/depth-ladder.json (`profile`), so the data and the
 // behavior cannot drift: a drift test pins the two together.
-import { invalidInput } from './errors.mjs';
-import { assertSlug } from './slug.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { assertSlug } from '../protocol/slug.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 /** The four intents the classifier accepts. */
 export const INTENTS = [

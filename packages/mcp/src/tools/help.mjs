@@ -10,8 +10,8 @@
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg } from './_register.mjs';
 import { getToolSpec } from './_register.mjs';
-import { routingMap } from '../core/routing.mjs';
-import { YAML_SUBSET } from '../core/yaml-subset.mjs';
+import { routingMap } from '../core/protocol/routing.mjs';
+import { YAML_SUBSET } from '../core/fs/yaml-subset.mjs';
 
 /**
  * Which tool each help topic describes.

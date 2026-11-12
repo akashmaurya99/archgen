@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { parseYaml } from './yaml.mjs';
-import { loadAsset } from '../context.mjs';
+import { loadAsset } from '../../context.mjs';
 
 export // The asset is a PROCESS-WIDE constant, so its derived families are too.
 // The cache is keyed on nothing for that reason: there is nothing to key it

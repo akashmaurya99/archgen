@@ -17,7 +17,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkCapability, readSkillRequirements } from '../../packages/mcp/src/core/compat.mjs';
+import { checkCapability, readSkillRequirements } from '../../packages/mcp/src/core/protocol/compat.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');

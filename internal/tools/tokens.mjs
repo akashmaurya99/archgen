@@ -1,12 +1,12 @@
 // tokens.mjs — token helpers for the internal context-budget tool.
 //
-// The ESTIMATOR lives in the MCP package (`packages/mcp/src/core/tokens.mjs`)
+// The ESTIMATOR lives in the MCP package (`packages/mcp/src/core/protocol/tokens.mjs`)
 // because the server now reports the cost of its own calls. This file
 // re-exports it — so the number the CI gate prints and the number the
 // server reports are the same number — and adds the optional exact-tokenizer
 // path the QA tool can use when a tokenizer is installed.
 
-export { estimateTokens } from '../../packages/mcp/src/core/tokens.mjs';
+export { estimateTokens } from '../../packages/mcp/src/core/protocol/tokens.mjs';
 
 /**
  * Exact count from an installed tokenizer (gpt-tokenizer / js-tiktoken);

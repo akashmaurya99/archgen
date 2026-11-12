@@ -26,7 +26,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { docIndex } from '../../src/core/doc-navigator.mjs';
+import { docIndex } from '../../src/core/docs/doc-navigator.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

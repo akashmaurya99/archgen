@@ -18,9 +18,9 @@
 import { findCycle, graphMaps, isTaskMapping } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { readPlanFile } from './plan-file.mjs';
-import { project } from '../envelope.mjs';
-import { finding, countByCode } from './diagnostics.mjs';
-import { issueCode } from './codes.mjs';
+import { project } from '../../envelope.mjs';
+import { finding, countByCode } from '../protocol/diagnostics.mjs';
+import { issueCode } from '../protocol/codes.mjs';
 
 export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
 export const REQUIRED = ['id', 'title', 'file_ownership'];

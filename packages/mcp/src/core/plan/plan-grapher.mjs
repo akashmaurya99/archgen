@@ -15,13 +15,13 @@
 // renders stay exempt.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseYaml } from './yaml.mjs';
+import { parseYaml } from '../fs/yaml.mjs';
 import { buildGraph, findCycle, computeWaves, dedupeDependencies, computeQualityStats, GraphError, ownedPaths } from './graph.mjs';
 import { readParsedPlanFile } from './plan-file.mjs';
 import { resolveSlugInput, ScopeError } from './scope.mjs';
-import { cycle, invalidInput, notFound } from './errors.mjs';
-import { noSuchTask, hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { cycle, invalidInput, notFound } from '../protocol/errors.mjs';
+import { noSuchTask, hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 // Whole-graph Mermaid above this node count is refused.
 export const MERMAID_WHOLE_MAX_NODES = 250;

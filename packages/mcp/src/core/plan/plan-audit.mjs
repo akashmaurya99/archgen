@@ -30,10 +30,10 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, sep } from 'node:path';
-import { parseYaml } from './yaml.mjs';
+import { parseYaml } from '../fs/yaml.mjs';
 import { buildGraph, computeWaves, globsMayOverlap, ownedPaths } from './graph.mjs';
-import { WARNING_CODES } from './codes.mjs';
-import { loadAsset } from '../context.mjs';
+import { WARNING_CODES } from '../protocol/codes.mjs';
+import { loadAsset } from '../../context.mjs';
 import {
   artifactFamilies,
   containsGlob,
@@ -50,7 +50,7 @@ import {
   readText,
   readYaml,
   sourceAndTestRoots,
-} from './artifact-space.mjs';
+} from '../fs/artifact-space.mjs';
 import { readWaivers } from './waivers.mjs';
 
 /** A requirement id: FR-<MODULE>-nn. */

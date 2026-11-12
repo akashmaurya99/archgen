@@ -1,24 +1,24 @@
 // tasks.mjs — the `archgen_tasks` tool: the wave execution loop.
 import { z } from 'zod/v4';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
-import { routingSentence } from '../core/routing.mjs';
-import { resolveWaves, listTasks } from '../core/wave-resolver.mjs';
-import { buildWorkerContract } from '../core/worker-contract.mjs';
-import { matchSkills, findInstalledSkill, skillRules, skillSections } from '../core/skill-manager.mjs';
-import { docIndex } from '../core/doc-navigator.mjs';
-import { parseYaml } from '../core/yaml.mjs';
+import { routingSentence } from '../core/protocol/routing.mjs';
+import { resolveWaves, listTasks } from '../core/plan/wave-resolver.mjs';
+import { buildWorkerContract } from '../core/docs/worker-contract.mjs';
+import { matchSkills, findInstalledSkill, skillRules, skillSections } from '../core/skill/skill-manager.mjs';
+import { docIndex } from '../core/docs/doc-navigator.mjs';
+import { parseYaml } from '../core/fs/yaml.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { loadAsset } from '../context.mjs';
-import { setTaskStatus, STATUSES } from '../core/status-mutator.mjs';
-import { writeResumeSnapshot } from '../core/resume-snapshot.mjs';
-import { invalidInput } from '../core/errors.mjs';
-import { hint } from '../core/guidance.mjs';
-import { toolCall } from '../core/call.mjs';
+import { setTaskStatus, STATUSES } from '../core/plan/status-mutator.mjs';
+import { writeResumeSnapshot } from '../core/plan/resume-snapshot.mjs';
+import { invalidInput } from '../core/protocol/errors.mjs';
+import { hint } from '../core/protocol/guidance.mjs';
+import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
-import { resolveSlugInput, ScopeError } from '../core/scope.mjs';
+import { resolveSlugInput, ScopeError } from '../core/plan/scope.mjs';
 import { dirname, join } from 'node:path';
-import { ownedPaths } from '../core/graph.mjs';
-import { resolutionWarning, resolveTasksFile } from '../core/tasks-file.mjs';
+import { ownedPaths } from '../core/plan/graph.mjs';
+import { resolutionWarning, resolveTasksFile } from '../core/fs/tasks-file.mjs';
 
 /**
  * Resolve the task file an action reads.

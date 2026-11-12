@@ -10,7 +10,7 @@
 // matters as much as the tool logic.
 import { z } from 'zod/v4';
 import { guard, toToolResult } from '../envelope.mjs';
-import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
+import { ignoredArgsWarning, trackArgs } from '../core/protocol/action-args.mjs';
 import { Context } from '../context.mjs';
 
 /** The envelope, as seen by the client. Loose so `data` can be any shape. */
@@ -159,4 +159,4 @@ export {
   OFFSET_DESC,
   LOCATION_DESC,
   APPROVE_DESC,
-} from '../core/universal-args.mjs';
+} from '../core/protocol/universal-args.mjs';

@@ -20,8 +20,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { validateTasksYaml } from '../../src/core/validator.mjs';
-import { verifyPlan, issueCode } from '../../src/core/verifier.mjs';
+import { validateTasksYaml } from '../../src/core/plan/validator.mjs';
+import { verifyPlan, issueCode } from '../../src/core/plan/verifier.mjs';
 
 let dir;
 let file;

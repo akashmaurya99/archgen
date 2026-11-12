@@ -27,13 +27,13 @@
 // phantom diagram entries or false titles.
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { parseYaml } from './yaml.mjs';
-import { buildGraph, GraphError } from './graph.mjs';
-import { resolveSlugInput, ScopeError } from './scope.mjs';
+import { parseYaml } from '../fs/yaml.mjs';
+import { buildGraph, GraphError } from '../plan/graph.mjs';
+import { resolveSlugInput, ScopeError } from '../plan/scope.mjs';
 import { parseMarkdown, buildSections, findSection, anchorExists, sectionChildren, sectionOwnEnd } from './docs.mjs';
-import { cycle, invalidInput, notFound } from './errors.mjs';
-import { artifactSpaceMissing, hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { cycle, invalidInput, notFound } from '../protocol/errors.mjs';
+import { artifactSpaceMissing, hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 // Overview emits at most this many files (sorted); above it, truncated:true.
 // The cap is a BACKSTOP for a caller that bypasses the tool's own paging —

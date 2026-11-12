@@ -9,9 +9,9 @@
 //   4 -> INVALID_INPUT     (missing/invalid file)
 import { buildGraph, findCycle, computeWaves, findOwnershipConflict, GraphError, ownedPaths } from './graph.mjs';
 import { readParsedPlanFile } from './plan-file.mjs';
-import { cycle, invalidInput, ownershipConflict } from './errors.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { cycle, invalidInput, ownershipConflict } from '../protocol/errors.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 /**
  * Resolve the executable waves of a task graph.

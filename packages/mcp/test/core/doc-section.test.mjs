@@ -18,8 +18,8 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { docIndex } from '../../src/core/doc-navigator.mjs';
-import { ArchgenError } from '../../src/core/errors.mjs';
+import { docIndex } from '../../src/core/docs/doc-navigator.mjs';
+import { ArchgenError } from '../../src/core/protocol/errors.mjs';
 
 const PRD = `# PRD — Demo platform
 

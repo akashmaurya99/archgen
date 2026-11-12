@@ -39,7 +39,7 @@ import { createServer, TOOL_NAMES } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
 import { Context } from '../../src/context.mjs';
 import { guard } from '../../src/envelope.mjs';
-import { remainingPlaceholders } from '../../src/core/briefs.mjs';
+import { remainingPlaceholders } from '../../src/core/docs/briefs.mjs';
 import { buildSandbox } from '../sandbox.mjs';
 
 // Registering the tools populates the spec registry the handlers live in.

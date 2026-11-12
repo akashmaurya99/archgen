@@ -10,12 +10,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { invalidInput } from './core/errors.mjs';
-import { assertWithinRoot, containPath } from './core/fs-safety.mjs';
-import { skillSearchPaths } from './core/skill-roots.mjs';
-import { readSkillRequirements } from './core/compat.mjs';
-import { hint } from './core/guidance.mjs';
-import { toolCall } from './core/call.mjs';
+import { invalidInput } from './core/protocol/errors.mjs';
+import { assertWithinRoot, containPath } from './core/fs/fs-safety.mjs';
+import { skillSearchPaths } from './core/skill/skill-roots.mjs';
+import { readSkillRequirements } from './core/protocol/compat.mjs';
+import { hint } from './core/protocol/guidance.mjs';
+import { toolCall } from './core/protocol/call.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

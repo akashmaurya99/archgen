@@ -10,9 +10,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { loadAsset, BRIEFS_DIR } from '../../src/context.mjs';
-import { platformCapabilities, detectHarness } from '../../src/core/platform-caps.mjs';
-import { loadBrief, loadAllBriefs, BRIEF_KINDS } from '../../src/core/briefs.mjs';
-import { ALLOWED_CALLS } from '../../src/core/brief-context.mjs';
+import { platformCapabilities, detectHarness } from '../../src/core/harness/platform-caps.mjs';
+import { loadBrief, loadAllBriefs, BRIEF_KINDS } from '../../src/core/docs/briefs.mjs';
+import { ALLOWED_CALLS } from '../../src/core/docs/brief-context.mjs';
 
 const caps = loadAsset('platform-capabilities.json');
 

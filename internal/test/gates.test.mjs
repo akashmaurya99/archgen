@@ -42,8 +42,12 @@ test('teaching-lint fails when a failure site loses its hint', () => {
   try {
     // A copy of the package's src, with ONE failure site that teaches nothing.
     cpSync(join(ROOT, 'packages', 'mcp', 'src'), join(dir, 'src'), { recursive: true });
+    // The probe sits NEXT TO errors.mjs, because that is where invalidInput
+    // lives now — the core/ tree is grouped by domain, and a probe that
+    // imported across a domain boundary would be testing the import rather
+    // than the lint.
     writeFileSync(
-      join(dir, 'src', 'core', 'probe.mjs'),
+      join(dir, 'src', 'core', 'protocol', 'probe.mjs'),
       "import { invalidInput } from './errors.mjs';\n"
         + 'export function probe() {\n'
         + "  throw invalidInput('a failure that teaches nothing');\n"

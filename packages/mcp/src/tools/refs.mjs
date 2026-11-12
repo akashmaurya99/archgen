@@ -11,13 +11,13 @@
 import { z } from 'zod/v4';
 import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
-import { routingSentence } from '../core/routing.mjs';
+import { routingSentence } from '../core/protocol/routing.mjs';
 import { ASSETS_DIR } from '../context.mjs';
-import { indexTopic, readTopic, searchTopic, listTopics, REF_TOPICS } from '../core/refs.mjs';
-import { invalidInput } from '../core/errors.mjs';
-import { toolCall } from '../core/call.mjs';
+import { indexTopic, readTopic, searchTopic, listTopics, REF_TOPICS } from '../core/docs/refs.mjs';
+import { invalidInput } from '../core/protocol/errors.mjs';
+import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
-import { hint } from '../core/guidance.mjs';
+import { hint } from '../core/protocol/guidance.mjs';
 
 
 /**

@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { satisfies, compareVersions, parseVersion, readSkillRequirements, checkCapability } from '../../src/core/compat.mjs';
+import { satisfies, compareVersions, parseVersion, readSkillRequirements, checkCapability } from '../../src/core/protocol/compat.mjs';
 
 function skillWith(frontmatter) {
   const dir = mkdtempSync(join(tmpdir(), 'archgen-compat-'));

@@ -36,7 +36,7 @@ import { z } from 'zod/v4';
 
 import { createServer, TOOL_NAMES } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
-import { routingSentence } from '../../src/core/routing.mjs';
+import { routingSentence } from '../../src/core/protocol/routing.mjs';
 import { inRepo } from '../repo-root.mjs';
 
 createServer();

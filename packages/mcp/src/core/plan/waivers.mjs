@@ -5,7 +5,7 @@
 // it is not an audit rule. Keeping it beside the rules made the ledger's
 // shape a detail of the audit, and the ledger is what a reviewer reads first
 // when it asks whether a finding was already accepted.
-import { matchesFamily, readYaml } from './artifact-space.mjs';
+import { matchesFamily, readYaml } from '../fs/artifact-space.mjs';
 
 /**
  * The waiver ledger: the approved deviations, with who and why.

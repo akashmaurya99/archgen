@@ -62,7 +62,7 @@ When `ISSUES` returns: group findings by file and by CODE, and apply every fix t
 
 ### The floor's codes — group fixes by code, not by sentence
 
-Every finding carries a stable code, so fixes can be batched and counted. **This table is pinned by a drift test against `ISSUE_CODES` / `WARNING_CODES` in `packages/mcp/src/core/plan-audit.mjs` and `BASE_CODES` in `verifier.mjs`** — a code that exists but is not listed here (or listed but not existing) fails CI.
+Every finding carries a stable code, so fixes can be batched and counted. **This table is pinned by a drift test against `ISSUE_CODES` / `WARNING_CODES` in `packages/mcp/src/core/plan/plan-audit.mjs` and `BASE_CODES` in `verifier.mjs`** — a code that exists but is not listed here (or listed but not existing) fails CI.
 
 **BLOCKING (issues):**
 

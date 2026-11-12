@@ -21,8 +21,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { verifyPlan, planCoverage, MAX_FINDINGS } from '../../src/core/verifier.mjs';
-import { docIndex, DIGEST_SECTION_BUDGET } from '../../src/core/doc-navigator.mjs';
+import { verifyPlan, planCoverage, MAX_FINDINGS } from '../../src/core/plan/verifier.mjs';
+import { docIndex, DIGEST_SECTION_BUDGET } from '../../src/core/docs/doc-navigator.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

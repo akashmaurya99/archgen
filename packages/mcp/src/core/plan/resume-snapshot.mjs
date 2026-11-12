@@ -11,7 +11,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { readParsedPlanFile } from './plan-file.mjs';
-import { writeFileAtomic } from './fs-safety.mjs';
+import { writeFileAtomic } from '../fs/fs-safety.mjs';
 import { ownedPaths } from './graph.mjs';
 
 /**

@@ -7,7 +7,7 @@
 // versions and warnings. Failures are DATA, not protocol errors — the model
 // can read a failure and act on it (fix the YAML, resolve the cycle, retry
 // with force).
-import { toArchgenError } from './core/errors.mjs';
+import { toArchgenError } from './core/protocol/errors.mjs';
 
 /**
  * Build a successful tool result.

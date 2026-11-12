@@ -23,7 +23,7 @@ import {
 import {
   assertNotSymlink as mcpAssertNotSymlink,
   assertWithinRoot as mcpAssertWithinRoot,
-} from '../../packages/mcp/src/core/fs-safety.mjs';
+} from '../../packages/mcp/src/core/fs/fs-safety.mjs';
 
 /** Whether a guard refuses the path. */
 function refuses(guard, ...args) {

@@ -24,10 +24,10 @@
 // a silent choice.
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { invalidInput } from './errors.mjs';
-import { hint, teach } from './guidance.mjs';
-import { toolCall } from './call.mjs';
-import { isSlug } from './slug.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { hint, teach } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
+import { isSlug } from '../protocol/slug.mjs';
 
 /**
  * Every task file in the project's artifact spaces.

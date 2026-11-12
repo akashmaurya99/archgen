@@ -5,10 +5,10 @@
 // cutover). Output shape is byte-identical to the old script's stdout JSON:
 //   { direct: [taskIds], transitive: [taskIds], artifacts: [paths] }
 import { readParsedPlanFile } from './plan-file.mjs';
-import { invalidInput, notFound } from './errors.mjs';
-import { hint } from './guidance.mjs';
+import { invalidInput, notFound } from '../protocol/errors.mjs';
+import { hint } from '../protocol/guidance.mjs';
 import { isTaskMapping, ownedPaths } from './graph.mjs';
-import { toolCall } from './call.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 /**
  * Compute the blast radius of a task id or artifact path.

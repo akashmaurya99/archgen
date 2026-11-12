@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { installSkill } from '../../src/core/skill-manager.mjs';
+import { installSkill } from '../../src/core/skill/skill-manager.mjs';
 
 const REGISTRY = {
   version: '1',

@@ -34,7 +34,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseYaml, stringifyYaml } from '../../src/core/yaml.mjs';
+import { parseYaml, stringifyYaml } from '../../src/core/fs/yaml.mjs';
 import { inRepo, requireCorpus } from '../repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

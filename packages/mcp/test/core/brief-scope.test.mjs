@@ -23,8 +23,8 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync, realpathSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { resolveBriefScope, briefVars } from '../../src/core/brief-scope.mjs';
-import { ArchgenError } from '../../src/core/errors.mjs';
+import { resolveBriefScope, briefVars } from '../../src/core/docs/brief-scope.mjs';
+import { ArchgenError } from '../../src/core/protocol/errors.mjs';
 
 function sandbox() {
   const root = mkdtempSync(join(tmpdir(), 'archgen-brief-'));

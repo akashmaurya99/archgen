@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadAsset } from '../../src/context.mjs';
-import { copilotHome, configPathFor, detectHarnesses, wireServer } from '../../src/core/harness-wiring.mjs';
+import { copilotHome, configPathFor, detectHarnesses, wireServer } from '../../src/core/harness/harness-wiring.mjs';
 
 const registry = loadAsset('harness-mcp.json');
 const vscode = registry.harnesses.vscode;

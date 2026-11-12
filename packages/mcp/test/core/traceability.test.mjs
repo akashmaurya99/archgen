@@ -17,8 +17,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { auditPlan } from '../../src/core/plan-audit.mjs';
-import { readWaivers } from '../../src/core/waivers.mjs';
+import { auditPlan } from '../../src/core/plan/plan-audit.mjs';
+import { readWaivers } from '../../src/core/plan/waivers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

@@ -17,9 +17,9 @@ import { join } from 'node:path';
 import { createServer } from '../../src/server.mjs';
 import { getToolSpec, runTool } from '../../src/tools/_register.mjs';
 import { Context } from '../../src/context.mjs';
-import { buildScaffold } from '../../src/core/scaffold.mjs';
+import { buildScaffold } from '../../src/core/plan/scaffold.mjs';
 import { loadAsset } from '../../src/context.mjs';
-import { parseYaml } from '../../src/core/yaml.mjs';
+import { parseYaml } from '../../src/core/fs/yaml.mjs';
 
 createServer();
 

@@ -10,12 +10,12 @@
 // here. A template can therefore never disagree with the tool.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { invalidInput } from './errors.mjs';
-import { assertSlug } from './slug.mjs';
-import { TEMPLATES_DIR } from '../context.mjs';
+import { invalidInput } from '../protocol/errors.mjs';
+import { assertSlug } from '../protocol/slug.mjs';
+import { TEMPLATES_DIR } from '../../context.mjs';
 import { buildPlanProfile, scopeArtifactRules } from './plan-profile.mjs';
-import { hint } from './guidance.mjs';
-import { toolCall } from './call.mjs';
+import { hint } from '../protocol/guidance.mjs';
+import { toolCall } from '../protocol/call.mjs';
 
 /**
  * Which skeleton serves which artifact.
