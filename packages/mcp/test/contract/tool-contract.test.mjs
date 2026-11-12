@@ -96,6 +96,65 @@ test('coverage\'s continuation names the collection the caller ASKED for', async
   }
 });
 
+test('coverage\'s meta.more names EACH OTHER collection, not the caller\'s', async () => {
+  // WHY THIS TEST EXISTS. The continuation for the OTHER collections was
+  // built by a helper that took the collection as an argument and then
+  // DROPPED it — so every entry in `meta.more` named the CALLER's
+  // collection. A caller asking for `covered` was told it could continue
+  // `covered` from three different places, and the `tasks` and `uncovered`
+  // cursors it actually needed were never named at all.
+  //
+  // The continuation itself was correct (it continued what was asked for);
+  // only the LIST of the others was wrong — so nothing caught it.
+  const root = mkdtempSync(join(tmpdir(), 'archgen-more-'));
+  try {
+    const slugDir = join(root, '.archgen', 'demo');
+    mkdirSync(join(slugDir, 'plans'), { recursive: true });
+    const tasks = Array.from(
+      { length: 10 },
+      (_, i) =>
+        `  - id: T${i + 1}\n    title: module ${i + 1}\n    depends_on: []\n    file_ownership: ["src/m${i + 1}/**"]\n    acceptance:\n      - "the module ${i + 1} behaviour holds"`,
+    ).join('\n');
+    writeFileSync(join(slugDir, 'tasks.yaml'), `tasks:\n${tasks}\n`, 'utf8');
+    writeFileSync(join(slugDir, 'plans', 'demo.md'), '# Plan\n\nT1 does it.\n', 'utf8');
+    const local = new Context({
+      projectRoot: root,
+      anchorRoot: root,
+      home: join(root, '.home'),
+      env: { PATH: '/nonexistent-archgen-test-path' },
+    });
+
+    const envelope = await guard(getToolSpec('archgen_plan').handler, local, {
+      action: 'coverage',
+      tasksYaml: join(slugDir, 'tasks.yaml'),
+      planDir: join(slugDir, 'plans'),
+      collection: 'uncovered',
+      limit: 1,
+    });
+    assert.ok(envelope.ok, envelope.error?.message);
+    const more = envelope.meta?.more;
+    assert.ok(more, 'the answer must name the other collections\' continuations');
+
+    // Every continuation in the list must name ITS OWN collection — not the
+    // one the caller asked for.
+    const cursors = more.split(' | ');
+    assert.ok(cursors.length > 0, 'the list must carry at least one cursor');
+    for (const cursor of cursors) {
+      const named = /collection:'([^']+)'/.exec(cursor);
+      assert.ok(named, `each cursor must name a collection: ${cursor}`);
+      assert.notEqual(
+        named[1],
+        'uncovered',
+        `a cursor in meta.more must name the collection IT continues, not the caller's: ${cursor}`,
+      );
+    }
+    // The caller's own continuation is meta.next, and it DOES name it.
+    assert.match(envelope.meta.next, /collection:'uncovered'/, 'meta.next continues the asked-for collection');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('coverage\'s meta.total and meta.returned describe the SELECTED collection', async () => {
   const envelope = await call('archgen_plan', {
     action: 'coverage',
