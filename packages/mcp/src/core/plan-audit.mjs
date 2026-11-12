@@ -117,7 +117,10 @@ export function auditPlan({ slugDir, tasks }) {
   }
 
   const byId = new Map(tasks.map((t) => [String(t?.id ?? ''), t]));
-  const acceptanceOf = (id) => (byId.get(id)?.acceptance ?? []).map(String);
+  // The acceptance list may be a STRING — the validator reports that — so
+  // the audit reads what it can instead of throwing the whole audit away.
+  const acceptanceList = (t) => (Array.isArray(t?.acceptance) ? t.acceptance : []);
+  const acceptanceOf = (id) => acceptanceList(byId.get(id)).map(String);
 
   // ── waves ────────────────────────────────────────────────────────────────
   const waveOf = new Map();
@@ -138,7 +141,7 @@ export function auditPlan({ slugDir, tasks }) {
   const claims = new Map(); // `${taskId}#${index}` -> {edges:Set, reqs:Set}
   for (const t of tasks) {
     const id = String(t?.id ?? '');
-    (t?.acceptance ?? []).forEach((a, i) => {
+    acceptanceList(t).forEach((a, i) => {
       const text = String(a);
       const key = `${id}#${i + 1}`;
       const found = { edges: new Set(), reqs: new Set() };
@@ -442,7 +445,7 @@ export function auditPlan({ slugDir, tasks }) {
     const cited = new Map();
     for (const t of tasks) {
       const id = String(t?.id ?? '');
-      (t?.acceptance ?? []).forEach((a, i) => {
+      acceptanceList(t).forEach((a, i) => {
         const text = String(a);
         const ids = new Set([...text.matchAll(FR_ID)].map((m) => m[0]));
         for (const m of text.matchAll(CLAIMS)) {

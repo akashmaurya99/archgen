@@ -16,7 +16,6 @@ import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { resolveSlugInput, ScopeError } from '../core/scope.mjs';
 import { dirname, join } from 'node:path';
-import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 import { ownedPaths } from '../core/graph.mjs';
 
 /**

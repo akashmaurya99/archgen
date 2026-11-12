@@ -137,6 +137,19 @@ if [ "$INIT" -eq 1 ]; then
   refuse_escape "$ROOT/.claude" "$ROOT"
   mkdir -p -- "$ROOT/.agents/skills"
   BACKUP_NOTE=""
+  # The copy lands in a TEMPORARY sibling FIRST. The old store is only moved
+  # aside once the new one is COMPLETE, so an interrupted or failing copy
+  # leaves the project with the store it had — never with none.
+  # (The CLI's init does the same: copy → temp → rename old aside → rename
+  # temp into place → restore on failure.)
+  STORE_TMP="$ROOT/.agents/skills/.archgen.install.$$"
+  rm -rf -- "$STORE_TMP"
+  if ! cp -R -- "$SOURCE" "$STORE_TMP"; then
+    rm -rf -- "$STORE_TMP"
+    die "could not copy the skill store into .agents/skills/archgen — the existing store was left untouched"
+  fi
+  prune_dev_only "$STORE_TMP"
+
   if [ -e "$STORE" ] || [ -L "$STORE" ]; then
     if [ -d "$STORE" ] && [ ! -L "$STORE" ] && \
        diff -rq -x '.archgen-version' -- "$SOURCE" "$STORE" >/dev/null 2>&1; then
@@ -148,21 +161,11 @@ if [ "$INIT" -eq 1 ]; then
       if mv -- "$STORE" "$BACKUP_DEST" 2>/dev/null; then
         BACKUP_NOTE="previous divergent store moved to .archgen/.backup/$TS/.agents/skills/archgen"
       else
+        rm -rf -- "$STORE_TMP"
         die "could not back up divergent store at .agents/skills/archgen - refusing to replace without backup"
       fi
     fi
   fi
-  # The copy lands in a TEMPORARY sibling and is renamed into place, so an
-  # interrupted copy never leaves the project with NO store: the old one is
-  # still there, and the half-written one is never visible under its final
-  # name. (The CLI's init does the same — the two must agree.)
-  STORE_TMP="$ROOT/.agents/skills/.archgen.install.$$"
-  rm -rf -- "$STORE_TMP"
-  if ! cp -R -- "$SOURCE" "$STORE_TMP"; then
-    rm -rf -- "$STORE_TMP"
-    die "could not copy the skill store into .agents/skills/archgen"
-  fi
-  prune_dev_only "$STORE_TMP"
   if ! mv -- "$STORE_TMP" "$STORE"; then
     rm -rf -- "$STORE_TMP"
     die "could not move the copied skill store into place at .agents/skills/archgen"

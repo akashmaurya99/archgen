@@ -4,7 +4,7 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, A
 import { loadAsset } from '../context.mjs';
 import { wireArchgenMcp, archgenMcpStatus, resolveMcpBinary, uninstallArchgenMcp } from '../core/mcp-server-manager.mjs';
 import { manageCodegraph, assertLocation, findCodegraph, codegraphState } from '../core/codegraph-manager.mjs';
-import { shapeReport } from './codegraph.mjs';
+import { shapeReport } from '../core/codegraph-manager.mjs';
 import { getToolSpec, registeredToolNames } from './_register.mjs';
 import { detectHarnesses } from '../core/harness-wiring.mjs';
 import { platformCapabilities, detectHarness } from '../core/platform-caps.mjs';
@@ -13,7 +13,6 @@ import { invalidInput } from '../core/errors.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
-import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 const ACTION_DESC = 'doctor|bootstrap|install_mcp|uninstall_mcp|harnesses|harness_info';
 

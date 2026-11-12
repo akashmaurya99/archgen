@@ -9,7 +9,6 @@ import { invalidInput } from '../core/errors.mjs';
 import { hint, teach } from '../core/guidance.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
-import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 const ACTION_DESC = 'index|digest|section|refs|map|validate';
 

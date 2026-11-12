@@ -139,6 +139,10 @@ export function verifyPlan(file, planDir, opts = {}) {
       for (const wave of waves) {
         const conflict = findOwnershipConflict(wave);
         if (conflict) {
+          // The SAME glob listed twice by ONE task is the validator's
+          // TASK_FIELD_DUPLICATE finding. Reporting it here as an overlap
+          // too made one defect look like two, under two codes.
+          if (conflict.a === conflict.b) continue;
           issues.push(
             `OWNERSHIP_OVERLAP: same-wave ownership overlap: '${conflict.glob}' on '${conflict.a}' and '${conflict.b}'`,
           );

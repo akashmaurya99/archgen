@@ -60,11 +60,6 @@ export function deriveFamily(path) {
  * @param {string} rel slug-relative path
  * @param {Array<{pattern: string}>} families
  */
-/**
- * The family a path belongs to (null when no rule claims it).
- * @param {string} rel slug-relative path
- * @param {Array<{pattern: string}>} families
- */
 export function familyOf(rel, families) {
   const p = String(rel ?? '').replaceAll('\\', '/');
   for (const f of families) {
@@ -73,12 +68,6 @@ export function familyOf(rel, families) {
   return null;
 }
 
-/**
- * Does a path match a family pattern?
- *
- * `*` matches ONE path segment; `**` matches zero or more. The patterns are
- * the ladder's own, so this is a small, total glob — never a general one.
- */
 /**
  * Does a path match a family pattern?
  *
@@ -120,17 +109,6 @@ export function matchesFamily(pattern, path) {
  *
  * @returns {{enforced: boolean, sourceRoot: string|null, testRoot: string|null}}
  */
-/**
- * The source and test roots — DECLARED, never guessed.
- *
- * The host repo owns its layout. If `architecture.yaml` does not declare the
- * roots, the mirrored-tree rule cannot run: it is reported as NOT ENFORCED
- * rather than guessed from a path prefix (a guess would be wrong for half the
- * ecosystems, and a wrong guess that silently skips a check is worse than no
- * check).
- *
- * @returns {{enforced: boolean, sourceRoot: string|null, testRoot: string|null}}
- */
 export function sourceAndTestRoots(architecture) {
   const tool = architecture?.toolchain ?? {};
   const src = typeof tool.source_root === 'string' ? tool.source_root.trim() : '';
@@ -155,15 +133,6 @@ export function sourceAndTestRoots(architecture) {
  * reached APPROVE. A rule that cannot run must say so, never weaken
  * silently.
  */
-/**
- * A declared root, normalised.
- *
- * `./src` and `src` are the same root. The floor compared the declared root
- * against an ownership glob literally, so a plan that declared `./src` — or
- * owned `./src/core/**` — silently skipped the mirrored-tree rule and still
- * reached APPROVE. A rule that cannot run must say so, never weaken
- * silently.
- */
 function normalizeRoot(root) {
   return String(root).replace(/^\.\//, '').replace(/\/+$/, '');
 }
@@ -174,15 +143,6 @@ export function normalizeGlob(glob) {
   return String(glob).replace(/^\.\//, '');
 }
 
-/**
- * Parse the edge-case matrices out of the plan markdown.
- *
- * A matrix is a markdown table with a `Covered by` column; each body row's
- * citations are `<task-id>#<index>`. The returned rows are the raw claims —
- * the audit checks that each citation RESOLVES and that the acceptance it
- * points at CLAIMS the row, and the map lets the gate agent judge whether it
- * MEANS what the row says.
- */
 /**
  * Parse the edge-case matrices out of the plan markdown.
  *
@@ -274,16 +234,6 @@ export function projectRootOf(slugDir) {
  * (`packages/app/.archgen/config.md`) was rewritten to `config.md` and
  * reported as missing.
  */
-/**
- * An artifact path relative to the artifact space, whatever form it was
- * recorded in.
- *
- * The `.archgen/<slug>/` prefix is stripped only when it is the PATH'S OWN
- * prefix. It used to be stripped from anywhere in the string, so a
- * repository path that merely CONTAINED an `.archgen/` segment
- * (`packages/app/.archgen/config.md`) was rewritten to `config.md` and
- * reported as missing.
- */
 export function normalizeArtifactPath(path) {
   const p = String(path).replaceAll('\\', '/').replace(/^\.\//, '');
   const anchored = /^\.archgen\/[^/]+\//.exec(p);
@@ -291,13 +241,6 @@ export function normalizeArtifactPath(path) {
   return p;
 }
 
-/**
- * Does a recorded path exist under a base directory?
- *
- * The path is CONTAINED first. A recorded `../outside.md` used to resolve
- * to a sibling of the slug dir — outside the artifact space, where a
- * `create` decision could be "satisfied" by a file the plan does not own.
- */
 /**
  * Does a recorded path exist under a base directory?
  *
@@ -319,15 +262,6 @@ export function existsUnder(base, path) {
   }
 }
 
-/**
- * The artifacts that live in an artifact space.
- *
- * The run state (`.agent/`) and the waiver ledger are NOT artifacts: they are
- * process state, and a profile decision about them would be noise.
- *
- * `answers.yaml` is excluded too: it is where the profile is RECORDED, so
- * demanding a decision for it would be circular.
- */
 /**
  * The artifacts that live in an artifact space.
  *
@@ -369,19 +303,6 @@ export function readText(path) {
  * @returns {{data: any, error: string|null}} `error` is set only when the
  *   file is present and unparseable.
  */
-/**
- * Read a YAML artifact of the plan.
- *
- * A file that EXISTS and does not parse is a different fact from a file that
- * is absent. The floor used to swallow the parse error and report the file
- * as missing — so a broken `architecture.yaml` was announced as "no
- * architecture.yaml", and the agent was told to declare roots when the real
- * defect was a syntax error in a file it had already written.
- *
- * @param {string} path
- * @returns {{data: any, error: string|null}} `error` is set only when the
- *   file is present and unparseable.
- */
 export function readYaml(path) {
   const text = readText(path);
   if (!text) return { data: null, error: null };
@@ -392,13 +313,6 @@ export function readYaml(path) {
   }
 }
 
-/**
- * The waiver ledger: the approved deviations, with who and why.
- *
- * A waived finding is an AUDIT EVENT, not a conversation. The file is the
- * record; the floor reports its size, and the gate brief shows it so the next
- * reviewer knows the deviation exists.
- */
 /** The plan markdown of an artifact space (every plans/*.md, concatenated). */
 export function readPlans(dir) {
   if (!existsSync(dir)) return '';

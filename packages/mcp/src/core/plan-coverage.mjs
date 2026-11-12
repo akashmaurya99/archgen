@@ -37,7 +37,9 @@ export function checkPlanCoverage(planDir, tasks) {
     return { findings: [`cannot read a plan file under ${planDir}: ${e.message}`], referenced, mentionedInTasks };
   }
 
-  const taskIds = new Set(tasks.filter(isTaskMapping).map((t) => t.id).filter(Boolean));
+  // A task with no id has no coverage status to report: the finding would
+  // name it 'undefined'.
+  const taskIds = new Set(tasks.filter(isTaskMapping).map((t) => t.id).filter((id) => id !== undefined && id !== null && String(id).trim() !== ''));
   // Task ids referenced in plans: bare tokens that match an existing-or-not id pattern.
   for (const t of taskIds) {
     const re = new RegExp(`\\b${escapeRe(t)}\\b`);
@@ -118,4 +120,4 @@ function mentions(task, id) {
   return hay.includes(id);
 }
 
-function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }

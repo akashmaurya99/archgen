@@ -213,6 +213,53 @@ check('a continuation call survives a value with an apostrophe', () => {
   return next.includes("floor\\'s");
 });
 
+check('a duplicate YAML key is refused', () => {
+  const file = join(dot, 'tasks.yaml');
+  writeFileSync(file, 'tasks:\n  - id: T1\n    title: a\n    title: b\n', 'utf8');
+  const r = call('archgen_plan', { action: 'validate', tasksYaml: file });
+  // A file that cannot be parsed is a FINDING, not a thrown error: the
+  // whole point of the validator is that a broken plan comes back as data.
+  return r.ok === true
+    && codes(r).includes('UNPARSEABLE')
+    && /duplicate key/i.test(JSON.stringify(r.data.errors));
+});
+
+check('two tasks claiming one path in a wave are an overlap', () => {
+  const file = join(dot, 'tasks.yaml');
+  writeFileSync(
+    file,
+    'tasks:\n  - id: T1\n    title: a\n    depends_on: []\n    file_ownership: ["src/shared/**"]\n    acceptance: ["ok"]\n  - id: T2\n    title: b\n    depends_on: []\n    file_ownership: ["src/shared/**"]\n    acceptance: ["ok"]\n',
+    'utf8',
+  );
+  const r = call('archgen_plan', { action: 'verify', tasksYaml: file, planDir: join(dot, 'plans') });
+  return (r.data?.issueCodes?.OWNERSHIP_OVERLAP ?? 0) === 1;
+});
+
+check('a task nobody mentions in the plan is a coverage defect', () => {
+  const file = join(dot, 'tasks.yaml');
+  writeFileSync(
+    file,
+    'tasks:\n  - id: T1\n    title: a\n    depends_on: []\n    file_ownership: ["src/**"]\n    acceptance: ["ok"]\n',
+    'utf8',
+  );
+  writeFileSync(join(dot, 'plans', 'demo.md'), '# Plan\n\nNothing about the task.\n', 'utf8');
+  const r = call('archgen_plan', { action: 'validate', tasksYaml: file, planDir: join(dot, 'plans') });
+  return codes(r).includes('PLAN_TASK_COVERAGE');
+});
+
+check('validate with a planDir never throws on a malformed task', () => {
+  const file = join(dot, 'tasks.yaml');
+  // A NUMERIC id: the reader turns `id: 007` into a number, and the
+  // coverage pass used to call .replace on it.
+  writeFileSync(
+    file,
+    'tasks:\n  - id: 7\n    title: a\n    depends_on: []\n    file_ownership: ["src/**"]\n    acceptance: ["ok"]\n',
+    'utf8',
+  );
+  const r = call('archgen_plan', { action: 'validate', tasksYaml: file, planDir: join(dot, 'plans') });
+  return r.ok === true && codes(r).includes('TASK_ID_INVALID');
+});
+
 rmSync(root, { recursive: true, force: true });
 
 const failed = results.filter(([ok]) => !ok);

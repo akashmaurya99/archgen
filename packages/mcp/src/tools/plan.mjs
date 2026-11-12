@@ -21,7 +21,6 @@ import { assertPathToken } from '../core/slug.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
-import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
 // would tax every request's context for no extra information.

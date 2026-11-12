@@ -193,7 +193,11 @@ export async function runCli(argv, io = {}) {
       out(JSON.stringify(envelope, null, 2));
       return 1;
     }
-    const envelope = await runTool(spec, ctx, check.data);
+    // The validated values win, but an argument the schema does not DECLARE
+    // is still the CALLER'S — and the tracker reports that the action
+    // ignored it. Zod strips unknown keys, so passing `check.data` alone
+    // made the CLI blind to exactly what the MCP server warns about.
+    const envelope = await runTool(spec, ctx, { ...parsed, ...check.data });
     out(JSON.stringify(envelope, null, 2));
     if (!envelope.ok) return 1;
     // `--fail-on <path>:<value>` turns a tool result into a BUILD GATE.

@@ -42,19 +42,6 @@ export function readWaivers(path) {
  * @param {{scope: string[]}} waiver
  * @param {string} issue the finding text (CODE: message)
  */
-/**
- * Does a waiver cover this finding?
- *
- * A waiver's `scope` names WHAT it covers, in one of two forms:
- *
- *   - a CODE (`MIRROR_MISSING`) — every finding of that class is approved;
- *   - a SUBJECT (`T19#2`, `src/features/catalog/**`) — that one instance is.
- *
- * A subject is matched on token boundaries, so `T1` never swallows `T19`.
- *
- * @param {{scope: string[]}} waiver
- * @param {string} issue the finding text (CODE: message)
- */
 export function waiverCovers(waiver, issue) {
   const text = String(issue ?? '');
   const code = text.split(':')[0];
@@ -88,23 +75,6 @@ export function waiverCovers(waiver, issue) {
   return false;
 }
 
-/**
- * The SUBJECTS a finding names — the things a waiver can scope.
- *
- *   - the paths it quotes:  owns 'src/core/**'
- *   - the task#acceptance refs it is ABOUT:  cites T19#1
- *
- * The prose between them is NOT a subject: a waiver scoped to a word that
- * happens to appear in a sentence must not approve the finding.
- *
- * The DETAIL CLAUSE is excluded too. A finding reads "… cites T19#1, but
- * that acceptance does not claim 'E1' — the acceptance that claims it is
- * T1#1." The finding is about T19#1; T1#1 is the detail. A waiver scoped to
- * T1#1 must not silence it.
- *
- * @param {string} text the finding text
- * @returns {string[]}
- */
 /**
  * The SUBJECTS a finding names — the things a waiver can scope.
  *

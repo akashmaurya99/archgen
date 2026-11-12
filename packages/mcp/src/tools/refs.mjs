@@ -17,7 +17,6 @@ import { invalidInput } from '../core/errors.mjs';
 import { toolCall } from '../core/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/guidance.mjs';
-import { ignoredArgsWarning, trackArgs } from '../core/action-args.mjs';
 
 const ACTION_DESC = 'list|index|read|search';
 

@@ -669,7 +669,14 @@ function emitValue(out, v, indent, comments, used, path) {
           out.push(pad + c.text); used.add(i);
         }
       });
-      if (item !== null && typeof item === 'object') {
+      if (Array.isArray(item)) {
+        // A nested ARRAY is written as FLOW YAML. The reader accepts a flow
+        // sequence but refuses a nested block sequence, and writing a nested
+        // array as a mapping turned `[1, 2]` into `{"0": 1, "1": 2}` — a
+        // silent type change on every rewrite.
+        out.push(pad + '- ' + encodeFlow(item));
+        inlineCommentFor(out, comments, used, itemPath);
+      } else if (item !== null && typeof item === 'object') {
         const entries = Object.entries(item);
         if (entries.length === 0) { out.push(pad + '- {}'); return; }
         const [k0, v0] = entries[0];
@@ -696,6 +703,29 @@ function emitEntries(out, entries, indent, comments, used, basePath) {
   for (const [k, val] of entries) {
     emitEntry(out, pad, indent, k, val, comments, used, [...basePath, k]);
   }
+}
+
+/**
+ * Encode a value as FLOW YAML.
+ *
+ * The reader accepts a flow sequence of scalars and flat maps; a map inside
+ * a map it refuses. The writer refuses the same shape — a writer that emits
+ * a file the reader cannot read is the corruption class this module exists
+ * to prevent.
+ *
+ * @param {any} value
+ * @param {boolean} [inMap] whether the value sits inside a flow mapping
+ * @returns {string}
+ */
+function encodeFlow(value, inMap = false) {
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => encodeFlow(v, false)).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    if (inMap) throw new TypeError('a flow mapping inside another flow mapping is not supported');
+    return `{${Object.entries(value).map(([k, v]) => `${encodeKey(k)}: ${encodeFlow(v, true)}`).join(',')}}`;
+  }
+  return encodeScalar(value);
 }
 
 function encodeScalar(v) {

@@ -227,6 +227,7 @@ test('every value the writer emits reads back unchanged', () => {
     'back`tick', '% pct', '{brace}', '[brack]', 'ends with colon:', 'true',
     'false', 'null', '42', '-17', '3.14', 'yes', 'no', 'on', 'off', '',
     'line1\nline2', 'multi\nline\n', 'a\tb', '修复：认证模块', 'http://x/y',
+    '1e21', '1e+5', '1e-5', '-0', '0.0', '007', '1.5', 'TRUE', 'NULL',
   ];
   for (const value of values) {
     const out = stringifyYaml({ k: value });
@@ -238,6 +239,16 @@ test('every value the writer emits reads back unchanged', () => {
     }
     assert.equal(parsed.k, value, `the writer lost ${JSON.stringify(value)}: emitted ${out}`);
   }
+});
+
+test('a nested array survives the write and the read back', () => {
+  // A nested array written as a MAPPING came back as {"0": 1, "1": 2} — a
+  // silent type change on every rewrite.
+  const source = 'k: [[1, 2]]\n';
+  const { data } = parseYaml(source, { filename: 'case.yaml' });
+  const { data: back } = parseYaml(stringifyYaml(data), { filename: 'case.yaml' });
+  assert.deepEqual(back, data);
+  assert.deepEqual(back.k, [[1, 2]]);
 });
 
 test('the writer preserves a collection nested under a sequence item', () => {

@@ -210,10 +210,13 @@ export function withFileLock(file, fn, opts = {}) {
       break;
     } catch (e) {
       if (e?.code !== 'EEXIST') throw e;
-      // A lock older than staleMs belongs to a holder that died.
+      // A lock older than staleMs MIGHT belong to a holder that died — but a
+      // slow holder is not a dead one, and stealing its lock put two writers
+      // in the critical section at once. The PID in the lock says which: it
+      // is taken only when that process is gone.
       try {
         const age = Date.now() - statSync(lockPath).mtimeMs;
-        if (age > staleMs) {
+        if (age > staleMs && !holderIsAlive(lockPath)) {
           unlinkSync(lockPath);
           continue;
         }
@@ -241,6 +244,35 @@ export function withFileLock(file, fn, opts = {}) {
     } catch {
       /* the lock is already gone */
     }
+  }
+}
+
+/**
+ * Whether the process holding a lock is still alive.
+ *
+ * The lock file carries the holder's PID. A stale lock is only broken when
+ * that process is GONE: a lock older than the stale window may belong to a
+ * writer that is merely slow, and taking its lock put two writers in the
+ * critical section at once.
+ *
+ * @param {string} lockPath
+ * @returns {boolean}
+ */
+function holderIsAlive(lockPath) {
+  let holder;
+  try {
+    holder = readFileSync(lockPath, 'utf8').trim();
+  } catch {
+    return false; // the lock is gone — nobody holds it
+  }
+  const pid = Number(holder);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM means the process exists and belongs to another user.
+    return e?.code === 'EPERM';
   }
 }
 

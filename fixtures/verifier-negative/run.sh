@@ -37,12 +37,13 @@ check_rejected() {
     process.stdin.on("data", (d) => { s += d; }).on("end", () => {
       let issues = "";
       try { issues = (JSON.parse(s).data?.issues ?? []).join(" | "); } catch { issues = ""; }
-      // The expectation was written for the BASIC regular expression of grep,
-      // where a backslash-pipe is an alternation. A JavaScript regular
-      // expression reads a backslash-pipe as a literal pipe, so the
-      // alternation is translated here.
+      // The expectation is matched against the finding CODES, not against
+      // the text: the message of a finding carries the file path, so a path
+      // that happens to contain the expected word satisfied the check, and a
+      // case with no defect at all passed.
       const pattern = process.argv[1].replace(/\\\|/g, "|");
-      if (!new RegExp(pattern, "i").test(issues)) process.exit(1);
+      const codes = (JSON.parse(s).data?.issues ?? []).map((m) => String(m).split(":")[0]);
+      if (!new RegExp(pattern, "i").test(codes.join(" | "))) process.exit(1);
     });
   ' "$expect" || fail "$label rejected for the wrong reason (expected '$expect' among the findings): $out"
   pass "$label rejected"
@@ -56,9 +57,9 @@ check_approved() {
   pass "$label approved"
 }
 
-check_rejected "$SCRIPT_DIR/cases/01-cycle"      "01-cycle"      "cycle"
-check_rejected "$SCRIPT_DIR/cases/02-overlap"    "02-overlap"    "ownership overlap"
-check_rejected "$SCRIPT_DIR/cases/03-unknown-ref" "03-unknown-ref" "unknown\|not found\|dangling"
+check_rejected "$SCRIPT_DIR/cases/01-cycle"      "01-cycle"      "CYCLE"
+check_rejected "$SCRIPT_DIR/cases/02-overlap"    "02-overlap"    "OWNERSHIP_OVERLAP"
+check_rejected "$SCRIPT_DIR/cases/03-unknown-ref" "03-unknown-ref" "UNKNOWN_TASK_ID"
 check_approved "$SCRIPT_DIR/cases/04-clean"      "04-clean"
 
 echo "VERIFIER-NEGATIVE E2E: ALL CHECKS PASSED"
