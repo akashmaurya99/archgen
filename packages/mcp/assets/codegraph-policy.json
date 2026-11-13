@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "_note": "How ArchGen installs, wires and exposes CodeGraph. One source of truth; override per machine with ARCHGEN_CODEGRAPH_*.",
+  "package": "@colbymchenry/codegraph",
+  "install": "latest",
+  "wire": "1.6.2",
+  "tools": ["explore", "node", "search", "callers", "callees", "impact", "files", "status"],
+  "telemetry": "off",
+  "_fields": {
+    "install": "What to install when the CLI is MISSING. 'latest' = the newest published release. An EXISTING install is never touched — it is the user's to manage.",
+    "wire": "The exact spec the MCP entry's npx fallback uses. Pinned so a machine with no binary still resolves a reviewed version.",
+    "tools": "The CodeGraph MCP tools the agent may call (CODEGRAPH_MCP_TOOLS). The allowlist REPLACES CodeGraph's default, so every tool wanted is named.",
+    "telemetry": "'off' sets CODEGRAPH_TELEMETRY=0 in the MCP entry — per process, no machine-wide write."
+  }
+}

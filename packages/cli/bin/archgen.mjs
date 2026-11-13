@@ -19,6 +19,7 @@ import { installGlobal, uninstallGlobal } from '../lib/install.js';
 import { initProject } from '../lib/init.js';
 import { doctorProject } from '../lib/doctor.js';
 import { uninstallProject } from '../lib/uninstall-project.js';
+import { bootstrapMcp, uninstallMcp, mcpList, codegraphAdmin } from '../lib/mcp-server.js';
 import { restoreMain } from '../lib/restore.js';
 import { migrateMain } from '../lib/migrate.js';
 import { compareSemver, fetchLatestVersion } from '../lib/version.js';
@@ -78,6 +79,17 @@ Usage:
                                   global vaults; nothing is restored by default
     [--snapshot <ts>]             restore that snapshot (current state is backed
                                   up first); --project <dir> / --global scope it
+  npx archgen-skill codegraph <action>   The CodeGraph admin surface:
+                                  status (read) · ensure (install + wire + index)
+                                  · wire (configs only)
+    [--project <dir>]              the project directory
+    [--location <s>]               project | global | both (default: both)
+    [--yes]                        approve the writes (required by ensure/wire)
+  npx archgen-skill mcp <action>         The MCP wiring admin surface:
+                                  list (read) · add · remove
+    [--project <dir>]              the project directory
+    [--location <s>]               project | global | both (default: both)
+    [--yes]                        approve the writes (required by add/remove)
   npx archgen-skill migrate [dir]     Evolve generated-artifact formats in place;
                                   --check (default) lists pending migrations
     [--apply]                     apply them (every touched file is backed up)
@@ -257,6 +269,91 @@ try {
     case 'restore': {
       // restoreMain parses its own flags and returns its own exit code.
       process.exitCode = await restoreMain(rest);
+      break;
+    }
+    case 'codegraph': {
+      // The CodeGraph admin surface. `status` reads; `ensure` and `wire`
+      // WRITE (they install the CLI and rewrite harness configuration).
+      // WITHOUT --yes the command is a PLAN — nothing is written — so an
+      // agent can show the user what would change and re-run with --yes.
+      const actionIndex = rest.findIndex((a) => !a.startsWith('-'));
+      const action = actionIndex >= 0 ? rest.splice(actionIndex, 1)[0] : null;
+      if (!action) throw new Error('codegraph needs an action: status | ensure | wire');
+      const yes = flag('--yes');
+      const location = takeValue('--location') || 'both';
+      const dir = targetDir();
+      assertNoUnknownFlags();
+      if (!['status', 'ensure', 'wire'].includes(action)) {
+        throw new Error(`unknown codegraph action '${action}' — use status | ensure | wire`);
+      }
+      const r = codegraphAdmin({ projectRoot: dir, action, location, approved: yes });
+      const data = r.report ?? {};
+      console.log(`archgen codegraph ${action} — ${dir}`);
+      console.log(`  cli:       ${data.cli?.present ? `${data.cli.version} (${data.cli.bin})` : 'not installed'}`);
+      console.log(`  install:   ${data.policy?.install ?? 'latest'} (${data.policy?.package ?? '?'})`);
+      console.log(`  wire spec: ${data.policy?.wire ?? 'unpinned'}`);
+      console.log(`  tools:     ${(data.policy?.tools ?? []).join(', ') || 'none'}`);
+      console.log(`  telemetry: ${data.policy?.telemetry ?? '?'}`);
+      console.log(`  index:     ${data.indexed ? 'indexed' : (data.index?.action ?? 'none')}`);
+      const wired = (data.wiring?.manual ?? []).map((w) => `${w.harness}:${w.status}`);
+      console.log(`  wired:     ${wired.join(' · ') || 'none'}`);
+      if (data.planned) {
+        console.log('');
+        console.log('  PLAN only — nothing was written. Re-run with --yes to apply it.');
+      }
+      if (!r.ok) {
+        console.error('  ! ' + (r.detail ?? 'the codegraph command failed'));
+        process.exitCode = 1;
+      }
+      break;
+    }
+    case 'mcp': {
+      // The MCP wiring admin surface: list what is detected, add the server,
+      // or remove it.
+      const actionIndex = rest.findIndex((a) => !a.startsWith('-'));
+      const action = actionIndex >= 0 ? rest.splice(actionIndex, 1)[0] : null;
+      if (!action) throw new Error('mcp needs an action: list | add | remove');
+      const yes = flag('--yes');
+      const location = takeValue('--location') || 'both';
+      const dir = targetDir();
+      assertNoUnknownFlags();
+      if (action === 'list') {
+        const r = mcpList({ projectRoot: dir, location });
+        const data = r.report ?? {};
+        console.log(`archgen mcp list — ${dir}`);
+        for (const h of data.detected ?? []) {
+          const cfgs = (h.configs ?? []).map((c) => `${c.location}:${c.path}`).join(' · ');
+          console.log(`  ${String(h.id).padEnd(12)} ${cfgs}`);
+        }
+        if (!(data.detected ?? []).length) console.log('  no harness detected');
+      } else if (action === 'remove') {
+        if (!yes) throw new Error('mcp remove writes to your machine — pass --yes to approve it');
+        const r = uninstallMcp({ projectRoot: dir, location });
+        console.log(`archgen mcp remove — ${dir}`);
+        for (const p of r.report?.removed ?? []) console.log('  - ' + p);
+        for (const s of r.report?.skipped ?? []) console.log('  ! ' + s);
+        if (!r.ok) process.exitCode = 1;
+      } else if (action === 'add') {
+        // WITHOUT --yes the command is a PLAN: the wiring is computed and
+        // reported, and nothing is written.
+        const r = bootstrapMcp({ projectRoot: dir, location, approved: yes });
+        console.log(`archgen mcp add — ${dir}`);
+        if (r.detail) {
+          console.error('  ! ' + r.detail);
+          process.exitCode = 1;
+        } else {
+          const report = r.report ?? {};
+          console.log(`  detected: ${(report.mcp?.detected ?? []).length} harness(es)`);
+          console.log(`  wired:    ${report.mcp?.wired ?? 0} config(s)`);
+          console.log(`  planned:  ${report.mcp?.planned ?? 0} config(s)`);
+          if (!yes) {
+            console.log('');
+            console.log('  PLAN only — nothing was written. Re-run with --yes to apply it.');
+          }
+        }
+      } else {
+        throw new Error(`unknown mcp action '${action}' — use list | add | remove`);
+      }
       break;
     }
     case 'migrate': {

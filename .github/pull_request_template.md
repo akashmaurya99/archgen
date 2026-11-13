@@ -4,8 +4,9 @@
 
 ## Which gates ran?
 
-- [ ] `npm --prefix packages/mcp test` (the MCP server suite — the skill ships no code)
-- [ ] `cd packages/cli && npm test`
+- [ ] `npm test` (internal QA + MCP + CLI + teaching + structure)
+- [ ] `npm --prefix packages/cli run sync:check` (after any `skill/` or `archgen.config.json` edit)
+- [ ] `npm run test:budget` (after touching a tool description, an argument, or the skill)
 
 ## Checklist
 

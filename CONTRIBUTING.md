@@ -13,7 +13,7 @@ packages/mcp/       `archgen-mcp` — the MCP server (owns every capability)
     harness/        MCP wiring, platform capability tables, CodeGraph
     fs/             the only layer that touches disk — containment, YAML, JSONC
   assets/           registries · templates · briefs · the protocol references
-packages/cli/       `archgen-skill` npm CLI (init / install / doctor / update / restore / migrate / uninstall) — zero-dep
+packages/cli/       `archgen-skill` npm CLI (init / install / doctor / uninstall / update / restore / migrate / mcp / codegraph) — zero-dep
 internal/           repo-only QA tooling (lint / release / budget / safety) — never shipped
 fixtures/           deterministic end-to-end drivers + shared YAML corpus
 schemas/            the architecture.yaml conventions (the task schema ships in packages/mcp/schemas/)
@@ -62,9 +62,12 @@ seventh.
 Fast path from the repo root — one setup, one command for everything CI runs:
 
 ```sh
-npm run setup   # once — installs the MCP server's dependencies
-npm test        # internal (QA) + MCP + CLI
+npm run setup
+npm test
 ```
+
+`npm run setup` installs the MCP server's dependencies (once);
+`npm test` runs the internal QA, MCP and CLI suites.
 
 The suites must never mutate the repository. `npm run test:immutable` proves
 it (CI runs it as the `immutable` job) — a suite that silently deletes a
@@ -79,16 +82,15 @@ Each package also has its own suite — run all of them before opening a PR
 (CI runs the same set):
 
 ```sh
-# MCP server — the runtime that owns every capability (node:test)
 cd packages/mcp && npm ci && npm test
-
-# CLI — zero-dependency
 cd packages/cli && npm test
-
-# Version single-source + vendor-freshness gate (CI: vendor-check job) —
-# run after ANY skill/ or archgen.config.json edit
 npm --prefix packages/cli run sync:check
 ```
+
+The first is the MCP server suite (the runtime that owns every capability);
+the second is the zero-dependency CLI; the third is the version
+single-source and vendor-freshness gate — run it after ANY `skill/` or
+`archgen.config.json` edit.
 
 ## Fixture drivers
 
@@ -148,8 +150,8 @@ output unilaterally.
   tool's schema into the model's context on every request. `npm run test:budget`
   caps the always-on total (SKILL.md + catalog); run it after touching a tool
   description, an argument, or the skill.
-- `.codegraph/` indexes are machine-local; they may be committed for team
-  projects ONLY when the team deliberately opts in.
+- `.codegraph/` indexes are machine-local state: NEVER commit one. CI's
+  vendor-check refuses any tracked `.codegraph/`.
 
 ## Testing an unpublished build
 
@@ -158,10 +160,13 @@ archgen-skill init` — that installs the PUBLISHED packages. One command
 installs this checkout into a project instead:
 
 ```sh
-scripts/install-local.sh <project-dir>            # MCP wired globally (the default)
-scripts/install-local.sh <project-dir> --location-project   # MCP wired into the project
-scripts/install-local.sh <project-dir> --check    # report what is installed, change nothing
+scripts/install-local.sh <project-dir>
+scripts/install-local.sh <project-dir> --location-project
+scripts/install-local.sh <project-dir> --check
 ```
+
+The first wires the MCP globally (the default), the second into the project,
+and the third reports what is installed without changing anything.
 
 It points the skill at this repo's vendored copy and the MCP entry at this
 repo's server (`ARCHGEN_MCP_BIN`), so the client drives the code you just
@@ -170,8 +175,11 @@ exactly as it is.
 
 **Restart the client session afterwards.** A client validates a call against
 the tool catalog it was given when the session connected; a session that
-predates the upgrade rejects a valid action. `archgen_setup{action:'doctor'}`
-reports `serverActions` — the action list the running server offers — so the
-two can be compared in one call.
+predates the upgrade rejects a valid action. `archgen-skill doctor` (or
+`archgen-mcp doctor`) reports `serverActions` — the action list the running
+server offers — so the two can be compared in one call. The model-facing
+surface is the PROFILE's: `archgen-mcp --catalog` prints what the client
+injects, and `--catalog-all` prints the admin tools the lean profile holds
+back.
 
 To revert the wiring: `packages/mcp/bin/archgen-mcp.mjs uninstall-mcp --yes`.

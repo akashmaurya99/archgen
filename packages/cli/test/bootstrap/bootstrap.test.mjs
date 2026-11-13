@@ -5,14 +5,14 @@
 // skip/gate logic only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bootstrapServers, renderBootstrapReport } from '../../lib/bootstrap.js';
 import { initProject } from '../../lib/init.js';
 import { resolveSkillSource } from '../../lib/init.js';
-import { resolveMcpBinary } from '../../lib/mcp-server.js';
+import { resolveMcpBinary, cliPackageVersion } from '../../lib/mcp-server.js';
 
 const THIS_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = join(dirname(THIS_FILE), '..', '..');
@@ -63,12 +63,15 @@ test('initProject forwards the skip as a warning, never as a failure', () => {
 test('the MCP binary resolves in a fixed order: override, local, PATH, npx', () => {
   const dir = tmp();
   try {
-    // No binary anywhere -> the npx fallback.
+    // No binary anywhere -> the npx fallback, PINNED to the version this CLI
+    // ships with. `latest` would let a newer server change behaviour under a
+    // CLI that was never tested against it.
     const fallback = resolveMcpBinary({ projectRoot: dir, home: dir, env: { PATH: '' } });
     assert.equal(fallback.bin, null);
     assert.equal(fallback.source, 'npx');
-    assert.deepEqual(fallback.args, ['-y', 'archgen-mcp']);
-
+    const version = cliPackageVersion();
+    assert.ok(version, 'the CLI package must carry a version');
+    assert.deepEqual(fallback.args, ['-y', `archgen-mcp@${version}`]);
     // An explicit override wins.
     const override = resolveMcpBinary({
       projectRoot: dir,
@@ -77,6 +80,35 @@ test('the MCP binary resolves in a fixed order: override, local, PATH, npx', () 
     });
     assert.equal(override.bin, THIS_FILE);
     assert.equal(override.source, 'override');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a server on PATH that is OLDER than this CLI is skipped, not used', () => {
+  // The CLI and the server ship together, and the skill declares the minimum
+  // server it needs. Driving an old server answers with an old tool surface,
+  // and the symptom reads as "the command does not exist" rather than "the
+  // installed server is too old" — so the skew is detected and the pinned
+  // fallback is used instead.
+  const dir = tmp();
+  try {
+    const binDir = join(dir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const bin = join(binDir, 'archgen-mcp');
+    // A fake "installed" server whose package.json says 0.0.1.
+    const pkgDir = join(dir, 'node_modules', 'archgen-mcp');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'archgen-mcp', version: '0.0.1', bin: { 'archgen-mcp': 'bin/archgen-mcp.mjs' } }), 'utf8');
+    writeFileSync(join(pkgDir, 'bin', 'archgen-mcp.mjs'), '#!/usr/bin/env node\n', 'utf8');
+    chmodSync(join(pkgDir, 'bin', 'archgen-mcp.mjs'), 0o755);
+    symlinkSync(join(pkgDir, 'bin', 'archgen-mcp.mjs'), bin);
+
+    const resolved = resolveMcpBinary({ projectRoot: dir, home: dir, env: { PATH: binDir } });
+    assert.equal(resolved.source, 'npx', 'a stale server on PATH must not be used');
+    assert.equal(resolved.bin, null);
+    assert.match(resolved.stale ?? '', /0\.0\.1/, 'the skew must name the version it found');
+    assert.match(resolved.stale ?? '', /needs/, 'the skew must say what it needs');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

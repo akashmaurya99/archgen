@@ -177,7 +177,7 @@ Mandatory four-part deliverable (no patch-fixing): **root cause** (one sentence)
 
 ## §dispatch — wave execution
 
-Dispatch via the platform's native sub-agent mechanism (`archgen_setup{action:'harness_info'}`). If sub-agents are missing, crash, or lack permissions, the **main agent executes sequentially**. Never switch harnesses or spawn external CLIs without explicit approval.
+Dispatch via the platform's native sub-agent mechanism (`archgen_platform`). If sub-agents are missing, crash, or lack permissions, the **main agent executes sequentially**. Never switch harnesses or spawn external CLIs without explicit approval.
 
 ### Executor — sub-agents are for WORK, never lookups
 

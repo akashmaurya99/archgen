@@ -118,12 +118,27 @@ function loadPlan(input, projectRoot = null) {
   } catch (e) {
     // GraphError = structurally invalid graph (duplicate task id, dangling
     // depends_on): the plan is unexecutable, not merely a bad flag.
-    if (e instanceof GraphError) throw cycle(e.message, { file: tasksFile });
+    if (e instanceof GraphError) {
+      throw cycle(e.message, {
+        ...hint({
+          action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }),
+          reason: 'the validator names every structural defect with the ids that cause it.',
+        }),
+        file: tasksFile,
+      });
+    }
     throw e;
   }
   const cyclePath = findCycle(prerequisites);
   if (cyclePath.length) {
-    throw cycle(`dependency cycle detected: ${cyclePath.join(' -> ')}`, { file: tasksFile, cycle: cyclePath });
+    throw cycle(`dependency cycle detected: ${cyclePath.join(' -> ')}`, {
+      ...hint({
+        action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }),
+        reason: 'the validator names every cycle with the ids that form it.',
+      }),
+      file: tasksFile,
+      cycle: cyclePath,
+    });
   }
   const { waves } = computeWaves(byId, prerequisites);
 
@@ -350,7 +365,15 @@ export function planGraph(input, opts = {}) {
       // not an empty plan. The names it knows are in the error.
       throw notFound(
         `no task owns module '${module}'`,
-        { module, modules, available: uniqueTasks.map((t) => t.id) },
+        {
+          ...hint({
+            action: toolCall('archgen_plan', { action: 'graph', tasksYaml: '<tasks.yaml>' }),
+            reason: 'the graph carries every task and the module it owns.',
+          }),
+          module,
+          modules,
+          available: uniqueTasks.map((t) => t.id),
+        },
       );
     }
     return {

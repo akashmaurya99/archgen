@@ -8,8 +8,9 @@
     "CodeGraph is wired automatically by the archgen MCP server (the per-platform",
     "shapes live in packages/mcp/assets/harness-mcp.json) — it needs no entry here.",
     "This file documents the SHAPE for any other MCP server.",
-    "Prefer the archgen_setup tool to hand-editing harness configs: it detects the",
-    "harness, resolves the absolute binary path, writes the right shape, and is",
+    "Never hand-edit a harness config: use the sanctioned command",
+    "(`archgen-skill mcp add --yes`, or the platform's own `mcp add`). It detects",
+    "the harness, resolves the absolute binary path, writes the right shape, and is",
     "idempotent."
   ],
   "_claude_code_cursor_windsurf_kiro_gemini": {

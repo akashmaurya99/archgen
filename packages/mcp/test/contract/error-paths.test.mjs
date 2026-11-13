@@ -112,8 +112,9 @@ function failingCalls() {
     // ── archgen_codegraph ───────────────────────────────────────────────────
     ['archgen_codegraph', 'ensure', { location: 'nowhere' }],
 
+    // ── archgen_platform ────────────────────────────────────────────────────
+    ['archgen_platform', '', { harness: 'no-such-harness' }],
     // ── archgen_setup ───────────────────────────────────────────────────────
-    ['archgen_setup', 'harness_info', { harness: 'no-such-harness' }],
     ['archgen_setup', 'harnesses', { harness: 'no-such-harness' }],
     ['archgen_setup', 'bootstrap', { location: 'nowhere' }],
 
@@ -140,19 +141,23 @@ test('every failing call returns a TYPED error, never INTERNAL', async () => {
       failures.push(`${tool} is not registered`);
       continue;
     }
-    const envelope = await guard(spec.handler, ctx, { action, ...args });
+    // A tool with no action enum (archgen_platform) is called with its own
+    // arguments only.
+    const payload = action === '' ? args : { action, ...args };
+    const envelope = await guard(spec.handler, ctx, payload);
+    const label = action === '' ? tool : `${tool}{action:'${action}'}`;
     if (envelope.ok) {
-      failures.push(`${tool}{action:'${action}'} with ${JSON.stringify(args)} unexpectedly SUCCEEDED`);
+      failures.push(`${label} with ${JSON.stringify(args)} unexpectedly SUCCEEDED`);
       continue;
     }
     const code = envelope.error?.code;
     if (!code || code === 'INTERNAL') {
-      failures.push(`${tool}{action:'${action}'} with ${JSON.stringify(args)} -> ${code}: ${envelope.error?.message}`);
+      failures.push(`${label} with ${JSON.stringify(args)} -> ${code}: ${envelope.error?.message}`);
       continue;
     }
     // A typed error carries a message the agent can act on.
     if (!envelope.error?.message) {
-      failures.push(`${tool}{action:'${action}'} -> ${code} with no message`);
+      failures.push(`${label} -> ${code} with no message`);
     }
   }
   assert.deepEqual(failures, [], `calls that failed badly:\n  ${failures.join('\n  ')}`);

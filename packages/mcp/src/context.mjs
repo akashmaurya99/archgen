@@ -114,7 +114,7 @@ export function loadAsset(name) {
   } catch {
     throw invalidInput(
       `missing server asset '${name}'`,
-      { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: name },
+      { ...hint({ action: 'archgen-skill doctor', reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: name },
     );
   }
   try {
@@ -122,7 +122,7 @@ export function loadAsset(name) {
   } catch (e) {
     throw invalidInput(
       `server asset '${name}' is not valid JSON: ${e.message}`,
-      { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: name },
+      { ...hint({ action: 'archgen-skill doctor', reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: name },
     );
   }
 }
@@ -172,7 +172,7 @@ export class Context {
     if (typeof candidate !== 'string' || candidate.trim() === '') {
       throw invalidInput(
         'projectRoot must be a non-empty string',
-        { ...hint({ action: toolCall('archgen_setup', { action: 'doctor', projectRoot: '<absolute path>' }), reason: "the project root is the anchor every path resolves against." }), projectRoot: candidate },
+        { ...hint({ action: 'archgen-skill doctor --project <absolute path>', reason: "the project root is the anchor every path resolves against." }), projectRoot: candidate },
       );
     }
     const abs = resolve(this.anchorRoot, candidate);

@@ -52,8 +52,11 @@ the global uninstall happens only when no project is named.
 **Or install globally** into every detected harness:
 
 ```bash
-npx archgen-skill install          # symlinks; --copy for real copies
+npx archgen-skill install
 ```
+
+It links the skill into every detected harness directory; `--copy` makes real
+copies instead of symlinks.
 
 Prefer shell? Clone the repo and run `./install.sh` (same behavior, plus
 `--init`, `--project`, `--uninstall`). Requires Node.js ≥ 20 — the official MCP
@@ -61,7 +64,8 @@ SDK v2 floor.
 
 **What `init` actually does:** installs the skill (guidance only — no code),
 wires the `archgen-mcp` MCP server into every detected harness, and ensures
-CodeGraph (its CLI, its MCP entry, and the project index). The CLI itself is
+CodeGraph (its CLI — installed only when it is MISSING, never upgraded — its
+MCP entry, and the project index). The CLI itself is
 zero-dependency; the MCP server it installs depends on the official MCP SDK.
 
 ## Quick start
@@ -92,6 +96,12 @@ by git.
 | `npx archgen-skill update [dir]` | Check npm for a newer `archgen-skill`, upgrade the global install if outdated, then re-init the project and run doctor against the new version |
 | `npx archgen-skill restore` | List backup snapshots; `--snapshot <ts>` restores one (current state is backed up first) |
 | `npx archgen-skill migrate [dir] [--apply]` | Evolve generated-artifact formats in place (`--check` by default; every touched file is backed up) |
+| `npx archgen-skill mcp list` | The MCP wiring admin surface: the detected harnesses and their config paths |
+| `npx archgen-skill mcp add --yes` | Wire the `archgen-mcp` server into the detected harnesses (prints the plan without `--yes`) |
+| `npx archgen-skill mcp remove --yes` | Remove the archgen MCP entries this server wrote |
+| `npx archgen-skill codegraph status` | The CodeGraph admin surface: install, wiring and index state (read-only) |
+| `npx archgen-skill codegraph ensure --yes` | Install the CodeGraph CLI if it is MISSING, wire its MCP entry, build the index |
+| `npx archgen-skill codegraph wire --yes` | Wire the CodeGraph MCP entry into the detected harnesses only |
 | `npx archgen-skill --version` / `--help` | Print the CLI version / show help |
 
 ## Why archgen
@@ -149,9 +159,11 @@ See [CONTRIBUTING.md](https://github.com/akashmaurya99/archgen/blob/main/CONTRIB
 Skill suite and CLI tests run with zero dependencies:
 
 ```sh
-node --test packages/mcp/test/**/*.test.mjs   # MCP server suite
-cd packages/cli && npm test                 # CLI suite
+node --test packages/mcp/test/**/*.test.mjs
+cd packages/cli && npm test
 ```
+
+The first is the MCP server suite; the second is the CLI suite.
 
 ## License
 

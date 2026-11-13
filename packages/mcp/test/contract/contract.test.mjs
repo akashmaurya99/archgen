@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
-import { createServer, TOOL_NAMES } from '../../src/server.mjs';
+import { createServer, exposedToolNames } from '../../src/server.mjs';
 import { resetServerContext } from '../../src/tools/_register.mjs';
 
 /** Connect a client to a fresh server over an in-memory transport. */
@@ -22,11 +22,13 @@ async function connect() {
   return { client, server };
 }
 
-test('tools/list exposes exactly the eight domain tools', async () => {
+test('tools/list exposes exactly the published tools', async () => {
   const { client } = await connect();
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
-  assert.deepEqual(names, [...TOOL_NAMES].sort());
+  // The PUBLISHED set — the lean profile's data plane. The admin tools are
+  // registered but not published, so they cannot be called from a model.
+  assert.deepEqual(names, [...exposedToolNames()].sort());
   await client.close();
 });
 

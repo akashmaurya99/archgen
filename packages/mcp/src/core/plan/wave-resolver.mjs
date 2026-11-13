@@ -41,7 +41,14 @@ export function resolveWaves(file) {
 
   const cyclePath = findCycle(prerequisites);
   if (cyclePath.length) {
-    throw cycle(`dependency cycle detected: ${cyclePath.join(' -> ')}`, { file, cycle: cyclePath });
+    throw cycle(`dependency cycle detected: ${cyclePath.join(' -> ')}`, {
+      ...hint({
+        action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }),
+        reason: 'the validator names every cycle with the ids that form it.',
+      }),
+      file,
+      cycle: cyclePath,
+    });
   }
 
   const { waves, blockedByFailure } = computeWaves(byId, prerequisites);
@@ -51,7 +58,16 @@ export function resolveWaves(file) {
     if (conflict) {
       throw ownershipConflict(
         `file_ownership conflict in same wave: glob '${conflict.glob}' claimed by '${conflict.a}' and '${conflict.b}'`,
-        { file, glob: conflict.glob, a: conflict.a, b: conflict.b },
+        {
+          ...hint({
+            action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }),
+            reason: 'the validator names every same-wave ownership overlap with the tasks that cause it.',
+          }),
+          file,
+          glob: conflict.glob,
+          a: conflict.a,
+          b: conflict.b,
+        },
       );
     }
   }

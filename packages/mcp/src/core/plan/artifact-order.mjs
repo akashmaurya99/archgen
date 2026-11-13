@@ -87,7 +87,7 @@ export function buildWriteOrder(artifacts, rules) {
           `the artifact rule for '${path}' depends on '${depFamily}', which is not a rule in the depth ladder`,
           {
             ...hint({
-              action: toolCall('archgen_setup', { action: 'doctor' }),
+              action: 'archgen-skill doctor',
               reason: 'the ladder and the artifact rules must agree before any order can be derived.',
             }),
             path,

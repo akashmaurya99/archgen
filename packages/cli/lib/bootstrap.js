@@ -92,7 +92,6 @@ export function bootstrapServers(opts) {
     approved: true,
     env,
   });
-
   if (!r.report) {
     // The bootstrap did NOT run: report it as a failure so the caller tells
     // the user. The skill install itself still succeeded — this is a warning,

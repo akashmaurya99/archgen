@@ -52,7 +52,7 @@ function readTemplate(templatesDir, name, slug) {
   } catch {
     throw invalidInput(
       `artifact template '${name}' is missing from the server assets`,
-      { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), template: name },
+      { ...hint({ action: 'archgen-skill doctor', reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), template: name },
     );
   }
   return text

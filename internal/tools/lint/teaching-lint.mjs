@@ -56,12 +56,18 @@ function sourceFiles(dir) {
  * in the file does not teach this call, and a STRING that merely mentions
  * "hint(" does not teach it either.
  *
+ * EVERY error constructor is inspected. The lint used to match only
+ * `invalidInput(`, so a `notFound`, a `permissionDenied` or a `cycle` could
+ * throw with no next step and the gate stayed green — the doctrine ("every
+ * failure teaches the agent its next call") was enforced for one error code
+ * out of nine.
+ *
  * @param {string} text
  * @returns {Array<{line: number, snippet: string}>}
  */
 function untaughtSites(text) {
   const out = [];
-  for (const m of text.matchAll(/invalidInput\(/g)) {
+  for (const m of text.matchAll(/\b(invalidInput|notFound|permissionDenied|unavailable|timeout|conflict|ownershipConflict|cycle)\(/g)) {
     const args = callArguments(text, m.index + m[0].length - 1);
     const code = withoutStrings(args);
     if (/\bhint\s*\(/.test(code) || /\bteach\s*\(/.test(code)) continue;
@@ -148,9 +154,39 @@ function callArguments(text, open) {
   return text.slice(open + 1);
 }
 
+/**
+ * The admin tools, and the files allowed to name them.
+ *
+ * A failure hint must teach a step the MODEL can take. In the lean profile
+ * the admin tools (`archgen_setup`, `archgen_codegraph`) are NOT published —
+ * so a hint that points at one teaches a call the model cannot make, and the
+ * agent burns a round discovering that.
+ *
+ * The admin tools' own files are exempt: their hints describe what the
+ * CLI (which CAN reach them) does.
+ */
+const ADMIN_TOOLS = ['archgen_setup', 'archgen_codegraph'];
+const ADMIN_TOOL_FILES = ['tools/setup.mjs', 'tools/codegraph.mjs'];
+
+/**
+ * The hints in one file that name an admin tool.
+ *
+ * @param {string} text
+ * @returns {Array<{line: number, snippet: string}>}
+ */
+function adminToolHints(text) {
+  const out = [];
+  for (const m of text.matchAll(/hint\s*\(\s*\{[^}]*action\s*:\s*toolCall\(\s*'(archgen_setup|archgen_codegraph)'/gs)) {
+    const line = text.slice(0, m.index).split('\n').length;
+    out.push({ line, snippet: text.slice(m.index, m.index + 90).split('\n')[0].trim() });
+  }
+  return out;
+}
+
 function main() {
   const files = sourceFiles(SRC);
   const violations = [];
+  const privileged = [];
   const used = new Set();
   for (const file of files) {
     const rel = file.slice(SRC.length + 1);
@@ -164,9 +200,16 @@ function main() {
       }
       violations.push({ rel, site });
     }
+    // A hint that points at an unpublished tool teaches nothing. The admin
+    // tools' own files are the exception: they describe the CLI.
+    if (!ADMIN_TOOL_FILES.some((f) => rel.endsWith(f))) {
+      for (const site of adminToolHints(text)) {
+        privileged.push({ rel, site });
+      }
+    }
   }
   const stale = [...ALLOWED_UNTAUGHT.keys()].filter((k) => !used.has(k));
-  if (violations.length || stale.length) {
+  if (violations.length || stale.length || privileged.length) {
     if (violations.length) {
       console.error('teaching-lint: failures that do not teach the next call.');
       for (const v of violations) {
@@ -174,6 +217,14 @@ function main() {
       }
       console.error('  Every failure carries a hint({action, reason}) — see core/guidance.mjs.');
       console.error('  A site that cannot carry one belongs in ALLOWED_UNTAUGHT, with a reason.');
+    }
+    if (privileged.length) {
+      console.error('teaching-lint: a failure hint points at an ADMIN tool the model cannot call.');
+      for (const v of privileged) {
+        console.error(`  ${v.rel}:${v.site.line}: ${v.site.snippet}`);
+      }
+      console.error('  The lean profile does not publish archgen_setup / archgen_codegraph.');
+      console.error('  Point the hint at a published tool, or at the CLI command that does the work.');
     }
     if (stale.length) {
       console.error('teaching-lint: exemptions that match no site — they are stale.');
@@ -185,6 +236,7 @@ function main() {
     process.exit(1);
   }
   console.log(`teaching-lint: every failure site in ${files.length} files teaches its next call.`);
+  console.log(`teaching-lint: no failure hint points at an unpublished admin tool (${ADMIN_TOOLS.join(', ')}).`);
 }
 
 try {

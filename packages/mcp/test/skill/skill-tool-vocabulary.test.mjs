@@ -20,7 +20,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createServer, TOOL_NAMES } from '../../src/server.mjs';
+import { createServer, exposedToolNames } from '../../src/server.mjs';
 import { getToolSpec } from '../../src/tools/_register.mjs';
 import { REPO_ROOT } from '../support/repo-root.mjs';
 
@@ -31,10 +31,15 @@ const SKILL_MD = join(REPO, 'skill', 'SKILL.md');
 // Registering the tools populates the spec registry the schemas live in.
 createServer();
 
+// The PUBLISHED tools — the ones the model can call and the skill may name.
+// The admin tools are registered (the CLI reaches them) but not published, so
+// the skill must not advertise them.
+const PUBLISHED = exposedToolNames();
+
 /** The live action enum for every tool, straight from the schema. */
 function liveActions() {
   const out = {};
-  for (const name of TOOL_NAMES) {
+  for (const name of PUBLISHED) {
     const shape = getToolSpec(name).inputSchema.shape;
     const action = shape?.action;
     out[name] = action?.options ?? action?._def?.entries ?? [];
@@ -65,7 +70,7 @@ function enumValues(schema) {
 /** Every enum value a tool's schema accepts, keyed by tool. */
 function liveValues() {
   const out = {};
-  for (const name of TOOL_NAMES) {
+  for (const name of PUBLISHED) {
     const shape = getToolSpec(name).inputSchema.shape;
     const values = new Set();
     for (const schema of Object.values(shape ?? {})) {
@@ -111,7 +116,7 @@ test('the skill declares only tools the server actually exposes', () => {
   const declared = declaredValues(markdown);
   assert.ok(declared.size >= 8, `the tool table looks malformed — ${declared.size} rows parsed`);
 
-  const unknown = [...declared.keys()].filter((tool) => !TOOL_NAMES.includes(tool));
+  const unknown = [...declared.keys()].filter((tool) => !PUBLISHED.includes(tool));
   assert.deepEqual(unknown, [], `the skill names tools the server does not expose: ${unknown.join(', ')}`);
 });
 
@@ -156,6 +161,6 @@ test('every tool the server exposes is documented in the skill', () => {
   if (!existsSync(SKILL_MD)) return;
   const markdown = readFileSync(SKILL_MD, 'utf8');
   const declared = declaredValues(markdown);
-  const missing = TOOL_NAMES.filter((name) => !declared.has(name));
+  const missing = PUBLISHED.filter((name) => !declared.has(name));
   assert.deepEqual(missing, [], `the server exposes tools the skill never mentions: ${missing.join(', ')}`);
 });

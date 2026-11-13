@@ -1,4 +1,4 @@
-## [0.1.7] - UNRELEASED
+## [0.1.7] - 2026-11-13
 
 A correctness release: the catalog is smaller AND correct, every section says
 what it is FOR, "no quality loss" is a CI fact instead of a promise, and the
@@ -10,6 +10,87 @@ artifacts are written in the order their content depends on.
 |---|---|---|
 | `packages/mcp` | `archgen-mcp` | `vmcp-0.1.7` |
 | `packages/cli` | `archgen-skill` | `vcli-0.1.7` |
+
+### Added — the control plane / data plane split
+
+The server now publishes a **PROFILE**, and the profile is a privilege
+boundary.
+
+- `lean` (the default) publishes eight tools: `archgen_plan`, `archgen_tasks`,
+  `archgen_docs`, `archgen_registry`, `archgen_skills`, `archgen_refs`,
+  `archgen_help`, `archgen_platform`.
+- `full` adds the admin tools `archgen_setup` and `archgen_codegraph` — the
+  ones that install software and write harness configuration. Their approval
+  flag is an ARGUMENT the model supplies, so they are no longer published to a
+  model that reads untrusted repositories.
+- `ARCHGEN_TOOL_PROFILE` (or `--tool-profile`) selects the profile; an unknown
+  value is refused, never silently defaulted.
+
+The admin handlers stay registered, so nothing is lost: `archgen-mcp exec
+archgen_setup …` and the new CLI commands (`archgen-skill mcp
+add|remove|list`, `archgen-skill codegraph ensure|wire|status`) reach exactly
+the same code. The CLI prints the PLAN without `--yes` and writes only with
+it.
+
+### Added — `archgen_platform`: the runtime facts, read-only
+
+The old `archgen_setup{action:'harness_info'}` answered one question — which
+harness is this — with the whole registry, and it came bundled with the
+ability to install software. `archgen_platform` answers it alone, read-only,
+and compactly: the detected harness, its skill paths, its MCP config path and
+key, its restart semantics, its sub-agent dispatch, and whether the project has
+a CodeGraph index.
+
+### Added — the CodeGraph policy: a first-time install, the whole tool surface, telemetry off per process
+
+`packages/mcp/assets/codegraph-policy.json` owns five facts that used to be
+scattered: the package, what a **first-time install** fetches, the exact spec
+the **npx fallback** uses, the **tools the agent may call**, and the telemetry
+posture.
+
+- **Install ONCE, never upgrade.** When the CodeGraph CLI is missing, the
+  first-time install fetches the newest published release — CodeGraph's own
+  official install path. When it is already there, ArchGen installs nothing,
+  upgrades nothing and rewrites nothing: an installed CodeGraph may be pinned,
+  may be a bundle install, and it is the user's to manage (`codegraph upgrade`
+  is theirs to run).
+- **The npx fallback stays pinned** (`@colbymchenry/codegraph@1.6.2`): a
+  machine with no binary still resolves a reviewed version, instead of
+  executing whatever `latest` became.
+- **The whole CodeGraph surface is in the agent's hands.** CodeGraph publishes
+  ONE MCP tool by default (`codegraph_explore`); the other seven exist and
+  stay unlisted because each listed tool costs permanent context. The policy
+  wires the allowlist `explore,node,search,callers,callees,impact,files,status`
+  — and `§platforms/codegraph-tools` maps every question to exactly one tool
+  (`explore` first, `search` for exact locations, `node` for one symbol or
+  file, `callers`/`callees`/`impact` for a change's blast radius, `files` for
+  layout, `status` for index health), so eight tools do not become eight
+  guesses.
+- Telemetry is turned off **per process** (`CODEGRAPH_TELEMETRY=0` in the MCP
+  entry) instead of by a machine-wide `codegraph telemetry off` write.
+- The wiring is CONVERGENT: an entry without the allowlist or with an
+  unpinned spec is a pending rewrite, and the next ensure brings it forward.
+- The worker contract now names the CLI equivalents (`codegraph explore`,
+  `codegraph query`, `codegraph node`, `codegraph impact`) — sub-agents never
+  see the MCP server's guidance.
+
+### Changed — the catalog is measured HONESTLY
+
+`npm run test:budget` now speaks JSON-RPC to the real binary and measures
+what `tools/list` actually returns. The old measurement (name + description +
+input schema) under-counted by ~34% because it never saw the output schema or
+the annotations, and it never counted the CodeGraph server's tools at all.
+
+- The per-tool output schema is now the compact `{ok}` shape; the full
+  envelope schema is published ONCE, as the MCP resource
+  `archgen://schema/envelope`. Every tool description carries the envelope's
+  shape where the model reads it.
+- The always-on ceiling moved from 13,800 to 18,000 — a HIGHER number, because
+  the measurement is honest now: the old figure under-counted by ~2,500
+  tokens and never counted CodeGraph's own catalog at all. The measured total
+  moved UP with it (13,503 → 17,459), and the ceiling still sits above it —
+  the estimator is ±10%, so the gate keeps a margin and still fails when the
+  always-on footprint grows past the line.
 
 ### Fixed — the catalog's routing was WRONG in six places
 
@@ -79,7 +160,7 @@ agent already had from a tool:
 
 - the depth budgets restated the `depth` block `profile` returns;
 - the answers-file format restated the skeleton `scaffold` serves;
-- the MCP key vocabulary restated the registry `harness_info` reads;
+- the MCP key vocabulary restated the registry `harnesses` reads;
 - the skill registry restated the entries `archgen_skills{action:'list'}` returns.
 
 Each is now a pointer to the tool that owns the fact. The drift gate that
@@ -94,12 +175,12 @@ marker, error code, coverage dimension, BLOCKING clause, YAML rule and gate
 rule — with a stable id and a matcher written against the obligation's
 load-bearing WORDS, not a whole sentence.
 
-`packages/mcp/test/core/skill-claim-ledger.test.mjs` checks every one of
+`packages/mcp/test/skill/skill-claim-ledger.test.mjs` checks every one of
 them. A claim may be REWORDED freely; it may not DISAPPEAR, and it may not
 WEAKEN. Deleting an obligation deletes its claim in the same commit, and
 that diff is the record.
 
-`packages/mcp/test/core/schema-routing.test.mjs` does the same for the
+`packages/mcp/test/protocol/schema-routing.test.mjs` does the same for the
 catalog: the property list, the enum values, the required arguments, the
 annotations and the per-action routing tables are pinned exactly, and every
 argument's description must still carry the facts it carried.
@@ -108,25 +189,27 @@ argument's description must still carry the facts it carried.
 
 | | before | after |
 |---|---|---|
-| `SKILL.md` | 7,916 | 7,441 |
-| MCP tool catalog | 5,587 | 5,538 |
-| **ALWAYS-ON** (both) | **13,503** | **12,979** |
-| protocol references | 19,168 | 19,455 |
+| `SKILL.md` | 7,916 | 7,813 |
+| MCP tool catalog — the real `tools/list` payload | 5,587 | 5,850 |
+| CodeGraph's own catalog | — | 3,796 |
+| **ALWAYS-ON** (all three) | **13,503** | **17,459** |
+| protocol references | 19,168 | 20,751 |
 | dispatch briefs | 4,236 | 4,069 |
 
-The catalog barely moved because it is at its floor: 86% of it is the JSON
-Schema of 92 arguments, and the flat shape is load-bearing (the
-`ARG_IGNORED` warning is what catches a wrong-action call). What changed is
-that the schema is now CORRECT, and the SKILL.md no longer restates
-protocols its references already own.
+The catalog is at its floor: most of it is the JSON Schema of its 76
+arguments, and the flat shape is load-bearing (the `ARG_IGNORED` warning is
+what catches a wrong-action call). What changed is that the schema is now
+CORRECT, and the SKILL.md no longer restates protocols its references already
+own.
 
-The budget ceiling moves with it: `--max-always-on` 13,800 → **13,000**. It
-is a ratchet at the achieved value, not a target — the saving cannot creep
-back.
+The budget ceiling moves with it: `--max-always-on` 13,800 → **18,000**. The
+figure is the honest measurement's, not the projection's, and it keeps a
+margin over the measured 17,459 (the estimator is ±10%), so the gate still
+fails when the always-on footprint grows past it.
 
 ### Changed — the skill teaches what the tools can do
 
-`archgen_plan{action:'scaffold'}` returns every skeleton at once — 6,631
+`archgen_plan{action:'scaffold'}` returns every skeleton at once — 7,428
 tokens. The tool already served ONE file per call; the skill never said so.
 It does now, and the mode table names `§artifact-templates/mechanical-invariants`
 — the section that owns the checklist the skill used to restate — so the
@@ -196,8 +279,10 @@ forever. All three are scanned now.
 `skill/SKILL.md` says the create set is written in the scaffold's
 `writeOrder`; the reference explains the dissolve/reuse semantics and points
 at the tool instead of restating the order. The always-on context grew by
-**12 tokens** (12,967 → 12,979 of a 13,000 ceiling) — the order itself is
-tool output, so it costs nothing on every request.
+The always-on context barely moved — the order itself is tool output, so it
+costs nothing on every request. Measured now: `SKILL.md` 7,813 · the real
+`tools/list` catalog 5,850 · CodeGraph's catalog 3,796 · **always-on 17,459**
+against an 18,000 ceiling.
 
 ## [0.1.6] - 2026-11-11
 

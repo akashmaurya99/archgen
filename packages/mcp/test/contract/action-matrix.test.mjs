@@ -126,7 +126,6 @@ function matrix() {
 
   // ── archgen_setup (unapproved: a PLAN, never a write) ───────────────────
   rows.push(['archgen_setup', 'doctor', {}]);
-  rows.push(['archgen_setup', 'harness_info', {}]);
   rows.push(['archgen_setup', 'harnesses', {}]);
   rows.push(['archgen_setup', 'bootstrap', { approve: false }]);
   rows.push(['archgen_setup', 'install_mcp', { approve: false }]);
@@ -146,6 +145,10 @@ function matrix() {
   rows.push(['archgen_refs', 'read', { topic: 'orchestration' }]);
   rows.push(['archgen_refs', 'search', { topic: 'orchestration', token: 'APPROVE' }]);
 
+  // ── archgen_platform (no action: it answers ONE question) ───────────────
+  rows.push(['archgen_platform', null, {}]);
+  rows.push(['archgen_platform', null, { harness: 'claude' }]);
+
   return rows;
 }
 
@@ -154,8 +157,11 @@ test('every action of every tool succeeds against a real project', async () => {
   for (const [tool, action, args] of matrix()) {
     const spec = getToolSpec(tool);
     assert.ok(spec, `${tool} is not registered`);
-    const envelope = await guard(spec.handler, ctx, { action, ...args });
-    const label = `${tool}{action:'${action}'}`;
+    // A tool with no action enum (archgen_platform) is called with its own
+    // arguments only.
+    const payload = action === null ? args : { action, ...args };
+    const envelope = await guard(spec.handler, ctx, payload);
+    const label = action === null ? tool : `${tool}{action:'${action}'}`;
     if (!envelope.ok) {
       failures.push(`${label} -> ${envelope.error.code}: ${envelope.error.message}`);
       continue;
@@ -233,8 +239,9 @@ test('every tool accepts limit and offset', () => {
   for (const tool of TOOL_NAMES) {
     // archgen_help returns ONE fixed briefing per topic. Its payload does not
     // grow with the project, so there is nothing to bound — and truncating a
-    // briefing would corrupt it.
-    if (tool === 'archgen_help') continue;
+    // briefing would corrupt it. archgen_platform answers ONE question about
+    // ONE harness: a fixed, small payload for the same reason.
+    if (tool === 'archgen_help' || tool === 'archgen_platform') continue;
     const shape = getToolSpec(tool).inputSchema.shape ?? {};
     for (const arg of ['limit', 'offset']) {
       if (!shape[arg]) missing.push(`${tool} has no ${arg}`);

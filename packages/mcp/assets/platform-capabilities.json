@@ -9,7 +9,7 @@
     "orchestrator never has to read a markdown table to learn where skills go,",
     "how an MCP config is shaped, or whether a harness can dispatch sub-agents.",
     "",
-    "`archgen_setup{action:'harness_info'}` serves it.",
+    "`archgen_platform` serves it.",
     "",
     "Facts verified against official vendor docs (2026-11). The `skills` CLI",
     "installs into .agents/skills/ UNIVERSALLY \u2014 see the note on each row."

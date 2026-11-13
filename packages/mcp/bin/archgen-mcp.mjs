@@ -25,11 +25,27 @@ const first = argv[0];
 const wantsCli = !(first === undefined || first === 'serve');
 
 if (wantsCli) {
-  const code = await runCli(argv);
-  process.exit(code ?? 0);
+  try {
+    const code = await runCli(argv);
+    process.exit(code ?? 0);
+  } catch (e) {
+    process.stderr.write(`archgen-mcp: ${e?.message ?? e}\n`);
+    if (e?.details?.nextAction) process.stderr.write(`  Next: ${e.details.nextAction}\n`);
+    process.exit(2);
+  }
 }
 
-const server = createServer();
-const transport = new StdioServerTransport();
-await server.connect(transport);
-process.stderr.write('archgen-mcp: server running on stdio\n');
+try {
+  const server = createServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write('archgen-mcp: server running on stdio\n');
+} catch (e) {
+  // A refused configuration (an unknown tool profile, a broken asset) must
+  // not crash the client with a stack trace: the harness would report "the
+  // server failed to start" and the reader would never see the cause. The
+  // message and the next step go to stderr — stdout is the protocol stream.
+  process.stderr.write(`archgen-mcp: ${e?.message ?? e}\n`);
+  if (e?.details?.nextAction) process.stderr.write(`  Next: ${e.details.nextAction}\n`);
+  process.exit(2);
+}

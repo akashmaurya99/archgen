@@ -195,7 +195,7 @@ export function buildEntry(entries, npxEntries, entryKey, binPath, fallbackComma
     // bug, not a user error. Say so plainly instead of crashing with a
     // SyntaxError from JSON.parse(undefined).
     throw invalidInput(
-      `unknown MCP entry shape '${entryKey}' — the harness registry and the writer disagree`, { ...hint({ action: toolCall('archgen_setup', { action: 'harnesses' }), reason: "the harness registry lists every harness the server can wire." }), entryKey, available: Object.keys(entries ?? {}) });
+      `unknown MCP entry shape '${entryKey}' — the harness registry and the writer disagree`, { ...hint({ action: 'archgen-skill mcp list', reason: "the harness registry lists every harness the server can wire." }), entryKey, available: Object.keys(entries ?? {}) });
   }
 
   const entry = structuredClone(source);

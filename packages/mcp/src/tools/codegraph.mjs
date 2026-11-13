@@ -10,6 +10,8 @@ import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset } from '../context.mjs';
 import { manageCodegraph, assertLocation, shapeReport } from '../core/harness/codegraph-manager.mjs';
 import { toolCall } from '../core/protocol/call.mjs';
+import { invalidInput } from '../core/protocol/errors.mjs';
+import { hint } from '../core/protocol/guidance.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 
 /**
@@ -21,6 +23,9 @@ const CODEGRAPH_ACTION_ARGS = {
   status: ['location', 'approve', 'telemetry', 'noInstall', 'limit', 'offset'],
   wire: ['location', 'approve', 'telemetry', 'noInstall', 'limit', 'offset'],
 };
+
+/** The actions this tool serves — the schema's enum, as a set. */
+const CODEGRAPH_ACTIONS = new Set(Object.keys(CODEGRAPH_ACTION_ARGS));
 
 const schema = z.object({
   action: z.enum(['ensure', 'status', 'wire']),
@@ -51,6 +56,20 @@ export function registerCodegraphTools(server) {
     handler: async (ctx, args) => {
       const registry = loadAsset('harness-mcp.json');
       const location = assertLocation(args.location ?? 'both');
+      // An UNKNOWN action must not resolve to `ensure` — the mode mapping
+      // below ends with it, so a typo would run a machine-level install
+      // where the caller asked for something else. The schema refuses it for a
+      // client; the handler refuses it for anything that calls it directly.
+      if (!CODEGRAPH_ACTIONS.has(args.action)) {
+        throw invalidInput(
+          `unknown action '${args.action}'`,
+          {
+            ...hint({ action: toolCall('archgen_help', { topic: 'codegraph' }), reason: 'the briefing lists every action and what it does.' }),
+            action: args.action,
+            available: [...CODEGRAPH_ACTIONS],
+          },
+        );
+      }
       const mode = args.action === 'status' ? 'status' : args.action === 'wire' ? 'wire' : 'ensure';
       const report = await manageCodegraph({
         mode,

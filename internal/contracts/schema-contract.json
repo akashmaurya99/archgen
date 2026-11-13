@@ -1,9 +1,9 @@
 {
   "$readme": [
-    "THE SCHEMA CONTRACT \u2014 what every tool's schema must keep KNOWABLE.",
+    "THE SCHEMA CONTRACT — what every tool's schema must keep KNOWABLE.",
     "",
     "The catalog is injected into every request, so its schema is a permanent",
-    "cost \u2014 and a permanent instruction. Compressing it is right; losing a",
+    "cost — and a permanent instruction. Compressing it is right; losing a",
     "fact in it is not.",
     "",
     "This file separates the two:",
@@ -18,7 +18,7 @@
     "    disappears, or a description that does without it, fails here.",
     "",
     "THE ROUTING MAP IS GENERATED, NOT WRITTEN. The tool description carries",
-    "one `Args by action \u2014 ...` line built from the SAME `*_ACTION_ARGS`",
+    "one `Args by action — ...` line built from the SAME `*_ACTION_ARGS`",
     "tables the handlers use. It replaces ~50 hand-written parentheticals",
     "scattered across the arguments, and it makes a class of drift",
     "structurally impossible: the hand-written ones had already drifted",
@@ -675,8 +675,7 @@
           "bootstrap",
           "install_mcp",
           "uninstall_mcp",
-          "harnesses",
-          "harness_info"
+          "harnesses"
         ],
         "location": [
           "project",
@@ -692,7 +691,6 @@
       "actionArgs": {
         "doctor": [
           "location",
-          "approve",
           "limit",
           "offset"
         ],
@@ -720,14 +718,6 @@
         ],
         "harnesses": [
           "location",
-          "approve",
-          "harness",
-          "limit",
-          "offset"
-        ],
-        "harness_info": [
-          "location",
-          "approve",
           "harness",
           "limit",
           "offset"
@@ -967,6 +957,29 @@
         ]
       }
     },
+    "archgen_platform": {
+      "annotations": {
+        "readOnly": true,
+        "destructive": false,
+        "idempotent": true
+      },
+      "properties": [
+        "harness",
+        "projectRoot"
+      ],
+      "required": [],
+      "enums": {},
+      "actionArgs": {},
+      "facts": {
+        "harness": [
+          "harness id"
+        ],
+        "projectRoot": [
+          "project root",
+          "cwd"
+        ]
+      }
+    },
     "archgen_help": {
       "annotations": {
         "readOnly": true,
@@ -988,6 +1001,7 @@
           "registry",
           "codegraph",
           "setup",
+          "platform",
           "skills",
           "refs",
           "yaml",

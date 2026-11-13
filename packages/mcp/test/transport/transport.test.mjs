@@ -98,14 +98,16 @@ test('the binary speaks MCP over stdio', async (t) => {
   const tools = await server.call('tools/list', {});
   assert.ok(tools.result, `tools/list failed: ${JSON.stringify(tools)}`);
   const names = tools.result.tools.map((t) => t.name).sort();
+  // The PUBLISHED surface: the lean profile's data plane. The admin tools
+  // (archgen_setup, archgen_codegraph) are registered but NOT published —
+  // they are the CLI's, and a model must not be able to call them.
   assert.deepEqual(names, [
-    'archgen_codegraph',
     'archgen_docs',
     'archgen_help',
     'archgen_plan',
+    'archgen_platform',
     'archgen_refs',
     'archgen_registry',
-    'archgen_setup',
     'archgen_skills',
     'archgen_tasks',
   ]);

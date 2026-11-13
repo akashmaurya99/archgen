@@ -82,13 +82,13 @@ test('the depth ladder and artifact-templates.md agree on the class names', () =
 });
 
 test('platforms.md points at the registry instead of restating it', () => {
-  // The harness capability TABLES are tool output now (archgen_setup
-  // {action:'harness_info'} serves packages/mcp/assets/platform-capabilities.json).
+  // The harness capability TABLES are tool output now (archgen_platform
+  // serves packages/mcp/assets/platform-capabilities.json).
   // The reference keeps the narrative — detection order, the unknown-platform
   // procedure, the CodeGraph scope — and points at the tool.
   const ref = read('platforms.md');
   if (!ref) return;
-  assert.match(ref, /archgen_setup\s*\{\s*action:\s*'harness_info'\s*\}/, 'the reference must point at the tool');
+  assert.match(ref, /archgen_platform/, 'the reference must point at the tool');
   assert.match(ref, /platform-capabilities\.json/, 'the reference must name the canonical registry');
   // It must NOT carry the per-harness capability rows any more.
   for (const [, h] of Object.entries(caps.harnesses)) {
@@ -135,10 +135,10 @@ test('the MCP top-level keys live in the registry — the reference points at th
   assert.deepEqual(
     restated,
     [],
-    `platforms.md must not restate the top-level key vocabulary (found: ${restated.join(', ')}) — harness_info serves it`,
+    `platforms.md must not restate the top-level key vocabulary (found: ${restated.join(', ')}) — archgen_platform serves it`,
   );
   assert.ok(
-    /harness_info/.test(ref),
+    /archgen_platform/.test(ref),
     'platforms.md must point at the tool that serves the key vocabulary',
   );
 });

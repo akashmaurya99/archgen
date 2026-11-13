@@ -6,7 +6,7 @@
 //   1. The routing map must leave these out — they belong to nearly every
 //      action, so listing them once per action repeats them for nothing.
 //   2. The catalog must say them ONCE, in the same words everywhere, so the
-//      nine tools cannot drift apart on a phrase they share.
+//      published tools cannot drift apart on a phrase they share.
 //   3. The schema contract must know which arguments are universal, so it
 //      can pin the routing without pinning the boilerplate.
 //
@@ -22,8 +22,9 @@ import { z } from 'zod/v4';
 export const UNIVERSAL_ARGS = new Set(['limit', 'offset', 'projectRoot']);
 
 // Shared schema words. The catalog is injected into every request, so a
-// description that repeats across nine tools is nine times the cost. One
-// definition keeps the wording identical everywhere and impossible to drift.
+// description that repeats across the published tools is paid for again and
+// again. One definition keeps the wording identical everywhere and impossible
+// to drift.
 export const LIMIT_DESC = 'Max items to return. Default 50.';
 export const OFFSET_DESC = 'Skip this many items.';
 const PROJECT_ROOT_DESC = 'Absolute project root; defaults to the server cwd.';

@@ -14,21 +14,35 @@
 //   bootstrap [--project <dir>]         wire the archgen MCP + ensure CodeGraph
 //   doctor [--project <dir>]            health report
 //   uninstall-mcp [--project <dir>]     remove the archgen MCP entries
-import { Context } from './context.mjs';
-import { createServer } from './server.mjs';
+import { Context, serverVersion } from './context.mjs';
+import { createServer, exposedToolNames } from './server.mjs';
 import { getToolSpec, registeredToolNames, runTool } from './tools/_register.mjs';
 import { loadAsset } from './context.mjs';
 import { uninstallArchgenMcp, archgenMcpStatus } from './core/harness/mcp-server-manager.mjs';
 import { assertLocation, findCodegraph } from './core/harness/codegraph-manager.mjs';
 import { detectHarnesses } from './core/harness/harness-wiring.mjs';
 
-const USAGE = `archgen-mcp — MCP server for archgen
+/**
+ * The usage text.
+ *
+ * It is a FUNCTION, not a template: the tool list is only known
+ * after the server is built, and a module-level template evaluated the list
+ * at import time — when it was empty. The line printed "Tools:" and nothing.
+ *
+ * @returns {string}
+ */
+function usage() {
+  return `archgen-mcp — MCP server for archgen
 
 Usage:
   archgen-mcp                                  serve the MCP server over stdio (default)
   archgen-mcp exec <tool> '<json-args>'        run one tool, print JSON
+  archgen-mcp version                          print the server version
   archgen-mcp bootstrap [--project <dir>]      wire the archgen MCP + ensure CodeGraph
   archgen-mcp doctor [--project <dir>]         health report
+  archgen-mcp platform [--project <dir>]       the runtime facts about THIS harness
+  archgen-mcp mcp-list [--project <dir>]      the harnesses and their MCP config paths
+  archgen-mcp codegraph status|ensure|wire     the CodeGraph index and its MCP wiring
   archgen-mcp uninstall-mcp [--project <dir>]  remove the archgen MCP entries
 
 Options:
@@ -37,13 +51,41 @@ Options:
   --yes             approve MCP-config writes
   --no-codegraph    skip the CodeGraph half of the bootstrap
   --no-mcp          skip the MCP wiring half of the bootstrap
+  --no-install      resolve the CodeGraph CLI without installing it
   --json            machine-readable output
-  --tool <name>     list a tool's schema
+  --tool <name>     print ONE tool's schema (name + description + JSON schema)
+  --tool-profile <p>  lean (default) | full — which tools the server publishes
   --fail-on <p>:<v> exit 3 when the tool result matches (e.g. verdict:ISSUES) — a build gate
-  --list            list every tool
-  --catalog         print the injected tool catalog (name + description + JSON schema)
+  --list            list every REGISTERED tool (published + admin; --catalog is the published set)
+  --catalog         print the catalog as the CLI projects it (name + description + input schema)
+  --catalog-wire    print the REAL tools/list payload — what a client injects
+  --catalog-all     print the projection of EVERY tool, published or not
 
 Tools: ${registeredToolNames().join(', ')}`;
+}
+
+/**
+ * The REAL `tools/list` payload, asked of the server itself.
+ *
+ * The SDK owns the wire shape (the title, the output schema, the
+ * annotations), so the only honest way to print it is to ASK the server the
+ * way a client asks. The projection above is a convenience; this is the fact.
+ *
+ * @param {any} server the MCP server
+ * @returns {Promise<{ok: boolean, tools: any[], reason?: string}>}
+ */
+async function listWireTools(server) {
+  try {
+    const handler = server.server?._requestHandlers?.get?.('tools/list');
+    if (typeof handler !== 'function') {
+      return { ok: false, tools: [], reason: 'the server exposes no tools/list handler' };
+    }
+    const result = await handler({ method: 'tools/list', params: {} }, { signal: new AbortController().signal });
+    return { ok: true, tools: result?.tools ?? [] };
+  } catch (e) {
+    return { ok: false, tools: [], reason: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 /**
  * Parse the CLI arguments.
@@ -60,9 +102,13 @@ export function parseArgs(argv) {
     yes: false,
     noCodegraph: false,
     noMcp: false,
+    noInstall: false,
     json: false,
     list: false,
     catalog: false,
+    catalogWire: false,
+    catalogAll: false,
+    toolProfile: null,
   };
   const rest = [...argv];
   const command = rest[0];
@@ -77,10 +123,15 @@ export function parseArgs(argv) {
     else if (a === '--yes') opts.yes = true;
     else if (a === '--no-codegraph') opts.noCodegraph = true;
     else if (a === '--no-mcp') opts.noMcp = true;
+    else if (a === '--no-install') opts.noInstall = true;
     else if (a === '--json') opts.json = true;
     else if (a === '--list') opts.list = true;
     else if (a === '--catalog') opts.catalog = true;
+    else if (a === '--catalog-wire') opts.catalogWire = true;
+    else if (a === '--catalog-all') opts.catalogAll = true;
+    else if (a === '--tool-profile') opts.toolProfile = rest[++i];
     else if (a === '--tool') opts.tool = rest[++i];
+    else if (a === '--version' || a === '-v') opts.command = 'version';
     else if (a === '--fail-on') opts.failOn = rest[++i];
     else if (a === '--help' || a === '-h') opts.command = 'help';
     else if (!a.startsWith('-')) {
@@ -138,25 +189,72 @@ export async function runCli(argv, io = {}) {
   const err = io.stderr ?? ((s) => process.stderr.write(s + '\n'));
   const opts = parseArgs(argv);
 
-  if (opts.command === 'help') {
-    out(USAGE);
+  if (opts.command === 'version') {
+    // The version is a fact people report in a bug, so it must be
+    // obtainable without reading a JSON report.
+    out(serverVersion());
     return 0;
   }
 
   // Register every tool (also populates the spec registry `exec` reads).
-  const server = createServer();
+  // The PROFILE decides what the server PUBLISHES; every tool stays in the
+  // registry, so `exec` can still reach the admin ones.
+  const server = createServer({ profile: opts.toolProfile });
+
+  if (opts.command === 'help') {
+    // AFTER the server is built: the usage text names the tools, and the
+    // registry is only populated once the tools are registered.
+    out(usage());
+    return 0;
+  }
 
   if (opts.list) {
     out(JSON.stringify(registeredToolNames(), null, 2));
     return 0;
   }
 
-  if (opts.catalog) {
-    // The EXACT payload a client injects into the model's context for every
-    // request: each tool's name, description and JSON schema. The internal
-    // token-budget tool measures this, so the catalog cost is budgeted like
-    // any other context expense.
-    const catalog = registeredToolNames().map((name) => ({
+  if (opts.tool && opts.command !== 'exec') {
+    // `--tool <name>` prints ONE tool's schema. It used to be documented and
+    // consumed by nothing: the flag started the stdio server instead, so a
+    // reader asking for a schema got a hanging process.
+    const spec = getToolSpec(opts.tool);
+    if (!spec) {
+      err(`unknown tool '${opts.tool}' — known tools: ${registeredToolNames().join(', ')}`);
+      return 2;
+    }
+    out(JSON.stringify({
+      name: opts.tool,
+      description: spec.description ?? '',
+      inputSchema: server.toolInputSchemaJson(opts.tool) ?? null,
+    }, null, 2));
+    return 0;
+  }
+
+  if (opts.catalogWire) {
+    // The REAL wire payload: what the protocol's `tools/list` returns, which
+    // carries MORE than the projection above (the title, the output schema
+    // and the annotations). It is the number the token budget is measured
+    // against, so it must be obtainable from the CLI too.
+    const wire = await listWireTools(server);
+    if (!wire.ok) {
+      err(`the wire catalog could not be read: ${wire.reason}`);
+      return 1;
+    }
+    out(JSON.stringify(wire.tools, null, 2));
+    return 0;
+  }
+
+  if (opts.catalog || opts.catalogAll) {
+    // The catalog AS THE CLI PROJECTS IT: each tool's name, description and
+    // input schema. The internal token-budget tool measures the REAL wire
+    // payload separately, because the protocol's `tools/list` carries more
+    // (the title, the output schema and the annotations).
+    //
+    // By default it is the PUBLISHED catalog — the tools the active profile
+    // exposes. `--catalog-all` adds the ones a profile holds back, so the
+    // admin surface can be measured too.
+    const names = opts.catalogAll ? registeredToolNames() : exposedToolNames();
+    const catalog = names.map((name) => ({
       name,
       description: getToolSpec(name)?.description ?? '',
       inputSchema: server.toolInputSchemaJson(name) ?? null,
@@ -170,7 +268,7 @@ export async function runCli(argv, io = {}) {
   if (opts.command === 'exec') {
     if (!opts.tool) {
       err('exec requires a tool name');
-      out(USAGE);
+      out(usage());
       return 2;
     }
     const spec = getToolSpec(opts.tool);
@@ -318,10 +416,90 @@ export async function runCli(argv, io = {}) {
     return 0;
   }
 
+  // ── the admin surface ────────────────────────────────────────────────────
+  //
+  // These commands are the CONTROL PLANE: they install software, write
+  // harness configuration and change machine state. They are reachable from
+  // the CLI — where a human (or CI) asked for them — and NOT from the model
+  // in the default profile.
+
+  if (opts.command === 'platform') {
+    const envelope = await runTool(getToolSpec('archgen_platform'), ctx, {});
+    const data = envelope.data ?? {};
+    if (opts.json) {
+      out(JSON.stringify(data, null, 2));
+    } else {
+      out(`archgen-mcp platform — ${ctx.projectRoot}`);
+      out(`  harness:  ${data.primary ?? 'unknown'}${data.detected?.length ? ` (detected: ${data.detected.join(', ')})` : ''}`);
+      const caps = data.capabilities ?? {};
+      out(`  skills:   ${Object.values(caps.skillPaths ?? {}).flat().join(', ') || 'unknown'}`);
+      out(`  mcp cfg:  ${caps.mcpConfig?.project?.path ?? 'unknown'} (key ${caps.mcpConfig?.project?.key ?? '?'})`);
+      out(`  restart:  ${caps.restart ?? 'unknown'}`);
+      out(`  subagent: ${caps.subAgents?.mechanism ?? 'unknown'}`);
+      out(`  codegraph: indexed=${data.codegraph?.indexed ?? false} · tools=${(data.codegraph?.tools ?? []).join(',') || 'none'}`);
+      if (data.reason) out(`  ! ${data.reason}`);
+    }
+    return envelope.ok ? 0 : 1;
+  }
+
+  if (opts.command === 'mcp-list') {
+    const envelope = await runTool(getToolSpec('archgen_setup'), ctx, { action: 'harnesses', location: assertLocation(opts.location) });
+    const data = envelope.data ?? {};
+    if (opts.json) {
+      out(JSON.stringify(data, null, 2));
+    } else {
+      out(`archgen-mcp mcp-list — ${ctx.projectRoot}`);
+      for (const h of data.detected ?? []) {
+        const cfgs = (h.configs ?? []).map((c) => `${c.location}:${c.path}`).join(' · ');
+        out(`  ${h.id.padEnd(12)} ${cfgs}`);
+      }
+      if (!(data.detected ?? []).length) out('  no harness detected');
+    }
+    return envelope.ok ? 0 : 1;
+  }
+
+  if (opts.command === 'codegraph') {
+    const action = opts.args; // status | ensure | wire
+    if (!['status', 'ensure', 'wire'].includes(action)) {
+      err(`codegraph needs an action: status | ensure | wire`);
+      out(usage());
+      return 2;
+    }
+    // `ensure` and `wire` WRITE: they install the CLI and rewrite harness
+    // configuration. WITHOUT --yes the command is a PLAN — it reports what
+    // would change and writes nothing — so an agent can show the plan and
+    // let the user approve it before applying.
+    const envelope = await runTool(getToolSpec('archgen_codegraph'), ctx, {
+      action,
+      location: assertLocation(opts.location),
+      approve: opts.yes === true,
+      noInstall: opts.noInstall ?? false,
+    });
+    const data = envelope.data ?? {};
+    if (opts.json) {
+      out(JSON.stringify(data, null, 2));
+    } else {
+      out(`archgen-mcp codegraph ${action} — ${ctx.projectRoot}`);
+      out(`  cli:       ${data.cli?.present ? `${data.cli.version} (${data.cli.bin})` : 'not installed'}`);
+      out(`  install:   ${data.policy?.install ?? 'latest'} · package ${data.policy?.package ?? '?'}`);
+      out(`  wire spec: ${data.policy?.wire ?? 'unpinned'}`);
+      out(`  tools:     ${(data.policy?.tools ?? []).join(',') || 'none'}`);
+      out(`  telemetry: ${data.policy?.telemetry ?? '?'}`);
+      out(`  index:     ${data.indexed ? 'indexed' : (data.index?.action ?? 'none')}`);
+      const wired = (data.wiring?.manual ?? []).map((w) => `${w.harness}:${w.status}`);
+      out(`  wired:     ${wired.join(' · ') || 'none'}`);
+      if (data.planned) {
+        out('');
+        out('  PLAN only — nothing was written. Re-run with --yes to apply it.');
+      }
+    }
+    return envelope.ok ? 0 : 1;
+  }
+
   if (opts.command === 'serve') return null; // the caller connects the transport
 
   err(`unknown command '${opts.command}'`);
-  out(USAGE);
+  out(usage());
   return 2;
 }
 

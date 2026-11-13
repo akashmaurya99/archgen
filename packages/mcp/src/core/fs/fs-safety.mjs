@@ -20,6 +20,7 @@
 import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { conflict, permissionDenied } from '../protocol/errors.mjs';
+import { hint } from '../protocol/guidance.mjs';
 
 /** Canonical refusal message — identical wording to the CLI's. */
 export function refuseSymlinkMessage(absPath) {
@@ -38,7 +39,15 @@ export function assertNotSymlink(absPath) {
   } catch {
     return;
   }
-  if (st.isSymbolicLink()) throw permissionDenied(refuseSymlinkMessage(absPath), { path: absPath });
+  if (st.isSymbolicLink()) {
+    throw permissionDenied(refuseSymlinkMessage(absPath), {
+      ...hint({
+        action: 'remove the symlink, or point it at a real directory',
+        reason: 'the server never writes THROUGH a link — the target is outside its boundary.',
+      }),
+      path: absPath,
+    });
+  }
 }
 
 /**
@@ -112,11 +121,25 @@ export function assertWithinRoot(rootAbs, absPath) {
 
   if (lexicalInside) {
     // Lexically inside, but it lands somewhere else: a symlinked parent.
-    throw permissionDenied(refuseSymlinkMessage(absPath), { path: absPath, root: rootAbs });
+    throw permissionDenied(refuseSymlinkMessage(absPath), {
+      ...hint({
+        action: 'remove the symlinked parent, or point it at a real directory',
+        reason: 'the path is inside the root by name only — its real target is not.',
+      }),
+      path: absPath,
+      root: rootAbs,
+    });
   }
   throw permissionDenied(
     `refusing a path outside the project: ${absPath} is not inside ${rootAbs}`,
-    { path: absPath, root: rootAbs },
+    {
+      ...hint({
+        action: 'use a path inside the project root',
+        reason: 'the server owns a boundary: every path must resolve inside it.',
+      }),
+      path: absPath,
+      root: rootAbs,
+    },
   );
 }
 
@@ -224,7 +247,14 @@ export function withFileLock(file, fn, opts = {}) {
         continue; // the lock vanished between the EEXIST and the stat
       }
       if (Date.now() > deadline) {
-        throw conflict(`timed out after ${timeoutMs}ms waiting for the lock on ${file}`, { file, lockPath });
+        throw conflict(`timed out after ${timeoutMs}ms waiting for the lock on ${file}`, {
+          ...hint({
+            action: 'retry in a moment, or check whether another archgen process is still writing this file',
+            reason: 'another writer held the lock for longer than the timeout — the file was NOT written.',
+          }),
+          file,
+          lockPath,
+        });
       }
       sleepSync(pollMs);
     }

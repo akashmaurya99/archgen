@@ -42,7 +42,7 @@ import { noSuchTask, hint } from '../protocol/guidance.mjs';
  * you may use" — and a worker that reads that as a ban stops asking the
  * tools it was given.
  */
-const READONLY_ACTIONS = "archgen_plan{validate,verify,graph,impact,coverage,profile,scaffold,brief}, archgen_docs, archgen_refs, archgen_help, archgen_tasks{next,list,contract}, archgen_codegraph{status}, archgen_setup{doctor,harnesses,harness_info}, archgen_skills{match,installed,load,digest,list}, archgen_registry{show}";
+const READONLY_ACTIONS = "archgen_plan{validate,verify,graph,impact,coverage,profile,scaffold,brief}, archgen_docs, archgen_refs, archgen_help, archgen_platform, archgen_tasks{next,list,contract}, archgen_skills{match,installed,load,digest,list}, archgen_registry{show}";
 
 /**
  * Assemble the worker prompt for one task.
@@ -256,6 +256,13 @@ export function buildWorkerContract(opts) {
     lines.push('');
     lines.push('- Never re-index it — the watcher keeps it live.');
     lines.push('- Never grep for what the index can answer.');
+    // A worker is often a sub-agent, and a sub-agent never receives the MCP
+    // server's guidance — so the CLI equivalent is named here. It prints the
+    // same output, and it works in a harness with no MCP server at all.
+    lines.push(
+      '- No MCP server? The CLI prints the same thing: `codegraph explore "<symbols or question>"`, ' +
+        '`codegraph query <symbol>`, `codegraph node <symbol>`, `codegraph impact <symbol>`.',
+    );
     lines.push('');
   }
 

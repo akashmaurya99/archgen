@@ -27,6 +27,7 @@ const HELP_TOOL_FOR_TOPIC = {
   registry: 'archgen_registry',
   codegraph: 'archgen_codegraph',
   setup: 'archgen_setup',
+  platform: 'archgen_platform',
   skills: 'archgen_skills',
   refs: 'archgen_refs',
 };
@@ -188,17 +189,24 @@ Keeps the \`AGENTS.md\` features registry in sync with \`.archgen/\`.
 - \`slug\` and \`status\` must be passed together.
 - Managed block: \`<!-- archgen:features:start -->\` … \`<!-- archgen:features:end -->\`; every byte outside it is preserved.`,
 
-  codegraph: `# archgen_codegraph
+  codegraph: `# archgen_codegraph — the ADMIN surface
 
 Installs, wires, or inspects CodeGraph (source-symbol index) and its MCP server.
 
-**When**
-- \`.codegraph/\` absent: \`ensure\` once per project.
-- Check state: \`status\`. Wire configs only: \`wire\`.
+**Not published by default.** The lean profile does not expose this tool to the model: installing
+software and rewriting harness configuration are machine-level actions. The CLI reaches the same
+handler:
 
-**Actions**
+\`\`\`
+archgen-skill codegraph status            # read-only
+archgen-skill codegraph ensure            # PLAN only — nothing is written
+archgen-skill codegraph ensure --yes      # install (first time only) + wire + index
+archgen-skill codegraph wire --yes        # wire the harnesses only
+\`\`\`
+
+**Actions** (when the full profile publishes the tool)
 | action | what it does |
-|---|---|---|
+|---|---|
 | \`ensure\` | install missing CLI + wire MCPs + build index |
 | \`status\` | installed / wired / indexed (read-only, offline) |
 | \`wire\` | wire the MCP into detected harnesses only |
@@ -207,32 +215,57 @@ Installs, wires, or inspects CodeGraph (source-symbol index) and its MCP server.
 - The index is built ONCE per project; the server watcher keeps it live—never re-index by hand.
 - Config writes need \`approve:true\`; without it you get the PLAN, nothing is written.
 - Only DETECTED harnesses are touched.
-- Telemetry is ON by default on a fresh install and reports a machine ID; it is disclosed—never claim "100% local".`,
+- The npx FALLBACK spec is pinned, the global install is never upgraded, and the MCP entry carries the curated tool set plus \`CODEGRAPH_TELEMETRY=0\` — see \`§platforms/codegraph-tools\`.`,
 
-  setup: `# archgen_setup
+  setup: `# archgen_setup — the ADMIN surface
 
 Installation, MCP wiring, and health.
 
-**When**
-- Tools missing: \`npx archgen-skill init\`, then reload the harness.
-- Install into other harnesses: \`install_mcp\`. Check an install: \`doctor\`.
+**Not published by default.** The lean profile does not expose this tool to the model: it can install
+software and write harness configuration. The CLI reaches the same handler:
 
-**Actions**
+\`\`\`
+archgen-skill doctor                      # health
+archgen-skill mcp list                    # the detected harnesses + their config paths
+archgen-skill mcp add --yes               # wire the archgen MCP (PLAN without --yes)
+archgen-skill mcp remove --yes            # remove the entries this server wrote
+archgen-mcp bootstrap --project <dir>     # wire + ensure CodeGraph
+\`\`\`
+
+**Actions** (when the full profile publishes the tool)
 | action | what it does |
-|---|---|---|
+|---|---|
 | \`doctor\` | issues only (WARN/FAIL) + status/summary/versions + \`serverActions\` |
 | \`bootstrap\` | wire archgen MCP + ensure CodeGraph in one call; a no-op when already configured |
 | \`install_mcp\` | write ONLY the archgen MCP entry into detected harnesses |
 | \`uninstall_mcp\` | remove the archgen MCP entries this server wrote |
 | \`harnesses\` | detected harnesses + exact config path/key |
-| \`harness_info\` | platform capabilities; no argument = detect current |
 
 **Gotchas**
 - Every config write needs \`approve:true\`; without it you get the PLAN, nothing is written.
-- \`location\`: project | global | both. Global writes touch \$HOME.
+- \`location\`: project | global | both. Global writes touch $HOME.
 - Known top-level keys: \`mcpServers\` / \`servers\` / \`mcp\` / \`context_servers\`—never assume one.
 - \`doctor\` also reports \`serverActions\`: the actions this server offers. Fewer actions in YOUR tool schema means your client holds a stale catalog—reload the session.
-- \`harness_info\` with NO harness returns the fallback procedure for a platform it could not detect. With a harness NAME it returns that harness's capabilities — and a harness the registry does not know is refused, with the list of the ones it does.`,
+- For the RUNTIME facts (which harness am I on?), use \`archgen_platform\` — it is read-only and always published.`,
+
+  platform: `# archgen_platform
+
+The runtime facts about THIS harness — read-only, and the only tool that answers "where do skills
+go on this harness?".
+
+**When**
+- Before editing a harness config or spawning sub-agents (Hard Rule 7).
+- To learn the MCP config path, the top-level key, the restart semantics and the sub-agent mechanism.
+
+**Returns**
+- \`primary\` — the detected harness (the detection order lives in the registry).
+- \`detected\` — the ids of every harness present on this machine.
+- \`capabilities\` — skill paths, MCP config path + key (project and global), the platform own \`mcp add\` CLI, restart semantics, sub-agent dispatch.
+- \`codegraph\` — whether this project has an index, the installed version, the install and wire specs the policy names, and the tools the MCP entry exposes.
+
+**Gotchas**
+- Name a harness (\`harness:'claude'\`) to get that harness's row instead of the detected one.
+- An UNKNOWN platform is not an error: \`reason\` carries the message and \`nextStep\` the procedure (web-search the official docs, propose, get approval).`,
 
   skills: `# archgen_skills
 
@@ -285,7 +318,7 @@ Loads archgen's own protocol documents—the judgment layer: interviewing, artif
 
   all: `# archgen — the complete tool surface
 
-Nine tools, one domain each. The server resolves paths, validates input, and returns \`{ok,data,error,meta}\`; \`ok:false\` carries a typed \`error.code\`.
+Eight published tools, one domain each, plus two admin tools the CLI reaches. The server resolves paths, validates input, and returns \`{ok,data,error,meta}\`; \`ok:false\` carries a typed \`error.code\`.
 
 | tool | domain | use it for |
 |---|---|---|
@@ -293,18 +326,19 @@ Nine tools, one domain each. The server resolves paths, validates input, and ret
 | \`archgen_tasks\` | execution | next wave / set_status / list / snapshot / contract |
 | \`archgen_docs\` | artifacts | digest / section / map / refs / index / validate |
 | \`archgen_registry\` | registry | show / update the AGENTS.md features table |
-| \`archgen_codegraph\` | code index | ensure / status / wire CodeGraph + its MCP |
-| \`archgen_setup\` | install | doctor / bootstrap / install_mcp / uninstall_mcp / harnesses / harness_info |
 | \`archgen_skills\` | capability skills | match / install / installed / load / digest / list |
 | \`archgen_refs\` | protocols | list / index / read / search |
 | \`archgen_help\` | this | a detailed briefing for one domain |
+| \`archgen_platform\` | runtime | this harness: skill paths, MCP config, sub-agents, CodeGraph index |
+
+**The admin surface** — \`archgen_setup\` (doctor / bootstrap / install_mcp / uninstall_mcp / harnesses) and \`archgen_codegraph\` (ensure / status / wire) install software and write harness configuration. The lean profile does not publish them to the model; the CLI reaches the same handlers (\`archgen-skill mcp add|remove|list\`, \`archgen-skill codegraph ensure|wire|status\`). The \`full\` profile publishes them (\`ARCHGEN_TOOL_PROFILE=full\`).
 
 **Error codes**
 \`INVALID_INPUT\` · \`NOT_FOUND\` · \`CYCLE\` · \`OWNERSHIP_CONFLICT\` · \`CONFLICT\` · \`PERMISSION_DENIED\` · \`UNAVAILABLE\` · \`TIMEOUT\` · \`INTERNAL\`
 
 **Fetch, don't dump**
 - Every collection-shaped tool takes \`limit\` and \`offset\` (default 50).
-- One-item narrowing: \`taskId\` (tasks, coverage), \`skillId\` (skills), \`file\`+\`section\` (docs), \`harness\` (setup).
+- One-item narrowing: \`taskId\` (tasks, coverage), \`skillId\` (skills), \`file\`+\`section\` (docs), \`harness\` (platform).
 - \`meta\` carries \`available\` (what else exists), \`more\` (the call that fetches one item), and \`next\` (the next slice); \`meta.total\` is always the full count.
 
 **Call \`archgen_help{topic}\`** for the full briefing on any domain.`,
@@ -312,7 +346,7 @@ Nine tools, one domain each. The server resolves paths, validates input, and ret
 
 const schema = z.object({
   topic: z
-    .enum(['plan', 'tasks', 'docs', 'registry', 'codegraph', 'setup', 'skills', 'refs', 'yaml', 'all'])
+    .enum(['plan', 'tasks', 'docs', 'registry', 'codegraph', 'setup', 'platform', 'skills', 'refs', 'yaml', 'all'])
     .describe('Domain to explain.'),
   projectRoot: projectRootArg,
 });

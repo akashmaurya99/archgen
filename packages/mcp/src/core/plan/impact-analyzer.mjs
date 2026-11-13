@@ -37,7 +37,13 @@ export function analyzeImpact(file, target) {
       .filter((t) => (Array.isArray(t.artifacts) ? t.artifacts : []).includes(target) || ownedPaths(t).includes(target))
       .map((t) => t.id);
     if (seeds.length === 0) {
-      throw notFound(`no task claims '${target}' (not an id, artifact, or ownership glob)`, { target });
+      throw notFound(`no task claims '${target}' (not an id, artifact, or ownership glob)`, {
+        ...hint({
+          action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }),
+          reason: 'the list carries every task id; the target must be one of them, an artifact, or an owned path.',
+        }),
+        target,
+      });
     }
   }
 

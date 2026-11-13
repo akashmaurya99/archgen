@@ -114,7 +114,16 @@ function mutateStatus(file, taskId, nextStatus, force) {
   if (prev === 'done' && nextStatus !== 'done' && !force) {
     throw conflict(
       `refusing ${prev} -> ${nextStatus} for '${taskId}' without force (reopening completed work needs explicit intent)`,
-      { file, taskId, from: prev, to: nextStatus },
+      {
+        ...hint({
+          action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: '<tasks.yaml>', taskId, status: nextStatus, force: true }),
+          reason: 'reopening completed work is deliberate — pass force:true.',
+        }),
+        file,
+        taskId,
+        from: prev,
+        to: nextStatus,
+      },
     );
   }
 

@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createServer, TOOL_NAMES } from '../../packages/mcp/src/server.mjs';
+import { createServer, exposedToolNames } from '../../packages/mcp/src/server.mjs';
 import { getToolSpec } from '../../packages/mcp/src/tools/_register.mjs';
 
 createServer();
@@ -97,7 +97,7 @@ test('the skill tool table names exactly the actions the schemas offer', () => {
   const block = skill.split('<!-- archgen:catalog:start -->')[1]?.split('<!-- archgen:catalog:end -->')[0];
   assert.ok(block, 'the skill must carry the generated catalog block');
 
-  for (const name of TOOL_NAMES) {
+  for (const name of exposedToolNames()) {
     const spec = getToolSpec(name);
     const actions = spec.inputSchema.shape?.action?._def?.values
       ?? spec.inputSchema.shape?.action?.options

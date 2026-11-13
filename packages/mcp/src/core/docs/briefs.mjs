@@ -43,7 +43,7 @@ function resolveIncludes(text, briefsDir) {
     if (!existsSync(path)) {
       throw invalidInput(
         `brief fragment '${name}' is missing`,
-        { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete — reinstall archgen-mcp." }), fragment: name },
+        { ...hint({ action: 'archgen-skill doctor', reason: "the server package is incomplete — reinstall archgen-mcp." }), fragment: name },
       );
     }
     return readFileSync(path, 'utf8').trim();
@@ -70,7 +70,14 @@ export function loadBrief(briefsDir, kind, vars = {}) {
   try {
     text = readFileSync(path, 'utf8');
   } catch {
-    throw notFound(`brief template '${key}.md' is missing`, { kind, path });
+    throw notFound(`brief template '${key}.md' is missing`, {
+      ...hint({
+        action: toolCall('archgen_help', { topic: 'plan' }),
+        reason: 'the server package is incomplete — reinstall archgen-mcp.',
+      }),
+      kind,
+      path,
+    });
   }
   // The shared fragments are pasted in BEFORE the placeholder check, so a
   // fragment's own text can never be mistaken for a missing value.
@@ -174,7 +181,7 @@ export function renderBriefContext(ctx = {}) {
   out.push(
     'The read-only archgen actions are yours for facts: archgen_plan{validate,verify,graph,impact,coverage,' +
       'profile,scaffold,brief}, archgen_docs, archgen_refs, archgen_help, archgen_tasks{next,list,contract}, ' +
-      'archgen_codegraph{status}, archgen_setup{doctor,harnesses,harness_info}, ' +
+      'archgen_platform, ' +
       'archgen_skills{match,installed,load,digest,list}, archgen_registry{show}.',
   );
   out.push(

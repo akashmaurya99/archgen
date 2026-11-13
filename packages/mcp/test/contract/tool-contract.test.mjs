@@ -389,14 +389,17 @@ test('tasks{next, taskId} does not claim a DONE task does not exist', async () =
   }
 });
 
-test('harness_info answers with ONE shape, named or not', async () => {
-  const withHarness = await call('archgen_setup', { action: 'harness_info', harness: 'claude' });
-  const without = await call('archgen_setup', { action: 'harness_info' });
+test('archgen_platform answers with ONE shape, named or not', async () => {
+  // The runtime facts have ONE owner: `archgen_platform`, a read-only tool
+  // that is always published. The admin tool used to answer the same
+  // question in a second shape — a shape the model could not even call.
+  const withHarness = await call('archgen_platform', { harness: 'claude' });
+  const without = await call('archgen_platform', {});
   assert.ok(withHarness.ok, withHarness.error?.message);
   assert.ok(without.ok, without.error?.message);
   const a = Object.keys(withHarness.data).sort();
   const b = Object.keys(without.data).sort();
-  assert.deepEqual(a, b, `harness_info must have ONE shape:\n  named: ${a.join(',')}\n  detected: ${b.join(',')}`);
+  assert.deepEqual(a, b, `archgen_platform must have ONE shape:\n  named: ${a.join(',')}\n  detected: ${b.join(',')}`);
   // The named harness's capabilities ride INSIDE the envelope.
   assert.ok(withHarness.data.capabilities, 'the named harness must carry its capabilities');
   assert.equal(withHarness.data.harness, 'claude');

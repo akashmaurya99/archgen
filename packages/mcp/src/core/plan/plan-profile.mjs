@@ -97,7 +97,7 @@ export function buildPlanProfile(ladder, input = {}) {
   const spec = ladder?.profile;
   if (!spec) throw invalidInput(
     'depth-ladder.json has no profile rules',
-    { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: 'depth-ladder.json' },
+    { ...hint({ action: 'archgen-skill doctor', reason: "the server package is incomplete \u2014 reinstall archgen-mcp." }), asset: 'depth-ladder.json' },
   );
 
   const intent = String(input.intent ?? '').toUpperCase();

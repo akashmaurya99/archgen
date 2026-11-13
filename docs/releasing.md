@@ -73,15 +73,22 @@ version is hardcoded anywhere else.
 ### Verify — zero drift, everything green
 
 ```sh
-npm run sync:check     # derived files + lockfiles match archgen.config.json
-npm run test:versions  # every version surface agrees, and the version lives in one place
-npm run test:contract  # the declared minimum is satisfiable by this release
-npm run test:budget    # the always-on context is within its ceiling
-npm test               # every suite CI runs
-npm run test:fixtures  # the four end-to-end drivers, against the real tools
-npm run test:immutable # the suites did not mutate the repository
-bash scripts/smoke.sh  # the RELEASE itself: the packed tarballs, installed and driven
+npm run sync:check
+npm run test:versions
+npm run test:contract
+npm run test:budget
+npm test
+npm run test:fixtures
+npm run test:immutable
+bash scripts/smoke.sh
 ```
+
+In order: the derived files and lockfiles match `archgen.config.json`; every
+version surface agrees and the version lives in one place; the declared
+minimum server version is satisfiable by this release; the always-on context
+is within its ceiling; every suite CI runs passes; the four end-to-end drivers
+pass against the real tools; the suites did not mutate the repository; and
+the release itself — the packed tarballs, installed and driven — works.
 
 `scripts/smoke.sh` is the one that answers "will this work for a user?". It
 packs both npm tarballs — the exact bytes the registry would serve — installs
@@ -117,13 +124,15 @@ Changelog format). State the **publish order** and the two tags.
 
 ```sh
 git add -A && git commit -m "chore(release): x.y.z"
-
-# in THIS order — one tag at a time, and check each run before the next
 git tag -a vmcp-x.y.z      -m "archgen-mcp x.y.z — the MCP server that owns every archgen capability"
-git push origin vmcp-x.y.z          # → npm publish archgen-mcp
+git push origin vmcp-x.y.z
 git tag -a vcli-x.y.z      -m "archgen-skill x.y.z — the installer; wires the MCP server into every detected harness"
-git push origin vcli-x.y.z          # → npm publish archgen-skill
+git push origin vcli-x.y.z
 ```
+
+Push the tags in THIS order — one at a time, and check each run before the
+next. The first push publishes `archgen-mcp`; the second publishes
+`archgen-skill`.
 
 **PUBLISH ORDER — the MCP server FIRST.** The CLI's installer resolves
 `archgen-mcp` from the npm registry, so a release that advertises the MCP
@@ -213,10 +222,13 @@ depends on the official MCP SDK.
 
 ```sh
 cd packages/mcp
-npm ci                   # the committed lockfile is the source of truth
-npm test                 # gates first
-npm publish              # prepublishOnly re-derives the version from archgen.config.json
+npm ci
+npm test
+npm publish
 ```
+
+The committed lockfile is the source of truth, the gates run first, and
+`prepublishOnly` re-derives the version from `archgen.config.json`.
 
 CI publishes this package automatically on the `vmcp-<version>` tag (see the
 publish table above); the local command is the manual equivalent.
@@ -237,9 +249,12 @@ files under `vendor/` directly; they are generated from the canonical skill.
 
 ```sh
 cd packages/cli
-npm test                 # gates first
-npm publish              # syncs config + vendor automatically via prepublishOnly
+npm test
+npm publish
 ```
+
+The gates run first, and `publish` syncs the config and the vendor mirror
+automatically via `prepublishOnly`.
 
 CI publishes this package automatically on the `vcli-<version>` tag.
 

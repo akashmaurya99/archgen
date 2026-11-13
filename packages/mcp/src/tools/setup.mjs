@@ -8,7 +8,6 @@ import { manageCodegraph, assertLocation, findCodegraph, codegraphState } from '
 import { shapeReport } from '../core/harness/codegraph-manager.mjs';
 import { getToolSpec, registeredToolNames } from './_register.mjs';
 import { detectHarnesses } from '../core/harness/harness-wiring.mjs';
-import { platformCapabilities, detectHarness } from '../core/harness/platform-caps.mjs';
 import { checkCapability } from '../core/protocol/compat.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
 import { toolCall } from '../core/protocol/call.mjs';
@@ -18,18 +17,28 @@ import { hint } from '../core/protocol/guidance.mjs';
 /**
  * The arguments each action takes. An argument that belongs to another
  * action is a typed error, not a silent no-op.
+ *
+ * There is no `harness_info` here any more: the runtime facts about the
+ * harness have ONE owner, `archgen_platform` — a read-only tool that is
+ * always published. Two tools answering "which harness am I on?" is two
+ * shapes to keep in step, and the admin copy was the one the model could
+ * not call.
  */
 const SETUP_ACTION_ARGS = {
-  doctor: ['location', 'approve', 'limit', 'offset'],
+  // The doctor READS: it reports versions, the wiring state and the action
+  // inventory. It writes nothing, so it takes no approval flag.
+  doctor: ['location', 'limit', 'offset'],
   bootstrap: ['location', 'approve', 'telemetry', 'noCodegraph', 'noMcp', 'limit', 'offset'],
   install_mcp: ['location', 'approve', 'telemetry', 'limit', 'offset'],
   uninstall_mcp: ['location', 'approve', 'limit', 'offset'],
-  harnesses: ['location', 'approve', 'harness', 'limit', 'offset'],
-  harness_info: ['location', 'approve', 'harness', 'limit', 'offset'],
+  harnesses: ['location', 'harness', 'limit', 'offset'],
 };
 
+/** The actions this tool serves — the schema's enum, as a set. */
+const SETUP_ACTIONS = new Set(Object.keys(SETUP_ACTION_ARGS));
+
 const schema = z.object({
-  action: z.enum(['doctor', 'bootstrap', 'install_mcp', 'uninstall_mcp', 'harnesses', 'harness_info']),
+  action: z.enum(['doctor', 'bootstrap', 'install_mcp', 'uninstall_mcp', 'harnesses']),
   location: z.enum(['project', 'global', 'both']).optional().describe(LOCATION_DESC),
   approve: z.boolean().optional().describe(APPROVE_DESC),
   telemetry: z.enum(['keep', 'off', 'on']).optional().describe('CodeGraph anonymous telemetry; off is machine-wide.'),
@@ -116,46 +125,20 @@ export function registerSetupTools(server) {
       const location = assertLocation(args.location ?? 'both');
       const approved = args.approve === true;
 
-      if (args.action === 'harness_info') {
-        const caps = loadAsset('platform-capabilities.json');
-        // ONE SHAPE, always. The answer used to be the capability row when
-        // a harness was named, the detection block when it was not, and a
-        // third block when detection threw — so a client had to branch on
-        // the RESPONSE to know what it got.
-        const base = {
-          harness: args.harness ?? null,
-          detected: null,
-          primary: null,
-          capabilities: null,
-          harnesses: Object.entries(caps.harnesses ?? {}).map(([id, h]) => ({ id, label: h.label })),
-          universal: caps.universal ?? null,
-          // ALWAYS present, so the key set does not depend on which branch
-          // answered.
-          reason: null,
-          nextStep: null,
-        };
-        if (args.harness) {
-          // The named harness's row goes INSIDE the envelope, not instead
-          // of it. A harness the registry does not know is a CALLER mistake
-          // and is refused with the list of the ones it does know; the
-          // fallback below is for a platform it could not DETECT.
-          return { ...base, harness: args.harness, capabilities: platformCapabilities(caps, args.harness) };
-        }
-        try {
-          const detected = detectHarness(caps, { projectRoot: ctx.projectRoot, home: ctx.home });
-          return {
-            ...base,
-            detected: detected.detected ?? [],
-            primary: detected.primary ?? null,
-            capabilities: detected.capabilities ?? null,
-          };
-        } catch (e) {
-          return {
-            ...base,
-            reason: e instanceof Error ? e.message : String(e),
-            nextStep: 'Unknown platform: web-search the official MCP + skills docs, propose findings, get user approval.',
-          };
-        }
+      // An UNKNOWN action must not fall through to the next branch. The
+      // chain below ends with the bootstrap path, so `harness_info` (removed
+      // in this release) used to resolve to a BOOTSTRAP — a machine-level
+      // action where the caller asked for a read. The schema refuses it for a
+      // client; the handler refuses it for anything that calls it directly.
+      if (!SETUP_ACTIONS.has(args.action)) {
+        throw invalidInput(
+          `unknown action '${args.action}'`,
+          {
+            ...hint({ action: toolCall('archgen_help', { topic: 'setup' }), reason: 'the briefing lists every action and what it does.' }),
+            action: args.action,
+            available: [...SETUP_ACTIONS],
+          },
+        );
       }
 
       if (args.action === 'harnesses') {
@@ -253,7 +236,7 @@ export function registerSetupTools(server) {
           status: codegraph ? 'OK' : 'WARN',
           msg: codegraph
             ? `codegraph ${codegraph.version} at ${codegraph.bin}`
-            : 'codegraph not installed — run archgen_codegraph { action: "ensure" }',
+            : 'codegraph not installed — run archgen-skill codegraph ensure --yes',
         });
         // THE WIRING. `archgenMcpStatus` computes which harness configs
         // carry the server — and the doctor threw the answer away, so it
@@ -264,9 +247,9 @@ export function registerSetupTools(server) {
         checks.push({
           status: targets.length === 0 ? 'WARN' : wired.length === 0 ? 'WARN' : 'OK',
           msg: targets.length === 0
-            ? 'no harness config found — run archgen_setup { action: "install_mcp", approve: true }'
+            ? 'no harness config found — run archgen-skill mcp add --yes'
             : wired.length === 0
-              ? `the server is wired into NO harness (${targets.length} config(s) found) — run archgen_setup { action: "install_mcp", approve: true }`
+              ? `the server is wired into NO harness (${targets.length} config(s) found) — run archgen-skill mcp add --yes`
               : `wired into ${wired.map((t) => `${t.harness} (${t.location})`).join(', ')}`,
         });
         checks.push({

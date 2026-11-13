@@ -25,6 +25,7 @@ the ones that make the plan wrong.
 ## What the floor checks
 
 - cycles, dangling `depends_on` references, and plan↔task coverage;
+- a plan section of its own for every task (`PLAN_TASK_SECTION_MISSING`);
 - same-wave ownership overlap, and one task's glob *containing* another's
   (reported as a warning — a later wave can overwrite the earlier task);
 - the mirrored test tree (when `architecture.yaml` declares
@@ -38,6 +39,8 @@ the ones that make the plan wrong.
   artifact on disk has a decision;
 - every declared path owned by a task, and every declared decision backed by
   its file;
+- every waiver carrying the fields that make it an approval
+  (`WAIVER_INVALID`);
 - `parallel_group` labels that match the computed wave.
 
 A rule that cannot run — because the plan declares no `toolchain` roots, or
@@ -51,10 +54,10 @@ Every finding carries a stable code, so CI can group and count:
 | Group | Codes |
 |---|---|
 | Profile | `PROFILE_NOT_RECORDED`, `PROFILE_CREATE_MISSING`, `PROFILE_OMIT_PRESENT`, `PROFILE_REUSE_MISSING`, `PROFILE_UNRECORDED`, `PROFILE_DECISION_INVALID` |
-| Traceability | `MATRIX_UNKNOWN_TASK`, `MATRIX_INDEX_OUT_OF_RANGE`, `MATRIX_CLAIM_MISMATCH`, `MATRIX_DANGLING_CLAIM`, `REQ_UNCITED`, `REQ_UNKNOWN` |
-| Structure | `MIRROR_MISSING`, `DECISION_MISSING`, `PATH_UNOWNED`, `WAVE_LABEL_DRIFT`, `WAVE_GROUP_SPANS` |
-| Task file | `NO_ACCEPTANCE`, `EMPTY_OWNERSHIP`, `OWNERSHIP_OVERLAP`, `CYCLE`, `DANGLING_DEP`, `PLAN_TASK_COVERAGE`, `UNKNOWN_TASK_ID` |
-| Warnings (never blocking) | `CONFIG_NOT_ENFORCED`, `OWNERSHIP_CONTAINED`, `WAIVER_COUNT_MISMATCH`, `GATE_IDENTITY_MISSING` |
+| Traceability | `MATRIX_UNKNOWN_TASK`, `MATRIX_INDEX_OUT_OF_RANGE`, `MATRIX_CLAIM_MISMATCH`, `MATRIX_DANGLING_CLAIM`, `MATRIX_CITATION_UNRESOLVED`, `MATRIX_CLAIMS_UNDECLARED`, `REQ_UNCITED`, `REQ_UNKNOWN` |
+| Structure | `MIRROR_MISSING`, `DECISION_MISSING`, `PATH_UNOWNED`, `WAVE_LABEL_DRIFT`, `WAVE_GROUP_SPANS`, `WAIVER_INVALID` |
+| Task file | `UNPARSEABLE`, `NO_TASKS`, `DUPLICATE_TASK_ID`, `NO_ACCEPTANCE`, `EMPTY_OWNERSHIP`, `OWNERSHIP_OVERLAP`, `CYCLE`, `DANGLING_DEP`, `PLAN_TASK_COVERAGE`, `PLAN_TASK_SECTION_MISSING`, `UNKNOWN_TASK_ID` |
+| Warnings (never blocking) | `CONFIG_NOT_ENFORCED`, `OWNERSHIP_CONTAINED`, `WAIVER_COUNT_MISMATCH`, `GATE_IDENTITY_MISSING`, `TASK_FIELD_UNKNOWN`, `ARTIFACT_NOT_OWNED`, `PLAN_TASK_TITLE_DRIFT`, `CONFIG_UNPARSEABLE`, `PROFILE_UNPARSEABLE`, `ARG_IGNORED` |
 
 `archgen_plan{action:'verify'}` returns `issues`, `warnings`, and the counts
 `issueCodes` / `warningCodes`.

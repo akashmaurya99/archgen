@@ -4,7 +4,7 @@
 //   node context-budget.mjs [--skill-dir <dir>] [--project <dir>] [--slug <name>]
 //                           [--json] [--windows <list>] [--budget <n>] [--tokenizer <pkg>]
 // Exit 0 ok · 1 over --budget · 2 invalid input · 4 unreadable input.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -306,6 +306,270 @@ async function auditCatalog(mcpDir) {
   };
 }
 
+/**
+ * Measure the REAL MCP wire catalog.
+ *
+ * `--catalog` prints name + description + inputSchema. The wire protocol's
+ * `tools/list` carries MORE: the title, the output schema and the tool
+ * annotations. A budget that measured only the projection UNDERCOUNTED the
+ * permanent context tax by a third — so the gate was green while the model
+ * paid for bytes no report showed.
+ *
+ * This speaks the protocol to the real binary over stdio — the same path a
+ * client takes — and measures what comes back.
+ *
+ * @param {string} mcpDir the packages/mcp directory
+ * @returns {{available: boolean, tools: Array<{name: string, tokens: number}>, totalTokens: number, bytes: number, reason?: string}}
+ */
+async function auditWireCatalog(mcpDir) {
+  const bin = join(mcpDir, 'bin', 'archgen-mcp.mjs');
+  if (!existsSync(bin)) {
+    return { available: false, tools: [], totalTokens: 0, bytes: 0, reason: `no MCP package at ${mcpDir}` };
+  }
+  const list = await listMcpTools(bin, null);
+  if (!list.ok) {
+    return { available: false, tools: [], totalTokens: 0, bytes: 0, reason: list.reason };
+  }
+  const tools = list.tools.map((t) => ({ name: t.name, tokens: estimateTokens(JSON.stringify(t)) }));
+  return {
+    available: true,
+    tools,
+    totalTokens: tools.reduce((n, t) => n + t.tokens, 0),
+    bytes: list.bytes,
+  };
+}
+
+/**
+ * Ask an MCP server for its tools over stdio.
+ *
+ * @param {string} bin the server binary
+ * @param {Record<string, string|undefined>|null} env extra environment
+ * @returns {Promise<{ok: boolean, tools: any[], bytes: number, reason?: string}>}
+ */
+function listMcpTools(bin, env) {
+  return new Promise((resolvePromise) => {
+    const child = spawn(process.execPath, [bin], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: env ? { ...process.env, ...env } : process.env,
+    });
+    let stdout = '';
+    let buffer = '';
+    const pending = new Map();
+    let nextId = 1;
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { child.kill(); } catch { /* already gone */ }
+      resolvePromise(result);
+    };
+    const timer = setTimeout(() => finish({ ok: false, tools: [], bytes: 0, reason: 'the server did not answer tools/list in time' }), 20000);
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+      buffer += chunk;
+      let idx;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        let msg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.id !== undefined && pending.has(msg.id)) {
+          pending.get(msg.id)(msg);
+          pending.delete(msg.id);
+        }
+      }
+    });
+    const call = (method, params) => new Promise((res) => {
+      const id = nextId++;
+      pending.set(id, res);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+    });
+    child.on('error', (e) => finish({ ok: false, tools: [], bytes: 0, reason: e.message }));
+    (async () => {
+      const init = await call('initialize', {
+        protocolVersion: '2026-07-28',
+        capabilities: {},
+        clientInfo: { name: 'archgen-context-budget', version: '1.0.0' },
+      });
+      if (!init.result) {
+        finish({ ok: false, tools: [], bytes: 0, reason: 'the server did not initialize' });
+        return;
+      }
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })}\n`);
+      const listed = await call('tools/list', {});
+      const tools = listed.result?.tools ?? [];
+      finish({ ok: true, tools, bytes: JSON.stringify(tools).length });
+    })();
+  });
+}
+
+/**
+ * Measure the CodeGraph MCP catalog — the OTHER server a session may carry.
+ *
+ * CodeGraph is optional, but when it is wired its tools are in the model's
+ * context exactly like ArchGen's own. The allowlist comes from the policy
+ * asset, so the figure describes what the wire actually exposes.
+ *
+ * @param {string} mcpDir the packages/mcp directory
+ * @returns {{available: boolean, tools: Array<{name: string, tokens: number}>, totalTokens: number, bytes: number, reason?: string}}
+ */
+async function auditCodegraphCatalog(mcpDir) {
+  const policyPath = join(mcpDir, 'assets', 'codegraph-policy.json');
+  if (!existsSync(policyPath)) {
+    return { available: false, tools: [], totalTokens: 0, bytes: 0, reason: 'no CodeGraph policy asset' };
+  }
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'));
+  const baseline = readCodegraphBaseline();
+  const bin = which('codegraph');
+  if (!bin) {
+    // FAIL CLOSED. The CodeGraph catalog is the THIRD always-on term, and a
+    // CI runner has no codegraph installed — so measuring it live there
+    // yields zero, and a gate that counted zero would check the ceiling
+    // against 13,663 tokens while the real cost is 17,459. The baseline is
+    // the measured figure, so the gate always sees the truth.
+    if (baseline) {
+      return {
+        available: true,
+        estimated: true,
+        tools: baseline.tools.map((name) => ({ name, tokens: 0 })),
+        totalTokens: baseline.totalTokens,
+        bytes: 0,
+        reason: 'the codegraph CLI is not on PATH — the committed baseline was used',
+      };
+    }
+    return {
+      available: false,
+      tools: [],
+      totalTokens: 0,
+      bytes: 0,
+      reason: 'the codegraph CLI is not on PATH and there is no baseline',
+    };
+  }
+  const list = await listMcpToolsExternal(bin, ['serve', '--mcp', '--path', process.cwd()], {
+    CODEGRAPH_MCP_TOOLS: (policy.tools ?? []).join(','),
+    ...(policy.telemetry === 'off' ? { CODEGRAPH_TELEMETRY: '0' } : {}),
+  });
+  if (!list.ok) {
+    if (baseline) {
+      return {
+        available: true,
+        estimated: true,
+        tools: baseline.tools.map((name) => ({ name, tokens: 0 })),
+        totalTokens: baseline.totalTokens,
+        bytes: 0,
+        reason: `the CodeGraph server did not answer (${list.reason}) — the committed baseline was used`,
+      };
+    }
+    return { available: false, tools: [], totalTokens: 0, bytes: 0, reason: list.reason };
+  }
+  const tools = list.tools.map((t) => ({ name: t.name, tokens: estimateTokens(JSON.stringify(t)) }));
+  const totalTokens = tools.reduce((n, t) => n + t.tokens, 0);
+  // A live measurement BELOW the baseline means the surface shrank. The gate
+  // must not lower its floor because a CodeGraph release got smaller: the
+  // baseline is the number the ceiling was set against.
+  const floor = baseline?.totalTokens ?? 0;
+  return {
+    available: true,
+    estimated: false,
+    tools,
+    totalTokens: Math.max(totalTokens, floor),
+    bytes: list.bytes,
+    reason: totalTokens < floor ? `the live catalog (${totalTokens}) is below the baseline (${floor}); the baseline was used` : null,
+  };
+}
+
+/**
+ * The committed CodeGraph catalog baseline.
+ *
+ * @returns {{totalTokens: number, tools: string[]}|null}
+ */
+function readCodegraphBaseline() {
+  const path = join(SCRIPT_DIR, 'codegraph-catalog.baseline.json');
+  if (!existsSync(path)) return null;
+  try {
+    const data = JSON.parse(readFileSync(path, 'utf8'));
+    return typeof data.totalTokens === 'number' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ask an EXTERNAL MCP server for its tools over stdio.
+ *
+ * @param {string} bin the executable
+ * @param {string[]} args its arguments
+ * @param {Record<string, string|undefined>} env extra environment
+ * @returns {Promise<{ok: boolean, tools: any[], bytes: number, reason?: string}>}
+ */
+function listMcpToolsExternal(bin, args, env) {
+  return new Promise((resolvePromise) => {
+    const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...env } });
+    let buffer = '';
+    const pending = new Map();
+    let nextId = 1;
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { child.kill(); } catch { /* already gone */ }
+      resolvePromise(result);
+    };
+    const timer = setTimeout(() => finish({ ok: false, tools: [], bytes: 0, reason: 'the server did not answer tools/list in time' }), 20000);
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      let idx;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        let msg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.id !== undefined && pending.has(msg.id)) {
+          pending.get(msg.id)(msg);
+          pending.delete(msg.id);
+        }
+      }
+    });
+    const call = (method, params) => new Promise((res) => {
+      const id = nextId++;
+      pending.set(id, res);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+    });
+    child.on('error', (e) => finish({ ok: false, tools: [], bytes: 0, reason: e.message }));
+    (async () => {
+      const init = await call('initialize', {
+        protocolVersion: '2026-07-28',
+        capabilities: {},
+        clientInfo: { name: 'archgen-context-budget', version: '1.0.0' },
+      });
+      if (!init.result) {
+        finish({ ok: false, tools: [], bytes: 0, reason: 'the server did not initialize' });
+        return;
+      }
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })}\n`);
+      const listed = await call('tools/list', {});
+      const tools = listed.result?.tools ?? [];
+      finish({ ok: true, tools, bytes: JSON.stringify(tools).length });
+    })();
+  });
+}
+
+/** Locate an executable on PATH. */
+function which(bin) {
+  const dirs = String(process.env.PATH ?? '').split(':').filter(Boolean);
+  for (const d of dirs) {
+    const p = join(d, bin);
+    try { if (existsSync(p)) return p; } catch { /* not here */ }
+  }
+  return null;
+}
+
 // --- report ------------------------------------------------------------------
 // --- ON-DEMAND CONTENT -------------------------------------------------------
 //
@@ -405,6 +669,8 @@ function statusFor(pct) {
 const mcpDir = resolve(opts.mcpDir ?? join(SCRIPT_DIR, '..', '..', '..', 'packages', 'mcp'));
 const skill = skillDir ? await auditSkill(mcpDir) : null;
 const catalog = await auditCatalog(mcpDir);
+const wireCatalog = await auditWireCatalog(mcpDir);
+const codegraphCatalog = await auditCodegraphCatalog(mcpDir);
 const onDemand = auditOnDemand(mcpDir);
 const projectRoot = opts.project ? resolve(opts.project) : process.cwd();
 const artifacts = await auditArtifacts(projectRoot, opts.slug);
@@ -421,14 +687,38 @@ if (catalog.available) {
     tokens: catalog.totalTokens,
     note: `${catalog.tools.length} tools — the permanent context tax`,
   });
-  if (skill) {
-    scenarios.push({
-      id: 'always-on',
-      label: 'ALWAYS-ON: SKILL.md + MCP tool catalog',
-      tokens: skill.scenarios[0].tokens + catalog.totalTokens,
-      note: 'what the agent pays before it does anything',
-    });
-  }
+}
+if (wireCatalog.available) {
+  scenarios.push({
+    id: 'mcp-wire-catalog',
+    label: 'MCP tool catalog — the REAL tools/list payload',
+    tokens: wireCatalog.totalTokens,
+    note: `${wireCatalog.tools.length} tools — what the protocol actually carries`,
+  });
+}
+if (codegraphCatalog.available) {
+  scenarios.push({
+    id: 'codegraph-catalog',
+    label: 'CodeGraph tool catalog (the OTHER server, when wired)',
+    tokens: codegraphCatalog.totalTokens,
+    note: `${codegraphCatalog.tools.length} tools — the curated CodeGraph surface`,
+  });
+}
+// The ALWAYS-ON figure is the WIRE one: it is what a client injects, and it
+// is the number the ceiling is checked against. The projection stays in the
+// report for comparison.
+const alwaysOnTokens = skill && wireCatalog.available
+  ? skill.scenarios[0].tokens + wireCatalog.totalTokens + codegraphCatalog.totalTokens
+  : skill && catalog.available
+    ? skill.scenarios[0].tokens + catalog.totalTokens + codegraphCatalog.totalTokens
+    : null;
+if (alwaysOnTokens !== null) {
+  scenarios.push({
+    id: 'always-on',
+    label: 'ALWAYS-ON: SKILL.md + the tool catalogs the client injects',
+    tokens: alwaysOnTokens,
+    note: 'what the agent pays before it does anything',
+  });
 }
 for (const a of artifacts) {
   scenarios.push({
@@ -468,7 +758,13 @@ const overBudget = opts.budget !== null ? scenarios.filter((s) => s.tokens > opt
 // went green.
 const alwaysOn = scenarios.find((s) => s.id === 'always-on');
 const alwaysOnOver = opts.maxAlwaysOn !== null && alwaysOn !== undefined && alwaysOn.tokens > opts.maxAlwaysOn;
-const alwaysOnUnmeasured = opts.maxAlwaysOn !== null && alwaysOn === undefined;
+// An UNMEASURED always-on term must not pass a ceiling. The CodeGraph
+// catalog is one of those terms: a CI runner has no codegraph installed, so
+// without the committed baseline the third term would silently read zero and
+// the gate would check the ceiling against a number that is 3,796 tokens
+// short of the truth.
+const alwaysOnUnmeasured =
+  opts.maxAlwaysOn !== null && (alwaysOn === undefined || !codegraphCatalog.available);
 
 const report = {
   generator: 'archgen context-budget',
@@ -483,6 +779,21 @@ const report = {
     totalTokens: catalog.totalTokens,
     bytes: catalog.bytes,
     tools: catalog.tools,
+  },
+  wireCatalog: {
+    available: wireCatalog.available,
+    reason: wireCatalog.reason ?? null,
+    totalTokens: wireCatalog.totalTokens,
+    bytes: wireCatalog.bytes,
+    tools: wireCatalog.tools,
+  },
+  codegraphCatalog: {
+    available: codegraphCatalog.available,
+    estimated: codegraphCatalog.estimated === true,
+    reason: codegraphCatalog.reason ?? null,
+    totalTokens: codegraphCatalog.totalTokens,
+    bytes: codegraphCatalog.bytes,
+    tools: codegraphCatalog.tools,
   },
   onDemand,
   skill: skill && {
@@ -535,7 +846,7 @@ if (opts.json) {
   }
 
   if (catalog.available) {
-    line('MCP TOOL CATALOG (injected into every request)');
+    line('MCP TOOL CATALOG (name + description + input schema)');
     line(`  total ${fmtTokens(catalog.totalTokens)} tokens across ${catalog.tools.length} tools`);
     for (const t of [...catalog.tools].sort((a, b) => b.tokens - a.tokens)) {
       line(`    ${String(t.tokens).padStart(8)}  ${t.name}`);
@@ -543,6 +854,30 @@ if (opts.json) {
     line();
   } else if (catalog.reason) {
     line(`MCP TOOL CATALOG — not measured: ${catalog.reason}`);
+    line();
+  }
+
+  if (wireCatalog.available) {
+    line('MCP WIRE CATALOG (the REAL tools/list payload a client injects)');
+    line(`  total ${fmtTokens(wireCatalog.totalTokens)} tokens across ${wireCatalog.tools.length} tools`);
+    for (const t of [...wireCatalog.tools].sort((a, b) => b.tokens - a.tokens)) {
+      line(`    ${String(t.tokens).padStart(8)}  ${t.name}`);
+    }
+    line();
+  } else if (wireCatalog.reason) {
+    line(`MCP WIRE CATALOG — not measured: ${wireCatalog.reason}`);
+    line();
+  }
+
+  if (codegraphCatalog.available) {
+    line('CODEGRAPH TOOL CATALOG (the other server, when it is wired)');
+    line(`  total ${fmtTokens(codegraphCatalog.totalTokens)} tokens across ${codegraphCatalog.tools.length} tools${codegraphCatalog.estimated ? ' (baseline — the CLI is not installed here)' : ''}`);
+    for (const t of [...codegraphCatalog.tools].sort((a, b) => b.tokens - a.tokens)) {
+      line(`    ${String(t.tokens).padStart(8)}  ${t.name}`);
+    }
+    line();
+  } else if (codegraphCatalog.reason) {
+    line(`CODEGRAPH TOOL CATALOG — not measured: ${codegraphCatalog.reason}`);
     line();
   }
 

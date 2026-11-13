@@ -10,12 +10,12 @@ The procedures below govern **external** MCP servers and capability skills.
 
 ## INSTALL-MCP procedure (approval-gated)
 
-1. **Identify platform:** `archgen_setup{action:'harness_info'}` (or `§platforms/mcp-configuration`) for the config path, the top-level key, the URL field and the restart semantics. The key vocabulary lives in `§platforms/mcp-configuration` — one list, not two.
+1. **Identify platform:** `archgen_platform` (or `§platforms/mcp-configuration`) for the config path, the top-level key, the URL field and the restart semantics. The key vocabulary lives in `§platforms/mcp-configuration` — one list, not two.
 2. **Discover:** web-search current official install docs for the server and harness. Never guess commands or schemas.
 3. **Declare scope:** **GLOBAL** (recommended for cross-project tools like CodeGraph) or **HARNESS-SPECIFIC**.
 4. **Prefer native CLI:** Claude Code `claude mcp add --scope project --transport http <name> <url>`; Codex `codex mcp add <name> --url <url>`; Gemini CLI `gemini mcp add -s project -t http <name> <url>`.
 5. **Approval gate:** when editing config directly, show the exact diff (matching `packages/mcp/assets/mcp-template.json`) and **WAIT FOR EXPLICIT USER APPROVAL**.
-6. **Apply & verify:** write, apply restart/reload semantics, verify tool visibility.
+6. **Apply & verify:** never hand-edit a harness config — apply the change with the sanctioned command (`archgen-skill mcp add --project <dir> --location project --yes` for ArchGen's own server, the platform's own `mcp add` for an external one). It prints the PLAN first and writes only with `--yes`; then apply the restart/reload semantics and verify tool visibility.
 
 ## FETCH-SKILL procedure
 

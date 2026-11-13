@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "_note": "The measured CodeGraph MCP catalog — the THIRD always-on term, and the one a CI runner cannot measure (it has no codegraph installed). This baseline is what the budget gate falls back to, so the gate can never pass on a number that silently omits the CodeGraph server's tools. Re-measure with: npm run measure",
+  "totalTokens": 3796,
+  "tools": [
+    "codegraph_node",
+    "codegraph_explore",
+    "codegraph_files",
+    "codegraph_search",
+    "codegraph_callers",
+    "codegraph_callees",
+    "codegraph_impact",
+    "codegraph_status"
+  ]
+}

@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createServer, TOOL_NAMES } from '../src/server.mjs';
+import { createServer, exposedToolNames } from '../src/server.mjs';
 import { getToolSpec } from '../src/tools/_register.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +29,7 @@ const END = '<!-- archgen:catalog:end -->';
 /** The one-line summary of each tool, in the order the table lists them. */
 const SUMMARIES = {
   archgen_help: 'Full briefing for one domain—use it instead of guessing argument shapes',
+  archgen_platform: 'This harness: skill paths, MCP config, sub-agents, CodeGraph index',
 };
 
 /**
@@ -39,7 +40,6 @@ const SUMMARIES = {
  */
 const NOTES = {
   archgen_registry: 'the `AGENTS.md` features registry',
-  archgen_codegraph: 'CodeGraph & its MCP',
   archgen_refs: "topics: `interview`, `artifact-templates`, `orchestration`, `platforms`, `mcp-and-skills`, `code-standards`",
 };
 
@@ -51,14 +51,22 @@ function actionsOf(name) {
   return Array.isArray(options) ? options : [];
 }
 
-/** The rendered rows. The table header lives outside the generated block. */
+/**
+ * The rendered rows. The table header lives outside the generated block.
+ *
+ * The table lists the PUBLISHED tools — the ones the model actually sees.
+ * The admin tools (`archgen_setup`, `archgen_codegraph`) are not in it: a
+ * tool the model cannot call must not be advertised to it, and a row that
+ * names a tool the client never got was a way to spend a round-trip on a
+ * dead name.
+ */
 function render() {
-  return TOOL_NAMES.map((name) => {
+  return exposedToolNames().map((name) => {
     const actions = actionsOf(name);
     const summary = SUMMARIES[name] ?? '';
     const note = NOTES[name] ?? '';
-    // A tool with no action enum (archgen_help) has no list — its summary IS
-    // the row.
+    // A tool with no action enum (archgen_help, archgen_platform) has no
+    // list — its summary IS the row.
     if (!actions.length) return `| \`${name}\` | ${summary} |`;
     const list = actions.map((a) => `\`${a}\``).join(' · ');
     return `| \`${name}\` | ${list}${note ? ` — ${note}` : ''} |`;
@@ -92,7 +100,10 @@ export function catalogText() {
 
 function main() {
   const check = process.argv.includes('--check');
-  createServer();
+  // The DEFAULT profile, always: the table is a shipped artifact, and a
+  // developer with ARCHGEN_TOOL_PROFILE set must not regenerate it into
+  // something the published skill does not say.
+  createServer({ profile: 'lean' });
   const current = readFileSync(SKILL_MD, 'utf8');
   const next = applyCatalog(current);
   if (current === next) {

@@ -23,7 +23,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd, firstProse, toPurpose } from './docs.mjs';
 import { notFound } from '../protocol/errors.mjs';
-import { noSuchSection } from '../protocol/guidance.mjs';
+import { hint, noSuchSection } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
 
 /** The reference documents this server serves. */
@@ -72,14 +72,21 @@ export function resolveTopic(topic, opts) {
 function unknownTopic(topic, opts) {
   const known = REF_TOPICS.filter((t) => resolveTopic(t, opts) !== null);
   const missing = REF_TOPICS.filter((t) => !known.includes(t));
-  const hint = missing.length
+  // The local is NOT named `hint`: that is the imported helper that carries
+  // the next step, and a local of the same name shadowed it.
+  const installNote = missing.length
     ? {
         hint:
           `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} served only when the archgen skill is installed — ` +
           'run `npx archgen-skill init` to install it',
       }
     : {};
-  return notFound(`unknown reference '${topic}'`, { topic, known, ...hint });
+  return notFound(`unknown reference '${topic}'`, {
+    ...hint({ action: toolCall('archgen_refs', { action: 'list' }), reason: 'the list names every reference topic.' }),
+    topic,
+    known,
+    ...installNote,
+  });
 }
 
 /**

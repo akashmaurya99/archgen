@@ -46,7 +46,7 @@ export function compareVersions(a, b) {
   if (!x || !y) {
     throw invalidInput(
       `cannot compare versions: '${a}' and '${b}' are not both versions`,
-      { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the skill and the server must agree on a version." }), a, b },
+      { ...hint({ action: 'archgen-skill doctor', reason: "the skill and the server must agree on a version." }), a, b },
     );
   }
   for (const k of ['major', 'minor', 'patch']) {
@@ -71,7 +71,7 @@ export function satisfies(version, spec) {
   const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)/.exec(raw);
   if (!m) throw invalidInput(
     `unparseable version requirement '${spec}'`,
-    { ...hint({ action: toolCall('archgen_setup', { action: 'doctor' }), reason: "the skill declares the server version it needs." }), requirement: spec },
+    { ...hint({ action: 'archgen-skill doctor', reason: "the skill declares the server version it needs." }), requirement: spec },
   );
   const op = m[1] ?? '=';
   const want = { major: +m[2], minor: +m[3], patch: +m[4] };

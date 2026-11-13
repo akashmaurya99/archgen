@@ -42,8 +42,29 @@ test('every config names an entry shape the writer knows', () => {
   }
 });
 
-test('every config names a format the writer supports', () => {
-  const formats = new Set(['json', 'toml']);
+test('the two servers agree on the ENVIRONMENT KEY for every entry shape', () => {
+  // A client reads ONE key: OpenCode reads `environment`, everyone else
+  // reads `env`. The CodeGraph entry and the archgen entry describe the SAME
+  // platform, so they must agree about the key — otherwise an environment
+  // variable (the tool profile, the CodeGraph allowlist) lands where the
+  // client does not look, and the setting silently does nothing.
+  //
+  // This test caught exactly that: the archgen OpenCode entry had no
+  // `envKey`, so `ARCHGEN_TOOL_PROFILE` was written under `env` and ignored.
+  for (const key of Object.keys(registry.entries)) {
+    for (const [a, b] of BLOCKS) {
+      const left = registry[a][key]?.envKey ?? 'env';
+      const right = registry[b][key]?.envKey ?? 'env';
+      assert.equal(
+        left,
+        right,
+        `${key}: ${a} writes its environment under '${left}' and ${b} under '${right}' — the client reads ONE key`,
+      );
+    }
+  }
+});
+
+test('every config names a format the writer supports', () => {  const formats = new Set(['json', 'toml']);
   for (const [harness, spec] of Object.entries(registry.harnesses)) {
     for (const [loc, cfg] of Object.entries(spec.configs ?? {})) {
       assert.ok(

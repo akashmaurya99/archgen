@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # POSIX-only (Linux/macOS). On Windows use the cross-platform equivalent:
 #   npx archgen-skill init   (or: npx archgen-skill install)
-# every flag here has a matching --flag on the CLI; parity is enforced by
-# packages/cli tests + the managed-block byte comparison.
+# every flag here has a matching --flag on the CLI (--location-global is the
+# CLI's default), except --init, which is the CLI's `init` command; parity is
+# enforced by packages/cli tests + the managed-block byte comparison.
 # install.sh — multi-harness installer for the archgen skill.
-# Zero dependencies beyond coreutils; no sudo; no network.
+# Zero dependencies beyond coreutils; no sudo; the SKILL install needs no
+# network. The optional server bootstrap at the end does (it runs
+# `npx -y archgen-mcp bootstrap`) — skip it with --no-mcp --no-codegraph.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,7 +40,9 @@ LOCATION="global"
 
 usage() {
   cat <<EOF
-Usage: install.sh [--copy] [--project <dir>] [--uninstall] [--no-codegraph]
+Usage: install.sh [--copy] [--project <dir>] [--init [dir]] [--uninstall]
+                  [--no-codegraph] [--no-mcp]
+                  [--location-global|--location-project]
 
   --copy            make real copies instead of symlinks (default: symlink)
   --project <dir>   create + install into <dir>/.github/skills (GitHub Copilot,

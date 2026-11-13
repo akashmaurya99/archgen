@@ -332,7 +332,15 @@ export function docIndex(input, opts = {}) {
         return false;
       }
     });
-    if (!hit) throw notFound(`cannot read file ${fileScopeArg} (missing or not a file)`, { file: fileScopeArg });
+    if (!hit) {
+      throw notFound(`cannot read file ${fileScopeArg} (missing or not a file)`, {
+        ...hint({
+          action: toolCall('archgen_docs', { action: 'index', slugDir: '<artifact space>' }),
+          reason: 'the index lists every document in the artifact space.',
+        }),
+        file: fileScopeArg,
+      });
+    }
     let hitReal;
     try {
       hitReal = realpathSync(hit);
@@ -427,7 +435,15 @@ export function docIndex(input, opts = {}) {
     try {
       buildGraph(tasks);
     } catch (e) {
-      if (e instanceof GraphError) throw cycle(e.message, { file: tasksRel });
+      if (e instanceof GraphError) {
+        throw cycle(e.message, {
+          ...hint({
+            action: toolCall('archgen_plan', { action: 'validate', tasksYaml: '<tasks.yaml>' }),
+            reason: 'the validator names every cycle with the ids that form it.',
+          }),
+          file: tasksRel,
+        });
+      }
       throw e;
     }
     // Five broken classes — unknown TASK-nn, unresolved FR-id, dangling artifact
@@ -725,7 +741,15 @@ export function docIndex(input, opts = {}) {
         );
       }
       const doc = parsedDocAt(hit);
-      if (!doc) throw notFound(`cannot read section ${sectionRef} (unreadable)`, { section: sectionRef });
+      if (!doc) {
+        throw notFound(`cannot read section ${sectionRef} (unreadable)`, {
+          ...hint({
+            action: toolCall('archgen_docs', { action: 'digest', slugDir: '<artifact space>' }),
+            reason: 'the digest lists every document and its sections.',
+          }),
+          section: sectionRef,
+        });
+      }
 
       // The section NAME: an explicit `#anchor`, or — when the FILE came from
       // the `file` scope — the ref itself, which then names a heading.
@@ -734,6 +758,10 @@ export function docIndex(input, opts = {}) {
         const section = findSection(doc, wanted);
         if (!section) {
           throw notFound(`section ${sectionRef}: no section '${wanted}' in ${relFromRoot(hit)}`, {
+            ...hint({
+              action: toolCall('archgen_docs', { action: 'digest', slugDir: '<artifact space>' }),
+              reason: 'the digest lists every section slug in every document.',
+            }),
             section: sectionRef,
             file: relFromRoot(hit),
             available: buildSections(doc).map((s) => s.slug),
@@ -749,7 +777,13 @@ export function docIndex(input, opts = {}) {
     // whose file part was empty). Resolve it against the documents.
     const wanted = anchor && !filePart ? anchor : filePart;
     if (!wanted) {
-      throw notFound(`cannot read section ${sectionRef} (missing or not a file)`, { section: sectionRef });
+      throw notFound(`cannot read section ${sectionRef} (missing or not a file)`, {
+        ...hint({
+          action: toolCall('archgen_docs', { action: 'digest', slugDir: '<artifact space>' }),
+          reason: 'the digest lists every document and its sections — a section is named by slug, or by path#anchor.',
+        }),
+        section: sectionRef,
+      });
     }
 
     const { docs } = collectDocs();
@@ -794,6 +828,10 @@ export function docIndex(input, opts = {}) {
       for (const s of buildSections(doc)) available.push(`${relFromRoot(doc.abs)}#${s.slug}`);
     }
     throw notFound(`no section '${wanted}' under ${slug}`, {
+      ...hint({
+        action: toolCall('archgen_docs', { action: 'digest', slugDir: '<artifact space>' }),
+        reason: 'the digest lists every section slug in every document.',
+      }),
       section: sectionRef,
       available: available.slice(0, 50),
       availableCount: available.length,

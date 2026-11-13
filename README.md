@@ -21,6 +21,21 @@ Antigravity** — and any agentskills.io-compatible harness.
 
 ---
 
+## Contents
+
+| | |
+| --- | --- |
+| [What archgen does](#what-archgen-does) | The guarantees, and the mechanism behind each |
+| [Install](#install) | Project, global, and air-gapped installs |
+| [How it is deployed](#how-it-is-deployed) | The data plane the model sees, the control plane the CLI owns |
+| [Usage](#usage) | What you say, and what runs |
+| [The gates](#the-gates) | Why nothing is written before you approve it |
+| [Code intelligence](#code-intelligence) | CodeGraph: the whole surface, installed once |
+| [Token footprint](#token-footprint) | What a session actually pays |
+| [Repository layout](#repository-layout) | Where everything lives |
+| [Development](#development) | Running the gates, the fixtures, a release |
+| [Documentation](#documentation) | The rest of the docs |
+
 ## What archgen does
 
 AI coding agents fail at scale for predictable reasons: plans with hidden
@@ -40,52 +55,80 @@ these into a structural guarantee rather than a hope.
 
 ## Install
 
-**In the project root:**
+### In a project
 
 ```bash
 npx archgen-skill init
 ```
 
-Installs one canonical skill copy, wires the `archgen-mcp` server into every
-detected harness, and ensures CodeGraph. Then **reload your harness** — the
-tools are not available until you do.
+This installs one canonical skill copy, wires the `archgen-mcp` server into
+every detected harness, and ensures CodeGraph. **Reload your harness
+afterwards** — the tools are not available until you do.
 
-To install into every detected harness as a global skill:
+By default the skill is wired into your global harness directories. To make
+the project carry its own committed MCP configuration instead, add
+`--location-project`.
+
+### As a global skill
 
 ```bash
-npx archgen-skill install          # symlinks; --copy for real copies
+npx archgen-skill install
 ```
 
-**Or let the agent do it.** Copy the prompt in
+This links the skill into every detected harness directory. Pass `--copy` for
+real copies instead of symlinks.
+
+### Without npm
+
+[`install.sh`](install.sh) is a POSIX-only installer with zero dependencies
+beyond coreutils — no sudo, and no npm or registry for the skill itself (it
+copies the tree in the repository). It exists for no-registry and air-gapped
+machines, for installs you want to audit before running (it is one readable
+file), and as the reference implementation the npm CLI is parity-tested
+against. The optional server bootstrap it runs at the end **does** need Node
+and the npm registry — skip it with `--no-mcp --no-codegraph` on an offline
+machine.
+
+```bash
+git clone https://github.com/akashmaurya99/archgen.git
+cd archgen
+./install.sh --init
+./install.sh
+./install.sh --uninstall
+```
+
+The three commands are, in order: project setup with the server bootstrap,
+a global install for every detected harness, and an uninstall that removes
+exactly what was recorded.
+
+On Windows use `npx archgen-skill init` — it is the cross-platform equivalent.
+
+**Requirements:** Node.js ≥ 20. The CLI has zero npm dependencies; the MCP
+server it installs depends on the official Model Context Protocol SDK.
+
+### Let the agent do it
+
+Copy the prompt in
 [`docs/agent-setup-prompt.md`](docs/agent-setup-prompt.md) and paste it into
 your agent — it installs the system, verifies the install, and reports the
 next wave.
 
-**Without npm.** [`install.sh`](install.sh) is a POSIX-only installer with
-zero dependencies beyond coreutils — no sudo, no network, no registry. It
-exists for no-registry and air-gapped machines, for installs you want to audit
-before running (it is one readable file), and as the reference implementation
-the npm CLI is parity-tested against.
+## How it is deployed
 
-```bash
-git clone https://github.com/akashmaurya99/archgen.git
-cd archgen && ./install.sh --init      # project setup + server bootstrap
-./install.sh                            # global skill, every detected harness
-./install.sh --uninstall                # removes exactly what it recorded
-```
+Two planes, one implementation.
 
-On Windows use `npx archgen-skill init` — it is the cross-platform equivalent.
-**Requirements:** Node.js ≥ 20. The CLI has zero npm dependencies; the MCP
-server it installs depends on the official Model Context Protocol SDK.
+| Plane | Who | What it can do |
+| --- | --- | --- |
+| **Data plane** | the model, over MCP | plan, verify, execute, navigate artifacts, read the runtime facts |
+| **Control plane** | the CLI or CI | install packages, wire harness configs, change machine state |
 
-## The `archgen-mcp` server
+The admin tools (`archgen_setup`, `archgen_codegraph`) live on the control
+plane: in the default `lean` profile they are **not published to the model**
+at all, so their schemas never enter its context and the model cannot call
+them. The CLI reaches the same handlers, and every write command prints its
+plan first and writes only with `--yes`.
 
-Every deterministic capability lives in one MCP server, **`archgen-mcp`**,
-published to npm as [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp)
-and spoken over stdio by any MCP client.
-
-The agent calls it over MCP; the installer calls `archgen-mcp bootstrap`. One
-implementation, two ways in, so the two can never disagree.
+### The tools the model sees
 
 | Tool | Does |
 | --- | --- |
@@ -93,16 +136,34 @@ implementation, two ways in, so the two can never disagree.
 | `archgen_tasks` | next wave · set status · list · resume snapshot · worker contract |
 | `archgen_docs` | index · digest · section · refs · map · validate the user's artifacts |
 | `archgen_registry` | refresh or read the `AGENTS.md` features registry |
-| `archgen_codegraph` | install, wire and index CodeGraph |
-| `archgen_setup` | doctor · bootstrap · install/remove MCP · list harnesses · harness info |
 | `archgen_skills` | match · install · load · digest the capability-skill registry |
 | `archgen_refs` | load archgen's own protocol documents, section by section |
 | `archgen_help` | the full briefing for one tool domain |
+| `archgen_platform` | this harness: skill paths, MCP config, sub-agents, CodeGraph index |
+
+### The commands an operator runs
+
+```bash
+archgen-skill doctor
+archgen-skill mcp list
+archgen-skill mcp add --yes
+archgen-skill mcp remove --yes
+archgen-skill codegraph status
+archgen-skill codegraph ensure --yes
+archgen-skill codegraph wire --yes
+```
+
+Without `--yes` every command prints the plan and writes nothing.
+
+`ARCHGEN_TOOL_PROFILE=full` publishes the admin tools to the model as well.
+Use it for a trusted automation run, not for a model reading an untrusted
+repository.
 
 Every result is a typed envelope: `{ ok, data, error, meta }`. A failure is
 data, not a crash — `error.code` is one of `INVALID_INPUT`, `NOT_FOUND`,
 `CYCLE`, `OWNERSHIP_CONFLICT`, `CONFLICT`, `PERMISSION_DENIED`, `UNAVAILABLE`,
-`TIMEOUT`, `INTERNAL`.
+`TIMEOUT`, `INTERNAL`. The full envelope schema is published once, as the MCP
+resource `archgen://schema/envelope`.
 
 ## Usage
 
@@ -117,72 +178,130 @@ Open your project in any supported agent and talk naturally.
 | *"roll back the auth changes"* | Impact analysis → reverse-order revert plan → approval |
 | *"fetch the design skill"* | Capability-skill registry: match, install, apply |
 
+## The gates
+
 Nothing is written until three gates pass, in order, and never skipped — even
 for a SMALL scope. Gate depth scales with the profile, while the deterministic
-floor always runs. **The floor comes first**: `archgen_plan{action:'verify'}`
-is driven to `APPROVE` by the orchestrator — ownership overlap, the mirrored
-test tree, matrix citations, PRD requirement coverage, **the recorded profile
-decisions**, decision files, declared paths, wave labels — before any gate
-agent is dispatched, so the agent never spends a round on arithmetic. Every
-finding carries a stable **code**, so fixes batch by code and file and CI
-counts classes. The **verifier gate** then judges what the tools cannot, from
-rendered maps and a plan snapshot (so a stale brief is caught, not judged):
-every artifact has a consumer, every reuse names a real host path, every
-omission has a recorded reason, every matrix row cites an acceptance that
-verifies it. Findings are **BLOCKING**, **NIT** (cosmetic) or **OBSERVATION**
-(a capability nobody asked for) — the verifier may not invent requirements. The
-gate runs **at most two rounds**: round 1 exhaustive, round 2 a delta
-re-check, and what remains escalates to the user. The **plan review** then
-checks scope fit and minimalism, and the **user gate** presents the
-create/reuse/omit artifact list, the wave summary and the ownership map before
-asking for approval.
+floor always runs.
+
+**The floor comes first.** `archgen_plan{action:'verify'}` is driven to
+`APPROVE` by the orchestrator — ownership overlap, the mirrored test tree,
+matrix citations, PRD requirement coverage, the recorded profile decisions,
+decision files, declared paths, wave labels — before any gate agent is
+dispatched, so the agent never spends a round on arithmetic. Every finding
+carries a stable **code**, so fixes batch by code and file and CI counts
+classes.
+
+**The verifier gate** then judges what the tools cannot, from rendered maps
+and a plan snapshot (so a stale brief is caught, not judged): every artifact
+has a consumer, every reuse names a real host path, every omission has a
+recorded reason, every matrix row cites an acceptance that verifies it.
+Findings are **BLOCKING**, **NIT** (cosmetic) or **OBSERVATION** (a capability
+nobody asked for) — the verifier may not invent requirements. The gate runs
+**at most two rounds**: round 1 exhaustive, round 2 a delta re-check, and what
+remains escalates to the user.
+
+**The plan review** then checks scope fit and minimalism, and **the user gate**
+presents the create/reuse/omit artifact list, the wave summary and the
+ownership map before asking for approval.
+
+The whole gate chain is also a build gate:
+
+```bash
+npx archgen-mcp exec archgen_plan '{"action":"verify","tasksYaml":".archgen/<slug>/tasks.yaml","planDir":".archgen/<slug>/plans"}' --fail-on verdict:ISSUES
+```
+
+## Code intelligence
+
+CodeGraph is a separate MCP server that answers code questions from a local
+symbol graph. archgen installs it, wires it, and tells the agent how to use
+it — it never re-implements it.
+
+| Tool | Use it for |
+| --- | --- |
+| `codegraph_explore` | the first call for almost anything: source + call paths + blast radius, in one call |
+| `codegraph_search` | exact symbol locations, without the source |
+| `codegraph_node` | one symbol's body, or one file's current source with line numbers |
+| `codegraph_callers` / `codegraph_callees` | a precise question about one symbol |
+| `codegraph_impact` | what a change to one symbol reaches |
+| `codegraph_files` | a layout survey of the index |
+| `codegraph_status` | index health, when the index looks wrong |
+
+CodeGraph publishes only `codegraph_explore` by default; the other seven are
+unlisted because each listed tool costs permanent context. archgen's policy
+publishes all of them and ships the **routing rules** that tell the agent
+which one to reach for, so eight tools do not become eight guesses. Sub-agents
+and harnesses without MCP use the CLI equivalents instead:
+`codegraph explore`, `codegraph query`, `codegraph node`, `codegraph impact`.
+
+The policy lives in one file
+([`packages/mcp/assets/codegraph-policy.json`](packages/mcp/assets/codegraph-policy.json)):
+
+| Fact | Default | Why |
+| --- | --- | --- |
+| `package` | `@colbymchenry/codegraph` | one source for the CLI and the MCP entry |
+| `install` | `latest` | what a **first-time** install fetches — the newest published release |
+| `wire` | `1.6.2` | the exact spec the MCP entry's `npx` fallback uses |
+| `tools` | all eight | the whole surface, in the agent's hands |
+| `telemetry` | `off` | `CODEGRAPH_TELEMETRY=0` in the MCP entry — per process, no machine-wide write |
+
+An installed CodeGraph is never upgraded or rewritten: it may be pinned, it
+may be a bundle install, and it is the user's to manage.
 
 ## Token footprint
 
 Measured, not guessed. `npm run test:budget` reports it, and CI fails if the
-always-on footprint exceeds 13,000 tokens.
-
-**Every session pays this much, and no more:**
+always-on footprint exceeds 18,000 tokens.
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 7,462 |
-| MCP tool catalog (9 tools) | 5,538 |
-| **Always-on total** | **13,000** — 40% of a 32k window |
+| `skill/SKILL.md` | 7,813 |
+| MCP tool catalog — the real `tools/list` payload | 5,850 |
+| CodeGraph's own tools (when CodeGraph is wired) | 3,796 |
+| **Always-on total** | **17,459** — 53% of a 32k window |
+
+The catalog is measured over the REAL protocol, not a projection: the budget
+tool speaks JSON-RPC to the real binary and measures what `tools/list`
+returns. The earlier measurement (name + description + input schema only)
+under-counted by a third, because it never saw the output schema or the
+annotations.
 
 **Everything else is pulled per section, on demand.** The five protocol
-references are 18,960 tokens *in total*, but a typical section is **278
+references are 20,751 tokens *in total*, but a typical section is **278
 tokens** — the agent loads the one it needs, never the file:
 
 | On demand | In total | What is actually read |
 | --- | ---: | --- |
-| A protocol reference | 18,960 | one section — **278 tokens** |
+| A protocol reference | 20,751 | one section — **278 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
 | A dispatch brief | 4,069 | the one being dispatched |
 | An artifact template | 3,071 | the one being scaffolded |
 
 Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
 and `archgen_skills` serve one section at a time, and a dispatch brief arrives
-with the evidence map, the dependency graph, the reference-integrity result, the
-mechanical floor and the traceability maps already rendered — so the agent pulls
-what it needs and never re-reads a plan. A section call returns the section's
-own text and names its nested subsections, so pulling one section never drags
-the document along with it.
+with the evidence map, the dependency graph, the reference-integrity result,
+the mechanical floor and the traceability maps already rendered — so the agent
+pulls what it needs and never re-reads a plan.
 
 What makes that hold is **behaviour**, not shorter prompts: the deterministic
 floor proves the mechanical facts before an agent is dispatched, one exhaustive
 gate pass instead of a discovery loop, one agent per task instead of one per
-lookup, a worker contract that already carries the capability skill's rules and
-the edge cases it owes, and a hard cap of three parallel sub-agents. Shrinking
-a prompt to save tokens costs a whole extra round — making the first answer
-complete does not.
+lookup, a worker contract that already carries the capability skill's rules
+and the edge cases it owes, and a hard cap of three parallel sub-agents.
+Shrinking a prompt to save tokens costs a whole extra round — making the
+first answer complete does not.
+
+**The savings came from structure, never from cutting the agent's aids.** The
+skill keeps every rule, every rationale and every failure hint it had; what
+changed is that the model no longer carries a privileged tool it may not use,
+and the protocol no longer repeats the same output schema on every tool.
 
 ## Repository layout
 
 | Path | What | Distributed as |
 | --- | --- | --- |
 | [`skill/`](skill/) | The agent skill — `SKILL.md` + `references/code-standards.md` (guidance only; the server owns every capability) | vendored into npm |
-| [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `doctor` / `uninstall` | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
+| [`packages/cli/`](packages/cli/) | `archgen-skill init` / `install` / `doctor` / `uninstall` / `update` / `restore` / `migrate` / `mcp` / `codegraph` — the CONTROL PLANE | npm: [`archgen-skill`](https://www.npmjs.com/package/archgen-skill) |
 | [`packages/mcp/`](packages/mcp/) | `archgen-mcp` — the server that owns every deterministic capability | npm: [`archgen-mcp`](https://www.npmjs.com/package/archgen-mcp) |
 | [`packages/mcp/schemas/`](packages/mcp/schemas/) | The task-file JSON schema (`tasks.schema.json`) | npm: `archgen-mcp` |
 | [`schemas/`](schemas/) | The architecture.yaml conventions (normative shape) | repo-only |
@@ -190,10 +309,8 @@ complete does not.
 | [`internal/`](internal/) | QA tooling (the gates) — never shipped | repo-only |
 | [`docs/`](docs/) | The folder index · architecture walkthrough · the CI gate · agent setup prompt · release process | repo-only |
 
-### Inside the two packages
-
-Both packages split their source **by domain**, and both split their tests
-the same way, so a test lives in the folder of the code it tests.
+Both packages split their source **by domain**, and both split their tests the
+same way, so a test lives in the folder of the code it tests.
 
 ```
 packages/mcp/src/core/            packages/cli/lib/
@@ -206,14 +323,14 @@ packages/mcp/src/core/            packages/cli/lib/
 └── fs/        the only layer that touches disk
 ```
 
-`protocol/` and `fs/` are the bottom layers: neither imports anything
-above it. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full map.
+`protocol/` and `fs/` are the bottom layers: neither imports anything above
+it. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full map.
 
 ### The gates
 
-`internal/tools/` holds the repository's own gates, grouped by what they
-are for — `lint/` (a defect fails the build), `release/`, `budget/`,
-`safety/`. They are repo-only and never shipped.
+`internal/tools/` holds the repository's own gates, grouped by what they are
+for — `lint/` (a defect fails the build), `release/`, `budget/`, `safety/`.
+They are repo-only and never shipped.
 
 | Gate | What it proves |
 | --- | --- |
@@ -224,18 +341,19 @@ are for — `lint/` (a defect fails the build), `release/`, `budget/`,
 | `test:budget` | The always-on context (skill + tool catalog) fits its ceiling |
 | `test:immutable` | The suites never mutate the repository |
 
-
 ## Development
 
-```sh
-npm run setup   # once — installs the MCP server's dependencies
-npm test        # internal + MCP + CLI suites (the set CI runs)
+Install the MCP server's dependencies once, then run the suite CI runs:
+
+```bash
+npm run setup
+npm test
 ```
 
 The deterministic end-to-end drivers make **no LLM calls** and drive the real
 MCP tool surface, so a broken tool fails the fixtures:
 
-```sh
+```bash
 npm run test:fixtures
 ```
 
@@ -248,7 +366,7 @@ npm run test:fixtures
 
 ### Cutting a release
 
-```sh
+```bash
 npm run release:prepare <version>
 ```
 
@@ -267,11 +385,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 | Doc | Contents |
 | --- | --- |
 | [docs/README.md](docs/README.md) | The index of the `docs/` folder |
-| [docs/architecture.md](docs/architecture.md) | Dual-mode design, gates, wave mechanics, platform detection |
+| [docs/architecture.md](docs/architecture.md) | The two planes, the gates, wave mechanics, platform detection |
 | [docs/ci.md](docs/ci.md) | The plan gate as a build gate — `archgen-mcp exec … --fail-on verdict:ISSUES` |
 | [docs/agent-setup-prompt.md](docs/agent-setup-prompt.md) | Copy-paste prompt: install archgen and verify it |
 | [docs/releasing.md](docs/releasing.md) | Cutting CLI + MCP server releases |
 | [skill/SKILL.md](skill/SKILL.md) | The full skill contract the agents execute |
+| [SECURITY.md](SECURITY.md) | The privilege boundary, the CodeGraph policy, how to report a vulnerability |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ## License

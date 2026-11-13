@@ -427,6 +427,12 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
   // network, and no MCP server installed. The MCP server is asked for its own
   // report; if it cannot run, that is a WARN with the remediation command.
   const mcp = mcpDoctor({ projectRoot: root, env: { ...process.env, HOME: homeDir } });
+  if (mcp.stale) {
+    // The server on PATH was SKIPPED for being too old. Say so: the symptom
+    // otherwise is "the command does not exist", which sends the reader
+    // looking for a missing feature instead of a version skew.
+    add('WARN', `${mcp.stale} — the pinned fallback was used instead; refresh the global install with: npm i -g archgen-mcp@latest`);
+  }
   if (!mcp.report) {
     add('WARN', `archgen MCP server not reachable${mcp.detail ? ` — ${mcp.detail}` : ''} — install with: npx archgen-mcp bootstrap --project . --yes`);
   } else {

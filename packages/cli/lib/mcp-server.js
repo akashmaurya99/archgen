@@ -12,10 +12,36 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { whichOnPath } from './spawn-npm.js';
+import { installedServerVersion } from './global-server.js';
+import { compareSemver } from './version.js';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const MCP_PACKAGE = 'archgen-mcp';
+
+/** This CLI package's root — the version it ships with. */
+const CLI_PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * The CLI's own version.
+ *
+ * It is the SERVER version the CLI expects: the two packages are released
+ * together and the skill declares the minimum server it needs. The npx
+ * fallback asks for EXACTLY this version instead of `latest`, so an install
+ * is reproducible and a newer server cannot change behaviour under a CLI
+ * that was never tested against it.
+ *
+ * @returns {string|null}
+ */
+export function cliPackageVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync(join(CLI_PACKAGE_ROOT, 'package.json'), 'utf8'));
+    return typeof pkg.version === 'string' ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Locate the archgen-mcp binary.
@@ -24,10 +50,20 @@ export const MCP_PACKAGE = 'archgen-mcp';
  *   1. $ARCHGEN_MCP_BIN            — explicit override
  *   2. <project>/node_modules/.bin/archgen-mcp
  *   3. `archgen-mcp` on PATH       — a global npm install
- *   4. `npx -y archgen-mcp`        — network fallback (npx caches it)
+ *   4. `npx -y archgen-mcp@<this CLI's version>` — network fallback (npx
+ *      caches it). The fallback is PINNED to the version this CLI ships
+ *      with: `latest` would let a newer server change behaviour under a CLI
+ *      that was never tested against it.
+ *
+ * A server on PATH that is OLDER than this CLI is SKIPPED, not used. The CLI
+ * and the server are released together and the skill declares the minimum
+ * server it needs, so driving an old server would answer with an old tool
+ * surface — and the failure looks like "the command does not exist" rather
+ * than "the installed server is too old". The pinned npx fallback is used
+ * instead.
  *
  * @param {{projectRoot?: string, home?: string, env?: Record<string, string|undefined>}} opts
- * @returns {{bin: string|null, source: 'override'|'local'|'path'|'npx', command: string, args: string[]}}
+ * @returns {{bin: string|null, source: 'override'|'local'|'path'|'npx', command: string, args: string[], stale?: string|null}}
  */
 export function resolveMcpBinary(opts = {}) {
   const { projectRoot = process.cwd(), home = homedir(), env = process.env } = opts;
@@ -46,9 +82,31 @@ export function resolveMcpBinary(opts = {}) {
   if (existsSync(local)) return { bin: local, source: 'local', command: local, args: [] };
 
   const onPath = whichOnPath('archgen-mcp', env);
-  if (onPath) return { bin: onPath, source: 'path', command: onPath, args: [] };
+  const version = cliPackageVersion();
+  if (onPath) {
+    const installed = installedServerVersion(onPath);
+    const cmp = version && installed ? compareSemver(installed, version) : null;
+    if (cmp === null || cmp >= 0) {
+      // Same version, newer, or an unreadable version (the caller's call).
+      return { bin: onPath, source: 'path', command: onPath, args: [] };
+    }
+    // TOO OLD: fall through to the pinned fallback, and say why.
+    const stale = `the archgen-mcp on PATH is ${installed}; this CLI needs ${version}`;
+    return {
+      bin: null,
+      source: 'npx',
+      command: 'npx',
+      args: ['-y', version ? `${MCP_PACKAGE}@${version}` : MCP_PACKAGE],
+      stale,
+    };
+  }
 
-  return { bin: null, source: 'npx', command: 'npx', args: ['-y', MCP_PACKAGE] };
+  return {
+    bin: null,
+    source: 'npx',
+    command: 'npx',
+    args: ['-y', version ? `${MCP_PACKAGE}@${version}` : MCP_PACKAGE],
+  };
 }
 
 /**
@@ -173,7 +231,6 @@ function runMcp(args, opts = {}) {
   const projectRoot = requireProjectRoot(opts.projectRoot ?? process.cwd(), 'runMcp');
   const resolved = resolveMcpBinary({ projectRoot, env });
   const inv = mcpInvocation(resolved.command, [...resolved.args, ...args], process.platform, env);
-
   let r;
   try {
     r = spawnSync(inv.command, inv.args, {
@@ -202,6 +259,9 @@ function runMcp(args, opts = {}) {
     data,
     stdout,
     stderr: r.stderr ?? '',
+    // WHY the server was chosen (or skipped). A version-skew note belongs in
+    // the doctor's output, not buried in a failed command.
+    stale: resolved.stale ?? null,
   };
 }
 
@@ -227,14 +287,18 @@ export function bootstrapArgs(projectRoot, opts = {}) {
 /**
  * Wire the archgen MCP server into the detected harnesses and ensure CodeGraph.
  *
- * @param {{projectRoot: string, location?: 'project'|'global'|'both', approved?: boolean, env?: Record<string, string|undefined>}} opts
+ * @param {{projectRoot: string, location?: 'project'|'global'|'both', approved?: boolean, profile?: string, env?: Record<string, string|undefined>}} opts
  * @returns {{ok: boolean, skipped?: string, detail?: string, report?: any}}
  */
 export function bootstrapMcp(opts) {
-  const { location = 'both', approved = true, env = process.env } = opts;
+  const { location = 'both', approved = true, profile = null, env = process.env } = opts;
   const args = bootstrapArgs(opts.projectRoot, { location, approved });
 
-  const r = runMcp(args, { projectRoot: opts.projectRoot, env });
+  // The TOOL PROFILE is declared in the WIRING when it is not the default, so
+  // the project's MCP config says which surface it runs with — instead of one
+  // developer's shell deciding it.
+  const childEnv = profile ? { ...env, ARCHGEN_TOOL_PROFILE: profile } : env;
+  const r = runMcp(args, { projectRoot: opts.projectRoot, env: childEnv });
   if (r.detail) {
     return { ok: false, detail: `cannot run ${MCP_PACKAGE}: ${r.detail}` };
   }
@@ -253,7 +317,7 @@ export function mcpDoctor(opts) {
   const { env = process.env } = opts;
   const projectRoot = requireProjectRoot(opts.projectRoot, 'mcpDoctor');
   const r = runMcp(['doctor', '--project', projectRoot, '--json'], { projectRoot, env, timeout: 60000 });
-  return { ok: r.ok, report: r.data, detail: r.detail ?? (r.data ? undefined : r.stderr.trim().split('\n')[0]) };
+  return { ok: r.ok, report: r.data, detail: r.detail, stale: r.stale ?? null };
 }
 
 /**
@@ -270,5 +334,49 @@ export function uninstallMcp(opts) {
     ['uninstall-mcp', '--project', projectRoot, '--location', location, '--yes', '--json'],
     { projectRoot, env, timeout: 60000 },
   );
+  return { ok: r.ok, report: r.data, detail: r.detail };
+}
+
+/**
+ * The runtime facts about this harness — the same answer `archgen_platform`
+ * gives the model, reachable from a terminal.
+ *
+ * @param {{projectRoot: string, env?: Record<string, string|undefined>}} opts
+ */
+export function platformFacts(opts) {
+  const { env = process.env } = opts;
+  const projectRoot = requireProjectRoot(opts.projectRoot, 'platformFacts');
+  const r = runMcp(['platform', '--project', projectRoot, '--json'], { projectRoot, env, timeout: 60000 });
+  return { ok: r.ok, report: r.data, detail: r.detail };
+}
+
+/**
+ * The detected harnesses and their MCP config paths.
+ *
+ * @param {{projectRoot: string, location?: 'project'|'global'|'both', env?: Record<string, string|undefined>}} opts
+ */
+export function mcpList(opts) {
+  const { env = process.env } = opts;
+  const projectRoot = requireProjectRoot(opts.projectRoot, 'mcpList');
+  const location = opts.location ?? 'both';
+  const r = runMcp(['mcp-list', '--project', projectRoot, '--location', location, '--json'], { projectRoot, env, timeout: 60000 });
+  return { ok: r.ok, report: r.data, detail: r.detail };
+}
+
+/**
+ * Drive the CodeGraph admin surface: `status`, `ensure` or `wire`.
+ *
+ * `ensure` and `wire` WRITE — they install the CLI and rewrite harness
+ * configuration — so they carry the approval flag the server expects.
+ *
+ * @param {{projectRoot: string, action: 'status'|'ensure'|'wire', location?: 'project'|'global'|'both', approved?: boolean, env?: Record<string, string|undefined>}} opts
+ */
+export function codegraphAdmin(opts) {
+  const { env = process.env } = opts;
+  const projectRoot = requireProjectRoot(opts.projectRoot, 'codegraphAdmin');
+  const location = opts.location ?? 'both';
+  const args = ['codegraph', opts.action, '--project', projectRoot, '--location', location, '--json'];
+  if (opts.approved) args.push('--yes');
+  const r = runMcp(args, { projectRoot, env, timeout: 600000 });
   return { ok: r.ok, report: r.data, detail: r.detail };
 }

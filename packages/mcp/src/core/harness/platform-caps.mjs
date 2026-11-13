@@ -31,6 +31,10 @@ export function platformCapabilities(registry, harness = null) {
   const entry = registry.harnesses?.[key];
   if (!entry) {
     throw notFound(`unknown harness '${harness}'`, {
+      ...hint({
+        action: toolCall('archgen_help', { topic: 'platform' }),
+        reason: 'the briefing names the harness the server can detect, and the procedure for one it cannot.',
+      }),
       harness,
       known: Object.keys(registry.harnesses ?? {}),
     });
@@ -59,7 +63,7 @@ export function detectHarness(registry, opts) {
   }
   if (found.length === 0) {
     throw invalidInput(
-      `no known harness detected in ${projectRoot} — follow the unknown-platform procedure (web-search the official docs, propose, get approval)`, { ...hint({ action: toolCall('archgen_setup', { action: 'harness_info' }), reason: "the harness registry names every harness the server detects." }), projectRoot });
+      `no known harness detected in ${projectRoot} — follow the unknown-platform procedure (web-search the official docs, propose, get approval)`, { ...hint({ action: toolCall('archgen_platform', {}), reason: "the harness registry names every harness the server detects." }), projectRoot });
   }
   // The registry's detection order breaks ties.
   const order = registry.detectionOrder ?? [];

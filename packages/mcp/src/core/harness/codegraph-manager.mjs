@@ -7,25 +7,147 @@
 // server are wired by the same code.
 //
 // Modes: ensure | init | wire | status
-//   ensure: install CLI if missing -> wire every DETECTED harness -> index the
-//           project. The MCP server's watcher keeps the index live afterwards.
+//   ensure: install the CLI if it is MISSING -> wire every DETECTED harness ->
+//           index the project. The MCP server's watcher keeps the index live
+//           afterwards. An EXISTING install is never upgraded.
 //   init:   index only (no config writes)
 //   wire:   wire only (no install, no index)
 //   status: report what is installed / wired / indexed
 //
+// The tool exposes `ensure | status | wire`; `init` is the manager's internal
+// mode for indexing alone.
+//
 // SAFETY: MCP configs are written only with approval (otherwise the plan is
 // reported); non-JSON configs are reported, never rewritten.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { detectHarnesses, wireServer, recordWiring, configHasServer, configTargetFor } from './harness-wiring.mjs';
 import { invalidInput } from '../protocol/errors.mjs';
 import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
 import { project } from '../../envelope.mjs';
 
-const CODEGRAPH_PACKAGE = '@colbymchenry/codegraph';
+/** The server package's `assets/` directory — the policy asset lives there. */
+const ASSETS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'assets');
+
+/**
+ * The CodeGraph policy: what to install, what to wire, which tools the agent
+ * may call, and the telemetry posture.
+ *
+ * It lives in `assets/codegraph-policy.json` so those four facts have ONE
+ * place to change them. The environment overrides it for a machine that must
+ * pin something else.
+ *
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {{package: string, install: string, wire: string|null, tools: string[], telemetry: string}}
+ */
+export function codegraphPolicy(env = process.env) {
+  const policy = loadPolicy();
+  const tools = String(env.ARCHGEN_CODEGRAPH_TOOLS ?? '').trim();
+  const version = String(env.ARCHGEN_CODEGRAPH_VERSION ?? '').trim();
+  const telemetry = String(env.ARCHGEN_CODEGRAPH_TELEMETRY ?? '').trim();
+  // `latest` (or `none`) is the explicit way to say "do not pin".
+  const pinned = version === '' ? (policy.wire ?? null) : /^(latest|none|unpinned)$/i.test(version) ? null : version;
+  return {
+    package: policy.package ?? '@colbymchenry/codegraph',
+    // WHAT TO INSTALL when the CLI is MISSING. The default is the newest
+    // published release — the official install path. An EXISTING install is
+    // never touched (see `ensureCli`).
+    install: String(env.ARCHGEN_CODEGRAPH_INSTALL ?? policy.install ?? 'latest'),
+    // WHAT THE CONFIG POINTS AT when there is no binary. Pinned, so a machine
+    // with no CodeGraph still resolves a reviewed version.
+    wire: pinned,
+    tools: tools === '' ? [...(policy.tools ?? [])] : tools.split(',').map((t) => t.trim()).filter(Boolean),
+    telemetry: telemetry === '' ? (policy.telemetry ?? 'off') : telemetry,
+  };
+}
+
+/** The policy asset, read once per call. */
+function loadPolicy() {
+  try {
+    return JSON.parse(readFileSync(join(ASSETS_DIR, 'codegraph-policy.json'), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The npm spec for the WIRING: the package, pinned when the policy pins it.
+ *
+ * @param {{package: string, wire: string|null}} policy
+ * @returns {string}
+ */
+export function codegraphSpec(policy) {
+  return policy.wire ? `${policy.package}@${policy.wire}` : policy.package;
+}
+
+/**
+ * The npm spec for the INSTALL: the package, at the policy's `install`
+ * version (`latest` → no version suffix).
+ *
+ * @param {{package: string, install: string}} policy
+ * @returns {string}
+ */
+export function codegraphInstallSpec(policy) {
+  const wanted = String(policy.install ?? 'latest').trim();
+  if (!wanted || /^(latest|none|unpinned)$/i.test(wanted)) return policy.package;
+  return `${policy.package}@${wanted.replace(/^v/, '')}`;
+}
+
+/**
+ * The registry entries with the policy applied: a pinned npx spec and the
+ * environment the MCP server needs.
+ *
+ * The environment is what makes CodeGraph expose more than its default tool:
+ * the server reads `CODEGRAPH_MCP_TOOLS` at startup and lists ONLY the tools
+ * in it. Without it a wired CodeGraph exposes `codegraph_explore` alone —
+ * which is CodeGraph's deliberate default, not an ArchGen bug.
+ *
+ * Two facts about that allowlist:
+ *   - it REPLACES the default, so `explore` is always named explicitly;
+ *   - a name CodeGraph does not know is dropped silently, and an allowlist
+ *     with no valid name exposes NOTHING. The policy therefore lists only
+ *     tools that exist in the pinned version.
+ *
+ * The environment key is per platform: most clients read `env`, OpenCode
+ * reads `environment`. The registry says which, so the entry is written the
+ * way the client actually reads it.
+ *
+ * @param {any} registry the harness registry
+ * @param {{package: string, pin: string|null, tools: string[], telemetry: string}} policy
+ * @returns {{entries: any, npxEntries: any}}
+ */
+export function codegraphEntries(registry, policy) {
+  const spec = codegraphSpec(policy);
+  const env = { CODEGRAPH_MCP_TOOLS: policy.tools.join(',') };
+  // Per-PROCESS telemetry: the MCP server never phones home, and the
+  // machine-wide setting is left exactly as the user configured it.
+  if (policy.telemetry === 'off') env.CODEGRAPH_TELEMETRY = '0';
+  if (policy.telemetry === 'on') env.CODEGRAPH_TELEMETRY = '1';
+
+  const withEnv = (entry) => {
+    if (!entry) return entry;
+    const { envKey, ...rest } = entry;
+    return { ...rest, [envKey ?? 'env']: { ...(rest[envKey ?? 'env'] ?? {}), ...env } };
+  };
+  const pinSpec = (entry) => {
+    if (!entry || !Array.isArray(entry.args)) return entry;
+    return {
+      ...entry,
+      args: entry.args.map((a) => (typeof a === 'string' && a === policy.package ? spec : a)),
+    };
+  };
+
+  const entries = {};
+  for (const [key, entry] of Object.entries(registry.entries ?? {})) entries[key] = withEnv(entry);
+  const npxEntries = {};
+  for (const [key, entry] of Object.entries(registry.npxEntries ?? {})) npxEntries[key] = withEnv(pinSpec(entry));
+  return { entries, npxEntries };
+}
+
 
 /** Run a command; never throws. Returns {ok, status, stdout, stderr}. */
 export function run(cmd, args, opts = {}) {
@@ -157,6 +279,7 @@ export function findCodegraph(env = process.env) {
 export function codegraphState(opts) {
   const { registry, projectRoot, home = homedir(), env = process.env, location = 'both' } = opts;
   const cli = findCodegraph(env);
+  const policy = codegraphPolicy(env);
   const targets = [];
   for (const d of detectHarnesses(registry, projectRoot, home, env)) {
     for (const [loc, cfg] of Object.entries(d.spec.configs ?? {})) {
@@ -171,10 +294,44 @@ export function codegraphState(opts) {
         key: cfg.format === 'toml' ? `mcp_servers.codegraph` : cfg.key,
         exists: existsSync(target.path),
         wired: configHasServer(target.path, cfg, 'codegraph'),
+        // The tools the config actually exposes. A config written by
+        // CodeGraph's own installer carries none, so the server falls back to
+        // its default single tool — the fact the operator needs to see.
+        tools: configuredTools(target.path, cfg, registry),
       });
     }
   }
-  return { cli, indexed: existsSync(join(projectRoot, '.codegraph')), targets };
+  return { cli, policy, indexed: existsSync(join(projectRoot, '.codegraph')), targets };
+}
+
+/**
+ * The CodeGraph tools a config exposes, read from its own environment.
+ *
+ * The key is the CLIENT'S key — OpenCode reads `environment`, everyone else
+ * reads `env` — and it comes from the registry's entry shape. Hard-coding
+ * `env` reported "no allowlist" for an OpenCode config that carried one.
+ *
+ * @param {string} abs the config path
+ * @param {any} cfg the registry's config row
+ * @param {any} registry the harness registry
+ * @returns {string[]|null} the short names, or null when the config says nothing
+ */
+function configuredTools(abs, cfg, registry) {
+  if (!existsSync(abs) || cfg.format === 'toml') return null;
+  const shape = registry?.entries?.[cfg.entry] ?? registry?.npxEntries?.[cfg.entry] ?? null;
+  const envKey = shape?.envKey ?? 'env';
+  try {
+    const raw = JSON.parse(readFileSync(abs, 'utf8'));
+    let cur = raw;
+    for (const part of String(cfg.key ?? 'mcpServers').split('.')) {
+      if (!cur || typeof cur !== 'object') return null;
+      cur = cur[part];
+    }
+    const list = cur?.codegraph?.[envKey]?.CODEGRAPH_MCP_TOOLS;
+    return typeof list === 'string' && list.trim() !== '' ? list.split(',').map((t) => t.trim()).filter(Boolean) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Current telemetry state: 'enabled' | 'disabled' | 'unknown'. */
@@ -231,6 +388,20 @@ export async function manageCodegraph(opts) {
     ok: true,
   };
 
+  // The POLICY: what to install, what to wire, the tools the agent may call,
+  // the telemetry posture. It is resolved once, here, so every path below —
+  // the install, the wiring, the status — tells the same story.
+  const policy = codegraphPolicy(env);
+  const spec = codegraphSpec(policy);
+  const installSpec = codegraphInstallSpec(policy);
+  report.policy = {
+    package: policy.package,
+    install: policy.install,
+    wire: policy.wire,
+    tools: policy.tools,
+    telemetry: policy.telemetry,
+  };
+
   /**
    * Resolve the CodeGraph CLI.
    *
@@ -243,8 +414,13 @@ export async function manageCodegraph(opts) {
    * working installation. The version that is already on the machine is the
    * version the MCP config points at, and it works.
    *
-   * `install` lets a caller ask for the RESOLUTION only — the binary's path
-   * without touching the machine. That is what `wire` needs: wiring is a
+   * So the FIRST-TIME install is the only install: when the CLI is missing,
+   * the policy's `install` spec is fetched (the newest published release by
+   * default — CodeGraph's own official install path); when it is present,
+   * nothing is fetched, nothing is upgraded, and nothing is rewritten.
+   *
+   * `install: false` lets a caller ask for the RESOLUTION only — the binary's
+   * path without touching the machine. That is what `wire` needs: wiring is a
    * configuration change; installing a program globally is not.
    */
   const ensureCli = async ({ install = true } = {}) => {
@@ -253,11 +429,12 @@ export async function manageCodegraph(opts) {
       if (noInstall || !install) {
         // Caller manages the CLI — fall back to the npx form in the MCP config.
         report.cli.action = 'absent';
-        report.cli.detail = `not installed and installation was skipped — the MCP config will use "npx -y ${CODEGRAPH_PACKAGE} serve --mcp"`;
+        report.cli.detail = `not installed and installation was skipped — the MCP config will use "npx -y ${spec} serve --mcp"`;
         return { bin: null, version: null };
       }
       if (dryRun) {
         report.cli.action = 'would-install';
+        report.cli.detail = `not installed — the first-time install fetches ${installSpec}`;
         return { bin: null, version: null };
       }
       // NOT APPROVED — do not install.
@@ -269,11 +446,14 @@ export async function manageCodegraph(opts) {
       // The gate now covers the install, so an unapproved call is a plan.
       if (!approved) {
         report.cli.action = 'would-install';
-        report.cli.detail = `not installed — pass approve:true to install ${CODEGRAPH_PACKAGE} globally`;
+        report.cli.detail = `not installed — pass approve:true to install ${installSpec} globally`;
         return { bin: null, version: null };
       }
-      // Official install path; always the latest published release.
-      const inv = npmInvocation(['install', '-g', CODEGRAPH_PACKAGE], env);
+      // The FIRST-TIME install. The policy decides WHAT is fetched: the
+      // newest published release by default (CodeGraph's own official install
+      // path), or an exact version when a machine pins one. It runs ONCE —
+      // an existing install is never upgraded.
+      const inv = npmInvocation(['install', '-g', installSpec], env);
       const r = await runAsync(inv.command, inv.args, { timeout: 600000, shell: inv.shell, env });
       found = findCodegraph(env);
       if (!found) {
@@ -283,12 +463,20 @@ export async function manageCodegraph(opts) {
         return { bin: null, version: null };
       }
       report.cli.action = 'installed';
+      report.cli.detail = `installed ${found.version} — the first-time install fetches ${installSpec}`;
     } else {
-      // Already installed: report it and stop. No upgrade, no version check.
+      // Already installed: report it and stop. NO fetch, NO upgrade, NO
+      // version check.
+      //
+      // An installed CodeGraph is the USER's to manage: it may be pinned, it
+      // may be a bundle install, and upgrading it behind their back changes a
+      // program they chose. The MCP config points at the binary that is
+      // there, and it works. (The policy's `wire` spec only matters for the
+      // npx fallback — the path taken when there is NO binary.)
       report.cli.action = 'present';
+      report.cli.detail = `installed ${found.version} — left exactly as it is (an installed CodeGraph is the user's to manage)`;
     }
-    report.cli.present = true;
-    report.cli.bin = found.bin;
+    report.cli.present = true;    report.cli.bin = found.bin;
     report.cli.version = found.version;
     return found;
   };
@@ -299,30 +487,42 @@ export async function manageCodegraph(opts) {
     const wanted = targets ?? detected.map((d) => d.id);
     const selected = detected.filter((d) => wanted.includes(d.id));
 
-    // A harness whose relevant configs already carry the entry needs no
-    // installer run. This is what makes a second `ensure` a true no-op:
-    // without it, `codegraph install --yes` rewrote every config on every
-    // bootstrap even though nothing had changed.
-    const alreadyWired = (d) => {
-      const locs = location === 'both' ? ['global', 'project'] : [location];
-      let checked = false;
-      for (const loc of locs) {
-        const cfg = d.spec.configs?.[loc];
-        if (!cfg) continue;
-        if (loc === 'global' && !d.atHome) continue;
-        if (loc === 'project' && !d.atProject) continue;
-        checked = true;
-        const target = configTargetFor(cfg, { projectRoot, home, env });
-        if (!configHasServer(target.path, cfg, 'codegraph')) return false;
-      }
-      return checked;
+    // The entries this session wants: the pinned npx spec and the environment
+    // that exposes the curated tool set (and turns telemetry off for the
+    // server process).
+    const { entries, npxEntries } = codegraphEntries(registry, policy);
+
+    // CONVERGENCE, not presence. A harness is "already wired" only when its
+    // config carries the EXACT entry this session would write — an entry
+    // without the tool allowlist, or with an unpinned package, is a config
+    // that has to be brought forward. The dry run asks the real writer, so
+    // the no-op decision can never drift from the write it skips.
+    const converged = (candidates) => {
+      const check = wireServer({
+        serverId: 'codegraph',
+        registry,
+        entries,
+        npxEntries,
+        projectRoot,
+        home,
+        location,
+        approved: false,
+        dryRun: true,
+        binPath: cli.bin,
+        fallbackCommand: 'codegraph',
+        targets: candidates.map((d) => d.id),
+        env,
+      });
+      const rows = [...check.wired, ...check.skipped];
+      if (!rows.length) return false;
+      return rows.every((r) => r.status === 'unchanged');
     };
 
     const nativeIds = [];
     for (const d of selected) {
       const target = d.spec.codegraphTarget;
       if (!target) continue;
-      if (alreadyWired(d)) continue;
+      if (converged([d])) continue;
       if (location === 'project') {
         if (d.atProject) nativeIds.push(target);
       } else if (location === 'global') {
@@ -361,13 +561,16 @@ export async function manageCodegraph(opts) {
       }
     }
 
-    // Harnesses codegraph does not target (windsurf, vscode, zed, trae) are
-    // wired from the registry's per-platform key + shape.
+    // EVERY detected harness is written by OUR writer — including the ones
+    // the native installer just touched. CodeGraph's own installer writes a
+    // bare entry (one tool, an unpinned command); ours writes the pinned
+    // spec and the tool allowlist, so the agent gets the curated surface on
+    // every harness whose config this writer may safely edit.
     const manual = wireServer({
       serverId: 'codegraph',
       registry,
-      entries: registry.entries,
-      npxEntries: registry.npxEntries,
+      entries,
+      npxEntries,
       projectRoot,
       home,
       location,
@@ -375,8 +578,8 @@ export async function manageCodegraph(opts) {
       dryRun,
       binPath: cli.bin,
       fallbackCommand: 'codegraph',
-      skipHarnesses: selected.filter((d) => d.spec.codegraphTarget).map((d) => d.id),
       targets: selected.map((d) => d.id),
+      env,
     });
     for (const w of manual.wired) {
       report.wiring.manual.push({ harness: w.harness, path: w.path, key: w.key, ...w });
@@ -386,28 +589,6 @@ export async function manageCodegraph(opts) {
       if (w.status === 'error' || w.status === 'skipped') report.ok = false;
     }
     report.wiring.skipped.push(...manual.skipped);
-
-    // Fall back to our writer when the native install failed.
-    const nativeFailed = report.wiring.native.some((n) => n.status === 'failed');
-    if (nativeFailed && !dryRun) {
-      const fallback = wireServer({
-        serverId: 'codegraph',
-        registry,
-        entries: registry.entries,
-        npxEntries: registry.npxEntries,
-        projectRoot,
-        home,
-        location,
-        approved,
-        dryRun,
-        binPath: cli.bin,
-        fallbackCommand: 'codegraph',
-        skipHarnesses: selected.filter((d) => !d.spec.codegraphTarget).map((d) => d.id),
-      });
-      for (const w of fallback.wired) {
-        report.wiring.manual.push({ harness: w.harness, path: w.path, key: w.key, fallback: true, ...w });
-      }
-    }
     return selected;
   };
 
@@ -493,6 +674,9 @@ export async function manageCodegraph(opts) {
       path: t.path,
       key: t.key,
       status: t.wired ? 'wired' : t.exists ? 'present-no-codegraph' : 'absent',
+      // The tool surface the config actually exposes — `null` means the
+      // config says nothing, so CodeGraph falls back to its own default.
+      tools: t.tools ?? null,
     }));
     report.index.action = state.indexed ? 'indexed' : 'not-indexed';
     report.index.initialized = state.indexed;
@@ -582,6 +766,7 @@ export async function manageCodegraph(opts) {
       detected: report.detected,
       cli: { present: report.cli.present, version: report.cli.version, action: report.cli.action },
       telemetry: { state: report.telemetry.state },
+      policy: report.policy,
       index:
         report.index.action === 'none'
           ? undefined
@@ -597,7 +782,7 @@ export function assertLocation(location) {
   if (!['global', 'project', 'both'].includes(location)) {
     throw invalidInput(
       `location must be global|project|both`,
-      { ...hint({ action: toolCall('archgen_codegraph', { action: 'status', location: 'project' }), reason: "location chooses which CodeGraph install to read." }), location },
+      { ...hint({ action: 'archgen-skill codegraph status', reason: "location chooses which CodeGraph install to read." }), location },
     );
   }
   return location;
@@ -630,6 +815,11 @@ export function shapeReport(report, window = {}) {
     // on which path answered.
     detected: report.detected ?? [],
   };
+  // THE POLICY: the pinned version, the tools the agent may call, the
+  // telemetry posture. It is a fact the caller acts on (is this machine
+  // running the reviewed version?), so it is in the shaped report — and it
+  // is ALWAYS present, so the key set does not depend on which path answered.
+  out.policy = report.policy ?? { package: null, install: null, wire: null, tools: [], telemetry: 'off' };
   if (report.cli?.bin) out.cli.bin = report.cli.bin;
   // A failed or blocked install explains itself in `detail`; dropping it
   // leaves the caller with "failed" and no next step.

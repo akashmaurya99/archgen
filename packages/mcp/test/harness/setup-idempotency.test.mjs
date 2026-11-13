@@ -25,12 +25,31 @@ import { Context, loadAsset } from '../../src/context.mjs';
 import { guard } from '../../src/envelope.mjs';
 import { configHasServer } from '../../src/core/harness/harness-wiring.mjs';
 import { archgenMcpStatus } from '../../src/core/harness/mcp-server-manager.mjs';
-import { manageCodegraph } from '../../src/core/harness/codegraph-manager.mjs';
+import { manageCodegraph, codegraphEntries, codegraphPolicy } from '../../src/core/harness/codegraph-manager.mjs';
 import { summarizeWiring } from '../../src/tools/setup.mjs';
 
 createServer();
 const registry = loadAsset('harness-mcp.json');
 const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'archgen-mcp.mjs');
+
+/**
+ * The CodeGraph entry the writer WOULD produce for this registry.
+ *
+ * It is not the registry's raw entry any more: the policy adds the pinned
+ * package spec, the curated tool allowlist and the per-process telemetry
+ * switch, and the writer resolves the binary to an absolute path. A config
+ * that carries anything else is a PENDING REWRITE — so the fixtures below
+ * must build the entry from the same helper the writer uses, or they would
+ * be asserting that a stale entry is a no-op.
+ *
+ * @param {any} reg the registry
+ * @param {string} bin the resolved CodeGraph binary
+ * @returns {any} the desired entry
+ */
+function desiredEntry(reg, bin) {
+  const { entries } = codegraphEntries(reg, codegraphPolicy({}));
+  return { ...entries.stdio, command: bin };
+}
 
 /** A fake `codegraph` that records every argv and creates the index on init. */
 function fakeCodegraph(root, logFile) {
@@ -91,7 +110,7 @@ function configuredSandbox() {
       {
         mcpServers: {
           archgen: { type: 'stdio', command: 'npx', args: ['-y', 'archgen-mcp'] },
-          codegraph: { type: 'stdio', command: bin, args: ['serve', '--mcp'] },
+          codegraph: desiredEntry(registry, bin),
         },
       },
       null,
@@ -212,7 +231,7 @@ test('ensure without approval is still a no-op when the project is already confi
     // is a pending rewrite, not a no-op.
     writeFileSync(
       join(root, '.fakeproj', 'mcp.json'),
-      JSON.stringify({ mcpServers: { codegraph: { ...falsy.entries.stdio, command: bin } } }),
+      JSON.stringify({ mcpServers: { codegraph: desiredEntry(falsy, bin) } }),
       'utf8',
     );
 
@@ -247,7 +266,7 @@ test('ensure never claims alreadyConfigured while the CLI or the index is pendin
     const { binDir, bin } = fakeCodegraph(root, log);
     writeFileSync(
       join(root, '.fakeproj', 'mcp.json'),
-      JSON.stringify({ mcpServers: { codegraph: { ...falsy.entries.stdio, command: bin } } }),
+      JSON.stringify({ mcpServers: { codegraph: desiredEntry(falsy, bin) } }),
       'utf8',
     );
     const withCli = { PATH: `${binDir}:/bin:/usr/bin` };

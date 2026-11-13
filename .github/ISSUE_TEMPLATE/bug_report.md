@@ -31,6 +31,6 @@ labels: bug
 - OS:
 - Node version:
 
-> If the MCP server misbehaves, `archgen_setup { action: 'doctor' }` prints the
+> If the MCP server misbehaves, `archgen-skill doctor` prints the
 > capability contract, the skill install, the MCP wiring and CodeGraph state —
 > paste it here.

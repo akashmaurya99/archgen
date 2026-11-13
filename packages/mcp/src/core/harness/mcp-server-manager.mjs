@@ -49,6 +49,34 @@ export function resolveMcpBinary(opts) {
 
 
 /**
+ * The archgen MCP entries, with the TOOL PROFILE declared when one is.
+ *
+ * The profile decides which tools the server PUBLISHES. It is normally the
+ * default (`lean`) and is then left implicit, so the server's own default
+ * governs and an operator can still override it in the environment. When an
+ * operator asks for a non-default profile, it is written INTO the entry: the
+ * project's MCP config then declares the posture, and it travels with the
+ * repository instead of living in one shell.
+ *
+ * @param {any} registry the harness registry
+ * @param {Record<string, string|undefined>} env the environment
+ * @returns {{entries: any, npxEntries: any}}
+ */
+function archgenEntries(registry, env = process.env) {
+  const profile = String(env.ARCHGEN_TOOL_PROFILE ?? '').trim();
+  const withProfile = (entry) => {
+    if (!entry || !profile || profile === 'lean') return entry;
+    const { envKey, ...rest } = entry;
+    return { ...rest, [envKey ?? 'env']: { ...(rest[envKey ?? 'env'] ?? {}), ARCHGEN_TOOL_PROFILE: profile } };
+  };
+  const entries = {};
+  for (const [key, entry] of Object.entries(registry.archgenEntries ?? {})) entries[key] = withProfile(entry);
+  const npxEntries = {};
+  for (const [key, entry] of Object.entries(registry.archgenNpxEntries ?? registry.archgenEntries ?? {})) npxEntries[key] = withProfile(entry);
+  return { entries, npxEntries };
+}
+
+/**
  * Wire the archgen MCP into the detected harnesses.
  *
  * @param {{
@@ -76,8 +104,9 @@ export function wireArchgenMcp(opts) {
 
   const resolved = opts.binPath !== undefined ? { bin: opts.binPath, source: 'override' } : resolveMcpBinary({ projectRoot, home, env });
 
-  const entries = registry.archgenEntries;
-  const npxEntries = registry.archgenNpxEntries ?? registry.archgenEntries;
+  // The entries carry the TOOL PROFILE when one was requested, so a project's
+  // MCP config can declare the posture it runs with.
+  const { entries, npxEntries } = archgenEntries(registry, env);
 
   const result = wireServer({
     serverId: 'archgen',
@@ -91,6 +120,10 @@ export function wireArchgenMcp(opts) {
     dryRun,
     binPath: resolved.bin,
     fallbackCommand: 'npx',
+    // The writer resolves the SAME paths the status reports: the Copilot home
+    // and every ~-relative config come from the caller's env. Without it the
+    // writer and the status can disagree about where a config lives.
+    env,
   });
 
   // The npx fallback is baked into the registry's archgenNpxEntries block, so

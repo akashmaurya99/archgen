@@ -11,9 +11,14 @@
 import { z } from 'zod/v4';
 import { guard, toToolResult } from '../envelope.mjs';
 import { ignoredArgsWarning, trackArgs } from '../core/protocol/action-args.mjs';
+import { isExposed } from '../core/protocol/profiles.mjs';
 import { Context } from '../context.mjs';
 
-/** The envelope, as seen by the client. Loose so `data` can be any shape. */
+/**
+ * The envelope, as seen by the client.
+ *
+ * Loose so `data` can be any shape.
+ */
 const envelopeSchema = z
   .object({
     ok: z.boolean(),
@@ -28,6 +33,54 @@ const envelopeSchema = z
     meta: z.record(z.string(), z.unknown()),
   })
   .loose();
+
+/**
+ * The per-tool OUTPUT schema — the part a client validates against.
+ *
+ * It is deliberately the SMALLEST honest shape: the envelope's four fields
+ * are identical for every tool, so repeating the whole schema on every tool
+ * was paying ~256 tokens × N of permanent context tax for ONE fact the
+ * client already knows. `ok` is the invariant that matters (it says whether
+ * the call succeeded); the other three are declared `additionalProperties`
+ * so nothing is rejected, and the tool's own description carries the shape
+ * where the model reads it.
+ *
+ * The FULL envelope schema is published ONCE, as the MCP resource
+ * `archgen://schema/envelope` — one place to read, no duplication.
+ */
+const outputSchema = z.object({ ok: z.boolean() }).loose();
+
+/** The shape every tool returns, in the words the model reads. */
+const ENVELOPE_SHAPE = '{ok,data,error,meta}';
+
+/**
+ * Publish the full envelope schema as a resource.
+ *
+ * The per-tool output schema is the compact one; this is the complete
+ * contract, readable once by a client that wants it.
+ *
+ * @param {import('@modelcontextprotocol/server').McpServer} server
+ */
+export function registerEnvelopeResource(server) {
+  server.registerResource(
+    'archgen-envelope-schema',
+    'archgen://schema/envelope',
+    {
+      title: 'ArchGen result envelope',
+      description: 'The shape every ArchGen tool returns: {ok,data,error,meta}.',
+      mimeType: 'application/schema+json',
+    },
+    async () => ({
+      contents: [
+        {
+          uri: 'archgen://schema/envelope',
+          mimeType: 'application/schema+json',
+          text: JSON.stringify(z.toJSONSchema(envelopeSchema, { io: 'output' }), null, 2),
+        },
+      ],
+    }),
+  );
+}
 
 /**
  * Every registered tool, keyed by name.
@@ -86,6 +139,14 @@ export async function runTool(spec, ctx, args) {
 /**
  * Register one tool on the server.
  *
+ * A tool the ACTIVE PROFILE does not expose is still REGISTERED — its spec
+ * stays in the registry, so the CLI facade (`archgen-mcp exec archgen_setup
+ * …`) and the admin commands keep working — but it is NOT published on the
+ * MCP server. An unpublished tool never appears in `tools/list`, so its
+ * schema never enters the model's context and the model cannot call it at
+ * all: the boundary is the tool's ABSENCE, not a refusal it could talk
+ * its way past.
+ *
  * @param {import('@modelcontextprotocol/server').McpServer} server
  * @param {string} name tool name
  * @param {{
@@ -100,14 +161,22 @@ export async function runTool(spec, ctx, args) {
  * }} spec
  */
 export function registerTool(server, name, spec) {
-  SPECS.set(name, spec);
+  // The advertised description carries the RESULT SHAPE. The per-tool output
+  // schema is the compact one (see `outputSchema`), so the model still reads
+  // the envelope's shape at the point where it decides what to call.
+  const advertised = {
+    ...spec,
+    description: `${spec.description} → ${ENVELOPE_SHAPE}`,
+  };
+  SPECS.set(name, advertised);
+  if (!isExposed(name)) return; // admin surface in this profile — CLI only
   server.registerTool(
     name,
     {
       title: spec.title,
-      description: spec.description,
+      description: advertised.description,
       inputSchema: spec.inputSchema,
-      outputSchema: envelopeSchema,
+      outputSchema,
       annotations: {
         readOnlyHint: spec.readOnly === true,
         destructiveHint: spec.destructive === true,

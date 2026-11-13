@@ -33,7 +33,7 @@
     {
       "id": "skill.boot.doctor",
       "file": "skill/SKILL.md",
-      "match": "archgen_setup\\{action:'doctor'\\}",
+      "match": "archgen-skill doctor",
       "obligation": "the doctor is how a misconfigured server is diagnosed"
     },
     {
@@ -225,7 +225,7 @@
     {
       "id": "skill.rule7.platform",
       "file": "skill/SKILL.md",
-      "match": "archgen_setup\\{action:'harness_info'\\}",
+      "match": "archgen_platform",
       "obligation": "platform capabilities are read before editing configs"
     },
     {
@@ -315,14 +315,32 @@
     {
       "id": "skill.codegraph.ensure",
       "file": "skill/SKILL.md",
-      "match": "archgen_codegraph\\{action:'ensure'",
+      "match": "archgen-skill codegraph ensure",
       "obligation": "the bootstrap command is named"
     },
     {
       "id": "skill.codegraph.approve",
       "file": "skill/SKILL.md",
-      "match": "approve:true",
-      "obligation": "the bootstrap needs explicit approval"
+      "match": "codegraph ensure --yes|prints the PLAN first",
+      "obligation": "the bootstrap needs explicit approval before it writes"
+    },
+    {
+      "id": "skill.admin.cli",
+      "file": "skill/SKILL.md",
+      "match": "archgen-skill mcp add|remove|list|sanctioned command",
+      "obligation": "the admin surface is reached through the CLI, never through a model tool call"
+    },
+    {
+      "id": "skill.admin.plan",
+      "file": "skill/SKILL.md",
+      "match": "prints the PLAN|writes only when you pass `--yes`",
+      "obligation": "an admin write prints its plan and needs the approval flag"
+    },
+    {
+      "id": "skill.admin.nohandedit",
+      "file": "skill/SKILL.md",
+      "match": "Never hand-edit a harness config|hand-edit a harness config",
+      "obligation": "a harness config is never hand-edited"
     },
     {
       "id": "skill.envelope.ok",
@@ -1305,7 +1323,7 @@
     {
       "id": "ref.platform.harnessinfo",
       "file": "packages/mcp/assets/references/platforms.md",
-      "match": "archgen_setup\\{action:'harness_info'\\}",
+      "match": "archgen_platform",
       "obligation": "the runtime authority for a harness is the tool"
     },
     {
@@ -1317,8 +1335,8 @@
     {
       "id": "ref.platform.keys",
       "file": "packages/mcp/assets/references/platforms.md",
-      "match": "Never assume one key across harnesses|harness_info",
-      "obligation": "the top-level key vocabulary is owned by the registry and served by harness_info, never restated"
+      "match": "Never assume one key across harnesses|archgen_platform",
+      "obligation": "the top-level key vocabulary is owned by the registry and served by archgen_platform, never restated"
     },
     {
       "id": "ref.platform.urlkeys",

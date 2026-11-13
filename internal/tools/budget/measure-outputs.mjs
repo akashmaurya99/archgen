@@ -141,7 +141,6 @@ const CALLS = [
   ['archgen_codegraph', { action: 'ensure' }],
   ['archgen_setup', { action: 'doctor' }],
   ['archgen_setup', { action: 'harnesses' }],
-  ['archgen_setup', { action: 'harness_info' }],
   ['archgen_setup', { action: 'install_mcp' }],
   ['archgen_setup', { action: 'uninstall_mcp' }],
   ['archgen_skills', { action: 'list' }],
@@ -162,8 +161,11 @@ const CALLS = [
   ['archgen_help', { topic: 'registry' }],
   ['archgen_help', { topic: 'codegraph' }],
   ['archgen_help', { topic: 'setup' }],
+  ['archgen_help', { topic: 'platform' }],
   ['archgen_help', { topic: 'skills' }],
   ['archgen_help', { topic: 'refs' }],
+  ['archgen_help', { topic: 'yaml' }],
+  ['archgen_platform', {}],
 ];
 
 const rows = [];

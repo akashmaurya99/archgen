@@ -9,10 +9,11 @@ archgen has ONE implementation of every deterministic capability, and it is the
 orchestration guidance for the agent. Two consumers reach the same
 implementation:
 
-1. **Agent.** The MCP server over stdio. Eight domain tools
+1. **Agent.** The MCP server over stdio. Eight published tools
    (`archgen_plan`, `archgen_tasks`, `archgen_docs`, `archgen_registry`,
-   `archgen_codegraph`, `archgen_setup`, `archgen_skills`, `archgen_refs`)
-   plus `archgen_help`; every result is a typed envelope
+   `archgen_skills`, `archgen_refs`, `archgen_help`, `archgen_platform`), plus
+   two admin tools (`archgen_setup`, `archgen_codegraph`) that the default
+   `lean` profile does NOT publish; every result is a typed envelope
    `{ ok, data, error, meta }`.
 2. **CLI installer.** `archgen-skill init` / `install` shells out to
    `archgen-mcp bootstrap` to wire the MCP server into every detected harness
@@ -21,6 +22,75 @@ implementation:
 Both read the same artifacts and the same task-file schema
 (`packages/mcp/schemas/tasks.schema.json`); the frozen YAML corpus (`fixtures/yaml-corpus/`)
 plus its corpus test keep the MCP core's parser pinned to a known contract.
+
+## The control plane and the data plane
+
+The server publishes a **PROFILE**, and the profile is a privilege boundary.
+
+| Profile | Tools | Who uses it |
+|---|---|---|
+| `lean` (default) | the eight data-plane tools | the model, over MCP |
+| `full` | the data plane + `archgen_setup` + `archgen_codegraph` | a trusted automation run |
+
+The admin tools install packages, write harness configuration and change
+machine-wide settings. Their approval flag is an ARGUMENT — the model supplies
+it — so publishing them to a model that reads untrusted repositories would put
+a privileged action behind a prompt-injection. In the lean profile they are
+not published at all: an unpublished tool never appears in `tools/list`, so
+the model cannot call it.
+
+A profile decides what the MODEL sees, never what the system can do: the
+handlers stay registered, so `archgen-mcp exec archgen_setup …` and the CLI's
+`archgen-skill mcp add|remove|list` and `archgen-skill codegraph
+ensure|wire|status` reach exactly the same code. The CLI's commands print the
+PLAN without `--yes` and write only with it, so an agent can show the user
+what would change before it changes.
+
+`archgen_platform` is the read-only half that the model still needs: which
+harness this is, where its skills go, where its MCP config lives, how it
+dispatches sub-agents, and whether this project has a CodeGraph index. It
+answers one question with a compact answer — the old
+`archgen_setup{action:'harness_info'}` (removed) answered the same question with every harness in
+the registry.
+
+## CodeGraph is a separate server, under a policy
+
+CodeGraph keeps a local SQLite symbol graph in `.codegraph/` and serves it over
+its OWN MCP server. ArchGen never re-implements it: it wires it, indexes it,
+and tells the agent what it may call.
+
+CodeGraph publishes **one** tool by default (`codegraph_explore`); seven more
+exist and stay unlisted, because each listed tool costs permanent context and
+steers the agent toward a narrower call. The server reads
+`CODEGRAPH_MCP_TOOLS` to decide, so the allowlist has to live in the MCP
+ENTRY — which is what `packages/mcp/assets/codegraph-policy.json` produces.
+
+| Policy fact | Default | Consequence |
+|---|---|---|
+| `package` + `install` | `@colbymchenry/codegraph`, `latest` | the FIRST-TIME install fetches the newest published release — CodeGraph's own official install path |
+| `wire` | `1.6.2` | the exact spec the MCP entry's `npx` fallback uses: reproducible, even on a machine with no binary |
+| `tools` | all eight | `explore,node,search,callers,callees,impact,files,status` — the whole surface, in the agent's hands |
+| `telemetry` | `off` | `CODEGRAPH_TELEMETRY=0` in the MCP entry: per process, no machine-wide write, and the user's own setting is untouched |
+
+**An installed CodeGraph is never touched.** When the CLI is missing, the
+first-time install fetches it; when it is already there, ArchGen installs
+nothing, upgrades nothing and rewrites nothing — it may be pinned, it may be a
+bundle install, and it is the user's to manage (`codegraph upgrade` is theirs
+to run).
+
+The allowlist REPLACES CodeGraph's default, so every tool wanted is named
+explicitly; a name CodeGraph does not know is dropped silently. Eight tools
+only stay cheap because the ROUTING is written down: `§platforms/codegraph-tools`
+maps each question ("where is X defined?", "who calls this?", "what breaks if
+I change it?") to exactly one tool, with `explore` first for everything else.
+The wiring is CONVERGENT, not merely present: a config that carries an old
+entry — no allowlist, an unpinned spec — is a pending rewrite, and the next
+ensure brings it forward.
+
+Workers and sub-agents never see the MCP server's guidance, so the worker
+contract names the CLI equivalents (`codegraph explore`, `codegraph query`,
+`codegraph node`, `codegraph impact`), which print the same output in a
+harness with no MCP server at all.
 
 ## The repository's own shape
 
@@ -43,14 +113,14 @@ packages/mcp/src/core/       the server's implementations
 ```
 
 **`protocol/` and `fs/` are bottom layers.** Neither imports anything
-above it. `protocol` is what every tool imports (27 of the 46 core files
+above it. `protocol` is what every tool imports (23 of the 48 core files
 do), and `fs` is the only code that reads or writes a file. The four
 domains above them — `plan`, `docs`, `skill`, `harness` — are the
 capabilities themselves.
 
 The boundary is not decoration; it is checked. `structure-lint` asserts
 that no directory grows past the size it was laid out for, so the flat
-46-file row this replaced cannot come back.
+48-file row this replaced cannot come back.
 
 The CLI is flatter by design: `packages/cli/lib/` holds one file per
 command plus the shared primitives (`fs-paths.js`, `store.js`,
@@ -235,7 +305,7 @@ Everything generated goes inside `.archgen/<project-slug>/` at the target repo r
 
 ## Platform detection & web-search fallback
 
-Step 0 asks the server: `archgen_setup { action: 'harness_info' }` detects the
+Step 0 asks the server: `archgen_platform` detects the
 harness from env/config markers in order (`.claude/`, `.cursor/`, `.windsurf/`,
 `.opencode`, `opencode.json`, `.github/copilot-instructions.md`, `~/.codex`,
 `.gemini/`, `.kiro/`, `.trae/`) and returns its capability row — skill install
@@ -254,11 +324,13 @@ Two support modes round out the loop:
 
 - **INSTALL-MCP.** When a needed MCP server (e.g. context7) isn't configured, the
   orchestrator reads the platform's config quirks from
-  `archgen_setup { action: 'harness_info' }` (VS Code uses `servers`; OpenCode
+  `archgen_platform` (VS Code uses `servers`; OpenCode
   uses `mcp` with array commands; Antigravity requires `serverUrl`), prefers the
   platform CLI (`claude/codex/gemini/copilot mcp add …`), otherwise drafts the
-  exact config diff and shows it. Configs are written only after approval, then
-  verified post-reload.
+  exact config diff and shows it. The config write itself is an ADMIN action:
+  the sanctioned command (`archgen-skill mcp add …`, or the platform's own
+  `mcp add`) prints the PLAN and writes only with `--yes`; the agent never
+  hand-edits a harness config. The result is verified post-reload.
 - **FETCH-SKILL.** The registry, the matching, the install and the
   follow-instruction all live in the `archgen_skills` tool
   (`packages/mcp/assets/skill-registry.json`). A task whose title, summary or
@@ -339,7 +411,8 @@ metadata:
     archgen_mcp: ">=x.y.z"
 ```
 
-`archgen_setup{action:'doctor'}` reports a mismatch, `bootstrap` warns before
+`archgen-skill doctor` (or `archgen-mcp doctor`) reports a mismatch,
+`bootstrap` warns before
 wiring, and a CI gate (`internal/tools/lint/check-capability-contract.mjs`) refuses
 to ship a skill whose declared minimum exceeds the server's version.
 
@@ -349,7 +422,7 @@ to ship a skill whose declared minimum exceeds the server's version.
 | `archgen_plan { action: 'scaffold' }` | the depth ladder's artifact set + skeletons + the dependency write order |
 | `archgen_plan { action: 'brief' }` | the verifier / review / survey / investigate briefs |
 | `archgen_tasks { action: 'contract' }` | the worker prompt contract (7 rules) |
-| `archgen_setup { action: 'harness_info' }` | the harness capability tables |
+| `archgen_platform` | the harness capability tables |
 
 ## The no-dead-action gate
 

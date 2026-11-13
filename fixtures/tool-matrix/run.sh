@@ -181,16 +181,21 @@ mcp archgen_registry "{\"action\":\"show\"}" "registry/show"
 mcp archgen_registry "{\"action\":\"update\",\"slug\":\"demo\",\"status\":\"planned\"}" "registry/update"
 pass "archgen_registry — 2 actions"
 
-echo "── archgen_setup / archgen_codegraph (read + unapproved) ──"
+echo "── archgen_platform (the runtime facts) ────────────────────"
+mcp archgen_platform "{}" "platform/detect"
+mcp archgen_platform "{\"harness\":\"claude\"}" "platform/named harness"
+pass "archgen_platform — 2 calls"
+
+echo "── archgen_setup / archgen_codegraph (ADMIN: read + unapproved) ──"
 mcp archgen_setup "{\"action\":\"doctor\"}" "setup/doctor"
-mcp archgen_setup "{\"action\":\"harness_info\"}" "setup/harness_info"
 mcp archgen_setup "{\"action\":\"harnesses\"}" "setup/harnesses"
 mcp archgen_setup "{\"action\":\"install_mcp\"}" "setup/install_mcp (unapproved -> plan)"
 mcp archgen_setup "{\"action\":\"uninstall_mcp\"}" "setup/uninstall_mcp (unapproved -> plan)"
+mcp archgen_setup "{\"action\":\"bootstrap\",\"noCodegraph\":true,\"noMcp\":true}" "setup/bootstrap (unapproved -> plan)"
 mcp archgen_codegraph "{\"action\":\"status\"}" "codegraph/status"
 mcp archgen_codegraph "{\"action\":\"wire\",\"noInstall\":true}" "codegraph/wire (unapproved -> plan)"
 mcp archgen_codegraph "{\"action\":\"ensure\",\"noInstall\":true}" "codegraph/ensure (unapproved -> plan)"
-pass "archgen_setup + archgen_codegraph — 8 actions"
+pass "archgen_setup + archgen_codegraph — 8 admin actions (the CLI's surface)"
 
 echo "── archgen_skills ─────────────────────────────────────────"
 mcp archgen_skills "{\"action\":\"list\"}" "skills/list"
@@ -210,10 +215,10 @@ mcp archgen_refs "{\"action\":\"search\",\"topic\":\"orchestration\",\"token\":\
 pass "archgen_refs — 5 actions"
 
 echo "── archgen_help ───────────────────────────────────────────"
-for topic in plan tasks docs registry codegraph setup skills refs all; do
+for topic in plan tasks docs registry codegraph setup platform skills refs yaml all; do
   mcp archgen_help "{\"topic\":\"$topic\"}" "help/$topic"
 done
-pass "archgen_help — 9 topics"
+pass "archgen_help — 11 topics"
 
 echo ""
 echo "── the three original failures, re-checked ────────────────"
