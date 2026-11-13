@@ -1,0 +1,17 @@
+# The answers file — the scope class is what makes the per-task sections
+# REQUIRED. At SMALL scope a plan is a plan note; at MEDIUM and above every
+# task carries its own section, and the floor proves it.
+scope_class: MEDIUM
+problem: "the core behaviour"
+success_criteria:
+  - text: "the core behaviour holds"
+    feeds: prd.metrics
+constraints:
+  - "none"
+stack:
+  language: "typescript"
+  runtime: "node"
+  hosting: "none"
+integrations: []
+compliance: []
+risks: []

@@ -1,0 +1,5 @@
+{
+  "name": "a MEDIUM plan that mentions a task but gives it no section of its own",
+  "codes": ["PLAN_TASK_SECTION_MISSING"],
+  "warnings": []
+}

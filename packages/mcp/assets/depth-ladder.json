@@ -60,28 +60,50 @@
       "existing-architecture",
       "existing-adr"
     ],
+    "_artifactRules_readme": [
+      "THE ONE ARTIFACT LIST, IN THE ORDER THE ARTIFACTS MUST BE WRITTEN.",
+      "",
+      "The array order IS the write order, and `dependsOn` names WHY an",
+      "artifact waits for another. The order is not a convention: every edge",
+      "carries the fact that must pass forward, and the floor proves that join",
+      "afterwards (REQ_UNKNOWN, PATH_UNOWNED, DECISION_MISSING,",
+      "PLAN_TASK_COVERAGE). Writing the dependent first is not a style",
+      "preference — it is a content inconsistency the moment it is written.",
+      "",
+      "`dependsOn[].family` is a rule's `pattern` — the FAMILY identity the",
+      "floor already matches against, so a plan may name its files as it",
+      "likes. `hard: true` means the dependent CANNOT be written correctly",
+      "without the dependency, and the one-file scaffold cursor refuses it",
+      "until the dependency exists; `hard: false` is a convention that orders",
+      "but never blocks.",
+      "",
+      "An edge DISSOLVES when the profile omits the dependency (there is",
+      "nothing to wait for) and becomes EXTERNAL when the profile reuses it",
+      "(the host document satisfies it — cite it, never regenerate it).",
+      "",
+      "A rule's `max` was removed: no code ever read it, and the live ADR",
+      "ceiling is `depthBudgets[].maxAdrs`."
+    ],
     "artifactRules": [
       {
-        "path": ".archgen/<slug>/tasks.yaml",
-        "pattern": "tasks.yaml",
-        "purpose": "the task contract every plan needs"
-      },
-      {
-        "path": ".archgen/<slug>/plans/<slug>.md",
-        "pattern": "plans/*.md",
-        "purpose": "the plan of record"
+        "path": ".archgen/<slug>/codebase-map.md",
+        "pattern": "codebase-map.md",
+        "intentIn": ["BROWNFIELD-FEATURE", "BROWNFIELD-CHANGE"],
+        "purpose": "survey evidence; reuse a fresh map when one already exists",
+        "dependsOn": []
       },
       {
         "path": ".archgen/<slug>/answers.yaml",
         "pattern": "answers.yaml",
         "scopeIn": ["MEDIUM", "LARGE"],
-        "purpose": "captured requirements and the plan profile"
-      },
-      {
-        "path": ".archgen/<slug>/codebase-map.md",
-        "pattern": "codebase-map.md",
-        "intentIn": ["BROWNFIELD-FEATURE", "BROWNFIELD-CHANGE"],
-        "purpose": "survey evidence; reuse a fresh map when one already exists"
+        "purpose": "captured requirements and the plan profile",
+        "dependsOn": [
+          {
+            "family": "codebase-map.md",
+            "hard": true,
+            "carries": "the Existing-docs inventory that decides each artifact's create/reuse decision"
+          }
+        ]
       },
       {
         "path": ".archgen/<slug>/docs/prd.md",
@@ -90,7 +112,14 @@
         "intentIn": ["GREENFIELD-SYSTEM"],
         "signalSome": ["product-facing", "production"],
         "reuseSignal": "existing-prd",
-        "purpose": "product requirements for a product-facing system"
+        "purpose": "product requirements for a product-facing system",
+        "dependsOn": [
+          {
+            "family": "answers.yaml",
+            "hard": true,
+            "carries": "the elicited problem, personas, success metrics and NFRs"
+          }
+        ]
       },
       {
         "path": ".archgen/<slug>/architecture.yaml",
@@ -105,29 +134,115 @@
           "external-integration"
         ],
         "reuseSignal": "existing-architecture",
-        "purpose": "the contract source of truth for cross-module work"
+        "purpose": "the contract source of truth for cross-module work",
+        "dependsOn": [
+          {
+            "family": "answers.yaml",
+            "hard": true,
+            "carries": "the stack, the constraints and the naming conventions"
+          },
+          {
+            "family": "codebase-map.md",
+            "hard": true,
+            "carries": "the source and test roots, the module list and the host documents"
+          },
+          {
+            "family": "docs/prd.md",
+            "hard": false,
+            "carries": "the module sections and the NFRs the contracts implement"
+          }
+        ]
       },
       {
         "path": ".archgen/<slug>/decisions/0001-<title>.md",
         "pattern": "decisions/*.md",
         "signalSome": ["irreversible", "regulated", "data-migration"],
-        "max": 3,
         "reuseSignal": "existing-adr",
-        "purpose": "irreversible decisions only — never routine choices"
+        "purpose": "irreversible decisions only — never routine choices",
+        "dependsOn": [
+          {
+            "family": "architecture.yaml",
+            "hard": true,
+            "carries": "the decisions[].id and title that name this file"
+          }
+        ]
       },
       {
         "path": ".archgen/<slug>/docs/<module>.md",
         "pattern": "docs/*.md",
         "scopeIn": ["LARGE"],
         "signalSome": ["multi-module", "multi-service", "external-integration"],
-        "purpose": "topology diagrams for non-obvious systems (<=15 nodes)"
+        "purpose": "topology diagrams for non-obvious systems (<=15 nodes)",
+        "dependsOn": [
+          {
+            "family": "architecture.yaml",
+            "hard": true,
+            "carries": "the modules[] entries and depends_on_modules the diagram draws"
+          }
+        ]
       },
       {
         "path": ".archgen/<slug>/docs/mermaid-snippets.md",
         "pattern": "docs/mermaid-snippets.md",
         "scopeIn": ["LARGE"],
         "signalSome": ["multi-module", "multi-service", "external-integration"],
-        "purpose": "diagram snippets — only when a diagram is created"
+        "purpose": "diagram snippets — only when a diagram is created",
+        "dependsOn": [
+          {
+            "family": "architecture.yaml",
+            "hard": false,
+            "carries": "the modules the snippets illustrate"
+          }
+        ]
+      },
+      {
+        "path": ".archgen/<slug>/tasks.yaml",
+        "pattern": "tasks.yaml",
+        "purpose": "the task contract every plan needs",
+        "dependsOn": [
+          {
+            "family": "docs/prd.md",
+            "hard": true,
+            "carries": "the FR-<MODULE>-nn ids the acceptance lines cite"
+          },
+          {
+            "family": "architecture.yaml",
+            "hard": true,
+            "carries": "structure: and owns[] the file_ownership globs mirror, and the toolchain roots"
+          },
+          {
+            "family": "answers.yaml",
+            "hard": false,
+            "carries": "the recorded profile the floor checks"
+          },
+          {
+            "family": "codebase-map.md",
+            "hard": false,
+            "carries": "the surveyed modules and the host paths the ownership mirrors"
+          },
+          {
+            "family": "decisions/*.md",
+            "hard": false,
+            "carries": "the decision id an acceptance may cite"
+          }
+        ]
+      },
+      {
+        "path": ".archgen/<slug>/plans/<slug>.md",
+        "pattern": "plans/*.md",
+        "purpose": "the plan of record",
+        "dependsOn": [
+          {
+            "family": "tasks.yaml",
+            "hard": true,
+            "carries": "the task ids, titles and the 1-based acceptance indexes the sections and matrix rows cite"
+          },
+          {
+            "family": "docs/*.md",
+            "hard": false,
+            "carries": "the module diagrams a plan section may link to"
+          }
+        ]
       }
     ],
     "depthBudgets": {

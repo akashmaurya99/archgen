@@ -173,6 +173,25 @@ test('--apply stamps provenance comments and snapshots each file into migrate ba
   assert.match(lines.join('\n'), /backup: \.archgen\/\.backup\//);
 });
 
+test('the stamp migration covers answers.yaml — all three YAML artifacts carry the header', async () => {
+  // The reference told the agent to stamp `tasks.yaml`, `architecture.yaml`
+  // AND `answers.yaml`; the migration stamped two of them, so a plan written
+  // before the convention existed kept an unstamped answers.yaml forever.
+  const dir = seedArtifacts();
+  const answers = join(dir, 'answers.yaml');
+  const body = 'scope_class: MEDIUM\nplan_profile:\n  artifacts: []\n';
+  writeFileSync(answers, body);
+
+  const { lines, result: code } = await captureStdout(() => migrateMain([proj, '--apply']));
+  assert.equal(code, 0);
+  const ls = readFileSync(answers, 'utf8').split('\n');
+  assert.equal(ls[0], '# schema_version: 1', 'the answers file is stamped');
+  assert.match(ls[1], /^# generator: archgen( v\d+\.\d+\.\d+)?$/);
+  assert.match(ls[2], /^# generated_at: /);
+  assert.ok(readFileSync(answers, 'utf8').endsWith(body), 'the body is appended verbatim');
+  assert.match(lines.join('\n'), /\.archgen\/demo-shop\/answers\.yaml/);
+});
+
 test('idempotent: second run reports nothing pending and changes nothing', async () => {
   seedArtifacts();
   await captureStdout(() => migrateMain([proj, '--apply']));

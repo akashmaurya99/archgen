@@ -29,8 +29,9 @@
 // ctx shape (built here, passed to detect/files/apply):
 //   ctx.projectRoot   absolute root
 //   ctx.dryRun        true unless explicitly applying
-//   ctx.scanArtifacts() -> [{ rel, kind }] for .archgen/*/tasks.yaml and
-//                          .archgen/*/architecture.yaml (dot-dirs skipped)
+//   ctx.scanArtifacts() -> [{ rel, kind }] for .archgen/*/tasks.yaml,
+//                          .archgen/*/architecture.yaml and
+//                          .archgen/*/answers.yaml (dot-dirs skipped)
 //   ctx.backup(rel)   snapshot one project-relative file into
 //                     .archgen/.backup/<ts>/migrate/<rel>; THROWS under
 //                     dry-run so a mutating migration can never run silently
@@ -88,7 +89,15 @@ export function makeCtx(projectRoot, { dryRun }) {
     projectRoot: root,
     dryRun: dryRun === true,
 
-    /** Discover generated artifacts this framework knows how to migrate. */
+    /**
+     * Discover generated artifacts this framework knows how to migrate.
+     *
+     * The three YAML artifacts that carry the provenance header are scanned:
+     * `tasks.yaml`, `architecture.yaml` and `answers.yaml`. The third was
+     * missing — the reference told the agent to stamp all three, and the
+     * migration stamped two, so a plan written before the convention existed
+     * kept an unstamped `answers.yaml` forever.
+     */
     scanArtifacts() {
       const base = join(root, '.archgen');
       if (!existsSync(base)) return [];
@@ -98,7 +107,7 @@ export function makeCtx(projectRoot, { dryRun }) {
         .map((e) => e.name)
         .sort();
       for (const slug of slugs) {
-        for (const f of ['tasks.yaml', 'architecture.yaml']) {
+        for (const f of ['tasks.yaml', 'architecture.yaml', 'answers.yaml']) {
           const abs = join(base, slug, f);
           if (existsSync(abs) && statSync(abs).isFile()) {
             out.push({ rel: `.archgen/${slug}/${f}`, kind: f.replace(/\.yaml$/, '') });

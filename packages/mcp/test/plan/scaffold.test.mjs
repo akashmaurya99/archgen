@@ -173,6 +173,46 @@ test('the profile and the scaffold agree on the artifact set', () => {
   }
 });
 
+test('the scaffold serves the create set in the WRITE ORDER, with the dependencies', () => {
+  // The served order used to be the ladder's RULE order, which put
+  // tasks.yaml first — before the PRD whose FR ids its acceptance lines cite.
+  const s = buildScaffold(ladder, 'LARGE', {
+    slug: 'demo',
+    intent: 'GREENFIELD-SYSTEM',
+    signals: ['production', 'product-facing', 'multi-module'],
+  });
+  assert.deepEqual(
+    s.writeThese.map((p) => p.replace('.archgen/demo/', '')),
+    ['answers.yaml', 'docs/prd.md', 'architecture.yaml', 'docs/<module>.md', 'docs/mermaid-snippets.md', 'tasks.yaml', 'plans/demo.md'],
+  );
+  // The order carries the facts each step must inherit.
+  assert.ok(s.writeOrderNote, 'the payload must explain the order');
+  const tasks = s.writeOrder.find((step) => step.path.endsWith('/tasks.yaml'));
+  assert.ok(tasks, 'the task file must be a step');
+  const prd = tasks.dependsOn.find((d) => d.family === 'docs/prd.md');
+  assert.equal(prd.state, 'create');
+  assert.equal(prd.hard, true);
+  assert.match(prd.carries, /FR-/);
+});
+
+test('the write order and the served set are the same list', () => {
+  const s = buildScaffold(ladder, 'MEDIUM', {
+    slug: 'demo',
+    intent: 'BROWNFIELD-FEATURE',
+    signals: ['public-contract'],
+  });
+  assert.deepEqual(
+    s.writeOrder.map((step) => step.path),
+    s.writeThese,
+    'the order and the list must never disagree',
+  );
+  assert.deepEqual(
+    s.writeOrder.map((step) => step.step),
+    s.writeOrder.map((_, i) => i + 1),
+    'the steps are numbered in order',
+  );
+});
+
 test('every canonical YAML template PARSES with the real parser', () => {
   // The templates used to live as prose examples and were never validated —
   // three of them carried YAML the parser REJECTS (a `notes: >= 0` block-scalar

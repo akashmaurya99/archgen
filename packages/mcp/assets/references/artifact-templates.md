@@ -29,6 +29,14 @@ An artifact exists only when it has a consumer and changes a decision. Apply thi
 
 **No artifact without a consumer.** A generated copy of an existing PRD, architecture document, or ADR is a defect. So is an architecture file for a localized change, an ADR for a routine choice, a diagram for a trivial flow, or a task with no requirement. The floor checks the copy **inside the artifact space**; a duplicate written elsewhere in the host repository (a second PRD at the repo root) is the **reviewer's** judgement, not a floor check — look for it.
 
+### The write order — which file first, and why it matters
+
+`archgen_plan{action:'scaffold'}` returns `writeOrder`: the create set in the only order it can be written consistently. **Write them in that order, one file at a time** (`scaffold{file}` serves a single skeleton and names its step). Each step names the artifacts it depends on and the fact it must carry forward from them — the `FR-<MODULE>-nn` ids the acceptance lines cite, the `owns[]` globs the ownership mirrors, the task ids and acceptance indexes the plan sections cite.
+
+A dependency the profile **omits** dissolves: there is nothing to wait for. A dependency the profile **reuses** is satisfied by the host document — cite it, never regenerate it. A dependency the profile **creates** must exist first, and the one-file cursor refuses to serve the dependent until it does.
+
+The order is not a style preference. The floor proves each of those joins afterwards — the FR ids an acceptance cites, the paths a task owns, the decision ids the architecture declares, the task ids a plan section names — so a file written out of order is not merely unpolished: **it is wrong the moment it is written**, and the floor finds it a round later, after the gate was dispatched and the user was asked to approve.
+
 ## Plan depth by scope class
 
 Run `archgen_plan{action:'profile'}` first; fetch skeletons with `archgen_plan{action:'scaffold', scope, slug}`. **Required files must exist; a file the profile omits must not be created.** Authoring depth:
@@ -229,11 +237,11 @@ Generated only when the profile marks it create. Rules for the anti-hallucinatio
 - `modules[].depends_on_modules` is a DAG (drives task `depends_on`).
 - `key_interfaces` lists only exports other modules may consume.
 - `environment_matrix` vars fail fast when unparsed at the config boundary.
-- Record `toolchain:` (language, build/test/lint/typecheck commands, source and test roots) and `existing_docs:` (host sources of truth) so tasks cite them instead of guessing.
+- Record `toolchain:` (language, build/test/lint/typecheck commands, source and test roots) and `existing_docs:` (host sources of truth) so tasks cite them instead of guessing. The source and test roots come from the survey's map — the floor mirrors between the two roots it is given and never guesses a prefix.
 
 ## Product requirements document (PRD)
 
-Generated only when the profile marks it create. Author it BEFORE `tasks.yaml` (~1 bullet-dense page per module):
+Generated only when the profile marks it create. Author it from the elicited answers (~1 bullet-dense page per module) — the scaffold's `writeOrder` places it before the task file that cites its ids:
 - `FR-<MODULE>-nn` IDs are immutable once referenced by `tasks.yaml`.
 - NFRs need concrete numbers (latency, throughput, compliance standard); adjectives fail verification.
 - Success metrics state `<baseline> -> <target> within <window>`.
@@ -244,6 +252,7 @@ Generated via `scaffold` (the provenance header carries `# schema_version: 1`; t
 - `depends_on` lists prerequisites only.
 - Same-wave `file_ownership` globs are strictly disjoint.
 - `acceptance` is objectively checkable; cite edge rows (`E1`–`En`) and PRD IDs where the profile created a PRD.
+- Its content depends on what came before: the acceptance lines cite the PRD's FR ids, and `file_ownership` mirrors the architecture's `owns[]`.
 
 ## Edge-case matrix (MEDIUM+)
 

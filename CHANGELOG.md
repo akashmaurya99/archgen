@@ -1,7 +1,8 @@
-## [0.1.7] - 2026-11-12
+## [0.1.7] - UNRELEASED
 
-A context release: the catalog is smaller AND correct, every section says
-what it is FOR, and "no quality loss" is a CI fact instead of a promise.
+A correctness release: the catalog is smaller AND correct, every section says
+what it is FOR, "no quality loss" is a CI fact instead of a promise, and the
+artifacts are written in the order their content depends on.
 
 **Publish order: `archgen-mcp` FIRST, then `archgen-skill`.**
 
@@ -107,10 +108,10 @@ argument's description must still carry the facts it carried.
 
 | | before | after |
 |---|---|---|
-| `SKILL.md` | 7,916 | 7,459 |
+| `SKILL.md` | 7,916 | 7,441 |
 | MCP tool catalog | 5,587 | 5,538 |
-| **ALWAYS-ON** (both) | **13,503** | **12,997** |
-| protocol references | 19,168 | 18,966 |
+| **ALWAYS-ON** (both) | **13,503** | **12,979** |
+| protocol references | 19,168 | 19,455 |
 | dispatch briefs | 4,236 | 4,069 |
 
 The catalog barely moved because it is at its floor: 86% of it is the JSON
@@ -130,6 +131,73 @@ tokens. The tool already served ONE file per call; the skill never said so.
 It does now, and the mode table names `§artifact-templates/mechanical-invariants`
 — the section that owns the checklist the skill used to restate — so the
 invariants are loaded before the tasks are written, not after.
+
+### Fixed — the tool published the WRONG write order as fact
+
+The scaffold served the create set in the ladder's RULE order, and that order
+put `tasks.yaml` **first** — before the PRD whose `FR-<MODULE>-nn` ids its
+acceptance lines must cite, and before the `architecture.yaml` whose
+`owns[]` its `file_ownership` globs must mirror. A LARGE greenfield plan was
+served as:
+
+```
+tasks.yaml → plans/<slug>.md → answers.yaml → docs/prd.md → architecture.yaml → …
+```
+
+Four hard inversions. The dependency graph was not absent — it was implicit,
+inverted, and unaudited, and every one of them is a content inconsistency the
+moment the file is written.
+
+The edges are **data** now (`dependsOn` in `depth-ladder.json`), and the
+order is **derived** from them at runtime — never stored, so the two cannot
+disagree. The chain is:
+
+```
+codebase-map.md → answers.yaml → docs/prd.md → architecture.yaml
+                 → decisions/0001-*.md → docs/<module>.md + docs/mermaid-snippets.md
+                 → tasks.yaml → plans/<slug>.md
+```
+
+Each edge carries the fact that must pass forward ("the `FR-<MODULE>-nn` ids
+the acceptance lines cite"), so the agent is told WHAT to carry, not only
+WHEN. An omitted dependency **dissolves**; a reused one is satisfied by the
+host document.
+
+### Added — the one-file cursor refuses a file whose dependency does not exist
+
+`scaffold{file}` now checks the artifact space on disk. A missing **hard**
+dependency is a refusal that teaches the unblocking call (`teach` + `hint`,
+the shape every archgen failure uses); a missing **soft** one is reported in
+the payload. A plan can no longer be written out of order — and the floor
+still proves the joins afterwards (`REQ_UNKNOWN`, `PATH_UNOWNED`,
+`DECISION_MISSING`, `PLAN_TASK_COVERAGE`), one round later than it should
+have.
+
+### Added — the floor proves the per-task plan section
+
+The class contract says a MEDIUM/LARGE plan carries one heading per task.
+The floor proved only that a task id appears **somewhere** in the plan text,
+so a plan that mentioned `T9` in passing — and had no `T9` section — passed,
+and the worker contract then pointed at a section that did not exist.
+
+`PLAN_TASK_SECTION_MISSING` (an issue) and `PLAN_TASK_TITLE_DRIFT` (a
+warning — a paraphrase is not a defect) close it, at MEDIUM/LARGE with a
+recorded scope class.
+
+### Fixed — the provenance migration stamped two of the three YAML artifacts
+
+The reference told the agent to stamp `tasks.yaml`, `architecture.yaml` **and
+`answers.yaml`**; `npx archgen-skill migrate` scanned only the first two, so
+a plan written before the convention existed kept an unstamped `answers.yaml`
+forever. All three are scanned now.
+
+### Changed — the skill states the order, and the data states the reason
+
+`skill/SKILL.md` says the create set is written in the scaffold's
+`writeOrder`; the reference explains the dissolve/reuse semantics and points
+at the tool instead of restating the order. The always-on context grew by
+**12 tokens** (12,967 → 12,979 of a 13,000 ceiling) — the order itself is
+tool output, so it costs nothing on every request.
 
 ## [0.1.6] - 2026-11-11
 

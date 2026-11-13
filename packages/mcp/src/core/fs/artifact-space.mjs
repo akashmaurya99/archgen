@@ -268,6 +268,44 @@ export function listArtifacts(slugDir) {
   }
   return out;
 }
+
+/**
+ * Every artifact in the space, mapped to the FAMILY it belongs to.
+ *
+ * WHY THIS EXISTS ALONGSIDE `listArtifacts`. The list above is what a PROFILE
+ * decision is checked against: it excludes `answers.yaml`, because demanding
+ * a decision for the file the decision is RECORDED in would be circular.
+ *
+ * The WRITE ORDER needs the opposite: `answers.yaml` is a dependency other
+ * artifacts wait for, so its absence must be visible. So this walk includes
+ * it, and still excludes the process state (`.agent/`, `waivers.yaml`) that
+ * is not an artifact.
+ *
+ * The family is resolved with `familyOf`, so a literal pattern beats a
+ * wildcard one: `docs/prd.md` is its own family and never satisfies the
+ * per-module diagram family `docs/*.md`.
+ *
+ * @param {string} slugDir
+ * @returns {Map<string, string[]>} family -> the slug-relative paths in it
+ */
+export function artifactSpaceFamilies(slugDir) {
+  const families = artifactFamilies();
+  const out = new Map();
+  const add = (rel) => {
+    const family = familyOf(rel, families) ?? rel;
+    if (!out.has(family)) out.set(family, []);
+    out.get(family).push(rel);
+  };
+  for (const name of ['tasks.yaml', 'architecture.yaml', 'codebase-map.md', 'answers.yaml']) {
+    if (existsSync(join(slugDir, name))) add(name);
+  }
+  for (const dir of ['docs', 'decisions', 'plans']) {
+    const full = join(slugDir, dir);
+    if (!existsSync(full)) continue;
+    for (const f of listFiles(full)) add(`${dir}/${f}`);
+  }
+  return out;
+}
 export function readText(path) {
   try {
     return existsSync(path) ? readFileSync(path, 'utf8') : null;

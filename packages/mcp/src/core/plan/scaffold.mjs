@@ -14,6 +14,7 @@ import { invalidInput } from '../protocol/errors.mjs';
 import { assertSlug } from '../protocol/slug.mjs';
 import { TEMPLATES_DIR } from '../../context.mjs';
 import { buildPlanProfile, scopeArtifactRules } from './plan-profile.mjs';
+import { buildWriteOrder } from './artifact-order.mjs';
 import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
 
@@ -143,6 +144,17 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   const reusePaths = profile ? profile.artifacts.filter((a) => a.decision === 'reuse').map((a) => a.path) : [];
   const omitPaths = profile ? profile.artifacts.filter((a) => a.decision === 'omit').map((a) => a.path) : [];
 
+  // THE WRITE ORDER. The create set, in the only order it can be written
+  // consistently: every artifact after the ones it depends on.
+  //
+  // The edges live in the ladder's rules (`dependsOn`); the order is DERIVED
+  // from them here and never stored, so the two can never disagree. The
+  // ladder's FULL rule list is the input — not the class-filtered one — so a
+  // dependency the class does not create is DISSOLVED rather than reported
+  // as an unknown family.
+  const writeOrder = buildWriteOrder(artifacts, ladder.profile?.artifactRules ?? []);
+  const orderedCreates = writeOrder.order;
+
   // The canonical templates (assets/templates/) — one copy, served here.
   const header = provenanceHeader(generatedAt, generator);
   const tasksYaml = templatesDir
@@ -208,11 +220,20 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     // otherwise gets "missing or not a directory" from every artifact tool
     // and reads it as a broken tool rather than an unwritten plan.
     writes: false,
-    writeThese: requiredArtifacts,
+    // The create set, ORDERED. This is the list the agent writes, top to
+    // bottom: each step waits for the ones it depends on.
+    writeThese: orderedCreates,
     requiredArtifacts,
     optionalArtifacts,
     reuseArtifacts: reusePaths,
     omittedArtifacts: omitPaths,
+    // The order itself, with each step's dependencies and the fact each one
+    // must carry forward. The agent follows this, one file at a time.
+    writeOrder: writeOrder.steps,
+    writeOrderNote:
+      'Write the artifacts in the writeOrder sequence, one file at a time. ' +
+      'Each step names the artifacts it depends on and the fact it must carry forward from them; ' +
+      'a dependency the profile omits dissolves, and one it reuses is satisfied by the host document.',
     profile,
     scopeMismatch:
       profile && profile.scopeClass !== requested
@@ -220,6 +241,7 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
         : null,
     artifactPolicy:
       'Write a REQUIRED artifact. Write an OPTIONAL artifact only when the plan profile marks it create. ' +
+      'Write them in the writeOrder sequence — each step waits for the artifacts it depends on. ' +
       'A reuse decision cites an existing repository source; an omit decision records its reason. ' +
       'Unrecorded omissions and artifacts without a consumer are defects.',
     omissionPolicy: {
@@ -243,7 +265,8 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     skeletons: served,
     edgeMatrixTemplate: edgeMatrix,
     nextStep:
-      'Run archgen_plan{action:"profile"} first; then fill only the skeletons whose profile decision is create. ' +
+      'Run archgen_plan{action:"profile"} first; then fill only the skeletons whose profile decision is create, ' +
+      'in the writeOrder sequence (step 1 first). ' +
       'Then run archgen_plan{action:"validate"} and archgen_plan{action:"verify"}.',
   };
 }

@@ -27,11 +27,12 @@ import { checkPlanCoverage } from '../../src/core/plan/plan-coverage.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Build a slug dir with the artifacts the audit reads. */
-function fixture({ architecture = null, prd = null, plans = {}, decisions = [] } = {}) {
+function fixture({ architecture = null, prd = null, plans = {}, decisions = [], answers = null } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'archgen-audit-'));
   const slugDir = join(root, 'demo');
   mkdirSync(join(slugDir, 'plans'), { recursive: true });
   if (architecture) writeFileSync(join(slugDir, 'architecture.yaml'), architecture, 'utf8');
+  if (answers) writeFileSync(join(slugDir, 'answers.yaml'), answers, 'utf8');
   if (prd) {
     mkdirSync(join(slugDir, 'docs'), { recursive: true });
     writeFileSync(join(slugDir, 'docs', 'prd.md'), prd, 'utf8');
@@ -264,8 +265,78 @@ test('cross-wave ownership containment is a WARNING, never a block', () => {
   }
 });
 
-test('the matrix parser reads a plan table and ignores tables without a Covered by column', () => {
-  const text = [
+test('a MEDIUM plan must give every task a section of its own', () => {
+  // The class contract is one heading per task. The floor proved only that
+  // the id appears SOMEWHERE, so a plan that mentioned T1 in passing passed
+  // and the worker contract pointed at a section that did not exist.
+  const f = fixture({
+    answers: 'scope_class: MEDIUM\n',
+    plans: { 'demo.md': '# Plan\n\nT1 does the core. T2 follows it.\n' },
+  });
+  try {
+    const { issues } = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    const missing = issues.filter((i) => i.includes('PLAN_TASK_SECTION_MISSING'));
+    assert.equal(missing.length, 2, `both tasks need a section: ${issues.join(' | ')}`);
+    assert.ok(missing[0].includes("'T1'"), 'the finding must name the task');
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a task WITH its own section is not reported', () => {
+  const f = fixture({
+    answers: 'scope_class: MEDIUM\n',
+    plans: {
+      'demo.md': '# Plan\n\n## T1 — core\n\nApproach: build it.\n\n## T2 — api\n\nApproach: call it.\n',
+    },
+  });
+  try {
+    const { issues } = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.deepEqual(
+      issues.filter((i) => i.includes('PLAN_TASK_SECTION_MISSING')),
+      [],
+      `a task with a section must not be reported: ${issues.join(' | ')}`,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a SMALL plan needs no per-task section', () => {
+  // SMALL is a plan note — the contract has no per-task sections, so the
+  // check must stay quiet there.
+  const f = fixture({ plans: { 'demo.md': '# Plan\n\nT1 does the core.\n' } });
+  try {
+    const { issues } = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.deepEqual(
+      issues.filter((i) => i.includes('PLAN_TASK_SECTION_MISSING')),
+      [],
+      'a SMALL plan must not be asked for per-task sections',
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a section title that differs from the task title is a WARNING, never a block', () => {
+  const f = fixture({
+    answers: 'scope_class: MEDIUM\n',
+    plans: { 'demo.md': '# Plan\n\n## T1 — the core module\n\nApproach: build it.\n\n## T2 — api\n\nApproach: call it.\n' },
+  });
+  try {
+    const { issues, warnings } = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.deepEqual(
+      issues.filter((i) => i.includes('PLAN_TASK_TITLE_DRIFT')),
+      [],
+      'a paraphrase must never block',
+    );
+    assert.equal(warnings.filter((w) => w.includes('PLAN_TASK_TITLE_DRIFT')).length, 1);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('the matrix parser reads a plan table and ignores tables without a Covered by column', () => {  const text = [
     '| Case | Input | Covered by |',
     '| --- | --- | --- |',
     '| E1 | empty | T1#1 |',

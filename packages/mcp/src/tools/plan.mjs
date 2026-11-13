@@ -5,6 +5,8 @@
 // enum costs far less context than five thin tools — and it removes the
 // "which one do I call?" confusion the whole MCP exercise exists to fix.
 import { z } from 'zod/v4';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
@@ -18,11 +20,12 @@ import { verifyPlan, planCoverage } from '../core/plan/verifier.mjs';
 import { planGraph } from '../core/plan/plan-grapher.mjs';
 import { analyzeImpact } from '../core/plan/impact-analyzer.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
-import { assertPathToken } from '../core/protocol/slug.mjs';
+import { assertPathToken, isSlug } from '../core/protocol/slug.mjs';
 import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, warningMeta, withMeta } from '../envelope.mjs';
-import { hint } from '../core/protocol/guidance.mjs';
+import { hint, teach } from '../core/protocol/guidance.mjs';
 import { resolutionWarning, resolveTasksFile } from '../core/fs/tasks-file.mjs';
+import { artifactSpaceFamilies } from '../core/fs/artifact-space.mjs';
 import { collectionRules } from '../core/protocol/action-args.mjs';
 
 // The action list lives in archgen_help (one call away). Repeating it here
@@ -460,6 +463,19 @@ export function registerPlanTools(server) {
             // and no release ever has to update a version written by hand.
             generator: `archgen v${serverVersion()}`,
           });
+          // The one-file cursor carries the SAME inputs the call did, and the
+          // class the scaffold SERVED. It used to carry only the requested
+          // scope, so following it re-entered CLASS mode — and class mode
+          // refused the very artifacts the profile had marked `create`.
+          const servedScope = built.scopeClass ?? args.scope;
+          const sameInputs = {
+            scope: servedScope,
+            intent: args.intent,
+            signals: args.signals?.length ? args.signals : undefined,
+            modules: args.modules,
+            tasks: args.tasks,
+            slug: args.slug ?? '<slug>',
+          };
           // ONE file's skeleton, when the caller named one.
           //
           // The caller names the file the way the tool PUBLISHED it — the
@@ -497,6 +513,52 @@ export function registerPlanTools(server) {
               throw invalidInput(
                 `the profile marks '${artifact.path}' as ${artifact.decision} — do not write it (${artifact.reason ?? 'no reason recorded'})`, { ...hint({ action: toolCall('archgen_plan', { action: 'profile', intent: 'GREENFIELD-SYSTEM', slug: '<slug>' }), reason: "the profile decides which artifacts to create." }), action, file: wanted, decision: artifact.decision, reason: artifact.reason ?? null });
             }
+            // THE DEPENDENCIES. A file that cites another file's FACTS cannot
+            // be written before that file exists: an acceptance line cites
+            // the PRD's FR ids, a `file_ownership` glob mirrors the
+            // architecture's `owns[]`, and a plan section cites the task ids
+            // and acceptance indexes. Written out of order, they are wrong
+            // the moment they are written — and the floor finds it a round
+            // later, after the gate was dispatched.
+            //
+            // So the cursor checks the ARTIFACT SPACE on disk. A missing HARD
+            // dependency is a refusal that teaches the unblocking call; a
+            // missing SOFT one is a warning the payload carries.
+            const step = (built.writeOrder ?? []).find((s) => s.path === (artifact?.path ?? wanted)) ?? null;
+            const slug = args.slug ?? slugOfPath(artifact?.path ?? wanted);
+            const space = artifactSpaceFor(ctx, slug);
+            const unmet = [];
+            for (const dep of step?.dependsOn ?? []) {
+              // A `host` dependency is satisfied by the host document and an
+              // `omitted` one has nothing to wait for.
+              if (dep.state !== 'create') continue;
+              if (space?.get(dep.family)?.length) continue;
+              unmet.push(dep);
+              if (!dep.hard) continue; // a soft edge orders; it never blocks
+              const unblock = toolCall('archgen_plan', {
+                action: 'scaffold',
+                ...sameInputs,
+                slug: slug ?? sameInputs.slug,
+                file: dep.path,
+              });
+              throw invalidInput(
+                teach(
+                  `'${artifact.path}' depends on '${dep.path}', which does not exist yet`,
+                  'write the dependency first — it carries ' + (dep.carries || 'the facts this file cites'),
+                  unblock,
+                ),
+                {
+                  ...hint({
+                    action: unblock,
+                    reason: 'the dependency must exist before this file can cite it.',
+                  }),
+                  action,
+                  file: wanted,
+                  missing: dep.path,
+                  dependsOn: step?.dependsOn ?? [],
+                },
+              );
+            }
             // ONLY the file. The old payload kept the whole scaffold and
             // replaced the skeletons map, so a "one file" call still carried
             // ~1,900 tokens of profile, artifacts, notes and budgets.
@@ -512,25 +574,21 @@ export function registerPlanTools(server) {
                 purpose: artifact?.purpose ?? null,
                 reason: artifact?.reason ?? null,
                 required: artifact?.required ?? null,
+                // Its place in the write order, and what it waits for.
+                step: step?.step ?? null,
+                dependsOn: step?.dependsOn ?? [],
               },
               skeleton,
               writeThese: artifact ? [artifact.path] : [],
-              nextStep: `Write ${artifact?.path ?? wanted} from the skeleton above, then ${toolCall('archgen_plan', { action: 'validate' })}.`,
+              // The dependencies that are not on disk yet. A hard one would
+              // have refused the call; a soft one is reported here.
+              unmetDependencies: unmet.map((d) => ({ path: d.path, family: d.family, carries: d.carries })),
+              dependencyCheck: space ? 'checked against the artifact space on disk' : 'skipped — no artifact space resolved',
+              nextStep: unmet.length
+                ? `Write ${unmet[0].path} first — it carries ${unmet[0].carries || 'the facts this file cites'} — then ${artifact?.path ?? wanted}.`
+                : `Write ${artifact?.path ?? wanted} from the skeleton above, then ${toolCall('archgen_plan', { action: 'validate' })}.`,
             };
           }
-          // The one-file cursor carries the SAME inputs the call did, and the
-          // class the scaffold SERVED. It used to carry only the requested
-          // scope, so following it re-entered CLASS mode — and class mode
-          // refused the very artifacts the profile had marked `create`.
-          const servedScope = built.scopeClass ?? args.scope;
-          const sameInputs = {
-            scope: servedScope,
-            intent: args.intent,
-            signals: args.signals?.length ? args.signals : undefined,
-            modules: args.modules,
-            tasks: args.tasks,
-            slug: args.slug ?? '<slug>',
-          };
           return withMeta(
             built,
             moreMeta({
@@ -661,6 +719,40 @@ export function registerPlanTools(server) {
   });
 }
 
+
+/**
+ * The slug an artifact path names (`.archgen/<slug>/...`).
+ *
+ * The path the tool PUBLISHED is the most reliable name of the space: it is
+ * the one the agent holds. A path carrying the literal `<slug>` names no
+ * space, and neither does a segment that is not a legal slug — a slug is a
+ * PATH SEGMENT, so `..` must never be read as one.
+ *
+ * @param {string} path
+ * @returns {string|null}
+ */
+function slugOfPath(path) {
+  const m = /^\.archgen\/([^/]+)\//.exec(String(path ?? '').replaceAll('\\', '/'));
+  const slug = m?.[1];
+  return isSlug(slug) ? slug : null;
+}
+
+/**
+ * The artifact space of a slug: the families of the files on disk.
+ *
+ * Null when the space does not exist — the caller then SKIPS the dependency
+ * check rather than guessing which space it meant.
+ *
+ * @param {any} ctx
+ * @param {string|null} slug
+ * @returns {Map<string, string[]>|null}
+ */
+function artifactSpaceFor(ctx, slug) {
+  if (!slug) return null;
+  const dir = join(ctx.projectRoot, '.archgen', slug);
+  if (!existsSync(dir)) return null;
+  return artifactSpaceFamilies(dir);
+}
 
 /**
  * The meta block for a resolved task file: the warning when the file was

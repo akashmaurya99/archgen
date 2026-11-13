@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { loadAsset } from '../../src/context.mjs';
 import { ISSUE_CODES, WARNING_CODES, BASE_CODES, KNOWN_CODES } from '../../src/core/protocol/codes.mjs';
 import { buildPlanProfile } from '../../src/core/plan/plan-profile.mjs';
+import { buildWriteOrder } from '../../src/core/plan/artifact-order.mjs';
 import { buildScaffold } from '../../src/core/plan/scaffold.mjs';
 import { readWaivers } from '../../src/core/plan/waivers.mjs';
 import { REPO_ROOT } from '../support/repo-root.mjs';
@@ -240,8 +241,41 @@ test('a scaffold called WITHOUT an intent says it served the candidate set, not 
   assert.match(built.modeNote, /profile/i, 'the note must point at the profile');
 });
 
-// ── 6. the ladder's own contract ───────────────────────────────────────────
+// ── 7. the write order ──────────────────────────────────────────────────────
 
+test('the derived write order IS the ladder array order — one source of truth', () => {
+  // The ladder's rule array is the order the artifacts are written in, and
+  // the `dependsOn` edges say why. The derived order must equal the array
+  // order restricted to the create set: if the two disagreed, the served
+  // order and the declared order would be two answers to one question.
+  const cases = [
+    ['SMALL', 'BROWNFIELD-CHANGE', []],
+    ['MEDIUM', 'GREENFIELD-MODULE', ['new-module']],
+    ['MEDIUM', 'BROWNFIELD-FEATURE', ['public-contract']],
+    ['LARGE', 'GREENFIELD-SYSTEM', ['production', 'product-facing', 'multi-module']],
+    ['LARGE', 'GREENFIELD-SYSTEM', ['production', 'irreversible', 'multi-module']],
+  ];
+  for (const [scope, intent, signals] of cases) {
+    const profile = buildPlanProfile(ladder, { intent, signals, slug: 'demo' });
+    const order = buildWriteOrder(profile.artifacts, ladder.profile.artifactRules);
+    const byRuleOrder = profile.artifacts.filter((a) => a.decision === 'create').map((a) => a.path);
+    assert.deepEqual(
+      order.order,
+      byRuleOrder,
+      `${scope}/${intent}: the derived order must be the ladder's own array order`,
+    );
+  }
+});
+
+test('the reference points at the tool for the order instead of restating it', () => {
+  // A prose order is a second source that drifts. The reference states the
+  // RULE and names the payload that carries the order.
+  const ref = read(join(REFS, 'artifact-templates.md'));
+  assert.ok(ref, 'artifact-templates.md must ship with the MCP server');
+  assert.ok(ref.includes('writeOrder'), 'the reference must name the payload that carries the order');
+});
+
+// ── 6. the ladder's own contract ───────────────────────────────────────────
 test('every artifact rule carries a family pattern the floor can match', () => {
   for (const rule of ladder.profile.artifactRules ?? []) {
     assert.ok(rule.pattern, `the rule ${rule.path} must carry a pattern`);

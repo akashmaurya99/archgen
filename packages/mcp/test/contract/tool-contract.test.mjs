@@ -225,8 +225,71 @@ test('scaffold{file} serves a create-decided artifact, and only that file', asyn
   assert.deepEqual(envelope.data.writeThese, ['.archgen/demo/tasks.yaml']);
 });
 
-test('bootstrap and archgen_codegraph answer with the SAME codegraph key set', async () => {
-  const setup = await call('archgen_setup', { action: 'bootstrap', location: 'project', approve: false });
+test('scaffold{file} REFUSES a file whose hard dependency does not exist yet', async () => {
+  // The task file cites the PRD's FR ids and mirrors the architecture's
+  // ownership globs. Written before those exist, it is wrong the moment it
+  // is written — so the cursor refuses it and names the call that unblocks it.
+  const root = mkdtempSync(join(tmpdir(), 'archgen-order-'));
+  try {
+    const slugDir = join(root, '.archgen', 'demo');
+    mkdirSync(join(slugDir, 'docs'), { recursive: true });
+    const local = new Context({
+      projectRoot: root,
+      anchorRoot: root,
+      home: join(root, '.home'),
+      env: { PATH: '/nonexistent-archgen-test-path' },
+    });
+    const envelope = await guard(getToolSpec('archgen_plan').handler, local, {
+      action: 'scaffold',
+      scope: 'LARGE',
+      intent: 'GREENFIELD-SYSTEM',
+      signals: ['production', 'product-facing'],
+      slug: 'demo',
+      file: '.archgen/demo/tasks.yaml',
+    });
+    assert.ok(!envelope.ok, 'the dependent must not be served before its dependency');
+    assert.equal(envelope.error?.code, 'INVALID_INPUT');
+    assert.match(envelope.error?.message ?? '', /docs\/prd\.md/, 'the error must name the missing dependency');
+    // The next call is the one that unblocks it.
+    assert.match(envelope.error?.details?.nextAction ?? '', /scaffold/, 'the error must teach the next call');
+    assert.match(envelope.error?.details?.nextAction ?? '', /prd\.md/, 'the next call must ask for the dependency');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('scaffold{file} serves the file once its hard dependency exists, and reports the soft ones', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'archgen-order2-'));
+  try {
+    const slugDir = join(root, '.archgen', 'demo');
+    mkdirSync(join(slugDir, 'docs'), { recursive: true });
+    writeFileSync(join(slugDir, 'docs', 'prd.md'), '# PRD\n\n- FR-NOTES-01 — a note exists\n', 'utf8');
+    const local = new Context({
+      projectRoot: root,
+      anchorRoot: root,
+      home: join(root, '.home'),
+      env: { PATH: '/nonexistent-archgen-test-path' },
+    });
+    const envelope = await guard(getToolSpec('archgen_plan').handler, local, {
+      action: 'scaffold',
+      scope: 'LARGE',
+      intent: 'GREENFIELD-SYSTEM',
+      signals: ['production', 'product-facing'],
+      slug: 'demo',
+      file: '.archgen/demo/tasks.yaml',
+    });
+    assert.ok(envelope.ok, envelope.error?.message);
+    assert.equal(envelope.data.one.path, '.archgen/demo/tasks.yaml');
+    assert.ok(envelope.data.one.step >= 1, 'the payload must name the step');
+    // The SOFT dependency (the answers file) is reported, not refused.
+    const unmet = (envelope.data.unmetDependencies ?? []).map((d) => d.family);
+    assert.ok(unmet.includes('answers.yaml'), `the soft dependency must be reported: ${unmet.join(', ')}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap and archgen_codegraph answer with the SAME codegraph key set', async () => {  const setup = await call('archgen_setup', { action: 'bootstrap', location: 'project', approve: false });
   const cg = await call('archgen_codegraph', { action: 'status' });
   assert.ok(setup.ok, setup.error?.message);
   assert.ok(cg.ok, cg.error?.message);

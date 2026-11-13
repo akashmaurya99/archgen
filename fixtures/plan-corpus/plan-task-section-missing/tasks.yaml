@@ -1,0 +1,7 @@
+tasks:
+  - id: T1
+    title: core
+    depends_on: []
+    file_ownership: ["src/core/**"]
+    acceptance:
+      - "the core behaviour holds"

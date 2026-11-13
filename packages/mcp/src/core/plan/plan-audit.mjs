@@ -64,6 +64,52 @@ function finding(code, message) {
 }
 
 /**
+ * The headings of the plan markdown, with the id each one names.
+ *
+ * The id is the heading's FIRST TOKEN — `### TASK-01 — Auth API` names
+ * `TASK-01`. Any heading level counts, because the plan may use `##` for a
+ * task section and `###` for a subsection, and the anchor rule treats both
+ * the same.
+ *
+ * @param {string} planText
+ * @returns {Array<{id: string, title: string}>}
+ */
+function planHeadings(planText) {
+  const out = [];
+  for (const m of String(planText ?? '').matchAll(/^#{2,6}\s+(.+)$/gm)) {
+    const text = m[1].trim();
+    // The id runs to the first space; the title is what follows, minus the
+    // separator the template writes between them.
+    const m2 = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:[—–:-]+\s*)?(.*)$/.exec(text);
+    if (!m2) continue;
+    out.push({ id: m2[1], title: m2[2].trim().replace(/[—–-]+\s*$/, '').trim() });
+  }
+  return out;
+}
+
+/**
+ * Do two titles name the same thing?
+ *
+ * A paraphrase is not a defect: the plan's heading may drop a word or use a
+ * different case. So the comparison folds case, collapses whitespace and
+ * ignores the punctuation at the edges.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function sameTitle(a, b) {
+  const fold = (s) =>
+    String(s ?? '')
+      .toLowerCase()
+      .replace(/[—–]+/g, '-')
+      .replace(/[^\p{L}\p{N}\s-]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  return fold(a) === fold(b);
+}
+
+/**
  * Audit one plan's artifacts.
  *
  * @param {{slugDir: string, tasks: any[]}} input
@@ -430,6 +476,47 @@ export function auditPlan({ slugDir, tasks }) {
           issues.push(finding('MATRIX_DANGLING_CLAIM', `acceptance ${key} claims edge case '${edge}' but no matrix row defines it`));
         }
       }
+    }
+  }
+
+  // ── 3b. one plan section per task ────────────────────────────────────────
+  //
+  // The class contract is explicit: at MEDIUM/LARGE the plan carries ONE
+  // section per task — a heading that names the id and the title — in
+  // dependency order. The floor proved only that a task id appears SOMEWHERE
+  // in the plan text, so a plan that mentioned 'T9' in passing and had no
+  // 'T9' section passed, and the worker contract then pointed at a section
+  // that does not exist.
+  //
+  // The SECTION is proved from the markdown: the id is the heading's first
+  // token. The TITLE is a paraphrase, so a title that differs from the task
+  // file's is a WARNING — never a block.
+  const scopeClass = String(profile?.scope_class ?? answers?.scope_class ?? '').toUpperCase();
+  const perTaskSections = scopeClass === 'MEDIUM' || scopeClass === 'LARGE';
+  const headings = planHeadings(planText);
+  maps.taskSections = [];
+  for (const t of tasks) {
+    const id = String(t?.id ?? '');
+    if (!id) continue;
+    const hit = headings.find((h) => h.id.toUpperCase() === id.toUpperCase());
+    maps.taskSections.push({ id, section: hit ? hit.title : null, found: Boolean(hit) });
+    if (!hit) {
+      if (perTaskSections) {
+        issues.push(
+          finding(
+            'PLAN_TASK_SECTION_MISSING',
+            `task '${id}' has no plan section — a ${scopeClass} plan carries one heading per task ('### <id> — <title>'). ` +
+              `Add a '## ${id} — <title>' section with its approach, edge cases and out-of-scope`,
+          ),
+        );
+      }
+      continue;
+    }
+    const title = String(t?.title ?? '').trim();
+    if (title && !sameTitle(hit.title, title)) {
+      warnings.push(
+        finding('PLAN_TASK_TITLE_DRIFT', `the plan section for '${id}' is titled '${hit.title}', but tasks.yaml titles it '${title}'`),
+      );
     }
   }
 

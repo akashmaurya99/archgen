@@ -559,6 +559,12 @@
       "obligation": "every YAML value is quoted"
     },
     {
+      "id": "skill.generate.order",
+      "file": "skill/SKILL.md",
+      "match": "writeOrder",
+      "obligation": "the create set is written in the scaffold's dependency order"
+    },
+    {
       "id": "skill.generate.mirror",
       "file": "packages/mcp/assets/references/artifact-templates.md",
       "match": "Mirrored test tree",

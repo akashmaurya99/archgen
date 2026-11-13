@@ -121,7 +121,7 @@ Depth budgets (`§artifact-templates/depth-budgets`) are ceilings: stop when the
 1. **Route & profile:** state action + intent in one sentence; run Step 2. `[wait for user]`
 2. **Interview:** `§interview`—Round 0 is scope calibration only; batch 3–5 recommendation-first forks, only unresolved ones. `[wait per round]`
 3. **Generate** in `.archgen/<slug>/` (collision → `<slug>-2`, `<slug>-3`; never overwrite/merge):
-   - Write only `create` artifacts; cite reused host docs; record omit reasons.
+   - Write only `create` artifacts, in the scaffold's `writeOrder`; cite reused host docs; record omit reasons.
    - Tasks carry `id`, `title`, `depends_on`, `parallel_group`, `file_ownership`, `artifacts`, objective `acceptance`; leave `status` unset. **Quote every value** — the parser reads an unquoted `key: value` list item as a mapping, and a flow list splits on commas (`§artifact-templates/the-yaml-subset`).
    - **Mechanical invariants:** the floor proves them; make them true the FIRST time (`§artifact-templates/mechanical-invariants`).
    - Run the **FETCH-SKILL pre-planning scan**.

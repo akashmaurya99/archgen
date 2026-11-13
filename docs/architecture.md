@@ -179,6 +179,41 @@ the plan's `## Profile` YAML block (SMALL) — and the floor **proves** it:
 every create exists, every omit does not, every reuse cites a file that
 exists, and every artifact on disk has a decision.
 
+## The artifacts are written in dependency order
+
+The artifacts are not independent documents. A task file's acceptance lines
+cite the `FR-<MODULE>-nn` ids the PRD defines; its `file_ownership` globs
+mirror the `architecture.yaml`'s `owns[]`; a plan section names the task ids
+and the 1-based acceptance indexes the task file holds. Writing a dependent
+before its dependency is therefore not a style preference — it is a content
+inconsistency the moment the file is written.
+
+The scaffold used to publish the ladder's **rule order** as the write order,
+which put `tasks.yaml` first — before the PRD and the architecture it cites.
+The edges are data now (`dependsOn` in `depth-ladder.json`), and the order is
+**derived** from them at runtime, so the ladder's array and the declared
+edges can never disagree:
+
+```
+codebase-map.md → answers.yaml → docs/prd.md → architecture.yaml
+                 → decisions/0001-*.md → docs/<module>.md + docs/mermaid-snippets.md
+                 → tasks.yaml → plans/<slug>.md
+```
+
+Each edge carries the fact that must pass forward ("the `FR-<MODULE>-nn` ids
+the acceptance lines cite"), so the agent is told **what** to carry and not
+only **when**. An omitted dependency **dissolves** — there is nothing to wait
+for; a reused one is satisfied by the host document, which is cited and never
+regenerated.
+
+`scaffold{action:'scaffold'}` serves the order as `writeOrder`, and the
+one-file cursor (`scaffold{file}`) checks the artifact space on disk: a
+missing **hard** dependency is a refusal that teaches the unblocking call, a
+missing **soft** one is reported in the payload. The floor still proves every
+join afterwards — `REQ_UNKNOWN`, `PATH_UNOWNED`, `MIRROR_MISSING`,
+`DECISION_MISSING`, `PLAN_TASK_COVERAGE` — but it now finds a defect a round
+earlier than before, instead of after the gate was dispatched.
+
 ## Wave execution & ownership discipline
 
 `archgen_tasks{action:'next'}` resolves the dependency frontier into topological waves. A cycle or an ownership clash comes back as the typed error codes `CYCLE` / `OWNERSHIP_CONFLICT` — the orchestrator fixes `tasks.yaml` before proceeding.
@@ -311,7 +346,7 @@ to ship a skill whose declared minimum exceeds the server's version.
 | Tool output | Replaces hand-assembly in |
 |---|---|
 | `archgen_plan { action: 'profile' }` | the scope score + per-artifact create/reuse/omit decisions + depth budgets |
-| `archgen_plan { action: 'scaffold' }` | the depth ladder's artifact set + skeletons |
+| `archgen_plan { action: 'scaffold' }` | the depth ladder's artifact set + skeletons + the dependency write order |
 | `archgen_plan { action: 'brief' }` | the verifier / review / survey / investigate briefs |
 | `archgen_tasks { action: 'contract' }` | the worker prompt contract (7 rules) |
 | `archgen_setup { action: 'harness_info' }` | the harness capability tables |
