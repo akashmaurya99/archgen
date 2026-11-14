@@ -9,12 +9,18 @@ on:
 jobs:
   # The MCP server is the runtime that owns every deterministic capability
   # (the skill ships no code). Node >= 20 is the SDK v2 floor.
+  #
+  # The matrix carries the MINIMUM supported version AND the CURRENT one:
+  # `node --test <dir>` works on Node 20 and BREAKS on Node 22+ (a positional
+  # argument became a glob, so the runner tried to EXECUTE the directory),
+  # and only the newer leg of the matrix caught it. A matrix that tests one
+  # version tests one version's semantics.
   mcp:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22]
+        node-version: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22]
+        node-version: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

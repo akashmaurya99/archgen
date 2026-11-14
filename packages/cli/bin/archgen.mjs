@@ -25,18 +25,19 @@ import { migrateMain } from '../lib/migrate.js';
 import { compareSemver, fetchLatestVersion } from '../lib/version.js';
 import { npmInvocation, whichOnPath, globalBinPath } from '../lib/spawn-npm.js';
 import { cliVersion } from '../lib/store.js';
+import { writeOut, writeErr } from '../lib/io.js';
 import { spawnSync } from 'node:child_process';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function runInitAndDoctor(dir) {
   const r = initProject(dir, PACKAGE_ROOT);
-  console.log('  = store refreshed at ' + r.storePath);
+  writeOut('  = store refreshed at ' + r.storePath);
   const d = doctorProject(dir, PACKAGE_ROOT, {});
   // A failed doctor must fail the update too: the project was NOT brought to
   // the new version.
   if (d.failures > 0) {
-    console.error('  ! doctor reported ' + d.failures + ' failure(s)');
+    writeErr('  ! doctor reported ' + d.failures + ' failure(s)');
     process.exitCode = 1;
   }
 }
@@ -188,19 +189,19 @@ try {
         mcp: !noMcp,
         location,
       });
-      console.log('archgen: project ready (single-store layout)');
-      console.log('  + store ' + r.storePath);
-      if (r.claudeLink === 'created') console.log('  + link  .claude/skills/archgen -> ../../.agents/skills/archgen');
-      else if (r.claudeLink === 'existing') console.log('  = link  .claude/skills/archgen (already points at the store)');
-      else if (r.claudeLink === 'migrated') console.log('  ~ link  .claude/skills/archgen migrated from copy to symlink');
-      else if (r.claudeLink === 'kept-divergent') console.log('  ! kept  .claude/skills/archgen (divergent - left untouched)');
-      else console.log('  ! skip  .claude/skills/archgen (symlink unavailable)');
-      for (const b of r.backups) console.log('  ~ backup ' + b + ' (previous store moved aside)');
+      writeOut('archgen: project ready (single-store layout)');
+      writeOut('  + store ' + r.storePath);
+      if (r.claudeLink === 'created') writeOut('  + link  .claude/skills/archgen -> ../../.agents/skills/archgen');
+      else if (r.claudeLink === 'existing') writeOut('  = link  .claude/skills/archgen (already points at the store)');
+      else if (r.claudeLink === 'migrated') writeOut('  ~ link  .claude/skills/archgen migrated from copy to symlink');
+      else if (r.claudeLink === 'kept-divergent') writeOut('  ! kept  .claude/skills/archgen (divergent - left untouched)');
+      else writeOut('  ! skip  .claude/skills/archgen (symlink unavailable)');
+      for (const b of r.backups) writeOut('  ~ backup ' + b + ' (previous store moved aside)');
       for (const f of r.contextFiles) {
-        console.log(`  ${r.createdContextFiles.includes(f) ? 'created' : 'updated'} ${f} (archgen pointer block)`);
+        writeOut(`  ${r.createdContextFiles.includes(f) ? 'created' : 'updated'} ${f} (archgen pointer block)`);
       }
-      for (const w of r.warnings) console.log('  note: ' + w);
-      console.log('\nNext: open this project in your agent and say "generate architecture" or "add feature X".');
+      for (const w of r.warnings) writeOut('  note: ' + w);
+      writeOut('\nNext: open this project in your agent and say "generate architecture" or "add feature X".');
       break;
     }
     case 'doctor': {
@@ -208,10 +209,10 @@ try {
       const dir = targetDir();
       assertNoUnknownFlags();
       const r = doctorProject(dir, PACKAGE_ROOT, { check });
-      console.log('archgen doctor — ' + r.root + (check ? '  (check mode: no changes made)' : ''));
-      for (const c of r.checks) console.log(`  [${c.status.toLowerCase().padEnd(9)}] ${c.msg}`);
+      writeOut('archgen doctor — ' + r.root + (check ? '  (check mode: no changes made)' : ''));
+      for (const c of r.checks) writeOut(`  [${c.status.toLowerCase().padEnd(9)}] ${c.msg}`);
       const t = r.tally;
-      console.log(`Summary: ${t.OK} ok, ${t.FIXED} fixed, ${t['WOULD-FIX']} would-fix, ${t.WARN} warning(s), ${t.FAIL} failure(s)`);
+      writeOut(`Summary: ${t.OK} ok, ${t.FIXED} fixed, ${t['WOULD-FIX']} would-fix, ${t.WARN} warning(s), ${t.FAIL} failure(s)`);
       if (r.failures > 0) process.exitCode = 1;
       break;
     }
@@ -225,10 +226,10 @@ try {
       if (stray) throw new Error(`unexpected argument: ${stray} — install takes no directory`);
       if (uninstallMode) { uninstall(); break; }
       const r = installGlobal({ copy, codegraph: !noCodegraph, mcp: !noMcp });
-      console.log('archgen: global harness install (mode: ' + (copy ? 'copy' : 'symlink') + ')');
-      for (const [status, mode, path] of r.rows) console.log(`  ${status.padEnd(7)} ${mode.padEnd(5)} ${path}`);
-      console.log('\nPer-project setup (recommended): npx archgen-skill init');
-      if (r.failures > 0) { console.error(`${r.failures} target(s) failed`); process.exitCode = 1; }
+      writeOut('archgen: global harness install (mode: ' + (copy ? 'copy' : 'symlink') + ')');
+      for (const [status, mode, path] of r.rows) writeOut(`  ${status.padEnd(7)} ${mode.padEnd(5)} ${path}`);
+      writeOut('\nPer-project setup (recommended): npx archgen-skill init');
+      if (r.failures > 0) { writeErr(`${r.failures} target(s) failed`); process.exitCode = 1; }
       break;
     }
     case 'uninstall': {
@@ -251,16 +252,16 @@ try {
       }
       if (projectTarget !== null) {
         const r = uninstallProject(projectTarget, PACKAGE_ROOT);
-        console.log('archgen: project uninstall — ' + r.root);
-        if (r.linkRemoved) console.log('  - .claude/skills/archgen (link)');
-        if (r.strippedBlocks.length) console.log('  - managed blocks stripped from ' + r.strippedBlocks.join(', '));
-        if (r.storeRemoved) console.log('  - .agents/skills/archgen (unmodified store)');
-        if (r.storeKept) console.log('  = .agents/skills/archgen KEPT (customized)');
-        if (r.manifestRemoved) console.log('  - .archgen/.install-manifest.json');
-        if (r.runtimeRemoved) console.log('  - .archgen/.runtime (legacy extension state)');
-        for (const m of r.mcpRemoved ?? []) console.log(`  - ${m} (archgen MCP entry)`);
-        for (const w of r.warnings) console.log('  note: ' + w);
-        console.log('  .archgen feature folders and backups are preserved.');
+        writeOut('archgen: project uninstall — ' + r.root);
+        if (r.linkRemoved) writeOut('  - .claude/skills/archgen (link)');
+        if (r.strippedBlocks.length) writeOut('  - managed blocks stripped from ' + r.strippedBlocks.join(', '));
+        if (r.storeRemoved) writeOut('  - .agents/skills/archgen (unmodified store)');
+        if (r.storeKept) writeOut('  = .agents/skills/archgen KEPT (customized)');
+        if (r.manifestRemoved) writeOut('  - .archgen/.install-manifest.json');
+        if (r.runtimeRemoved) writeOut('  - .archgen/.runtime (legacy extension state)');
+        for (const m of r.mcpRemoved ?? []) writeOut(`  - ${m} (archgen MCP entry)`);
+        for (const w of r.warnings) writeOut('  note: ' + w);
+        writeOut('  .archgen feature folders and backups are preserved.');
       } else {
         uninstall();
       }
@@ -288,21 +289,21 @@ try {
       }
       const r = codegraphAdmin({ projectRoot: dir, action, location, approved: yes });
       const data = r.report ?? {};
-      console.log(`archgen codegraph ${action} — ${dir}`);
-      console.log(`  cli:       ${data.cli?.present ? `${data.cli.version} (${data.cli.bin})` : 'not installed'}`);
-      console.log(`  install:   ${data.policy?.install ?? 'latest'} (${data.policy?.package ?? '?'})`);
-      console.log(`  wire spec: ${data.policy?.wire ?? 'unpinned'}`);
-      console.log(`  tools:     ${(data.policy?.tools ?? []).join(', ') || 'none'}`);
-      console.log(`  telemetry: ${data.policy?.telemetry ?? '?'}`);
-      console.log(`  index:     ${data.indexed ? 'indexed' : (data.index?.action ?? 'none')}`);
+      writeOut(`archgen codegraph ${action} — ${dir}`);
+      writeOut(`  cli:       ${data.cli?.present ? `${data.cli.version} (${data.cli.bin})` : 'not installed'}`);
+      writeOut(`  install:   ${data.policy?.install ?? 'latest'} (${data.policy?.package ?? '?'})`);
+      writeOut(`  wire spec: ${data.policy?.wire ?? 'unpinned'}`);
+      writeOut(`  tools:     ${(data.policy?.tools ?? []).join(', ') || 'none'}`);
+      writeOut(`  telemetry: ${data.policy?.telemetry ?? '?'}`);
+      writeOut(`  index:     ${data.indexed ? 'indexed' : (data.index?.action ?? 'none')}`);
       const wired = (data.wiring?.manual ?? []).map((w) => `${w.harness}:${w.status}`);
-      console.log(`  wired:     ${wired.join(' · ') || 'none'}`);
+      writeOut(`  wired:     ${wired.join(' · ') || 'none'}`);
       if (data.planned) {
-        console.log('');
-        console.log('  PLAN only — nothing was written. Re-run with --yes to apply it.');
+        writeOut('');
+        writeOut('  PLAN only — nothing was written. Re-run with --yes to apply it.');
       }
       if (!r.ok) {
-        console.error('  ! ' + (r.detail ?? 'the codegraph command failed'));
+        writeErr('  ! ' + (r.detail ?? 'the codegraph command failed'));
         process.exitCode = 1;
       }
       break;
@@ -320,35 +321,35 @@ try {
       if (action === 'list') {
         const r = mcpList({ projectRoot: dir, location });
         const data = r.report ?? {};
-        console.log(`archgen mcp list — ${dir}`);
+        writeOut(`archgen mcp list — ${dir}`);
         for (const h of data.detected ?? []) {
           const cfgs = (h.configs ?? []).map((c) => `${c.location}:${c.path}`).join(' · ');
-          console.log(`  ${String(h.id).padEnd(12)} ${cfgs}`);
+          writeOut(`  ${String(h.id).padEnd(12)} ${cfgs}`);
         }
-        if (!(data.detected ?? []).length) console.log('  no harness detected');
+        if (!(data.detected ?? []).length) writeOut('  no harness detected');
       } else if (action === 'remove') {
         if (!yes) throw new Error('mcp remove writes to your machine — pass --yes to approve it');
         const r = uninstallMcp({ projectRoot: dir, location });
-        console.log(`archgen mcp remove — ${dir}`);
-        for (const p of r.report?.removed ?? []) console.log('  - ' + p);
-        for (const s of r.report?.skipped ?? []) console.log('  ! ' + s);
+        writeOut(`archgen mcp remove — ${dir}`);
+        for (const p of r.report?.removed ?? []) writeOut('  - ' + p);
+        for (const s of r.report?.skipped ?? []) writeOut('  ! ' + s);
         if (!r.ok) process.exitCode = 1;
       } else if (action === 'add') {
         // WITHOUT --yes the command is a PLAN: the wiring is computed and
         // reported, and nothing is written.
         const r = bootstrapMcp({ projectRoot: dir, location, approved: yes });
-        console.log(`archgen mcp add — ${dir}`);
+        writeOut(`archgen mcp add — ${dir}`);
         if (r.detail) {
-          console.error('  ! ' + r.detail);
+          writeErr('  ! ' + r.detail);
           process.exitCode = 1;
         } else {
           const report = r.report ?? {};
-          console.log(`  detected: ${(report.mcp?.detected ?? []).length} harness(es)`);
-          console.log(`  wired:    ${report.mcp?.wired ?? 0} config(s)`);
-          console.log(`  planned:  ${report.mcp?.planned ?? 0} config(s)`);
+          writeOut(`  detected: ${(report.mcp?.detected ?? []).length} harness(es)`);
+          writeOut(`  wired:    ${report.mcp?.wired ?? 0} config(s)`);
+          writeOut(`  planned:  ${report.mcp?.planned ?? 0} config(s)`);
           if (!yes) {
-            console.log('');
-            console.log('  PLAN only — nothing was written. Re-run with --yes to apply it.');
+            writeOut('');
+            writeOut('  PLAN only — nothing was written. Re-run with --yes to apply it.');
           }
         }
       } else {
@@ -366,14 +367,14 @@ try {
       const dir = targetDir();
       assertNoUnknownFlags();
       const current = cliVersion(PACKAGE_ROOT);
-      console.log('archgen update — running v' + current + ', checking npm registry…');
+      writeOut('archgen update — running v' + current + ', checking npm registry…');
       const latest = fetchLatestVersion('archgen-skill');
       if (!latest) {
         // The registry could not be reached: the update did NOT happen. It
         // exited 0 and said "Nothing changed", which reads like "you are on
         // the latest version" — the one answer an offline machine must not
         // give.
-        console.error('  ! could not reach the npm registry (offline?) - the update did NOT run.');
+        writeErr('  ! could not reach the npm registry (offline?) - the update did NOT run.');
         process.exitCode = 1;
         break;
       }
@@ -382,35 +383,35 @@ try {
         // The registry answered with something that is not a semver (e.g. a
         // "beta" dist-tag). It is NOT "already the latest version" — refuse
         // instead, and never interpolate it into a command line.
-        console.error('  ! registry returned a non-semver version string; refusing: ' + JSON.stringify(latest));
+        writeErr('  ! registry returned a non-semver version string; refusing: ' + JSON.stringify(latest));
         process.exitCode = 1;
         break;
       }
       if (cmp === 0) {
-        console.log('  = already on the latest published version (' + latest + ').');
-        console.log('  Refreshing this project against it anyway…');
+        writeOut('  = already on the latest published version (' + latest + ').');
+        writeOut('  Refreshing this project against it anyway…');
         runInitAndDoctor(dir);
         break;
       }
       if (cmp < 0) {
-        console.log('  ↑ running v' + current + ' is newer than npm (' + latest + ') — not published yet.');
-        console.log('  Refreshing this project against the running version…');
+        writeOut('  ↑ running v' + current + ' is newer than npm (' + latest + ') — not published yet.');
+        writeOut('  Refreshing this project against the running version…');
         runInitAndDoctor(dir);
         break;
       }
       if (!/^\d+\.\d+\.\d+[-+]?[0-9A-Za-z.-]*$/.test(latest)) {
         // Registry returned something that is not a semver tag — never
         // interpolate it into a command line.
-        console.error('  ! registry returned a non-semver version string; refusing: ' + JSON.stringify(latest));
+        writeErr('  ! registry returned a non-semver version string; refusing: ' + JSON.stringify(latest));
         process.exitCode = 1;
         break;
       }
-      console.log('  ↑ newer version available: ' + latest);
-      console.log('  upgrading global install: npm install -g archgen-skill@' + latest);
+      writeOut('  ↑ newer version available: ' + latest);
+      writeOut('  upgrading global install: npm install -g archgen-skill@' + latest);
       const inv = npmInvocation(['install', '-g', 'archgen-skill@' + latest]);
       const up = spawnSync(inv.command, inv.args, { stdio: 'inherit', shell: inv.shell });
       if (up.status !== 0) {
-        console.error('  ! global upgrade failed — run it manually, then re-run: archgen-skill update');
+        writeErr('  ! global upgrade failed — run it manually, then re-run: archgen-skill update');
         process.exitCode = 1;
         break;
       }
@@ -419,15 +420,15 @@ try {
       // install — so the binary npm actually wrote is preferred.
       const freshBin = globalBinPath('archgen-skill') ?? whichOnPath('archgen-skill');
       if (!freshBin) {
-        console.log('\nUpgraded to v' + latest + '. Now finish per project with:\n  npx archgen-skill@latest init');
+        writeOut('\nUpgraded to v' + latest + '. Now finish per project with:\n  npx archgen-skill@latest init');
         break;
       }
-      console.log('\nre-running init + doctor with the new binary (' + latest + ')…');
+      writeOut('\nre-running init + doctor with the new binary (' + latest + ')…');
       const upInit = spawnSync(freshBin, ['init', dir], { stdio: 'inherit' });
       if (upInit.status !== 0) {
         // An aborted init (e.g. symlink refusal) must surface as a failure —
         // running doctor over a half-finished install would mask it.
-        console.error('  ! init failed during update - doctor skipped (see message above)');
+        writeErr('  ! init failed during update - doctor skipped (see message above)');
         process.exitCode = upInit.status ?? 1;
         break;
       }
@@ -435,33 +436,33 @@ try {
       if (upDoctor.status !== 0) {
         // A failed doctor must fail the update too — the project was NOT
         // brought to the new version.
-        console.error('  ! doctor failed during update (see message above)');
+        writeErr('  ! doctor failed during update (see message above)');
         process.exitCode = upDoctor.status ?? 1;
       }
       break;
     }
     case '--version': case '-v': {
-      console.log(cliVersion(PACKAGE_ROOT));
+      writeOut(cliVersion(PACKAGE_ROOT));
       break;
     }
     case '--help': case '-h': case undefined: {
-      console.log(HELP);
+      writeOut(HELP);
       if (cmd === undefined) process.exitCode = 1;
       break;
     }
     default:
-      console.error('unknown command: ' + cmd + '\n\n' + HELP);
+      writeErr('unknown command: ' + cmd + '\n\n' + HELP);
       process.exitCode = 1;
   }
 } catch (e) {
-  console.error('archgen: ' + (e instanceof Error ? e.message : String(e)));
+  writeErr('archgen: ' + (e instanceof Error ? e.message : String(e)));
   process.exitCode = 1;
 }
 
 function uninstall() {
   const r = uninstallGlobal();
-  if (r.noop) { console.log('archgen: nothing to uninstall (no manifest found).'); return; }
-  console.log(`archgen: removed ${r.removed} entr${r.removed === 1 ? 'y' : 'ies'}` + (r.failed ? `, ${r.failed} FAILED` : ''));
-  for (const b of r.backups ?? []) console.log('  ~ backup ' + b + ' (edited copy saved before removal)');
+  if (r.noop) { writeOut('archgen: nothing to uninstall (no manifest found).'); return; }
+  writeOut(`archgen: removed ${r.removed} entr${r.removed === 1 ? 'y' : 'ies'}` + (r.failed ? `, ${r.failed} FAILED` : ''));
+  for (const b of r.backups ?? []) writeOut('  ~ backup ' + b + ' (edited copy saved before removal)');
   if (r.failed > 0) process.exitCode = 1;
 }

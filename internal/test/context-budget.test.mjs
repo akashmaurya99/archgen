@@ -12,8 +12,14 @@ import { estimateTokens, exactTokens, pctOf } from '../tools/budget/tokens.mjs';
 const INTERNAL = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TOOLS = join(INTERNAL, 'tools', 'budget');
 const SKILL = join(INTERNAL, '..', 'skill');
+const ROOT = join(INTERNAL, '..');
 
-function run(args, cwd) {
+// The tool is run from the REPO ROOT, always. A test that only passes from
+// one working directory is a test that breaks the moment the runner changes
+// it — and the runner DOES change it: Node 22+ cannot take a directory as a
+// test path, so the suite discovers from `internal/` and every test starts
+// with `internal/` as its CWD.
+function run(args, cwd = ROOT) {
   return spawnSync(process.execPath, [join(TOOLS, 'context-budget.mjs'), ...args], { encoding: 'utf8', cwd });
 }
 
@@ -54,7 +60,7 @@ test('tokens: exactTokens returns null for an unavailable tokenizer module', asy
 // --- report ------------------------------------------------------------------
 
 test('context-budget: JSON report carries skill payload, scenarios and window pressure', () => {
-  const r = run(['--skill-dir', SKILL, '--json']);
+  const r = run(['--skill-dir', SKILL, '--project', ROOT, '--json']);
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.ok(out.skill.totalTokens > 0);
@@ -68,7 +74,7 @@ test('context-budget: JSON report carries skill payload, scenarios and window pr
 });
 
 test('context-budget: dev-only test files are excluded from the shipped payload', () => {
-  const r = run(['--skill-dir', SKILL, '--json']);
+  const r = run(['--skill-dir', SKILL, '--project', ROOT, '--json']);
   const out = JSON.parse(r.stdout);
   assert.ok(!out.skill.files.some((f) => f.file.startsWith('scripts/test/')), 'scripts/test never ships');
   const shipped = out.skill.files.reduce((n, f) => n + f.tokens, 0);
@@ -76,13 +82,13 @@ test('context-budget: dev-only test files are excluded from the shipped payload'
 });
 
 test('context-budget: the shipped skill tree carries NO code (the MCP server owns the capability)', () => {
-  const r = run(['--skill-dir', SKILL, '--json']);
+  const r = run(['--skill-dir', SKILL, '--project', ROOT, '--json']);
   const out = JSON.parse(r.stdout);
   assert.ok(!out.skill.files.some((f) => f.file.startsWith('scripts/')), 'the skill ships no scripts tree');
 });
 
 test('context-budget: the MCP tool catalog is measured from the LIVE server', () => {
-  const r = run(['--skill-dir', SKILL, '--json']);
+  const r = run(['--skill-dir', SKILL, '--project', ROOT, '--json']);
   const out = JSON.parse(r.stdout);
   // The catalog may be unavailable when packages/mcp deps are not installed —
   // that is a degraded measurement, never a silent zero.
@@ -97,9 +103,9 @@ test('context-budget: the MCP tool catalog is measured from the LIVE server', ()
 });
 
 test('context-budget: --max-always-on is a hard gate', () => {
-  const generous = run(['--skill-dir', SKILL, '--max-always-on', '100000000', '--json']);
+  const generous = run(['--skill-dir', SKILL, '--project', ROOT, '--max-always-on', '100000000', '--json']);
   assert.equal(generous.status, 0, generous.stderr);
-  const tight = run(['--skill-dir', SKILL, '--max-always-on', '1', '--json']);
+  const tight = run(['--skill-dir', SKILL, '--project', ROOT, '--max-always-on', '1', '--json']);
   assert.equal(tight.status, 1, 'an impossible always-on budget must fail the run');
 });
 
@@ -124,14 +130,14 @@ test('context-budget: artifact payload is measured for every .archgen slug', () 
 });
 
 test('context-budget: --budget makes an over-budget run exit 1', () => {
-  const r = run(['--skill-dir', SKILL, '--budget', '1', '--json']);
+  const r = run(['--skill-dir', SKILL, '--project', ROOT, '--budget', '1', '--json']);
   assert.equal(r.status, 1);
   const out = JSON.parse(r.stdout);
   assert.ok(out.overBudget.length > 0);
 });
 
 test('context-budget: a generous budget exits 0', () => {
-  const r = run(['--skill-dir', SKILL, '--budget', '100000000', '--json']);
+  const r = run(['--skill-dir', SKILL, '--project', ROOT, '--budget', '100000000', '--json']);
   assert.equal(r.status, 0);
   assert.equal(JSON.parse(r.stdout).overBudget.length, 0);
 });

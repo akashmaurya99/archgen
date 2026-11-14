@@ -156,9 +156,17 @@ than publishing the wrong thing.
 
 ### 2. npm credentials (one-time setup)
 
-The publish job supports **two** authentication paths. npm tries OIDC first and
-falls back to the token only if the OIDC exchange is refused — npm's OIDC
-exchange never throws, it just leaves the existing credentials in place.
+The publish job supports **two** authentication paths. It tries **OIDC first**
+— with NO auth token in the environment, because npm only uses trusted
+publishing when no token is present — and falls back to the token only if the
+OIDC publish failed.
+
+> **Why the order matters.** npm prefers a `NODE_AUTH_TOKEN` and IGNORES the
+> trusted publisher when one is present. So a workflow that exports the token
+> first can never use the trusted publisher, and a classic token with 2FA
+> enabled cannot publish from CI at all: npm answers `EOTP — This operation
+> requires a one-time password`. The OIDC path needs no secret, so it is the
+> one that runs first.
 
 #### Path A — OIDC trusted publishing (recommended; no secret at all)
 
@@ -199,15 +207,27 @@ Use this for the first publish of a new package, or as a permanent fallback.
    repository secret**, name `NPM_TOKEN`, value = the token.
    (Use an *environment* secret instead if you prefer a manual approval gate.)
 
-The workflow only puts the token in the environment when it exists — an empty
-`NODE_AUTH_TOKEN` would make npm authenticate with `""` and fail with
-`ENEEDAUTH` instead of using OIDC.
+> **The token must be able to publish WITHOUT a one-time password.** npm
+> restricts classic tokens that bypass 2FA: a token published from CI without
+> an OTP fails with `EOTP — This operation requires a one-time password`. A
+> 2FA-enabled token can therefore NEVER publish from this workflow — it is
+> not a fallback, it is a second way to fail. The token path is only a
+> fallback for the first publish of a package that does not exist yet; after
+> that, configure Path A and delete the secret if you prefer.
+
+The token is put in the environment ONLY in the fallback step, and only when
+it exists — an empty `NODE_AUTH_TOKEN` would make npm authenticate with `""`
+and fail with `ENEEDAUTH` instead of trying OIDC.
 
 #### What happens if neither is configured
 
-The publish job fails **before** the publish step, with an explicit message
-naming both fixes. It never publishes something wrong, and it never fails
-half-way.
+The OIDC publish fails, the fallback has no token, and the job stops with an
+explicit message naming the one fix: configure the Trusted Publisher for the
+package. It never publishes something wrong, and it never fails half-way.
+
+If the version is ALREADY on the registry — a manual publish, or a re-run of
+an old tag — the job refuses before packing and says so: npm never overwrites
+a published version.
 
 The workflow runs `npm publish --provenance`, so the published tarball carries
 an attestation linking it to this repository and commit.

@@ -21,6 +21,7 @@ import { loadAsset } from './context.mjs';
 import { uninstallArchgenMcp, archgenMcpStatus } from './core/harness/mcp-server-manager.mjs';
 import { assertLocation, findCodegraph } from './core/harness/codegraph-manager.mjs';
 import { detectHarnesses } from './core/harness/harness-wiring.mjs';
+import { writeOut, writeErr } from './core/protocol/io.mjs';
 
 /**
  * The usage text.
@@ -185,8 +186,12 @@ export function failOnMatches(data, rule) {
 }
 
 export async function runCli(argv, io = {}) {
-  const out = io.stdout ?? ((s) => process.stdout.write(s + '\n'));
-  const err = io.stderr ?? ((s) => process.stderr.write(s + '\n'));
+  // The output is SYNCHRONOUS. `process.stdout.write` to a pipe is
+  // asynchronous on Node 20, and a process that writes a large payload and
+  // exits can lose the tail: the 17KB catalog came back as 8KB of invalid
+  // JSON, and the budget gate silently dropped the largest always-on term.
+  const out = io.stdout ?? ((s) => writeOut(s));
+  const err = io.stderr ?? ((s) => writeErr(s));
   const opts = parseArgs(argv);
 
   if (opts.command === 'version') {

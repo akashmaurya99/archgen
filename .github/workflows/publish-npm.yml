@@ -20,12 +20,18 @@ name: Publish to npm
 #          environment      : (leave empty)
 #      And npm CLI >= 11.5.1 (this workflow installs Node 24, which ships it).
 #
-#   2. NPM_TOKEN (fallback / first publish).
+#   2. NPM_TOKEN (fallback only).
 #      A classic npm automation token, stored as the GitHub secret NPM_TOKEN.
-#      npm's OIDC exchange NEVER throws — when the trusted publisher is not
-#      configured, npm logs it at verbose level and keeps using the token.
-#      This is the ONLY way to publish archgen-mcp the first time, because a
-#      package that does not exist yet has no "Trusted Publishers" page.
+#      It is tried ONLY after the OIDC publish has failed — because npm uses
+#      trusted publishing only when NO auth token is present: a
+#      NODE_AUTH_TOKEN in the environment makes npm prefer the token and
+#      IGNORE the trusted publisher.
+#      A token with 2FA enabled CANNOT publish from CI at all: npm answers
+#      `EOTP — This operation requires a one-time password`. A CI token that
+#      can publish must therefore be one created to BYPASS 2FA.
+#      This path is also the only way to publish a package the FIRST time,
+#      because a package that does not exist yet has no "Trusted Publishers"
+#      page.
 #
 # PUBLISH ORDER: archgen-mcp FIRST. `archgen-skill init` resolves the MCP
 # server from the registry, so advertising a server that does not exist yet
@@ -135,7 +141,15 @@ jobs:
             # real answer.
             echo "npm CLI $version supports trusted publishing (OIDC)."
             if [ -n "${NPM_TOKEN:-}" ]; then
-              echo "the NPM_TOKEN secret is present; npm will fall back to it if the OIDC exchange is refused."
+              # The fallback is NOT equivalent. npm now restricts classic
+              # tokens that bypass 2FA: a token published from CI without a
+              # one-time password fails with `EOTP — This operation requires
+              # a one-time password`. A token that cannot publish directly
+              # is therefore not a fallback at all — it is a second way to
+              # fail. Say that HERE, where the remedy can be named.
+              echo "::warning::the NPM_TOKEN secret is present — it is tried ONLY if the OIDC publish fails."
+              echo "::warning::A classic token with 2FA enabled CANNOT publish from CI: npm answers EOTP (one-time password required). The token fallback only works for a token created to bypass 2FA."
+              echo "::notice::the real fix is the TRUSTED PUBLISHER for $PACKAGE_NAME on npmjs.com (Settings -> Trusted Publishers -> GitHub Actions, repository akashmaurya99/archgen, workflow publish-npm.yml)."
             else
               echo "::notice::publishing via OIDC — it requires a TRUSTED PUBLISHER on npmjs.com for $PACKAGE_NAME (Settings -> Trusted Publishers -> GitHub Actions, repository akashmaurya99/archgen, workflow publish-npm.yml)."
             fi
@@ -218,24 +232,67 @@ jobs:
         working-directory: ${{ matrix.dir }}
         run: npm test
 
-      - name: Publish
+      # ALREADY PUBLISHED? npm refuses to overwrite a version, and the
+      # refusal arrives as a bare 403 — which reads like a credential
+      # problem rather than "this version is out". Say it before packing.
+      - name: Verify the version is not already published
         if: startsWith(github.ref_name, matrix.tag)
         working-directory: ${{ matrix.dir }}
-        # npm tries OIDC first (the exchange never throws, so it falls back to
-        # the token on its own). The token is put in the environment ONLY when
-        # it exists: an EMPTY NODE_AUTH_TOKEN would make npm authenticate with
-        # "" and fail with ENEEDAUTH instead of using OIDC.
+        run: |
+          version="${GITHUB_REF_NAME#vmcp-}"
+          version="${version#vcli-}"
+          if npm view "${{ matrix.name }}@$version" version >/dev/null 2>&1; then
+            echo "::error::${{ matrix.name }}@$version is ALREADY on the registry — npm never overwrites a published version."
+            echo "::error::Nothing was published. If the manual publish was intentional, this job is simply done; if it was not, the tag is wrong."
+            exit 1
+          fi
+
+      # THE OIDC PATH FIRST, AND THE TOKEN ONLY AS A FALLBACK.
+      #
+      # npm uses TRUSTED PUBLISHING only when NO auth token is present: a
+      # NODE_AUTH_TOKEN in the environment makes npm prefer the token and
+      # IGNORE the trusted publisher. The workflow used to set the token
+      # whenever the secret existed, so the OIDC exchange never happened —
+      # and a classic token with 2FA enabled cannot publish from CI at all
+      # (`EOTP — This operation requires a one-time password`). The trusted
+      # publisher was therefore unreachable, and the release failed with an
+      # error that named the wrong cause.
+      #
+      # So: publish with NO token first (npm exchanges the workflow's OIDC
+      # identity), and only if THAT fails fall back to the token.
+      - name: Publish (npm trusted publishing / OIDC)
+        if: startsWith(github.ref_name, matrix.tag)
+        working-directory: ${{ matrix.dir }}
+        id: publish_oidc
+        continue-on-error: true
         run: |
           set -o pipefail
-          if [ -n "${NPM_TOKEN:-}" ]; then
-            echo "::notice::the NPM_TOKEN secret is present; npm will use it if the OIDC exchange is refused"
-            export NODE_AUTH_TOKEN="$NPM_TOKEN"
-          else
-            echo "::notice::no NPM_TOKEN secret — publishing via npm trusted publishing (OIDC)"
+          echo "::notice::publishing via npm trusted publishing (OIDC) — no auth token is set, so npm uses the workflow identity"
+          npm publish --provenance --access public 2>&1 | tee publish.log
+
+      - name: Publish (NPM_TOKEN fallback)
+        if: startsWith(github.ref_name, matrix.tag) && failure()
+        working-directory: ${{ matrix.dir }}
+        run: |
+          set -o pipefail
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error::The OIDC publish failed and no NPM_TOKEN secret is set."
+            echo "::error::Fix: npmjs.com -> Packages -> ${{ matrix.name }} -> Settings -> Trusted Publishers -> GitHub Actions (repository akashmaurya99/archgen, workflow publish-npm.yml). The trusted publisher needs NO token."
+            exit 1
           fi
-          npm publish --provenance --access public 2>&1 | tee publish.log || {
-            echo "::error::npm publish failed for ${{ matrix.name }}. If this says ENEEDAUTH or 401, the npm trusted publisher is not configured for it."
-            echo "::error::Fix: npmjs.com -> Packages -> ${{ matrix.name }} -> Settings -> Trusted Publishers -> GitHub Actions (repository akashmaurya99/archgen, workflow publish-npm.yml), OR add the NPM_TOKEN secret to this repository."
+          echo "::warning::the OIDC publish failed — retrying with the NPM_TOKEN secret."
+          export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          npm publish --provenance --access public 2>&1 | tee publish-fallback.log || {
+            echo "::error::npm publish failed for ${{ matrix.name }} on BOTH paths."
+            if grep -q "EOTP" publish-fallback.log; then
+              echo "::error::Cause: EOTP — npm requires a one-time password. The fallback token is 2FA-protected, so it cannot publish from CI."
+              echo "::error::Fix: npmjs.com -> Packages -> ${{ matrix.name }} -> Settings -> Trusted Publishers -> GitHub Actions (repository akashmaurya99/archgen, workflow publish-npm.yml). The trusted publisher needs NO token."
+            elif grep -qE "ENEEDAUTH|401|E403" publish-fallback.log; then
+              echo "::error::Cause: the registry refused the credential (ENEEDAUTH/401/E403). The npm trusted publisher is not configured for this package, or the token is revoked."
+              echo "::error::Fix: npmjs.com -> Packages -> ${{ matrix.name }} -> Settings -> Trusted Publishers -> GitHub Actions (repository akashmaurya99/archgen, workflow publish-npm.yml)."
+            else
+              echo "::error::See publish-fallback.log above for npm's own message."
+            fi
             exit 1
           }
         env:

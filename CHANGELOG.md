@@ -1,3 +1,60 @@
+## [0.1.8] - UNRELEASED
+
+The release machinery release: the test suite runs on every supported Node
+version, the budget gate measures the SAME number everywhere, and the publish
+workflow uses npm's trusted publishing instead of a token that cannot publish.
+
+### Fixed — the test suite could not run on Node 22+
+
+`node --test test/` works on Node 20 and BREAKS on Node 22+: a positional
+argument became a GLOB, so `test/` matched the DIRECTORY and the runner
+tried to execute it as a module —
+
+    Error: Cannot find module '.../packages/cli/test'
+
+— on every Node 22 and 24 runner. The CLI job and the immutable job failed
+on every push, and had been failing since 0.1.6. The suites now use the
+DISCOVERY form (`node --test`), which is portable across Node 20, 22 and 24,
+and the CI matrix carries all three versions — a matrix that tests one
+version tests one version's semantics.
+
+### Fixed — the budget gate SILENTLY dropped its largest term on Node 20
+
+`process.stdout.write` to a PIPE is asynchronous on Node 20, and a process
+that writes a large payload and exits can lose the tail. The budget tool read
+a TRUNCATED 17KB tool catalog as 8KB of invalid JSON, reported `the MCP tool
+catalog is not valid JSON`, and then measured the always-on cost WITHOUT the
+largest term — on a supported Node version, with the gate still green.
+
+Every large payload now goes through `fs.writeSync` (`core/protocol/io.mjs`,
+`packages/cli/lib/io.js`): the bytes are in the pipe before the process can
+exit, on every version. The measured always-on figure is now identical on
+Node 20, 22 and 24 — and it is the honest one.
+
+### Fixed — the publish workflow could not use npm's trusted publishing
+
+npm uses TRUSTED PUBLISHING only when NO auth token is present: a
+`NODE_AUTH_TOKEN` in the environment makes npm prefer the token and IGNORE the
+trusted publisher. The workflow set the token whenever the secret existed, so
+the OIDC exchange never happened — and a classic token with 2FA enabled
+cannot publish from CI at all:
+
+    npm error code EOTP
+    npm error This operation requires a one-time password.
+
+The workflow now publishes via OIDC FIRST (no token in the environment) and
+falls back to the token only if that fails. The error message names the real
+cause (`EOTP` vs `ENEEDAUTH`/`401`/`E403`) and the one-time fix on npmjs.com:
+Package → Settings → Trusted Publishers → GitHub Actions, repository
+`akashmaurya99/archgen`, workflow `publish-npm.yml`.
+
+### Added — the publish workflow refuses to republish a version
+
+npm never overwrites a published version, and the refusal arrives as a bare
+403 that reads like a credential problem. The workflow now checks the
+registry FIRST and says `archgen-mcp@0.1.7 is ALREADY on the registry —
+nothing was published`.
+
 ## [0.1.7] - 2026-11-13
 
 A correctness release: the catalog is smaller AND correct, every section says

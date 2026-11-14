@@ -44,6 +44,7 @@
     "sync:check": "node scripts/sync-config.mjs --check && node scripts/sync-vendor.mjs --check",
     "sync": "node scripts/sync-config.mjs && node scripts/sync-vendor.mjs",
     "prepublishOnly": "node scripts/sync-config.mjs && node scripts/sync-vendor.mjs",
-    "test": "ARCHGEN_CODEGRAPH=0 node --test test/"
+    "//test": "node --test (DISCOVERY, not a path). Node 22+ treats a positional argument as a GLOB, so `node --test test/` matches the DIRECTORY and the runner tries to execute it as a module — 'Cannot find module .../packages/cli/test' — on every Node 22/24 runner. Discovery works on every supported version, and the MCP package already uses it.",
+    "test": "ARCHGEN_CODEGRAPH=0 node --test"
   }
 }

@@ -16,7 +16,8 @@
   "scripts": {
     "setup": "npm ci --prefix packages/mcp",
     "test": "npm run test:internal && npm run test:mcp && npm run test:cli && npm run test:teaching && npm run test:structure",
-    "test:internal": "node --test internal/test/",
+    "//test:internal": "DISCOVERY from internal/. Node 22+ treats a positional argument as a GLOB, so `node --test internal/test/` matches the DIRECTORY and the runner tries to EXECUTE it as a module ('Cannot find module .../internal/test'). Discovery works on every supported version, and the tests are CWD-independent.",
+    "test:internal": "cd internal && node --test",
     "test:cli": "npm --prefix packages/cli test",
     "test:teaching": "node internal/tools/lint/teaching-lint.mjs",
     "test:structure": "node internal/tools/lint/structure-lint.mjs",

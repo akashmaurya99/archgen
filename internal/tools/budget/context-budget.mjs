@@ -9,11 +9,12 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { estimateTokens, exactTokens, fmtTokens, pctOf } from './tokens.mjs';
+import { writeOut, writeErr } from '../../../packages/mcp/src/core/protocol/io.mjs';
 
 const USAGE = 'usage: context-budget.mjs [--skill-dir <dir>] [--project <dir>] [--slug <name>] [--mcp-dir <dir>] [--json] [--windows <list>] [--budget <n>] [--max-always-on <n>] [--tokenizer <pkg>]';
 const DEFAULT_WINDOWS = [32768, 65536, 131072, 200000, 1000000];
 
-function die(msg, code = 4) { console.error(`context-budget: ${msg}`); process.exit(code); }
+function die(msg, code = 4) { writeErr(`context-budget: ${msg}`); process.exit(code); }
 
 // --- arguments ---------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -810,9 +811,12 @@ const report = {
 
 // --- output ------------------------------------------------------------------
 if (opts.json) {
-  console.log(JSON.stringify(report, null, 2));
+  // SYNCHRONOUS: a large report written to a pipe can lose its tail when the
+  // process exits on Node 20, and a truncated JSON report is a report nobody
+  // can read — and one the gate cannot check.
+  writeOut(JSON.stringify(report, null, 2));
 } else {
-  const line = (s = '-') => console.log(s);
+  const line = (s = '-') => writeOut(s);
   line('archgen context budget');
   line(`  token model: ${report.tokenModel}`);
   line(`  windows:     ${opts.windows.map(formatWindow).join(', ')}`);
@@ -917,7 +921,7 @@ if (opts.json) {
   }
 
   if (alwaysOnUnmeasured) {
-    console.error(
+    writeErr(
       'context-budget: the ALWAYS-ON cost could not be measured, so the ceiling cannot be checked.\n' +
       '  The MCP tool catalog is the larger of the two always-on terms; without it the\n' +
       '  number is unknown, and an unknown number must not pass a ceiling.\n' +
