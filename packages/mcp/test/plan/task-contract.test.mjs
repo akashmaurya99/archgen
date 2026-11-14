@@ -22,6 +22,7 @@ import { join } from 'node:path';
 
 import { validateTasksYaml } from '../../src/core/plan/validator.mjs';
 import { verifyPlan, issueCode } from '../../src/core/plan/verifier.mjs';
+import { scopeFor } from '../../src/core/plan/plan-scope.mjs';
 
 let dir;
 let file;
@@ -201,7 +202,7 @@ test('the floor and the validator agree on the task file', () => {
   const report = validateTasksYaml(file);
   const planDir = join(dir, 'plans');
   mkdirSync(planDir, { recursive: true });
-  const floor = verifyPlan(file, planDir);
+  const floor = verifyPlan(scopeFor(dir));
   assert.ok(codesOf(report).includes('DANGLING_DEP'));
   assert.ok(floor.issues.map(issueCode).includes('DANGLING_DEP'));
 });
@@ -211,7 +212,7 @@ test('a plan artifact that does not parse is reported as unparseable, not missin
   mkdirSync(planDir, { recursive: true });
   writeFileSync(file, OK_TASK, 'utf8');
   writeFileSync(join(dir, 'architecture.yaml'), 'toolchain:\n\tsource_root: src\n', 'utf8');
-  const floor = verifyPlan(file, planDir);
+  const floor = verifyPlan(scopeFor(dir));
   const warningCodes = floor.warnings.map(issueCode);
   assert.ok(
     warningCodes.includes('CONFIG_UNPARSEABLE'),

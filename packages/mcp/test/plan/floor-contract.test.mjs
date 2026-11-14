@@ -30,6 +30,7 @@ import { join } from 'node:path';
 
 import { auditPlan } from '../../src/core/plan/plan-audit.mjs';
 import { verifyPlan } from '../../src/core/plan/verifier.mjs';
+import { scopeFor } from '../../src/core/plan/plan-scope.mjs';
 import { waiverCovers } from '../../src/core/plan/waivers.mjs';
 
 function fixture({ architecture = null, prd = null, plans = {}, waivers = null, answers = null, decisions = {}, tasksYaml = false, docs = {}, outside = false } = {}) {
@@ -116,7 +117,7 @@ test('a valid waiver suppresses the finding it covers, and the plan can approve'
     // reports. It used to be applied inside the audit, over the audit's
     // findings only, so a waiver naming a task-file defect suppressed
     // nothing.
-    const report = verifyPlan(join(f.slugDir, 'tasks.yaml'), join(f.slugDir, 'plans'), {});
+    const report = verifyPlan(scopeFor(f.slugDir), {});
     assert.ok(
       !report.issues.some((i) => i.startsWith('MATRIX_CLAIMS_UNDECLARED')),
       `the waived finding must not remain an issue: ${report.issues.join(' | ')}`,
@@ -154,7 +155,7 @@ test('a waiver covers a TASK-FILE defect too, not only an audit finding', () => 
       'tasks:\n  - id: T1\n    title: api\n    depends_on: []\n    file_ownership: ["src/core/**"]\n    acceptance: []\n',
       'utf8',
     );
-    const report = verifyPlan(join(f.slugDir, 'tasks.yaml'), join(f.slugDir, 'plans'), {});
+    const report = verifyPlan(scopeFor(f.slugDir), {});
     assert.ok(
       !report.issues.some((i) => i.startsWith('NO_ACCEPTANCE')),
       `the waived task-file finding must not remain an issue: ${report.issues.join(' | ')}`,

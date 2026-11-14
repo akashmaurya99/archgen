@@ -134,7 +134,13 @@ export function buildBriefContext(kind, scope, ctx) {
   // findings the brief never showed.
   try {
     if (existsSync(scope.tasksYaml)) {
-      const result = verifyPlan(scope.tasksYaml, scope.plansDir);
+      // The SAME scope the brief was resolved from — the brief and the floor
+      // that judges it read one artifact space, by construction.
+      const result = verifyPlan({
+        tasksFile: scope.tasksYaml,
+        slugDir: scope.slugDir,
+        plansDir: scope.plansDir,
+      });
       const audit = result.audit ?? {};
       out.audit = {
         verdict: result.verdict,

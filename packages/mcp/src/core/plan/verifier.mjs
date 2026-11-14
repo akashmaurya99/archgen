@@ -12,7 +12,6 @@
 // usable at scale: fixes can be grouped by code, tests assert behaviour
 // instead of prose, and CI can count classes ("7 MIRROR_MISSING, 4
 // MATRIX_CLAIM_MISMATCH") instead of counting sentences.
-import { dirname } from 'node:path';
 import { computeWaves, findOwnershipConflict, graphMaps } from './graph.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { auditPlan } from './plan-audit.mjs';
@@ -79,15 +78,23 @@ function cap(list, max, offset = 0) {
 /**
  * Run the deterministic verifier gate.
  *
- * @param {string} file absolute path to tasks.yaml
- * @param {string} planDir absolute path to the plans directory
+ * The scope is the RESOLVED artifact space (`resolvePlanScope`): the two
+ * directories the floor reads, handed in rather than derived. The floor used
+ * to take a raw `planDir` and derive the slug dir from it — so the coverage
+ * half and the audit half could read DIFFERENT directories, and a caller who
+ * named the slug dir instead of the plans dir got a report that was
+ * confidently false ("no architecture.yaml" — it existed). One scope, one
+ * directory, by construction.
+ *
+ * @param {{tasksFile: string, slugDir: string, plansDir: string}} scope
  * @param {{offset?: number, limit?: number, collection?: 'issues'|'warnings'}} [opts]
  *   `offset` walks the selected collection; `limit` narrows the window.
  * @returns {{verdict: 'APPROVE'|'ISSUES', issues: string[], warnings: string[],
  *            issueCodes: object, warningCodes: object, issuesTotal: number,
  *            warningsTotal: number, omitted: {issues: number, warnings: number}}}
  */
-export function verifyPlan(file, planDir, opts = {}) {
+export function verifyPlan(scope, opts = {}) {
+  const { tasksFile: file, slugDir, plansDir } = scope;
   const issues = [];
   const warnings = [];
   /** The audit, kept so the caller can have its maps without a second run. */
@@ -151,12 +158,16 @@ export function verifyPlan(file, planDir, opts = {}) {
       }
     }
 
-    issues.push(...checkPlanCoverage(planDir, tasks).findings.map((m) => withCode(m)));
+    issues.push(...checkPlanCoverage(plansDir, tasks).findings.map((m) => withCode(m)));
 
     // The mechanical floor: the checks a gate agent would otherwise make by
     // hand, every round. They are computed HERE so the agent is left with
     // the judgment it is actually for.
-    const audit = auditPlan({ slugDir: dirname(planDir), tasks });
+    //
+    // The audit reads the SAME artifact space the coverage pass just read:
+    // `slugDir` is the resolved space root and `plansDir` is its plans
+    // directory, so the two halves can never read different directories.
+    const audit = auditPlan({ slugDir, tasks });
     lastAudit = audit;
     issues.push(...audit.issues);
     warnings.push(...audit.warnings);
@@ -281,12 +292,12 @@ function withCode(message) {
  * tail of the uncovered list. Each collection now carries its own window,
  * its own total and its own cursor.
  *
- * @param {string} file absolute path to tasks.yaml
- * @param {string} planDir absolute path to the plans directory
+ * @param {{tasksFile: string, slugDir: string, plansDir: string}} scope the RESOLVED artifact space
  * @param {{offset?: number, limit?: number, collection?: string}} [opts]
  * @returns {object}
  */
-export function planCoverage(file, planDir, opts = {}) {
+export function planCoverage(scope, opts = {}) {
+  const { tasksFile: file, slugDir, plansDir } = scope;
   const offset = Number.isInteger(opts.offset) ? opts.offset : 0;
   const limit = Number.isInteger(opts.limit) && opts.limit > 0 ? Math.min(opts.limit, MAX_FINDINGS) : MAX_FINDINGS;
   const collection = String(opts.collection ?? 'tasks');
@@ -306,7 +317,7 @@ export function planCoverage(file, planDir, opts = {}) {
   }
   const data = read.data;
   const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
-  const { findings, referenced, mentionedInTasks } = checkPlanCoverage(planDir, tasks);
+  const { findings, referenced, mentionedInTasks } = checkPlanCoverage(plansDir, tasks);
   const covered = [];
   const uncovered = [];
   /** The whole task list, in task order, each entry tagged with its state. */
@@ -331,7 +342,7 @@ export function planCoverage(file, planDir, opts = {}) {
   let edgeCases = { total: 0, linked: 0, unlinked: [], unlinkedTotal: 0, offset: 0 };
   let profileRecorded = false;
   try {
-    const audit = auditPlan({ slugDir: dirname(planDir), tasks });
+    const audit = auditPlan({ slugDir, tasks });
     profileRecorded = Boolean(audit.profile);
     const reqs = audit.maps.requirements ?? [];
     const reqUncovered = reqs.filter((r) => !r.covered).map((r) => r.id);

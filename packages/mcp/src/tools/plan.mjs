@@ -17,6 +17,7 @@ import { resolveBriefScope, briefVars } from '../core/docs/brief-scope.mjs';
 import { buildBriefContext } from '../core/docs/brief-context.mjs';
 import { validateTasksYaml } from '../core/plan/validator.mjs';
 import { verifyPlan, planCoverage } from '../core/plan/verifier.mjs';
+import { resolvePlanScope } from '../core/plan/plan-scope.mjs';
 import { planGraph } from '../core/plan/plan-grapher.mjs';
 import { analyzeImpact } from '../core/plan/impact-analyzer.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
@@ -141,9 +142,25 @@ export function registerPlanTools(server) {
       switch (action) {
         case 'validate': {
           const { file, warning } = requireTasksYaml(args, ctx);
+          // The artifact space is RESOLVED ONCE, here, at the boundary. The
+          // coverage pass then reads the resolved plans directory — never a
+          // path the caller typed — so a caller who named the slug directory
+          // instead of the plans directory is refused instead of being told
+          // the plan does not mention its own tasks.
+          const scope = resolvePlanScope({
+            tasksYaml: file,
+            planDir: args.planDir ? ctx.contain(args.planDir) : null,
+            projectRoot: ctx.projectRoot,
+            action: 'validate',
+          });
           const collection = resolveCollection('validate', args.collection, 'errors');
           const report = validateTasksYaml(file, {
-            planDir: args.planDir ? ctx.contain(args.planDir) : null,
+            scope,
+            // The coverage check runs when the caller named the plans dir.
+            // Without one, `validate` reports the task file's own rules and
+            // nothing else — a scope always knows where the plans dir WOULD
+            // be, so the scope alone must not turn the check on.
+            coverage: Boolean(args.planDir),
             limit: args.limit,
             offset: args.offset,
             // The errors and the warnings are SEPARATE collections with
@@ -191,9 +208,20 @@ export function registerPlanTools(server) {
             'verify requires planDir',
             { ...hint({ action: toolCall('archgen_plan', { action: 'verify', tasksYaml: '<tasks.yaml>', planDir: '<planDir>' }), reason: "verify needs the plans directory." }), action },
           );
-          const planDirArg = ctx.contain(args.planDir);
+          // ONE resolved scope for the whole report. The floor used to take
+          // the raw `planDir` and derive the slug dir from it, so its two
+          // halves could read DIFFERENT directories — and a caller who named
+          // the slug directory got a confident, false report ("no
+          // architecture.yaml" — it existed). The scope is proven here and
+          // handed down; a path that does not prove one is refused.
+          const scope = resolvePlanScope({
+            tasksYaml: file,
+            planDir: ctx.contain(args.planDir),
+            projectRoot: ctx.projectRoot,
+            action: 'verify',
+          });
           const collection = resolveCollection('verify', args.collection, 'issues');
-          const out = verifyPlan(file, planDirArg, {
+          const out = verifyPlan(scope, {
             offset: args.offset ?? 0,
             limit: args.limit,
             collection,
@@ -238,15 +266,20 @@ export function registerPlanTools(server) {
             'coverage requires planDir',
             { ...hint({ action: toolCall('archgen_plan', { action: 'coverage', tasksYaml: '<tasks.yaml>', planDir: '<planDir>' }), reason: "coverage needs the plans directory." }), action },
           );
-          const planDirArg = ctx.contain(args.planDir);
+          const scope = resolvePlanScope({
+            tasksYaml: file,
+            planDir: ctx.contain(args.planDir),
+            projectRoot: ctx.projectRoot,
+            action: 'coverage',
+          });
           const collection = resolveCollection('coverage', args.collection, 'tasks');
           // ONE task, when the caller named one: the answer is about THAT
           // task, not about the plan.
           if (args.taskId) {
-            const one = planCoverage(file, planDirArg, { taskId: args.taskId });
+            const one = planCoverage(scope, { taskId: args.taskId });
             return one;
           }
-          const covered = planCoverage(file, planDirArg, {
+          const covered = planCoverage(scope, {
             offset: args.offset ?? 0,
             limit: args.limit,
             collection,

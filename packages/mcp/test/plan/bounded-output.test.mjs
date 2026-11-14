@@ -22,6 +22,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { verifyPlan, planCoverage, MAX_FINDINGS } from '../../src/core/plan/verifier.mjs';
+import { scopeFor } from '../../src/core/plan/plan-scope.mjs';
 import { docIndex, DIGEST_SECTION_BUDGET } from '../../src/core/docs/doc-navigator.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -47,7 +48,7 @@ function brokenPlan(n) {
 test('the floor bounds its findings but keeps the counts exact', () => {
   const p = brokenPlan(120);
   try {
-    const out = verifyPlan(p.tasksYaml, p.plansDir);
+    const out = verifyPlan(scopeFor(dirname(p.plansDir)));
     assert.equal(out.verdict, 'ISSUES');
     assert.ok(out.issues.length <= MAX_FINDINGS, 'the list is bounded');
     assert.equal(out.issueCodes.MIRROR_MISSING, 120, 'the per-class count is exact');
@@ -62,7 +63,7 @@ test('the floor bounds its findings but keeps the counts exact', () => {
 test('coverage bounds the uncovered list and reports the total', () => {
   const p = brokenPlan(60);
   try {
-    const out = planCoverage(p.tasksYaml, p.plansDir);
+    const out = planCoverage(scopeFor(dirname(p.plansDir)));
     assert.ok(out.uncovered.items.length <= MAX_FINDINGS, 'the list is bounded');
     // The plan mentions T1, so T1 is covered and the other 59 are not.
     assert.equal(out.uncovered.total, 59, 'the total is exact');

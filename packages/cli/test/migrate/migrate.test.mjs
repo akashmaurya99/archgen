@@ -234,9 +234,16 @@ test('archgen_tasks{set_status} works on a stamped tasks.yaml: status flips, sta
   assert.ok(after.includes('# Core pipeline — do first'));
 });
 
-test('archgen_plan{verify} APPROVEs a stamped fixture copied from the yaml corpus', { skip: skipWithoutMcpDeps }, async () => {
+test('archgen_plan{verify} reads the WHOLE artifact space of a stamped fixture', { skip: skipWithoutMcpDeps }, async () => {
   const dir = seedArtifacts('corpus-check');
-  const plansDir = join(proj, 'plans-x');
+  // The plan lives in the ARTIFACT SPACE — `<slugDir>/plans`, beside the
+  // task file. It used to live in `<proj>/plans-x`, one directory away from
+  // the space it belongs to: the floor read the plan from there and the
+  // audit from the space, so the two halves of one report read two
+  // different trees — and the audit read a directory with no
+  // architecture.yaml, so half the rules never ran. The floor now refuses a
+  // plans dir that is not the space's own.
+  const plansDir = join(dir, 'plans');
   mkdirSync(plansDir, { recursive: true });
   writeFileSync(join(plansDir, 'plan.md'), '# Plan\nDo C first, then B, then A. Acceptance per tasks.yaml.\n');
 
@@ -247,7 +254,49 @@ test('archgen_plan{verify} APPROVEs a stamped fixture copied from the yaml corpu
   const r = runTool('archgen_plan', { action: 'verify', tasksYaml: join(dir, 'tasks.yaml'), planDir: plansDir }, proj);
   assert.equal(r.status, 0, r.stdout);
   assert.equal(r.envelope?.ok, true, JSON.stringify(r.envelope));
-  assert.equal(r.envelope?.data?.verdict, 'APPROVE');
+  // The stamp did not break the task file.
+  assert.equal(
+    (r.envelope?.data?.issues ?? []).some((i) => String(i).startsWith('UNPARSEABLE')),
+    false,
+    `the stamp broke the task file: ${JSON.stringify(r.envelope?.data?.issues)}`,
+  );
+  // The floor SEES the space: the corpus's architecture declares a decision
+  // with no decision file, and module paths no task owns. Those findings
+  // only exist when the audit read THIS space's architecture.yaml — and the
+  // old, wrong-directory read never saw them.
+  const issues = (r.envelope?.data?.issues ?? []).map(String);
+  assert.ok(
+    issues.some((i) => i.startsWith('DECISION_MISSING')),
+    `the floor did not see the space's architecture.yaml: ${JSON.stringify(issues)}`,
+  );
+  assert.ok(
+    issues.some((i) => i.startsWith('PATH_UNOWNED')),
+    `the floor did not check the space's declared paths: ${JSON.stringify(issues)}`,
+  );
+});
+
+test('archgen_plan{verify} APPROVEs a stamped fixture whose artifact space is coherent', { skip: skipWithoutMcpDeps }, async () => {
+  const dir = seedArtifacts('corpus-clean');
+  // A COHERENT space: the architecture declares only what the tasks own,
+  // and its decision has a decision file. The corpus's own architecture does
+  // not — it is a parser-parity sample, not a plan — so the floor (rightly)
+  // reports it. This case proves APPROVE is still reachable.
+  writeFileSync(
+    join(dir, 'architecture.yaml'),
+    'name: Acme Shop\nslug: corpus-clean\nstructure: "src/ config/ tests/"\nmodules: []\ndecisions: []\n',
+    'utf8',
+  );
+  const plansDir = join(dir, 'plans');
+  mkdirSync(plansDir, { recursive: true });
+  writeFileSync(join(plansDir, 'plan.md'), '# Plan\nDo C first, then B, then A. Acceptance per tasks.yaml.\n');
+
+  const r0 = await applyMigration('001-stamp-provenance', proj, { dryRun: false });
+  assert.equal(r0.status, 'applied');
+
+  const r = runTool('archgen_plan', { action: 'verify', tasksYaml: join(dir, 'tasks.yaml'), planDir: plansDir }, proj);
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(r.envelope?.ok, true, JSON.stringify(r.envelope));
+  assert.equal(r.envelope?.data?.verdict, 'APPROVE', JSON.stringify(r.envelope?.data?.issues));
 });
 
 test('applyMigration API: unknown id -> not-found; clean project -> clean; dryRun default refuses backup', async () => {

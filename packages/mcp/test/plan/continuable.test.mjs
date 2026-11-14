@@ -21,6 +21,7 @@ import { getToolSpec } from '../../src/tools/_register.mjs';
 import { Context } from '../../src/context.mjs';
 import { guard } from '../../src/envelope.mjs';
 import { verifyPlan, planCoverage, MAX_FINDINGS } from '../../src/core/plan/verifier.mjs';
+import { scopeFor } from '../../src/core/plan/plan-scope.mjs';
 import { docIndex } from '../../src/core/docs/doc-navigator.mjs';
 
 createServer();
@@ -47,7 +48,7 @@ function brokenPlan(n) {
 test('the floor\'s findings are WALKABLE — the whole tail is reachable', () => {
   const p = brokenPlan(120);
   try {
-    const first = verifyPlan(p.tasksYaml, p.plansDir, { offset: 0 });
+    const first = verifyPlan(scopeFor(dirname(p.plansDir)), { offset: 0 });
     assert.equal(first.issues.length, MAX_FINDINGS);
     // Walk the list: every finding is reachable, none is seen twice, and the
     // totals never change.
@@ -55,7 +56,7 @@ test('the floor\'s findings are WALKABLE — the whole tail is reachable', () =>
     let offset = first.issues.length;
     let window = first;
     while (window.omitted.issues > 0) {
-      window = verifyPlan(p.tasksYaml, p.plansDir, { offset });
+      window = verifyPlan(scopeFor(dirname(p.plansDir)), { offset });
       assert.equal(window.issuesTotal, first.issuesTotal, 'the total never changes');
       assert.equal(window.issueCodes.MIRROR_MISSING, first.issueCodes.MIRROR_MISSING, 'the counts never change');
       for (const issue of window.issues) {
@@ -73,13 +74,13 @@ test('the floor\'s findings are WALKABLE — the whole tail is reachable', () =>
 test('the coverage action\'s uncovered list is walkable', () => {
   const p = brokenPlan(120);
   try {
-    const first = planCoverage(p.tasksYaml, p.plansDir, { collection: 'uncovered' });
+    const first = planCoverage(scopeFor(dirname(p.plansDir)), { collection: 'uncovered' });
     assert.equal(first.uncovered.items.length, MAX_FINDINGS);
     const seen = new Set(first.uncovered.items);
     let offset = first.uncovered.items.length;
     let window = first;
     while (seen.size < window.uncovered.total) {
-      window = planCoverage(p.tasksYaml, p.plansDir, { collection: 'uncovered', offset });
+      window = planCoverage(scopeFor(dirname(p.plansDir)), { collection: 'uncovered', offset });
       assert.equal(window.uncovered.total, first.uncovered.total, 'the total never changes');
       for (const id of window.uncovered.items) {
         assert.ok(!seen.has(id), 'an id was shown twice');
@@ -96,12 +97,12 @@ test('the coverage action\'s uncovered list is walkable', () => {
 test('the coverage action\'s TASK list is walkable too — the default collection has a cursor', () => {
   const p = brokenPlan(120);
   try {
-    const first = planCoverage(p.tasksYaml, p.plansDir, { collection: 'tasks', limit: 10 });
+    const first = planCoverage(scopeFor(dirname(p.plansDir)), { collection: 'tasks', limit: 10 });
     assert.equal(first.tasks.items.length, 10);
     const seen = new Set(first.tasks.items.map((t) => t.id));
     let offset = first.tasks.items.length;
     while (seen.size < first.tasks.total) {
-      const window = planCoverage(p.tasksYaml, p.plansDir, { collection: 'tasks', limit: 10, offset });
+      const window = planCoverage(scopeFor(dirname(p.plansDir)), { collection: 'tasks', limit: 10, offset });
       assert.equal(window.tasks.total, first.tasks.total, 'the total never changes');
       for (const t of window.tasks.items) {
         assert.ok(!seen.has(t.id), 'a task was shown twice');

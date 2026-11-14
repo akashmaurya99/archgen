@@ -88,6 +88,51 @@ and the server installed CodeGraph anyway. The message and the machine
 disagreed, and the machine was the one that mattered. The flags are now
 forwarded to the server's bootstrap, where they already existed.
 
+### Fixed — the floor reported FALSE facts about a project
+
+`archgen_plan{action:'verify'}` read the artifact space from TWO places, and
+each derived it from the caller's `planDir` on its own: the coverage half
+read `planDir`, the audit half read `dirname(planDir)`. They agree only when
+`planDir` is the `plans` directory.
+
+A caller who named the SLUG directory instead got a report that was
+confident and untrue:
+
+    "no architecture.yaml — the mirrored-test-tree … rules are NOT ENFORCED"
+    "the plan records no profile — artifact necessity cannot be checked"
+    "task 'T-1' is not mentioned in any plan file under …"
+
+Every one of those was false: `architecture.yaml` existed, the profile was
+recorded, and the plan file mentioned the task. The coverage half had read
+the space's SURVEY doc (`codebase-map.md`) as if it were the plan, and the
+audit half had read `.archgen/` — one level too high.
+
+The fix is structural, not a check at one call site: the artifact space is
+now RESOLVED ONCE, at the boundary, by one owner
+(`core/plan/plan-scope.mjs`), and every consumer is handed the resolved
+directories. The rule it enforces is relational — **the task file and the
+plans directory must name the SAME artifact space** — so a plans directory
+that is not the space's own is a typed refusal with the exact call that
+would work, never a report about a project that does not exist.
+
+`verify`, `coverage` and `validate` share the resolver, and so does the
+dispatch brief: one scope, one set of directories, every action.
+
+### Fixed — the floor silently skipped half its rules
+
+The same defect, seen from the other side: with the plan outside the
+artifact space, the audit read a directory with no `architecture.yaml` — so
+`PATH_UNOWNED` and `DECISION_MISSING` never ran, and the plan APPROVED. The
+rules were not passing; they were never reached.
+
+### Added — the JS-runtime calling contract
+
+An agent's JS runtime has no `text()` helper, so `text(x)` is a
+`ReferenceError`, not a print — and a harness may surface a refused call as
+a THROWN error whose message is the envelope JSON. The skill now says so:
+return the value, and wrap a call in `try/catch` when you need the refusal's
+`error.code`.
+
 ### Fixed — `ARCHGEN_CODEGRAPH=0` was honoured in one place out of two
 
 `ARCHGEN_CODEGRAPH=0` means "no CodeGraph bootstrap: no spawn, no network,

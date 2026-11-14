@@ -189,6 +189,14 @@ Dispatch via the platform's native sub-agent mechanism (`archgen_platform`). If 
 | Single task implementation | **Worker** (`archgen_tasks{action:'contract'}`) |
 | Survey / verifier / reviewer / investigation | **Gate sub-agent** (`brief: 'survey'|'verifier'|'review'|'investigate'`) |
 
+### Calling tools from a JS runtime
+
+Batching calls is good practice; printing them is not the mechanism.
+
+- **Return the value.** There is no `text()` helper in an agent's JS runtime — `text(x)` is a `ReferenceError`, not a print. `return` the result (or `return results.map(...)`).
+- **A failed call may throw.** A harness surfaces a refused call as a thrown error whose **message is the envelope JSON**; `JSON.parse(e.message)` recovers `error.code` and `error.details.nextAction`. Wrap calls in `try/catch` when you need the refusal.
+- **`Promise.allSettled` over a batch** keeps one refusal from hiding the rest — inspect each entry's `status` before you read it.
+
 ### Session reuse and parallel dispatch
 
 Maintain a **dispatch ledger** (`dispatchKey → session` from `contract`). A follow-up **fix or clarification** in the files that agent already touched CONTINUES its session — it holds the decisions, the dead ends and the constraints, and a fresh agent would re-derive all of it.

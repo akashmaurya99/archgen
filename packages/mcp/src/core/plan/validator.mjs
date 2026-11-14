@@ -58,8 +58,20 @@ const COVERAGE_FIXES = {
 /**
  * Validate a tasks.yaml file.
  *
+ * The `scope` is the RESOLVED artifact space (`resolvePlanScope`). When
+ * `coverage` is set, the plan<->task coverage is read from the scope's plans
+ * directory — never from a raw path the caller typed. A caller who named the
+ * slug directory instead of the plans directory used to get "task 'T-1' is
+ * not mentioned in any plan file" for a plan that mentions it, because the
+ * coverage pass read the slug dir's markdown instead of the plan's.
+ *
+ * `coverage` is OFF unless the caller named a plans dir: `validate` without
+ * one reports the task file's OWN rules, and a scope always knows where the
+ * plans dir would be — so the scope alone must not turn the coverage check
+ * on.
+ *
  * @param {string} file absolute path to tasks.yaml
- * @param {{planDir?: string|null, limit?: number, offset?: number, collection?: string}} [opts]
+ * @param {{scope?: {plansDir: string}|null, coverage?: boolean, limit?: number, offset?: number, collection?: string}} [opts]
  * @returns {{valid: boolean, errors: object[], warnings: object[],
  *            errorsTotal: number, warningsTotal: number,
  *            errorsOffset: number, warningsOffset: number,
@@ -68,7 +80,8 @@ const COVERAGE_FIXES = {
  *            counts: {tasks: number, errors: number, warnings: number}}}
  */
 export function validateTasksYaml(file, opts = {}) {
-  const planDir = opts.planDir ?? null;
+  const scope = opts.scope ?? null;
+  const coverage = opts.coverage === true && Boolean(scope?.plansDir);
   const read = readPlanFile(file);
   const errors = read.findings.slice();
   const warnings = [];
@@ -90,13 +103,13 @@ export function validateTasksYaml(file, opts = {}) {
   warnings.push(...checked.warnings);
   const taskCount = checked.tasks.length;
 
-  if (planDir) {
+  if (coverage) {
     // Delegate plan<->task coverage checks to the single shared implementation.
     // The finding is CLASSIFIED, not stamped: the coverage pass reports four
     // different defects, and one code for all of them left NO_PLAN_DIR,
     // UNKNOWN_TASK_ID and IO_ERROR unreachable from `validate` — and paired
     // every one of them with a fix about mentioning a task in a plan.
-    for (const f of checkPlanCoverage(planDir, checked.tasks).findings) {
+    for (const f of checkPlanCoverage(scope.plansDir, checked.tasks).findings) {
       const code = issueCode(f);
       errors.push(finding(code, f, { fix: COVERAGE_FIXES[code] ?? COVERAGE_FIXES.PLAN_TASK_COVERAGE }));
     }

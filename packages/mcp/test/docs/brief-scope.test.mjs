@@ -156,7 +156,10 @@ test('with nothing to resolve from, the error says what is missing', () => {
       () => resolveBriefScope({ projectRoot: s.root }),
       (e) => {
         assert.equal(e.code, 'INVALID_INPUT');
-        assert.ok(e.details.missing.includes('tasks.yaml'));
+        // The resolver is now the ONE owner of this refusal, so it names the
+        // ARGUMENTS a caller can pass.
+        assert.ok(e.details.missing.includes('tasksYaml'));
+        assert.ok(e.details.missing.includes('planDir'));
         assert.ok(e.details.missing.includes('slug'));
         return true;
       },

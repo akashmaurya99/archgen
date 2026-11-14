@@ -12,6 +12,7 @@ import { join } from 'node:path';
 
 import { validateTasksYaml } from '../../src/core/plan/validator.mjs';
 import { verifyPlan } from '../../src/core/plan/verifier.mjs';
+import { scopeFor } from '../../src/core/plan/plan-scope.mjs';
 import { resolveWaves } from '../../src/core/plan/wave-resolver.mjs';
 import { setTaskStatus, detectEol } from '../../src/core/plan/status-mutator.mjs';
 import { analyzeImpact } from '../../src/core/plan/impact-analyzer.mjs';
@@ -111,7 +112,7 @@ test('a dependency cycle is CYCLE, not INTERNAL', () => {
   );
   // The verifier is a GATE, not a thrower: it reports the cycle as a finding
   // (APPROVE/ISSUES), exactly as the old verify-plan.mjs did.
-  const verdict = verifyPlan(p, work);
+  const verdict = verifyPlan(scopeFor(work, p));
   assert.equal(verdict.verdict, 'ISSUES');
   assert.ok(verdict.issues.some((i) => /cycle/i.test(i)), JSON.stringify(verdict.issues));
 });

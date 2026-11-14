@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseYaml } from '../../src/core/fs/yaml.mjs';
 import { verifyPlan, issueCode } from '../../src/core/plan/verifier.mjs';
+import { scopeFor } from '../../src/core/plan/plan-scope.mjs';
 import { REPO_ROOT, inRepo, requireCorpus } from '../support/repo-root.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -36,7 +37,7 @@ for (const name of cases()) {
     const dir = join(CORPUS, name);
     const expected = JSON.parse(readFileSync(join(dir, 'expect.json'), 'utf8'));
     const { data } = parseYaml(readFileSync(join(dir, 'tasks.yaml'), 'utf8'), { filename: 'tasks.yaml' });
-    const result = verifyPlan(join(dir, 'tasks.yaml'), join(dir, 'plans'));
+    const result = verifyPlan(scopeFor(dir));
 
     const codes = result.issues.map(issueCode).sort();
     assert.deepEqual(
@@ -60,7 +61,7 @@ test('the corpus is not empty — a gate with no cases is a gate with no memory'
 test('every corpus case fails the gate (a passing case would be a useless case)', () => {
   for (const name of cases()) {
     const dir = join(CORPUS, name);
-    const result = verifyPlan(join(dir, 'tasks.yaml'), join(dir, 'plans'));
+    const result = verifyPlan(scopeFor(dir));
     assert.equal(result.verdict, 'ISSUES', `${name} must be rejected by the floor`);
   }
 });
