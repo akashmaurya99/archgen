@@ -28,6 +28,13 @@ const INSTALL_SH = join(REPO, 'install.sh');
  * A throwaway machine: a HOME and a project, and a stub `npx` so the server
  * bootstrap never touches the network or the real machine.
  *
+ * The stubs are EXECUTABLE. A non-executable file in PATH is skipped by
+ * bash's command search, so a stub without the execute bit is not a stub at
+ * all: the real `npx` ran, fetched the published server from the registry,
+ * and the server ENSURED CodeGraph — a real `npm install -g` during a test,
+ * with npm's inherited prefix pointing into the repository. The immutable
+ * gate caught the resulting `packages/cli/bin/codegraph`.
+ *
  * @returns {{home: string, project: string, bin: string, cleanup: () => void}}
  */
 function machine() {
@@ -40,8 +47,8 @@ function machine() {
   mkdirSync(bin, { recursive: true });
   // A stub npx: the bootstrap is not what these tests are about, and the
   // real one would install packages.
-  writeFileSync(join(bin, 'npx'), '#!/bin/sh\nexit 0\n', 'utf8');
-  writeFileSync(join(bin, 'node'), '#!/bin/sh\nexit 0\n', 'utf8');
+  writeFileSync(join(bin, 'npx'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'node'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   return { home, project, bin, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 

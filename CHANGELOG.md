@@ -73,6 +73,44 @@ its camel-cased, upper-cased and globalconfig spellings) so npm falls back
 to the real global prefix. The rest of the environment survives — a global
 install still needs `HOME` and the user's npmrc.
 
+The variables are set to `undefined` rather than DELETED, and that is
+load-bearing: the callers MERGE the environment with `process.env`
+(`{ ...process.env, ...env }`), and a deleted key is simply absent from the
+patch — so the merge put npm's inherited prefix straight back. An
+`undefined` value overrides the inherited one, and Node's `spawn` skips
+`undefined` entries, so the variable is genuinely unset in the child.
+
+### Fixed — `init --no-codegraph` installed CodeGraph anyway
+
+The CLI's bootstrap helper LOGGED the scope flags and then dropped them:
+`archgen-skill init --no-codegraph` printed "CodeGraph bootstrap skipped" —
+and the server installed CodeGraph anyway. The message and the machine
+disagreed, and the machine was the one that mattered. The flags are now
+forwarded to the server's bootstrap, where they already existed.
+
+### Fixed — `ARCHGEN_CODEGRAPH=0` was honoured in one place out of two
+
+`ARCHGEN_CODEGRAPH=0` means "no CodeGraph bootstrap: no spawn, no network,
+no writes". The CLI checked it in ONE place — its own bootstrap helper — so
+the SERVER, the layer that actually runs `npm install -g`, never saw it.
+Every other path into the server (`archgen-skill mcp add`, the MCP tool, the
+`exec` facade) installed CodeGraph with the switch set.
+
+The switch is now checked where the install happens, so every path agrees:
+no install, no telemetry write, no project index.
+
+### Fixed — a test installed a package on the developer's machine
+
+The installer tests stubbed `npx` and `node` — but WITHOUT the execute bit.
+bash skips a non-executable file in its command search, so the stubs were not
+stubs at all: the real `npx` ran, fetched the published server from the
+registry, and the server ENSURED CodeGraph — a real `npm install -g` during
+a test, with npm's inherited prefix pointing into the repository. The
+immutable gate caught the resulting `packages/cli/bin/codegraph`.
+
+The stubs are executable now, and they are executable on purpose: a test
+must never install anything and must never reach the network.
+
 ### Added — `mcp add` can wire one side only
 
 `archgen-skill mcp add` gains `--no-codegraph` and `--no-mcp`, so an operator

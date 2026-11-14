@@ -75,6 +75,27 @@ function loadPolicy() {
 }
 
 /**
+ * Is CodeGraph switched OFF for this process?
+ *
+ * `ARCHGEN_CODEGRAPH=0` is the switch the CLI already honours, and it means
+ * exactly one thing: no CodeGraph bootstrap — no spawn, no network, no
+ * writes. The CLI checked it in ONE place (its own bootstrap helper), so the
+ * SERVER — the layer that actually runs `npm install -g` — never saw it. Any
+ * other path into the server (`archgen-skill mcp add`, the MCP tool, the
+ * `exec` facade) installed CodeGraph with the switch set.
+ *
+ * The switch is checked HERE, where the install happens, so every path
+ * agrees.
+ *
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {boolean}
+ */
+export function codegraphDisabled(env = process.env) {
+  const v = String(env.ARCHGEN_CODEGRAPH ?? '').trim().toLowerCase();
+  return v === '0' || v === 'off' || v === 'false' || v === 'no';
+}
+
+/**
  * The npm spec for the WIRING: the package, pinned when the policy pins it.
  *
  * @param {{package: string, wire: string|null}} policy
@@ -269,16 +290,24 @@ export function npmInvocation(npmArgs, env = process.env) {
  * So the prefix variables are REMOVED for a global install, and npm falls
  * back to the real global prefix.
  *
+ * They are set to `undefined` rather than DELETED, and that is load-bearing:
+ * the callers MERGE the environment with `process.env`
+ * (`{ ...process.env, ...env }`), and a DELETED key is simply absent from the
+ * patch — so the merge put npm's inherited prefix straight back. An
+ * `undefined` value overrides the inherited one, and Node's `spawn` skips
+ * `undefined` entries, so the variable is genuinely unset in the child.
+ *
  * @param {Record<string, string|undefined>} [env]
  * @returns {Record<string, string|undefined>}
  */
 export function globalInstallEnv(env = process.env) {
   const out = { ...env };
-  delete out.npm_config_prefix;
-  delete out.npmConfigPrefix;
-  delete out.NPM_CONFIG_PREFIX;
-  delete out.npm_config_globalconfig;
-  delete out.npmConfigGlobalconfig;
+  // npm reads both the hyphenated and the camel-cased spelling.
+  out.npm_config_prefix = undefined;
+  out.npmConfigPrefix = undefined;
+  out.NPM_CONFIG_PREFIX = undefined;
+  out.npm_config_globalconfig = undefined;
+  out.npmConfigGlobalconfig = undefined;
   return out;
 }
 
@@ -420,12 +449,16 @@ export async function manageCodegraph(opts) {
   const policy = codegraphPolicy(env);
   const spec = codegraphSpec(policy);
   const installSpec = codegraphInstallSpec(policy);
+  // The OFF switch, resolved once: it is the last word on whether anything
+  // may be installed on this machine.
+  const disabled = codegraphDisabled(env);
   report.policy = {
     package: policy.package,
     install: policy.install,
     wire: policy.wire,
     tools: policy.tools,
     telemetry: policy.telemetry,
+    disabled,
   };
 
   /**
@@ -452,10 +485,12 @@ export async function manageCodegraph(opts) {
   const ensureCli = async ({ install = true } = {}) => {
     let found = findCodegraph(env);
     if (!found) {
-      if (noInstall || !install) {
+      if (noInstall || !install || disabled) {
         // Caller manages the CLI — fall back to the npx form in the MCP config.
         report.cli.action = 'absent';
-        report.cli.detail = `not installed and installation was skipped — the MCP config will use "npx -y ${spec} serve --mcp"`;
+        report.cli.detail = disabled
+          ? `not installed and CodeGraph is switched off (ARCHGEN_CODEGRAPH=${env.ARCHGEN_CODEGRAPH}) — the MCP config will use "npx -y ${spec} serve --mcp"`
+          : `not installed and installation was skipped — the MCP config will use "npx -y ${spec} serve --mcp"`;
         return { bin: null, version: null };
       }
       if (dryRun) {
@@ -645,6 +680,14 @@ export async function manageCodegraph(opts) {
       report.index.action = 'would-index';
       return;
     }
+    // The OFF switch outranks the approval: `ARCHGEN_CODEGRAPH=0` means no
+    // CodeGraph writes at all, and `codegraph init` writes `.codegraph/` into
+    // the project.
+    if (disabled) {
+      report.index.action = 'skipped';
+      report.index.detail = `CodeGraph is switched off (ARCHGEN_CODEGRAPH=${env.ARCHGEN_CODEGRAPH}) — the project index was not built`;
+      return;
+    }
     // Official indexing command: creates .codegraph/ AND builds the graph.
     const r = await runAsync(cli.bin ?? 'codegraph', ['init', projectRoot], { timeout: 900000, env });
     if (!r.ok) {
@@ -671,6 +714,14 @@ export async function manageCodegraph(opts) {
     const state = telemetryState(cli.bin);
     report.telemetry.state = state;
     if (telemetry === 'keep' || !cli.bin) return;
+    // The OFF switch outranks the telemetry policy: `ARCHGEN_CODEGRAPH=0`
+    // means no CodeGraph writes at all, and a telemetry setting is a
+    // machine-wide write.
+    if (disabled) {
+      report.telemetry.action = 'skipped';
+      report.telemetry.detail = `CodeGraph is switched off (ARCHGEN_CODEGRAPH=${env.ARCHGEN_CODEGRAPH}) — the telemetry setting was not applied`;
+      return;
+    }
     if (telemetry === state) {
       report.telemetry.action = 'unchanged';
       return;

@@ -23,7 +23,7 @@ import { bootstrapMcp, uninstallMcp, mcpList, codegraphAdmin } from '../lib/mcp-
 import { restoreMain } from '../lib/restore.js';
 import { migrateMain } from '../lib/migrate.js';
 import { compareSemver, fetchLatestVersion } from '../lib/version.js';
-import { npmInvocation, whichOnPath, globalBinPath } from '../lib/spawn-npm.js';
+import { npmInvocation, whichOnPath, globalBinPath, globalInstallEnv } from '../lib/spawn-npm.js';
 import { cliVersion } from '../lib/store.js';
 import { writeOut, writeErr } from '../lib/io.js';
 import { spawnSync } from 'node:child_process';
@@ -423,8 +423,13 @@ try {
       }
       writeOut('  ↑ newer version available: ' + latest);
       writeOut('  upgrading global install: npm install -g archgen-skill@' + latest);
-      const inv = npmInvocation(['install', '-g', 'archgen-skill@' + latest]);
-      const up = spawnSync(inv.command, inv.args, { stdio: 'inherit', shell: inv.shell });
+      // The GLOBAL prefix, not the one npm inherited from the script that
+      // launched us: under `npm --prefix …` or `npx`, npm_config_prefix
+      // points at a local tree, and the upgrade would land THERE — a copy
+      // nobody can find.
+      const upEnv = globalInstallEnv(process.env);
+      const inv = npmInvocation(['install', '-g', 'archgen-skill@' + latest], upEnv);
+      const up = spawnSync(inv.command, inv.args, { stdio: 'inherit', shell: inv.shell, env: upEnv });
       if (up.status !== 0) {
         writeErr('  ! global upgrade failed — run it manually, then re-run: archgen-skill update');
         process.exitCode = 1;

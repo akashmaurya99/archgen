@@ -5,7 +5,7 @@
 // skip/gate logic only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, chmodSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,43 @@ test('bootstrap: --no-mcp and --no-codegraph together skip it', () => {
     });
     assert.equal(r.ok, true);
     assert.match(r.skipped ?? '', /--no-mcp/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The flags were LOGGED and then DROPPED: `init --no-codegraph` printed
+// "CodeGraph bootstrap skipped" — and the server installed CodeGraph anyway.
+// The message and the machine disagreed, and the machine was the one that
+// mattered. The stub server records its argv, so the flags are checked where
+// they have to arrive.
+test('bootstrap: the scope flags reach the server', () => {
+  const dir = tmp();
+  try {
+    const argvFile = join(dir, 'argv.txt');
+    const stub = join(dir, 'archgen-mcp-stub.mjs');
+    writeFileSync(
+      stub,
+      `#!${process.execPath}\n` +
+        `import { writeFileSync } from 'node:fs';\n` +
+        `writeFileSync(${JSON.stringify(argvFile)}, process.argv.slice(2).join(' '));\n` +
+        `process.stdout.write(JSON.stringify({ ok: true, mcp: {}, codegraph: {} }));\n`,
+      { mode: 0o755 },
+    );
+    const env = { HOME: dir, ARCHGEN_MCP_BIN: stub };
+    bootstrapServers({ projectDir: dir, noCodegraph: true, env });
+    const argv = readFileSync(argvFile, 'utf8');
+    assert.match(argv, /--no-codegraph/, `the server was not told to skip CodeGraph: ${argv}`);
+
+    writeFileSync(argvFile, '');
+    bootstrapServers({ projectDir: dir, noMcp: true, env });
+    assert.match(readFileSync(argvFile, 'utf8'), /--no-mcp/, 'the server was not told to skip the MCP wiring');
+
+    writeFileSync(argvFile, '');
+    bootstrapServers({ projectDir: dir, env });
+    const plain = readFileSync(argvFile, 'utf8');
+    assert.doesNotMatch(plain, /--no-codegraph/, 'a full bootstrap must not skip CodeGraph');
+    assert.doesNotMatch(plain, /--no-mcp/, 'a full bootstrap must not skip the MCP wiring');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

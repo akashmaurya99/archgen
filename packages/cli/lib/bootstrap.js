@@ -91,6 +91,12 @@ export function bootstrapServers(opts) {
     location,
     approved: true,
     env,
+    // The two flags are FORWARDED. They used to be logged and then dropped,
+    // so `init --no-codegraph` printed "CodeGraph bootstrap skipped" — and
+    // the server installed CodeGraph anyway. The message and the machine
+    // disagreed, and the machine was the one that mattered.
+    noCodegraph,
+    noMcp,
   });
   if (!r.report) {
     // The bootstrap did NOT run: report it as a failure so the caller tells

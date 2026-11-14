@@ -63,6 +63,13 @@ function run(args, extraEnv = {}) {
 /**
  * A fake npm: the CLI resolves npm through `npm_execpath`, so the update flow
  * can be exercised without a network or a real global install.
+ *
+ * The fake reads its target prefix from `FAKE_NPM_PREFIX`, NOT from
+ * `npm_config_prefix`. The CLI now strips `npm_config_prefix` for a global
+ * install — that is the whole point: the install must go to the REAL global
+ * prefix, not the one npm inherited from the script that launched it. A fake
+ * that keyed off the variable the production code neutralizes would break
+ * for the right reason and look like a regression.
  */
 function fakeNpm({ version, installMarker }) {
   const npmCli = join(proj, 'fake-npm.js');
@@ -71,7 +78,7 @@ function fakeNpm({ version, installMarker }) {
 const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
-const prefix = process.env.npm_config_prefix;
+const prefix = process.env.FAKE_NPM_PREFIX || process.env.npm_config_prefix;
 if (args[0] === 'view') { console.log(process.env.FAKE_NPM_VERSION); process.exit(0); }
 if (args[0] === 'prefix') { console.log(prefix); process.exit(0); }
 if (args[0] === 'install') {
@@ -200,6 +207,7 @@ test('M10: update propagates a failed doctor', () => {
   const r = run(['update', proj], {
     npm_execpath: npmCli,
     npm_config_prefix: prefix,
+    FAKE_NPM_PREFIX: prefix,
     FAKE_NPM_VERSION: '9.9.9',
     PATH: pathWithOldBinary(),
   });
@@ -218,6 +226,7 @@ test('L3: update re-executes the binary npm installed, not the one on PATH', () 
   const r = run(['update', proj], {
     npm_execpath: npmCli,
     npm_config_prefix: prefix,
+    FAKE_NPM_PREFIX: prefix,
     FAKE_NPM_VERSION: '9.9.9',
     PATH: pathWithOldBinary(),
   });

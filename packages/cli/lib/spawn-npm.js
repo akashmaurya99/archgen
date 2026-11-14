@@ -54,17 +54,24 @@ export function npmInvocation(npmArgs, env = process.env) {
  * So the prefix variables are REMOVED for a global install, and npm falls
  * back to the real global prefix.
  *
+ * They are set to `undefined` rather than DELETED, and that is load-bearing:
+ * a caller may MERGE the result with `process.env`
+ * (`{ ...process.env, ...env }`), and a DELETED key is simply absent from the
+ * patch — so the merge put npm's inherited prefix straight back. An
+ * `undefined` value overrides the inherited one, and Node's `spawn` skips
+ * `undefined` entries, so the variable is genuinely unset in the child.
+ *
  * @param {Record<string, string|undefined>} [env]
  * @returns {Record<string, string|undefined>}
  */
 export function globalInstallEnv(env = process.env) {
   const out = { ...env };
   // npm reads both the hyphenated and the camel-cased spelling.
-  delete out.npm_config_prefix;
-  delete out.npmConfigPrefix;
-  delete out.NPM_CONFIG_PREFIX;
-  delete out.npm_config_globalconfig;
-  delete out.npmConfigGlobalconfig;
+  out.npm_config_prefix = undefined;
+  out.npmConfigPrefix = undefined;
+  out.NPM_CONFIG_PREFIX = undefined;
+  out.npm_config_globalconfig = undefined;
+  out.npmConfigGlobalconfig = undefined;
   return out;
 }
 

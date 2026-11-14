@@ -65,10 +65,32 @@ function outsideDir() {
   return d;
 }
 
+/**
+ * Run install.sh.
+ *
+ * The `npx` and `node` on PATH are STUBS, and they are EXECUTABLE. A
+ * non-executable file in PATH is skipped by bash's command search, so a stub
+ * without the execute bit is not a stub at all: the real `npx` ran, fetched
+ * the published server from the registry, and the server ENSURED CodeGraph —
+ * a real `npm install -g` during a test, with npm's inherited prefix
+ * pointing into the repository. The immutable gate caught the resulting
+ * `packages/cli/bin/codegraph`.
+ *
+ * A test must never install anything and must never reach the network.
+ */
 function runInstallSh(args) {
+  const stubBin = join(proj, '.stub-bin');
+  mkdirSync(stubBin, { recursive: true });
+  writeFileSync(join(stubBin, 'npx'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  writeFileSync(join(stubBin, 'node'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   return spawnSync('bash', [INSTALL_SH, ...args], {
     encoding: 'utf8',
-    env: { ...process.env, HOME: home },
+    env: {
+      ...process.env,
+      HOME: home,
+      PATH: `${stubBin}:${process.env.PATH ?? ''}`,
+      npm_config_offline: 'true',
+    },
     cwd: proj,
   });
 }
