@@ -55,6 +55,8 @@ Why: one directory holding both production and test code grows a second, undecla
 
 - **Document WHY:** trade-offs, non-obvious constraints, and ADR references at decision points.
 - **Public APIs:** purpose, parameters, failure modes.
+- **Necessary, not decorative:** explain intent and constraints, never the mechanics the code already shows. Keep comments short, current, and in the codebase's own voice.
+- **No task bookkeeping:** never mention task IDs, ticket IDs, or workflow/agent bookkeeping in a comment — the code carries no assignment trail.
 - **Zero noise:** no restating code, no commented-out code, no inline changelogs.
 
 ## Verification
