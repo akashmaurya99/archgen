@@ -22,7 +22,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { globalBinPath } from '../../lib/spawn-npm.js';
+import { globalBinPath, globalInstallEnv } from '../../lib/spawn-npm.js';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BIN = join(CLI, 'bin', 'archgen.mjs');
@@ -100,6 +100,40 @@ function oldBinaryOnPath() {
 function pathWithOldBinary() {
   return pathDir + ':' + (process.env.PATH ?? '');
 }
+
+// M14: `npm install -g` inherited npm_config_prefix and installed into a
+//      LOCAL tree. Under `npm --prefix packages/cli test` — which is exactly
+//      what CI runs — a global CodeGraph install landed in
+//      `packages/cli/lib/node_modules/`, inside the package it was supposed
+//      to install FOR: invisible to every later run, and a dangling-symlink
+//      crash for the next one.
+test('M14: a global install ignores the prefix npm inherited from the script', () => {
+  const env = {
+    npm_config_prefix: '/some/local/tree',
+    npmConfigPrefix: '/some/local/tree',
+    NPM_CONFIG_PREFIX: '/some/local/tree',
+    npm_config_globalconfig: '/some/local/npmrc',
+    PATH: '/usr/bin:/bin',
+  };
+  const out = globalInstallEnv(env);
+  assert.equal(out.npm_config_prefix, undefined);
+  assert.equal(out.npmConfigPrefix, undefined);
+  assert.equal(out.NPM_CONFIG_PREFIX, undefined);
+  assert.equal(out.npm_config_globalconfig, undefined);
+  // The rest of the environment survives — a global install still needs HOME.
+  assert.equal(out.PATH, '/usr/bin:/bin');
+  assert.equal(out.npm_config_prefix, undefined);
+  // The ORIGINAL environment is not mutated: the caller may need the prefix
+  // for a LOCAL install afterwards.
+  assert.equal(env.npm_config_prefix, '/some/local/tree');
+});
+
+test('M14: the global-install env still carries the credentials npm needs', () => {
+  const env = { HOME: '/home/me', npm_config_prefix: '/local', NPM_CONFIG_USERCONFIG: '/home/me/.npmrc' };
+  const out = globalInstallEnv(env);
+  assert.equal(out.HOME, '/home/me');
+  assert.equal(out.NPM_CONFIG_USERCONFIG, '/home/me/.npmrc');
+});
 
 test('M9: `uninstall <dir>` removes that PROJECT and not every global install', () => {
   const target = join(proj, 'myproj');

@@ -91,6 +91,8 @@ Usage:
     [--project <dir>]              the project directory
     [--location <s>]               project | global | both (default: both)
     [--yes]                        approve the writes (required by add/remove)
+    [--no-codegraph]               wire ONLY the MCP server (no CodeGraph install)
+    [--no-mcp]                     skip the MCP wiring (CodeGraph only)
   npx archgen-skill migrate [dir]     Evolve generated-artifact formats in place;
                                   --check (default) lists pending migrations
     [--apply]                     apply them (every touched file is backed up)
@@ -315,6 +317,8 @@ try {
       const action = actionIndex >= 0 ? rest.splice(actionIndex, 1)[0] : null;
       if (!action) throw new Error('mcp needs an action: list | add | remove');
       const yes = flag('--yes');
+      const noCodegraph = flag('--no-codegraph');
+      const noMcp = flag('--no-mcp');
       const location = takeValue('--location') || 'both';
       const dir = targetDir();
       assertNoUnknownFlags();
@@ -337,7 +341,18 @@ try {
       } else if (action === 'add') {
         // WITHOUT --yes the command is a PLAN: the wiring is computed and
         // reported, and nothing is written.
-        const r = bootstrapMcp({ projectRoot: dir, location, approved: yes });
+        //
+        // `--no-codegraph` wires ONLY the MCP server. It matters for an
+        // operator who does not want CodeGraph on the machine, and for a
+        // test: without it, the bootstrap ENSURES CodeGraph, and on a machine
+        // without CodeGraph that is a real global install.
+        const r = bootstrapMcp({
+          projectRoot: dir,
+          location,
+          approved: yes,
+          noCodegraph: noCodegraph,
+          noMcp: noMcp,
+        });
         writeOut(`archgen mcp add — ${dir}`);
         if (r.detail) {
           writeErr('  ! ' + r.detail);

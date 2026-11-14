@@ -69,7 +69,11 @@ test('mcp remove without --yes REFUSES', () => {
 });
 
 test('mcp add --yes writes the entry, and mcp remove --yes takes it away', () => {
-  const added = cli(['mcp', 'add', '--project', project, '--yes']);
+  // `--no-codegraph` keeps the test OFFLINE and side-effect free: without
+  // it the bootstrap would ensure CodeGraph, and on a machine without
+  // CodeGraph that is a real global install. A test must never install
+  // anything.
+  const added = cli(['mcp', 'add', '--project', project, '--yes', '--no-codegraph']);
   assert.equal(added.code, 0, added.err);
   const config = join(home, '.claude.json');
   assert.ok(existsSync(config), 'the approved add must write the config');

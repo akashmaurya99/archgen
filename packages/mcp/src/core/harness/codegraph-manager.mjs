@@ -256,6 +256,32 @@ export function npmInvocation(npmArgs, env = process.env) {
   return { command: isWin ? 'npm.cmd' : 'npm', args: npmArgs, shell: isWin };
 }
 
+/**
+ * The environment for a GLOBAL install.
+ *
+ * `npm install -g` installs into the GLOBAL prefix — unless the environment
+ * says otherwise. npm sets `npm_config_prefix` whenever it runs a script
+ * with `--prefix` (and `npx` sets it too), and npm then installs into THAT
+ * prefix: under `npm --prefix packages/cli test`, a global CodeGraph install
+ * landed in `packages/cli/lib/node_modules/` — inside the package it was
+ * supposed to install FOR, where nothing can find it.
+ *
+ * So the prefix variables are REMOVED for a global install, and npm falls
+ * back to the real global prefix.
+ *
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {Record<string, string|undefined>}
+ */
+export function globalInstallEnv(env = process.env) {
+  const out = { ...env };
+  delete out.npm_config_prefix;
+  delete out.npmConfigPrefix;
+  delete out.NPM_CONFIG_PREFIX;
+  delete out.npm_config_globalconfig;
+  delete out.npmConfigGlobalconfig;
+  return out;
+}
+
 /** Resolve the codegraph CLI: absolute path + version, or null. */
 export function findCodegraph(env = process.env) {
   const bin = which('codegraph', env);
@@ -453,8 +479,13 @@ export async function manageCodegraph(opts) {
       // newest published release by default (CodeGraph's own official install
       // path), or an exact version when a machine pins one. It runs ONCE —
       // an existing install is never upgraded.
-      const inv = npmInvocation(['install', '-g', installSpec], env);
-      const r = await runAsync(inv.command, inv.args, { timeout: 600000, shell: inv.shell, env });
+      // The GLOBAL prefix, not the one npm inherited from the script that
+      // launched us: under `npm --prefix …` or `npx`, npm_config_prefix
+      // points at a local tree, and a global install would land THERE —
+      // invisible to every later run.
+      const installEnv = globalInstallEnv(env);
+      const inv = npmInvocation(['install', '-g', installSpec], installEnv);
+      const r = await runAsync(inv.command, inv.args, { timeout: 600000, shell: inv.shell, env: installEnv });
       found = findCodegraph(env);
       if (!found) {
         report.cli.action = 'failed';

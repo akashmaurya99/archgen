@@ -38,6 +38,37 @@ export function npmInvocation(npmArgs, env = process.env) {
 }
 
 /**
+ * The environment for a GLOBAL install.
+ *
+ * `npm install -g` installs into the GLOBAL prefix — unless the environment
+ * says otherwise. npm sets `npm_config_prefix` whenever it runs a script
+ * with `--prefix` (and `npx` sets it too), and npm then installs into THAT
+ * prefix: under `npm --prefix packages/cli test`, a global install landed in
+ *
+ *     packages/cli/lib/node_modules/
+ *
+ * — inside the package it was supposed to install FOR, where nothing can
+ * find it and every later `npx archgen-skill init` reports a missing
+ * server.
+ *
+ * So the prefix variables are REMOVED for a global install, and npm falls
+ * back to the real global prefix.
+ *
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {Record<string, string|undefined>}
+ */
+export function globalInstallEnv(env = process.env) {
+  const out = { ...env };
+  // npm reads both the hyphenated and the camel-cased spelling.
+  delete out.npm_config_prefix;
+  delete out.npmConfigPrefix;
+  delete out.NPM_CONFIG_PREFIX;
+  delete out.npm_config_globalconfig;
+  delete out.npmConfigGlobalconfig;
+  return out;
+}
+
+/**
  * Cross-platform `which` (PATHEXT on Windows).
  *
  * The env is a PARAMETER, not an assumption: a caller may be searching a

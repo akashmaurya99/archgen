@@ -26,7 +26,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { npmInvocation, whichOnPath } from './spawn-npm.js';
+import { npmInvocation, whichOnPath, globalInstallEnv } from './spawn-npm.js';
 import { compareSemver } from './version.js';
 
 export const MCP_PACKAGE = 'archgen-mcp';
@@ -133,11 +133,16 @@ export function ensureGlobalServer(opts = {}) {
 /** `npm install -g archgen-mcp@<version>`. */
 function installGlobal(version, env) {
   const spec = version === 'latest' ? MCP_PACKAGE : `${MCP_PACKAGE}@${version}`;
-  const inv = npmInvocation(['install', '-g', spec], env);
+  // The GLOBAL prefix, not the one npm inherited from the script that
+  // launched us: under `npm --prefix …` or `npx`, npm_config_prefix points
+  // at a local tree, and a global install would land THERE — invisible to
+  // every later run.
+  const installEnv = globalInstallEnv(env);
+  const inv = npmInvocation(['install', '-g', spec], installEnv);
   const r = spawnSync(inv.command, inv.args, {
     encoding: 'utf8',
     timeout: 300000,
-    env,
+    env: installEnv,
     shell: inv.shell,
   });
   if (r.status !== 0) {

@@ -223,14 +223,22 @@ export function requireProjectRoot(projectRoot, fn) {
  * Run one `archgen-mcp` subcommand and return its JSON output.
  *
  * @param {string[]} args the subcommand + flags
- * @param {{projectRoot?: string, timeout?: number, env?: Record<string, string|undefined>}} opts
+ * @param {{projectRoot?: string, timeout?: number, env?: Record<string, string|undefined>, noCodegraph?: boolean, noMcp?: boolean}} opts
  * @returns {{ok: boolean, code: number|null, data: any, stdout: string, stderr: string, detail?: string}}
  */
 function runMcp(args, opts = {}) {
-  const { timeout = 600000, env = process.env } = opts;
+  const { timeout = 600000, env = process.env, noCodegraph = false, noMcp = false } = opts;
   const projectRoot = requireProjectRoot(opts.projectRoot ?? process.cwd(), 'runMcp');
   const resolved = resolveMcpBinary({ projectRoot, env });
-  const inv = mcpInvocation(resolved.command, [...resolved.args, ...args], process.platform, env);
+  // The scope flags are forwarded to the server's bootstrap: the operator (or
+  // a test) can wire ONLY the MCP server, without the bootstrap also
+  // ENSURING CodeGraph — which on a machine without CodeGraph is a real
+  // global install.
+  const flags = [
+    ...(noCodegraph ? ['--no-codegraph'] : []),
+    ...(noMcp ? ['--no-mcp'] : []),
+  ];
+  const inv = mcpInvocation(resolved.command, [...resolved.args, ...args, ...flags], process.platform, env);
   let r;
   try {
     r = spawnSync(inv.command, inv.args, {
@@ -287,18 +295,18 @@ export function bootstrapArgs(projectRoot, opts = {}) {
 /**
  * Wire the archgen MCP server into the detected harnesses and ensure CodeGraph.
  *
- * @param {{projectRoot: string, location?: 'project'|'global'|'both', approved?: boolean, profile?: string, env?: Record<string, string|undefined>}} opts
+ * @param {{projectRoot: string, location?: 'project'|'global'|'both', approved?: boolean, profile?: string, noCodegraph?: boolean, noMcp?: boolean, env?: Record<string, string|undefined>}} opts
  * @returns {{ok: boolean, skipped?: string, detail?: string, report?: any}}
  */
 export function bootstrapMcp(opts) {
-  const { location = 'both', approved = true, profile = null, env = process.env } = opts;
+  const { location = 'both', approved = true, profile = null, noCodegraph = false, noMcp = false, env = process.env } = opts;
   const args = bootstrapArgs(opts.projectRoot, { location, approved });
 
   // The TOOL PROFILE is declared in the WIRING when it is not the default, so
   // the project's MCP config says which surface it runs with — instead of one
   // developer's shell deciding it.
   const childEnv = profile ? { ...env, ARCHGEN_TOOL_PROFILE: profile } : env;
-  const r = runMcp(args, { projectRoot: opts.projectRoot, env: childEnv });
+  const r = runMcp(args, { projectRoot: opts.projectRoot, env: childEnv, noCodegraph, noMcp });
   if (r.detail) {
     return { ok: false, detail: `cannot run ${MCP_PACKAGE}: ${r.detail}` };
   }

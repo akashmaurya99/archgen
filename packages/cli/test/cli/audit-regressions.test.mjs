@@ -10,7 +10,7 @@ import {
   rmSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -24,12 +24,21 @@ const BIN = join(CLI_ROOT, 'bin', 'archgen.mjs');
  * turn this regression test flaky for an unrelated reason. The copy is done
  * entry by entry: a cpSync `filter` trips a Node 26 ERR_INTERNAL_ASSERTION
  * on this tree's `bin/archgen-mcp` symlink.
+ *
+ * node_modules is skipped at EVERY depth, not only at the root: a global
+ * install that inherited npm_config_prefix once landed in
+ * `lib/node_modules/@colbymchenry/codegraph`, and the top-level skip copied
+ * it — with the platform package's DANGLING symlink inside it, which cpSync
+ * follows into an ENOENT. The copy now refuses every node_modules.
  */
 function copyCliPackage(dest) {
   mkdirSync(dest, { recursive: true });
   for (const entry of readdirSync(CLI_ROOT, { withFileTypes: true })) {
     if (entry.name === 'node_modules') continue;
-    cpSync(join(CLI_ROOT, entry.name), join(dest, entry.name), { recursive: true });
+    cpSync(join(CLI_ROOT, entry.name), join(dest, entry.name), {
+      recursive: true,
+      filter: (src) => !src.split(sep).includes('node_modules'),
+    });
   }
 }
 

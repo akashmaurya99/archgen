@@ -55,6 +55,33 @@ npm never overwrites a published version, and the refusal arrives as a bare
 registry FIRST and says `archgen-mcp@0.1.7 is ALREADY on the registry —
 nothing was published`.
 
+### Fixed — a global install landed INSIDE the package it was installing for
+
+`npm install -g` installs into the global prefix — unless the environment says
+otherwise, and npm sets `npm_config_prefix` whenever it runs a script with
+`--prefix` (and `npx` sets it too). Under `npm --prefix packages/cli test` —
+exactly what CI runs — a global CodeGraph install landed in
+
+    packages/cli/lib/node_modules/@colbymchenry/codegraph
+
+inside the package it was supposed to install FOR, where nothing can find it
+and every later run reports a missing server. The same leak affected the
+MCP server's CodeGraph install.
+
+A global install now strips the prefix variables (`npm_config_prefix` and
+its camel-cased, upper-cased and globalconfig spellings) so npm falls back
+to the real global prefix. The rest of the environment survives — a global
+install still needs `HOME` and the user's npmrc.
+
+### Added — `mcp add` can wire one side only
+
+`archgen-skill mcp add` gains `--no-codegraph` and `--no-mcp`, so an operator
+can wire ONLY the MCP server, or ONLY CodeGraph. Both flags are forwarded to
+the server's bootstrap, where they already existed — the CLI could not reach
+them. `--no-codegraph` also keeps the command OFFLINE and side-effect free:
+without it the bootstrap ENSURES CodeGraph, and on a machine without
+CodeGraph that is a real global install.
+
 ## [0.1.7] - 2026-11-13
 
 A correctness release: the catalog is smaller AND correct, every section says
