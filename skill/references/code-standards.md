@@ -21,7 +21,7 @@ Workers and planners must follow these rules.
 
 ## Files & modules
 
-- **Hard ceiling: < 1000 LOC per file.** Split when a file acquires a second responsibility.
+- **Soft limit: < 1000 LOC per file.** Treat 1000 LOC as a review trigger, not a hard cap; the gate agent decides based on cohesion and clarity.
 - **Single responsibility:** one public purpose per module. If its summary needs "and", split it.
 - Dependencies point inward: shared/common code never imports feature/domain code.
 
