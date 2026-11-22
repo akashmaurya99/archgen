@@ -11,6 +11,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -192,6 +193,26 @@ test('the stamp migration covers answers.yaml — all three YAML artifacts carry
   assert.match(lines.join('\n'), /\.archgen\/demo-shop\/answers\.yaml/);
 });
 
+test('migration refuses an artifact symlink instead of rewriting its external target', async () => {
+  const dir = seedArtifacts();
+  const outside = mkdtempSync(join(tmpdir(), 'ag-migrate-outside-'));
+  try {
+    const victim = join(outside, 'victim.yaml');
+    const original = 'tasks: []\n';
+    writeFileSync(victim, original);
+    rmSync(join(dir, 'tasks.yaml'));
+    symlinkSync(victim, join(dir, 'tasks.yaml'));
+
+    await assert.rejects(
+      applyMigration('001-stamp-provenance', proj, { dryRun: false }),
+      /Refusing to write through symlink/,
+    );
+    assert.equal(readFileSync(victim, 'utf8'), original);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 test('idempotent: second run reports nothing pending and changes nothing', async () => {
   seedArtifacts();
   await captureStdout(() => migrateMain([proj, '--apply']));
@@ -283,7 +304,7 @@ test('archgen_plan{verify} APPROVEs a stamped fixture whose artifact space is co
   // reports it. This case proves APPROVE is still reachable.
   writeFileSync(
     join(dir, 'architecture.yaml'),
-    'name: Acme Shop\nslug: corpus-clean\nstructure: "src/ config/ tests/"\nmodules: []\ndecisions: []\n',
+    'name: Acme Shop\nslug: corpus-clean\nstructure:\n  - path: src/\n    purpose: application source\nmodules: []\ndecisions: []\n',
     'utf8',
   );
   const plansDir = join(dir, 'plans');

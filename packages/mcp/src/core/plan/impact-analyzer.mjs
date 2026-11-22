@@ -7,7 +7,7 @@
 import { readParsedPlanFile } from './plan-file.mjs';
 import { invalidInput, notFound } from '../protocol/errors.mjs';
 import { hint } from '../protocol/guidance.mjs';
-import { isTaskMapping, ownedPaths } from './graph.mjs';
+import { globMatches, isTaskMapping, ownedPaths } from './graph.mjs';
 import { toolCall } from '../protocol/call.mjs';
 
 /**
@@ -34,7 +34,7 @@ export function analyzeImpact(file, target) {
     // Artifact-path mode: any task whose artifacts[] or file_ownership[] covers it.
     seeds = tasks
       .filter(isTaskMapping)
-      .filter((t) => (Array.isArray(t.artifacts) ? t.artifacts : []).includes(target) || ownedPaths(t).includes(target))
+      .filter((t) => (Array.isArray(t.artifacts) ? t.artifacts : []).includes(target) || ownedPaths(t).some((glob) => globMatches(glob, target)))
       .map((t) => t.id);
     if (seeds.length === 0) {
       throw notFound(`no task claims '${target}' (not an id, artifact, or ownership glob)`, {

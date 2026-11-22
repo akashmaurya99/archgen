@@ -59,20 +59,18 @@ Tag answers with `feeds:` targets for downstream traceability.
 7. Core entities, key fields, relationships? (`feeds: arch.data_contracts`)
 8. Primary operations (5–10 `VERB + resource`)? (`feeds: arch.api_contracts`)
 
-### R4 — NFRs with numbers → PRD
+### R4 — measurable NFR targets → PRD
 9. Performance budgets: p95 latency, peak throughput? (`feeds: prd.nfrs`)
 10. Scale targets: users, requests/day, annual data volume? (`feeds: prd.nfrs`)
 11. Security/compliance, i18n locales, accessibility target? (`feeds: prd.nfrs`)
 
-### R5 — environment & naming → contracts
+### R5 — environment, naming & close-out → contracts + PRD
 12. Environments, secret management, deploy cadence? (`feeds: arch.environment_matrix`)
 13. Existing naming, glossary, brand casing (`none` is valid)? (`feeds: arch.naming_conventions`)
-
-### R6 — close-out → PRD
 14. Explicit out-of-scope items? (`feeds: prd.out_of_scope`)
 15. Top 2 technical or product risks? (`feeds: prd.risks`)
 
-Present the finalized module map + numeric NFRs for confirmation. `[wait for user]`
+Present the finalized module map plus measurable NFR targets, controls, and justified `not applicable` choices for confirmation. `[wait for user]`
 
 ### Traceability — `feeds:` tags
 
@@ -88,14 +86,14 @@ Infer from the host repo first, then confirm only:
 
 ## BROWNFIELD classes — survey BEFORE questioning (mandatory)
 
-Produce `.archgen/<slug>/codebase-map.md` first (`SKILL.md` BROWNFIELD steps 1–2, including `## Existing docs` and `## Toolchain`). Never ask what the code answers—cite the path and confirm.
+Inspect before questioning. Profile with known module/task counts; create `codebase-map.md` only when complex or uncertain evidence needs a standalone document. A proven localized SMALL change embeds `## Survey` in its plan instead. Never ask what the code answers—cite the path and confirm.
 
 ### BROWNFIELD-FEATURE (additive; max ~5 questions, one batched message)
 1. Target acceptance behavior and critical edge cases not evident from code?
 2. Backward-compatibility requirements for existing data/clients?
 3. Rollout mechanism (feature flag, staged, immediate)?
-4. Protected paths outside `codebase-map.md`?
-5. Corrections to `codebase-map.md`?
+4. Protected paths outside the plan's Survey or standalone map?
+5. Corrections to the recorded survey evidence?
 
 ### BROWNFIELD-CHANGE (behavior modification; ≤3 rounds)
 1. Exact behavioral diff: current vs desired, plus invariants that must remain?
@@ -104,12 +102,12 @@ Produce `.archgen/<slug>/codebase-map.md` first (`SKILL.md` BROWNFIELD steps 1�
 
 ## Conflict detection
 
-Surface contradictions (scale vs budget, feature vs constraint, requirement vs `codebase-map.md`) one at a time:
+Surface contradictions (scale vs budget, feature vs constraint, requirement vs recorded survey evidence) one at a time:
 *"I see a tension between X and Y. Which takes precedence?"* `[wait for user]`
 
 ## Token discipline
 
-- Batch 3–5 questions per turn; never ping-pong single questions.
+- Batch 3–5 discovery questions when several forks remain; never split a batch across turns. A single low-confidence calibration question is the exception.
 - Respect round ceilings (`GREENFIELD-SYSTEM` ≤6; all others ≤3 including R0).
 - Re-profile instead of re-interviewing when a delta changes signals.
 
@@ -117,7 +115,7 @@ Surface contradictions (scale vs budget, feature vs constraint, requirement vs `
 
 When `.archgen/<slug>/answers.yaml` is present and valid, treat it as authoritative and skip conversational rounds.
 
-**The skeleton is GENERATED, not written here.** `archgen_plan{action:'scaffold', scope, intent, signals, modules, tasks, slug}` serves it (`scope` is required; passing the profile's `intent` makes the scaffold serve exactly the profile's create set), so the field list you get is the one the floor reads. Copy it from that answer — a hand-written copy is a second source that can disagree with the one the floor parses.
+**The skeleton is GENERATED, not written here.** `archgen_plan{action:'scaffold', scope, intent, signals, modules, tasks, slug, testLayout}` serves it (`testLayout` is optional and defaults to `mirrored`; use `colocated` for host-native tests) (`scope` is required; passing the profile's `intent` makes the scaffold serve exactly the profile's create set), so the field list you get is the one the floor reads. Copy it from that answer — a hand-written copy is a second source that can disagree with the one the floor parses.
 
 What each field is FOR:
 
@@ -127,7 +125,7 @@ What each field is FOR:
 - `plan_profile` — **REQUIRED for MEDIUM/LARGE**; the floor reads it. It carries `confidence`, `signals`, `artifacts[]` (one entry per artifact family: `path`, `decision`, `reason`, and `host_path` for a reuse), `escalate_if`, and the `gate` block — the canonical block, in `§artifact-templates/gate-metrics`.
 - `problem`, `success_criteria[]`, `constraints[]`, `stack`, `integrations[]`, `compliance[]`, `risks[]` — the elicited answers; `non_goals[]`, `personas[]`, `nfrs[]` and `out_of_scope[]` are optional.
 
-`plan_profile` is **required for MEDIUM and LARGE** — the floor checks every artifact decision against the files on disk, and without it there is nothing to check (it warns `PROFILE_NOT_RECORDED`). For SMALL, put the same block in the plan's `## Profile` fence instead. Every other field beyond `scope_class`, `problem`, `success_criteria`, `constraints`, `stack`, `integrations`, `compliance` and `risks` is optional and backward-compatible. `feeds:` tags may be object keys or trailing `# feeds:` comments.
+For SMALL, put `plan_profile` in the plan's `## Profile` fence instead. The remaining fields are optional and backward-compatible. `feeds:` tags may be object keys or trailing `# feeds:` comments.
 
 ## Completion test
 
@@ -136,4 +134,4 @@ Elicitation is complete only when ALL hold:
 - Inferred decisions are confirmed or corrected by the user.
 - Zero unresolved conflicts remain.
 - The profile's `scopeClass`, artifact decisions, and `intent_class` are agreed and recorded.
-- For `GREENFIELD-SYSTEM` with a created PRD: the module map is agreed and every NFR has a numeric target.
+- For `GREENFIELD-SYSTEM` with a created PRD: the module map is agreed, every measurable NFR has a numeric target, and every non-measurable NFR names a standard, control, or justified `not applicable`.

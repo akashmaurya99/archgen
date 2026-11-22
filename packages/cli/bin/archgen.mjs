@@ -19,7 +19,7 @@ import { installGlobal, uninstallGlobal } from '../lib/install.js';
 import { initProject } from '../lib/init.js';
 import { doctorProject } from '../lib/doctor.js';
 import { uninstallProject } from '../lib/uninstall-project.js';
-import { bootstrapMcp, uninstallMcp, mcpList, codegraphAdmin } from '../lib/mcp-server.js';
+import { bootstrapMcp, uninstallMcp, mcpList, codegraphAdmin, mcpInvocation } from '../lib/mcp-server.js';
 import { restoreMain } from '../lib/restore.js';
 import { migrateMain } from '../lib/migrate.js';
 import { compareSemver, fetchLatestVersion } from '../lib/version.js';
@@ -414,7 +414,7 @@ try {
         runInitAndDoctor(dir);
         break;
       }
-      if (!/^\d+\.\d+\.\d+[-+]?[0-9A-Za-z.-]*$/.test(latest)) {
+      if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(latest)) {
         // Registry returned something that is not a semver tag — never
         // interpolate it into a command line.
         writeErr('  ! registry returned a non-semver version string; refusing: ' + JSON.stringify(latest));
@@ -438,13 +438,14 @@ try {
       // The running process is the OLD code; re-exec the freshly installed binary.
       // The PATH search would find the FIRST match — often the OLD global
       // install — so the binary npm actually wrote is preferred.
-      const freshBin = globalBinPath('archgen-skill') ?? whichOnPath('archgen-skill');
+      const freshBin = globalBinPath('archgen-skill', upEnv) ?? whichOnPath('archgen-skill', upEnv);
       if (!freshBin) {
         writeOut('\nUpgraded to v' + latest + '. Now finish per project with:\n  npx archgen-skill@latest init');
         break;
       }
       writeOut('\nre-running init + doctor with the new binary (' + latest + ')…');
-      const upInit = spawnSync(freshBin, ['init', dir], { stdio: 'inherit' });
+      const initInvocation = mcpInvocation(freshBin, ['init', dir]);
+      const upInit = spawnSync(initInvocation.command, initInvocation.args, { stdio: 'inherit', shell: initInvocation.shell, env: upEnv });
       if (upInit.status !== 0) {
         // An aborted init (e.g. symlink refusal) must surface as a failure —
         // running doctor over a half-finished install would mask it.
@@ -452,7 +453,8 @@ try {
         process.exitCode = upInit.status ?? 1;
         break;
       }
-      const upDoctor = spawnSync(freshBin, ['doctor', dir], { stdio: 'inherit' });
+      const doctorInvocation = mcpInvocation(freshBin, ['doctor', dir]);
+      const upDoctor = spawnSync(doctorInvocation.command, doctorInvocation.args, { stdio: 'inherit', shell: doctorInvocation.shell, env: upEnv });
       if (upDoctor.status !== 0) {
         // A failed doctor must fail the update too — the project was NOT
         // brought to the new version.

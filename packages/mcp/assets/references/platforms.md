@@ -67,20 +67,20 @@ archgen-skill codegraph wire --yes                 # wire the harnesses only
 - **Index once:** built during bootstrap, kept live by the MCP file watcher—**never re-index manually**.
 - **Writes need `--yes`:** the CLI install and the harness config entries are machine-level changes. The command prints the PLAN without `--yes` and writes nothing; with `--yes` it applies.
 - **Install ONCE, never upgrade:** when the CodeGraph CLI is missing, the first-time install fetches the newest published release (CodeGraph's own official install path). When it is already there, ArchGen installs NOTHING and changes NOTHING — an installed CodeGraph may be pinned, may be a bundle install, and it is the user's to manage (`codegraph upgrade` is theirs to run).
-- **Telemetry:** CodeGraph enables anonymous machine-ID telemetry (`~/.codegraph/`) by default; disclose it accurately (never "100% offline/no telemetry"). ArchGen's policy sets `CODEGRAPH_TELEMETRY=0` **in the MCP entry** — per process, no machine-wide write.
-- **Step 0:** `.codegraph/` present → use it. Absent → run `archgen-skill codegraph ensure --yes` once per project (grep/glob fallback until then).
+- **Telemetry:** CodeGraph enables anonymous machine-ID telemetry (`~/.codegraph/`) by default; disclose it accurately (never "100% offline/no telemetry"). ArchGen's default policy sets `CODEGRAPH_TELEMETRY=0` **in the MCP entry** — per process, no machine-wide write. A separate admin `telemetry:'off'|'on'` override changes the CLI's global setting only after approval.
+- **Step 0:** a valid `codegraph.db` plus successful status means indexed; an empty `.codegraph/` directory does not. Missing or disabled → native search fallback. Show the ensure PLAN and obtain approval before `--yes`; never treat a model's approval flag as user consent.
 
 ### §codegraph-tools — the CodeGraph surface
 
 CodeGraph is its OWN MCP server. ArchGen never re-implements it: it wires it and tells the agent what it can call.
 
-**By default CodeGraph exposes ONE tool** (`codegraph_explore`); the other seven exist and stay unlisted, because each listed tool costs permanent context and steers the agent toward a narrower call. ArchGen's policy (`packages/mcp/assets/codegraph-policy.json`) re-enables the full set through the MCP entry's environment:
+**ArchGen defaults CodeGraph to `codegraph_explore`**, which covers source, call paths, and blast radius in one call. Specialized tools remain available for narrow queries through an explicit environment override in `packages/mcp/assets/codegraph-policy.json`:
 
 ```
 CODEGRAPH_MCP_TOOLS=explore,node,search,callers,callees,impact,files,status
 ```
 
-**The allowlist REPLACES the default**, so every tool wanted is named explicitly; a name CodeGraph does not know is dropped silently.
+**The allowlist REPLACES the default**, so name every tool wanted when overriding; unknown names are dropped. The CLI remains available for exact-symbol, layout, impact, and health operations without expanding the default model catalog.
 
 | Tool | Returns | Use it for | CLI equivalent |
 |---|---|---|---|

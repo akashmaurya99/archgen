@@ -58,7 +58,7 @@ YAML="$YAML" node --input-type=module -e '
 import { readFileSync } from "node:fs";
 const { parseYaml } = await import("file://" + process.env.YAML);
 const { data } = parseYaml(readFileSync(process.argv[1], "utf8"), { filename: "architecture.yaml" });
-for (const k of ["name", "slug", "stack", "structure", "modules", "decisions"]) {
+for (const k of ["name", "slug", "toolchain", "structure", "modules", "decisions"]) {
   if (data[k] === undefined) { console.error("architecture.yaml missing key: " + k); process.exit(1); }
 }
 if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(data.slug)) { console.error("bad slug"); process.exit(1); }
@@ -82,6 +82,7 @@ pass "[4/8] archgen_plan{validate} ok on generated tasks.yaml"
 verdict_json="$(mcp_exec archgen_plan "{\"action\":\"verify\",\"tasksYaml\":\"$TASKS\",\"planDir\":\"$DOT/plans\"}")" \
   || fail "verifier rejected: $verdict_json"
 printf '%s' "$verdict_json" | grep -q '"verdict": "APPROVE"' || fail "verdict not APPROVE: $verdict_json"
+printf '%s' "$verdict_json" | grep -q 'CONFIG_INVALID\|MODULE_OVERLAP\|PROFILE_DECISION_INVALID' && fail "contract warnings/errors present: $verdict_json"
 pass "[5/8] verifier gate APPROVE"
 
 # ── [6/8] START-WORK wave walk: resolve frontier, run wave, repeat ──────────
@@ -96,7 +97,7 @@ let d = ""; process.stdin.on("data", (c) => d += c).on("end", () => {
   if (!env.ok) { console.error("tool error: " + JSON.stringify(env.error)); process.exit(5); }
   const j = env.data;
   if ((j.blockedByFailure ?? []).length) { console.error("blockedByFailure: " + j.blockedByFailure.join(",")); process.exit(5); }
-  console.log((j.waves[0] ?? []).map((t) => t.id).join(" "));
+  console.log((j.frontier ?? []).map((t) => t.id).join(" "));
 });') " || fail "next wave reported blockedByFailure or bad JSON on wave $wave_no"
   [ -z "${ids// }" ] && break
   echo "   wave $wave_no: $ids"

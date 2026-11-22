@@ -13,9 +13,8 @@
 ## Functional requirements — <module-name> (repeat per module)
 - FR-<MODULE>-01: <single objectively verifiable behavior>
 - FR-<MODULE>-02: <single objectively verifiable behavior>
-<!-- FR ids are immutable once cited in tasks.yaml -->
 
-## Non-functional requirements (concrete numbers mandatory; no adjectives)
+## Non-functional requirements (measurable targets, controls, or justified not-applicable choices)
 - Performance: <metric> <operator> <number> at <load or sample size>
 - Security: <control> enforced on <surface>; <data-handling rule>; <standard, if required>
 - Reliability: <failure mode> -> <required recovery or availability target>

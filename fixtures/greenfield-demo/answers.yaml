@@ -18,3 +18,26 @@ integrations: [stripe, sendgrid]
 compliance: []             # checklist placeholders only
 risks:
   - scope creep beyond the initial module boundaries
+plan_profile:
+  confidence: high
+  signals: [new-module, multi-module, public-contract, data-migration, irreversible]
+  artifacts:
+    - path: .archgen/demo/tasks.yaml
+      decision: create
+      reason: executable dependency and ownership contract
+    - path: .archgen/demo/answers.yaml
+      decision: create
+      reason: canonical elicited requirements and profile
+    - path: .archgen/demo/architecture.yaml
+      decision: create
+      reason: multi-module structural contract
+    - path: .archgen/demo/plans/demo-platform.md
+      decision: create
+      reason: LARGE implementation and review narrative
+    - path: .archgen/demo/docs/c4-context.md
+      decision: create
+      reason: cross-module topology needs an explanatory view
+    - path: .archgen/demo/decisions/0001-postgres-over-mongo.md
+      decision: create
+      reason: irreversible datastore choice
+  escalate_if: [regulated, irreversible]

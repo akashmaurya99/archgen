@@ -102,14 +102,22 @@ function namedHomeExists(harness, env, home) {
  */
 export function configTargetFor(cfg, ctx) {
   const env = ctx.env ?? process.env;
+  let target;
   if (cfg.home === 'copilot') {
     const base = copilotHome(env, ctx.home);
-    return { path: join(base, cfg.path), root: base };
+    target = { path: join(base, cfg.path), root: base };
+  } else if (cfg.path.startsWith('~/')) {
+    target = { path: expandHome(cfg.path, ctx.home), root: ctx.home };
+  } else {
+    target = { path: join(ctx.projectRoot, cfg.path), root: ctx.projectRoot };
   }
-  if (cfg.path.startsWith('~/')) {
-    return { path: expandHome(cfg.path, ctx.home), root: ctx.home };
+  // OpenCode accepts JSONC. Use the existing commented config when the
+  // canonical JSON file is absent; never create a second competing config.
+  if (cfg.format === 'json' && target.path.endsWith('opencode.json') && !existsSync(target.path)) {
+    const jsonc = `${target.path}c`;
+    if (existsSync(jsonc)) return { ...target, path: jsonc };
   }
-  return { path: join(ctx.projectRoot, cfg.path), root: ctx.projectRoot };
+  return target;
 }
 
 /**
@@ -283,7 +291,10 @@ export function configHasServer(abs, cfg, serverId) {
 export function writeJsonConfig(abs, key, serverId, entry, opts) {
   const { approved, dryRun = false, root } = opts;
   try {
-    return withFileLock(abs, () => mergeJsonConfig(abs, key, serverId, entry, opts));
+    // Planning is a pure read/merge: no lock file or parent directory may be
+    // created before the user approves a real write.
+    if (dryRun || !approved) return mergeJsonConfig(abs, key, serverId, entry, opts);
+    return withFileLock(abs, () => mergeJsonConfig(abs, key, serverId, entry, opts), { root });
   } catch (e) {
     return { status: 'error', detail: e.message, path: abs };
   }
@@ -292,6 +303,8 @@ export function writeJsonConfig(abs, key, serverId, entry, opts) {
 /** The merge itself. Runs with the config file's lock held. */
 function mergeJsonConfig(abs, key, serverId, entry, opts) {
   const { approved, dryRun = false, root } = opts;
+  if (root) assertWithinRoot(root, abs);
+  assertNotSymlink(abs);
   const existed = existsSync(abs);
   let raw = '';
   if (existed) {
@@ -348,11 +361,13 @@ export function entryToToml(entry) {
       if (v.length === 0) continue;
       lines.push(`${k} = [${v.map((x) => tomlString(x)).join(', ')}]`);
     } else if (typeof v === 'object') {
-      lines.push(`[${k}]`);
-      for (const [ik, iv] of Object.entries(v)) {
-        if (iv === undefined || iv === null) continue;
-        lines.push(`${ik} = ${tomlString(iv)}`);
-      }
+      // Keep nested values in the SERVER table. A bare `[env]` header is a
+      // top-level TOML table, not `mcp_servers.<id>.env`, and breaks both the
+      // client's configuration and subsequent idempotent section merges.
+      const values = Object.entries(v)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => `${key} = ${tomlString(value)}`);
+      if (values.length) lines.push(`${k} = { ${values.join(', ')} }`);
     } else if (typeof v === 'boolean') {
       lines.push(`${k} = ${v ? 'true' : 'false'}`);
     } else {
@@ -374,8 +389,10 @@ export function entryToToml(entry) {
  * @param {{approved: boolean, dryRun?: boolean, root?: string}} opts
  */
 export function writeTomlConfig(abs, serverId, entry, opts) {
+  const { approved, dryRun = false, root } = opts;
   try {
-    return withFileLock(abs, () => mergeTomlConfig(abs, serverId, entry, opts));
+    if (dryRun || !approved) return mergeTomlConfig(abs, serverId, entry, opts);
+    return withFileLock(abs, () => mergeTomlConfig(abs, serverId, entry, opts), { root });
   } catch (e) {
     return { status: 'error', detail: e.message, path: abs };
   }
@@ -384,6 +401,8 @@ export function writeTomlConfig(abs, serverId, entry, opts) {
 /** The merge itself. Runs with the config file's lock held. */
 function mergeTomlConfig(abs, serverId, entry, opts) {
   const { approved, dryRun = false, root } = opts;
+  if (root) assertWithinRoot(root, abs);
+  assertNotSymlink(abs);
   const existed = existsSync(abs);
   let raw = '';
   if (existed) {
@@ -523,16 +542,22 @@ export function wireServer(opts) {
  */
 export function recordWiring(projectRoot, serverId, entries) {
   const p = join(projectRoot, '.archgen', '.mcp-wiring.json');
-  let existing = { version: 1, servers: {} };
   try {
-    const parsed = JSON.parse(readFileSync(p, 'utf8'));
-    if (parsed && typeof parsed === 'object' && parsed.servers) existing = parsed;
-  } catch {
-    /* absent or corrupt — start fresh */
-  }
-  existing.servers[serverId] = { writtenAt: new Date().toISOString(), entries };
-  try {
-    writeFileAtomic(p, JSON.stringify(existing, null, 2) + '\n', { root: projectRoot });
+    withFileLock(p, () => {
+      let existing = { version: 1, servers: {} };
+      try {
+        const parsed = JSON.parse(readFileSync(p, 'utf8'));
+        if (parsed && typeof parsed === 'object' && parsed.servers) existing = parsed;
+      } catch {
+        /* absent or corrupt — start fresh */
+      }
+      const previous = existing.servers[serverId]?.entries ?? [];
+      const identity = (entry) => `${entry.harness}\0${entry.location ?? 'project'}\0${entry.path}\0${entry.key}`;
+      const incoming = new Set(entries.map(identity));
+      const merged = [...previous.filter((entry) => !incoming.has(identity(entry))), ...entries];
+      existing.servers[serverId] = { writtenAt: new Date().toISOString(), entries: merged };
+      writeFileAtomic(p, JSON.stringify(existing, null, 2) + '\n', { root: projectRoot });
+    }, { root: projectRoot });
   } catch {
     /* the manifest is a convenience, never a blocker */
   }
@@ -559,6 +584,7 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
 
   const removed = [];
   const skipped = [];
+  const completed = new Set();
   for (const entry of record.entries) {
     try {
       const abs = entry.path;
@@ -580,6 +606,7 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
       }
       if (!existsSync(abs)) {
         skipped.push(`${entry.path} (absent)`);
+        completed.add(entry);
         continue;
       }
       if (entry.key?.startsWith('mcp_servers.')) {
@@ -600,6 +627,7 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
         const root = pathIsWithin(abs, projectRoot) ? projectRoot : home;
         writeFileAtomic(abs, [...lines.slice(0, start), ...lines.slice(next)].join('\n'), { root });
         removed.push(abs);
+        completed.add(entry);
       } else {
         // The removal is textual for a JSONC config: re-serializing the
         // parsed document would delete the user's comments.
@@ -619,9 +647,18 @@ export function removeWiring(projectRoot, serverId, home = homedir(), location =
         const root = pathIsWithin(abs, projectRoot) ? projectRoot : home;
         writeFileAtomic(abs, result.text, { root });
         removed.push(abs);
+        completed.add(entry);
       }
     } catch (e) {
       skipped.push(`${entry.path} (${e.message})`);
+    }
+  }
+  if (completed.size) {
+    try {
+      record.entries = record.entries.filter((entry) => !completed.has(entry));
+      writeFileAtomic(p, JSON.stringify(manifest, null, 2) + '\n', { root: projectRoot });
+    } catch (e) {
+      skipped.push(`${p} (could not prune wiring manifest: ${e.message})`);
     }
   }
   return { removed, skipped };

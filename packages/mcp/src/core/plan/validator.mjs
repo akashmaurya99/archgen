@@ -21,8 +21,9 @@ import { readPlanFile } from './plan-file.mjs';
 import { project } from '../../envelope.mjs';
 import { finding, countByCode } from '../protocol/diagnostics.mjs';
 import { issueCode } from '../protocol/codes.mjs';
+import { TASK_STATUSES } from './task-contract.mjs';
 
-export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
+export const STATUSES = TASK_STATUSES;
 // 'acceptance' is required: a task with no acceptance criteria has no way to
 // be verified, and the floor's job is to catch exactly that. It was checked
 // as an EMPTY list but not as an ABSENT one, so a task could declare no

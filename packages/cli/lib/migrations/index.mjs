@@ -36,10 +36,10 @@
 //                     .archgen/.backup/<ts>/migrate/<rel>; THROWS under
 //                     dry-run so a mutating migration can never run silently
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { BACKUP_ROOT_REL } from '../store.js';
+import { BACKUP_ROOT_REL, assertNotSymlink, assertWithinRoot, atomicWriteFile } from '../store.js';
 
 const MIGRATION_FILE_RE = /^(\d{3}-[a-z0-9][a-z0-9-]*)\.mjs$/;
 
@@ -101,6 +101,8 @@ export function makeCtx(projectRoot, { dryRun }) {
     scanArtifacts() {
       const base = join(root, '.archgen');
       if (!existsSync(base)) return [];
+      assertWithinRoot(root, base);
+      assertNotSymlink(base);
       const out = [];
       const slugs = readdirSync(base, { withFileTypes: true })
         .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
@@ -109,7 +111,10 @@ export function makeCtx(projectRoot, { dryRun }) {
       for (const slug of slugs) {
         for (const f of ['tasks.yaml', 'architecture.yaml', 'answers.yaml']) {
           const abs = join(base, slug, f);
-          if (existsSync(abs) && statSync(abs).isFile()) {
+          if (!existsSync(abs)) continue;
+          assertWithinRoot(root, abs);
+          assertNotSymlink(abs);
+          if (statSync(abs).isFile()) {
             out.push({ rel: `.archgen/${slug}/${f}`, kind: f.replace(/\.yaml$/, '') });
           }
         }
@@ -128,8 +133,11 @@ export function makeCtx(projectRoot, { dryRun }) {
       const srcAbs = join(root, ...relPath.split('/'));
       const destRel = `${BACKUP_ROOT_REL}/${ts}/migrate/${relPath}`;
       const destAbs = join(root, ...destRel.split('/'));
-      mkdirSync(dirname(destAbs), { recursive: true });
-      copyFileSync(srcAbs, destAbs);
+      assertWithinRoot(root, srcAbs);
+      assertWithinRoot(root, destAbs);
+      assertNotSymlink(srcAbs);
+      assertNotSymlink(destAbs);
+      atomicWriteFile(root, destAbs, readFileSync(srcAbs));
       return destRel;
     },
   };
@@ -182,6 +190,8 @@ export async function applyMigration(id, projectRoot, opts = {}) {
   for (const file of files) {
     const abs = join(ctx.projectRoot, ...file.split('/'));
     if (!existsSync(abs)) continue; // vanished between the scan and now
+    assertWithinRoot(ctx.projectRoot, abs);
+    assertNotSymlink(abs);
     backups.push({ file, backup: ctx.backup(file) });
     backedUp.push(file);
   }

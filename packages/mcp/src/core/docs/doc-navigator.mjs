@@ -30,8 +30,9 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { parseYaml } from '../fs/yaml.mjs';
 import { buildGraph, GraphError } from '../plan/graph.mjs';
 import { resolveSlugInput, ScopeError } from '../plan/scope.mjs';
-import { parseMarkdown, buildSections, findSection, anchorExists, sectionChildren, sectionOwnEnd } from './docs.mjs';
+import { parseMarkdown, buildSections, findSection, anchorExists, sectionChildren, sectionOwnEnd, excerptAround } from './docs.mjs';
 import { wholeWordSource } from '../skill/skill-manager.mjs';
+import { REQUIREMENT_PREFIXES, TECHNICAL_PREFIXES, TASK_PREFIXES } from '../plan/plan-coverage.mjs';
 import { cycle, invalidInput, notFound } from '../protocol/errors.mjs';
 import { artifactSpaceMissing, hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
@@ -73,8 +74,8 @@ const GENERATED_AT_RE = /generated_at:\s*(\S+)/;
 // either side, but path punctuation (`/`, `.`, `-`) may border it — so
 // "0001" finds "decisions/0001-postgres-over-mongo.md" while "TASK-05"
 // still refuses to match "TASK-055" or "XTASK-05".
-const TASK_ID_SOURCE = '(?<![A-Za-z0-9_])TASK-\\d+(?![A-Za-z0-9_])';
-const FR_ID_SOURCE = '(?<![A-Za-z0-9_])FR-[A-Z0-9]+-\\d+(?![A-Za-z0-9_])';
+const TASK_ID_SOURCE = '(?<![A-Za-z0-9_])[A-Za-z][A-Za-z0-9._-]*\\d[A-Za-z0-9._-]*(?![A-Za-z0-9_])';
+const FR_ID_SOURCE = '(?<![A-Za-z0-9_])FR-[A-Z0-9]+(?:-[A-Z0-9]+)*-\\d+(?![A-Za-z0-9_])';
 
 /**
  * Resolve the slug directory + the `.archgen` root used for output paths.
@@ -469,17 +470,24 @@ export function docIndex(input, opts = {}) {
         if (e) e.n++;
         else sink.set(ref, { n: 1, first: at });
       };
-      const scan = (source, sink) => {
+      const scan = (source, sink, accept = () => true) => {
         const re = new RegExp(source, 'g');
         for (let i = 0; i < doc.lines.length; i++) {
           re.lastIndex = 0;
           let m;
           while ((m = re.exec(doc.lines[i])) !== null) {
-            bump(sink, m[0], { file: relFromRoot(doc.abs), line: i + 1 });
+            if (accept(m[0])) bump(sink, m[0], { file: relFromRoot(doc.abs), line: i + 1 });
           }
         }
       };
-      scan(TASK_ID_SOURCE, taskOcc);
+      const prefixOf = (id) => (/^[A-Za-z]+/.exec(id)?.[0] ?? '').toUpperCase();
+      const knownPrefixes = new Set([...taskIds].map(prefixOf));
+      scan(TASK_ID_SOURCE, taskOcc, (id) => {
+        if (taskIds.has(id)) return true;
+        const prefix = prefixOf(id);
+        if (prefix === 'V' || REQUIREMENT_PREFIXES.has(prefix) || TECHNICAL_PREFIXES.has(prefix)) return false;
+        return TASK_PREFIXES.has(prefix) || knownPrefixes.has(prefix);
+      });
       scan(FR_ID_SOURCE, isPrd ? frDefOcc : frRefOcc);
       checked.taskRefs = taskOcc.size;
       checked.frRefs = frRefOcc.size;
@@ -494,6 +502,21 @@ export function docIndex(input, opts = {}) {
         if (linkSeen.has(lkey)) continue;
         linkSeen.add(lkey);
         checked.links++;
+        if (link.target.startsWith('#')) {
+          const anchor = link.target.slice(1);
+          const targetDoc = parsedDocAt(doc.abs);
+          if (targetDoc && !anchorExists(targetDoc, anchor)) {
+            broken.push({
+              kind: 'anchor',
+              ref: link.target,
+              file: relFromRoot(doc.abs),
+              line: link.line,
+              detail: `the anchor '#${anchor}' does not exist in ${relFromRoot(doc.abs)}`,
+              resolution: REFERENCE_RULE,
+            });
+          }
+          continue;
+        }
         const hash = link.target.indexOf('#');
         const target = hash === -1 ? link.target : link.target.slice(0, hash);
         const anchor = hash === -1 ? null : link.target.slice(hash + 1);
@@ -869,7 +892,7 @@ export function docIndex(input, opts = {}) {
           const line = section.line + i;
           const owner = ownerOf(line);
           if (!owner || owner.slug !== section.slug) continue; // its deepest owner reports it
-          matching.push({ line, text: bodyLines[i].trim().slice(0, 120) });
+          matching.push({ line, text: excerptAround(bodyLines[i], re, 160) });
         }
         if (!matching.length) continue;
         hits.push({

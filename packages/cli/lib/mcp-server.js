@@ -79,10 +79,21 @@ export function resolveMcpBinary(opts = {}) {
     '.bin',
     process.platform === 'win32' ? 'archgen-mcp.cmd' : 'archgen-mcp',
   );
-  if (existsSync(local)) return { bin: local, source: 'local', command: local, args: [] };
+  const version = cliPackageVersion();
+  if (existsSync(local)) {
+    const installed = installedServerVersion(local);
+    const cmp = version && installed ? compareSemver(installed, version) : null;
+    if (cmp === null || cmp >= 0) return { bin: local, source: 'local', command: local, args: [] };
+    return {
+      bin: null,
+      source: 'npx',
+      command: 'npx',
+      args: ['-y', version ? `${MCP_PACKAGE}@${version}` : MCP_PACKAGE],
+      stale: `the project-local archgen-mcp is ${installed}; this CLI needs ${version}`,
+    };
+  }
 
   const onPath = whichOnPath('archgen-mcp', env);
-  const version = cliPackageVersion();
   if (onPath) {
     const installed = installedServerVersion(onPath);
     const cmp = version && installed ? compareSemver(installed, version) : null;

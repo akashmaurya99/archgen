@@ -1,0 +1,23 @@
+tasks:
+  - id: "TASK-01"
+    title: "<shared foundation>"
+    depends_on: []
+    file_ownership: ["<source-root>/<shared>/**", "<test-root>/<shared>/**"]
+    acceptance:
+      - "<build command> exits 0"
+
+  - id: "TASK-02"
+    title: "<feature module A>"
+    depends_on: ["TASK-01"]
+    parallel_group: "wave-2"
+    file_ownership: ["<source-root>/<module-a>/**", "<test-root>/<module-a>/**"]
+    acceptance:
+      - "<observable behavior A> produces <expected result> (covers E1)"
+
+  - id: "TASK-03"
+    title: "<feature module B>"
+    depends_on: ["TASK-01"]
+    parallel_group: "wave-2"
+    file_ownership: ["<source-root>/<module-b>/**", "<test-root>/<module-b>/**"]
+    acceptance:
+      - "<observable behavior B> produces <expected result> (covers E2)"

@@ -89,6 +89,21 @@ test('repo-immutable catches a file that appears during the run', () => {
   }
 });
 
+test('repo-immutable also catches an ignored version-stamp mutation', () => {
+  const gate = join(ROOT, 'internal', 'tools', 'safety', 'repo-immutable.mjs');
+  const marker = join(ROOT, '.archgen-version');
+  assert.equal(existsSync(marker), false, 'the test needs an initially absent stamp');
+  try {
+    assert.notEqual(
+      status(process.execPath, [gate, '--', 'sh', '-c', 'printf x > .archgen-version']),
+      0,
+      'an ignored generated source mutation must be visible',
+    );
+  } finally {
+    rmSync(marker, { force: true });
+  }
+});
+
 test('the skill tool table names exactly the actions the schemas offer', () => {
   // The table is GENERATED from the live schemas, so this asserts the
   // property the generator exists to guarantee: every action the model can
@@ -109,4 +124,11 @@ test('the skill tool table names exactly the actions the schemas offer', () => {
       assert.ok(row.includes(`\`${action}\``), `the skill's table must name ${name}{action:'${action}'}`);
     }
   }
+});
+
+test('npm token fallback runs only after OIDC failure and summary requires a real publish', () => {
+  const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'publish-npm.yml'), 'utf8');
+  assert.match(workflow, /steps\.publish_oidc\.outcome == 'failure'/);
+  assert.doesNotMatch(workflow, /Publish \(NPM_TOKEN fallback\)[\s\S]*?&& failure\(\)/);
+  assert.match(workflow, /steps\.publish_oidc\.outcome == 'success' \|\| steps\.publish_fallback\.outcome == 'success'/);
 });

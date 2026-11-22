@@ -125,8 +125,9 @@ test('the telemetry setting is not written when CodeGraph is switched off', asyn
       env: { PATH: binDir, ARCHGEN_CODEGRAPH: '0' },
     });
     assert.equal(report.telemetry.action, 'skipped');
-    const calls = readFileSync(log, 'utf8');
-    assert.doesNotMatch(calls, /^telemetry off$/m, `the telemetry setting was written:\n${calls}`);
+    const { existsSync } = await import('node:fs');
+    const calls = existsSync(log) ? readFileSync(log, 'utf8') : '';
+    assert.equal(calls, '', 'disabled mode must not spawn even a version or status probe');
     assert.doesNotMatch(calls, /^init /m, `the project index was built:\n${calls}`);
     assert.equal(report.index.action, 'skipped');
   } finally {

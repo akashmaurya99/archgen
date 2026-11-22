@@ -34,7 +34,7 @@
 // ever needing an edit.
 //
 // Usage: node internal/tools/lint/version-lint.mjs [--root <dir>]
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trackedFiles } from './tracked-files.mjs';
@@ -116,6 +116,7 @@ function lintVersions({ root = DEFAULT_ROOT } = {}) {
   const violations = [];
 
   for (const rel of trackedFiles(rootDir)) {
+    if (!existsSync(join(rootDir, rel))) continue; // intentionally removed tracked file
     if (!SCANNED.test(rel)) continue;
     if (SKIP.some((s) => rel.startsWith(s))) continue;
     if (ALLOWED.some((a) => rel === a || rel.endsWith(a) || rel.startsWith(a))) continue;

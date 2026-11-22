@@ -246,11 +246,33 @@ test('a document whose root is not an object is refused', () => {
   assert.equal(result.text, source);
 });
 
-test('a strict JSON document with an array root keeps the old replace-it behaviour', () => {
+test('a strict JSON document with an array root is refused, never replaced', () => {
   const source = '[\n  1,\n  2\n]\n';
   const result = mergeEntry(source, 'mcp', 'archgen', ENTRY);
-  assert.equal(result.changed, true);
-  assert.deepEqual(JSON.parse(result.text).mcp.archgen, ENTRY);
+  assert.equal(result.changed, false);
+  assert.ok(result.reason);
+  assert.equal(result.text, source);
+});
+
+test('a BOM-prefixed config merges without losing the BOM or comments', () => {
+  const source = '\uFEFF{\n  // keep\n  "mcp": {}\n}\n';
+  const result = mergeEntry(source, 'mcp', 'archgen', ENTRY);
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.text.charCodeAt(0), 0xfeff);
+  assert.match(result.text, /\/\/ keep/);
+  assert.deepEqual(parseJsonc(result.text).data.mcp.archgen, ENTRY);
+});
+
+test('strict JSON duplicate keys and scalar targets are refused without data loss', () => {
+  for (const source of [
+    '{"mcp": {"archgen": {"command":"a"}, "archgen": {"command":"b"}}}',
+    '{"mcp": 42}',
+  ]) {
+    const result = mergeEntry(source, 'mcp', 'archgen', ENTRY);
+    assert.equal(result.changed, false);
+    assert.ok(result.reason);
+    assert.equal(result.text, source);
+  }
 });
 
 // ── strict JSON keeps its old behaviour ──────────────────────────────────────

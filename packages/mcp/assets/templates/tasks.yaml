@@ -1,55 +1,37 @@
-# comment lines are preserved by archgen_tasks{set_status}
-# Every VALUE below is QUOTED. A quoted value is always a string; an unquoted
-# one can become a NUMBER (id: 007 -> 7) or a mapping (a "key: value" list
-# item), and a flow list splits on commas.
 tasks:
-  # Wave 1 — foundation
   - id: "TASK-01"
-    title: "<outcome this task delivers>"
+    title: "<shared foundation>"
     depends_on: []
-    # <source-root> and <test-root> are the DECLARED roots from
-    # architecture.yaml toolchain. test_root is the root of the tree that
-    # MIRRORS the source tree (e.g. tests/unit) — the floor mirrors the path
-    # under <source-root> into <test-root>, so the two must line up.
-    file_ownership: ["<source-root>/<module>/**", "<test-root>/<module>/**"] # repo-root-relative, disjoint per wave
+    file_ownership: ["<source-root>/<shared>/**", "<test-root>/<shared>/**"]
     acceptance:
       - "<build command> exits 0"
-      - "<observable behavior check> produces <expected output>"
+      - "<typed config or shared contract> produces <expected result>"
 
-  # Wave 2 — feature
   - id: "TASK-02"
-    title: "<feature behavior>"
+    title: "<feature module A>"
     depends_on: ["TASK-01"]
-    file_ownership: ["<source-root>/<feature>/**", "<test-root>/<feature>/**"]
+    parallel_group: "wave-2"
+    file_ownership: ["<source-root>/<module-a>/**", "<test-root>/<module-a>/**"]
     acceptance:
-      - "<test command> passes with <sample size or threshold>"
-      - "<API/CLI behavior> returns <observable result>"
+      - "<API/CLI behavior A> returns <observable result> (covers FR-<MODULE>-01)"
 
-  # Final integration — its own wave, so its parallel_group matches
   - id: "TASK-03"
-    title: "<integration outcome>"
-    depends_on: ["TASK-02"]
-    parallel_group: "wave-3"
-    # Its docs path is the ONE file it writes. A `docs/**` glob would sit
-    # INSIDE every other task's docs glob, and the floor reports that
-    # (OWNERSHIP_CONTAINED) — the shipped skeleton must not teach a defect.
-    file_ownership: ["<source-root>/<integration>/**", "<test-root>/integration/<feature>/**", "docs/<feature>.md"]
-    artifacts: ["docs/<feature>.md"] # must be covered by file_ownership
+    title: "<feature module B>"
+    depends_on: ["TASK-01"]
+    parallel_group: "wave-2"
+    file_ownership: ["<source-root>/<module-b>/**", "<test-root>/<module-b>/**"]
     acceptance:
-      - "<integration command> completes <journey> against <test double or environment>"
+      - "<API/CLI behavior B> returns <observable result> (covers E1)"
 
-  # LARGE-scope task example (cites edge-row IDs; PRD FR-* IDs when a PRD exists)
-  # Its paths are DISJOINT from TASK-02's — a later task must never own a
-  # file inside another task's glob.
   - id: "TASK-04"
-    title: "<failure-sensitive operation with retry>"
-    depends_on: ["TASK-03"]
-    parallel_group: "wave-4"
+    title: "<integration and failure recovery>"
+    depends_on: ["TASK-02", "TASK-03"]
+    parallel_group: "wave-3"
     file_ownership:
-      - "<source-root>/<recovery>/<implementation file>"          # per naming_conventions.dir_layout
-      - "<test-root>/<recovery>/<mirrored test file>"             # the mirrored test tree
-      - "docs/<feature>-recovery.md"                              # its OWN doc, disjoint from TASK-03's
-    artifacts: ["docs/<feature>-recovery.md"]
+      - "<source-root>/<integration>/**"
+      - "<test-root>/integration/<feature>/**"
+      - "docs/<feature>-verification.md"
+    artifacts: ["docs/<feature>-verification.md"]
     acceptance:
       - "duplicate submission performs the operation once (covers E1)"
       - "<dependency> 5xx retries <n> times, then returns <structured error> (covers E2)"

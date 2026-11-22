@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadAsset, TEMPLATES_DIR, serverVersion } from '../../src/context.mjs';
 import { buildScaffold } from '../../src/core/plan/scaffold.mjs';
+import { buildPlanProfile } from '../../src/core/plan/plan-profile.mjs';
 import { parseYaml } from '../../src/core/fs/yaml.mjs';
 
 const ladder = loadAsset('depth-ladder.json');
@@ -183,7 +184,7 @@ test('the scaffold serves the create set in the WRITE ORDER, with the dependenci
   });
   assert.deepEqual(
     s.writeThese.map((p) => p.replace('.archgen/demo/', '')),
-    ['answers.yaml', 'docs/prd.md', 'architecture.yaml', 'docs/<module>.md', 'docs/mermaid-snippets.md', 'tasks.yaml', 'plans/demo.md'],
+    ['answers.yaml', 'docs/prd.md', 'architecture.yaml', 'docs/topology.md', 'tasks.yaml', 'plans/demo.md'],
   );
   // The order carries the facts each step must inherit.
   assert.ok(s.writeOrderNote, 'the payload must explain the order');
@@ -219,7 +220,7 @@ test('every canonical YAML template PARSES with the real parser', () => {
   // trigger, an unquoted `enum(a,b,c)` inside a flow mapping, and a plain
   // scalar containing ": "). Now they are served by the tool, so a copy-paste
   // can never be broken.
-  for (const file of ['tasks.yaml', 'architecture.yaml']) {
+  for (const file of ['tasks-small.yaml', 'tasks-medium.yaml', 'tasks.yaml', 'architecture.yaml']) {
     const text = readFileSync(join(TEMPLATES_DIR, file), 'utf8');
     assert.doesNotThrow(
       () => parseYaml(text, { filename: file }),
@@ -243,6 +244,36 @@ test('every scaffold ships a tasks.yaml skeleton in the parser-supported subset'
   }
 });
 
+test('task examples match the scope instead of teaching LARGE recovery to every plan', () => {
+  const small = parseYaml(buildScaffold(ladder, 'SMALL', { slug: 'demo' }).skeletons['tasks.yaml']).data.tasks;
+  const medium = parseYaml(buildScaffold(ladder, 'MEDIUM', { slug: 'demo' }).skeletons['tasks.yaml']).data.tasks;
+  const large = parseYaml(buildScaffold(ladder, 'LARGE', { slug: 'demo' }).skeletons['tasks.yaml']).data.tasks;
+  assert.equal(small.length, 1);
+  assert.equal(medium.length, 3);
+  assert.equal(large.length, 4);
+  assert.ok(!small.some((task) => /recovery|retry/.test(task.title)));
+  assert.deepEqual(medium.slice(1).map((task) => task.parallel_group), ['wave-2', 'wave-2']);
+  assert.deepEqual(large.at(-1).depends_on, ['TASK-02', 'TASK-03']);
+});
+
+test('colocated scaffolds omit mirrored roots and preserve them through the profile cursor', () => {
+  const profile = buildPlanProfile(ladder, {
+    intent: 'GREENFIELD-SYSTEM', signals: ['production', 'product-facing', 'multi-module'], slug: 'demo', testLayout: 'colocated',
+  });
+  assert.equal(profile.testLayout, 'colocated');
+  assert.match(profile.next, /testLayout:'colocated'/);
+  const s = buildScaffold(ladder, 'LARGE', {
+    slug: 'demo', intent: 'GREENFIELD-SYSTEM', signals: ['production', 'product-facing', 'multi-module'], testLayout: 'colocated',
+  });
+  const architecture = parseYaml(s.skeletons['architecture.yaml']).data;
+  const tasks = parseYaml(s.skeletons['tasks.yaml']).data.tasks;
+  assert.equal(architecture.toolchain.test_root, undefined);
+  assert.match(architecture.naming_conventions.test_placement, /colocated/);
+  assert.ok(architecture.structure.every((entry) => !entry.path.startsWith('<test-root>/')));
+  assert.ok(tasks.every((task) => task.file_ownership.every((glob) => !glob.startsWith('<test-root>/'))));
+  assert.ok(!s.writeThese.some((path) => path.endsWith('docs/mermaid-snippets.md')));
+});
+
 test('the scaffold serves the CANONICAL templates, not a second copy', () => {
   const s = buildScaffold(ladder, 'LARGE', { slug: 'demo', templatesDir: TEMPLATES_DIR });
   const onDisk = readFileSync(join(TEMPLATES_DIR, 'architecture.yaml'), 'utf8').trim();
@@ -253,6 +284,21 @@ test('the scaffold serves the CANONICAL templates, not a second copy', () => {
     assert.ok(served.includes(line), `the served template must contain the canonical line: ${line}`);
   }
   assert.ok(s.skeletons['docs/mermaid-snippets.md'].includes('graph TB'), 'the mermaid snippets must be served');
+});
+
+test('generated artifacts carry no comments beyond the required provenance header', () => {
+  const s = buildScaffold(ladder, 'LARGE', { slug: 'demo', templatesDir: TEMPLATES_DIR });
+  const allowed = new Set(['schema_version', 'generator', 'generated_at']);
+  for (const name of ['tasks.yaml', 'architecture.yaml', 'answers.yaml']) {
+    const parsed = parseYaml(s.skeletons[name], { filename: name });
+    for (const comment of parsed.comments) {
+      const match = /^# (schema_version|generator|generated_at):/.exec(comment.text);
+      assert.ok(match && allowed.has(match[1]), `${name} carries non-provenance comment: ${comment.text}`);
+    }
+  }
+  for (const name of ['docs/prd.md', 'decisions/NNNN-title.md', 'docs/mermaid-snippets.md', 'plans/<slug>.md']) {
+    assert.doesNotMatch(s.skeletons[name], /<!--[\s\S]*?-->/, `${name} carries an instructional HTML comment`);
+  }
 });
 
 test('the scaffold substitutes the slug into the served templates', () => {
@@ -293,4 +339,14 @@ test('the intent defaults map onto the scope classes', () => {
   assert.ok(ladder.classes.LARGE.intentDefaults.includes('GREENFIELD-SYSTEM'));
   assert.ok(ladder.classes.MEDIUM.intentDefaults.includes('BROWNFIELD-FEATURE'));
   assert.ok(ladder.classes.SMALL.intentDefaults.includes('BROWNFIELD-CHANGE'));
+});
+
+test('profile scaffolding works without a slug and keeps MEDIUM/LARGE profiles in answers only', () => {
+  const medium = buildScaffold(ladder, 'MEDIUM', { intent: 'BROWNFIELD-FEATURE', signals: ['multi-module'] });
+  assert.equal(medium.scopeClass, 'MEDIUM');
+  assert.ok(!medium.skeletons['plans/<slug>.md'].includes('```yaml\nscope_class: MEDIUM'));
+  assert.ok(medium.skeletons['plans/<slug>.md'].includes('../answers.yaml'));
+
+  const large = buildScaffold(ladder, 'LARGE', { intent: 'GREENFIELD-SYSTEM', signals: ['production', 'product-facing', 'multi-module'] });
+  assert.ok(large.skeletons['plans/<slug>.md'].includes('../answers.yaml'));
 });

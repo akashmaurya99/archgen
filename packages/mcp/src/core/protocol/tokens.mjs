@@ -1,10 +1,9 @@
 // tokens.mjs — the ONE token estimator.
 //
-// WHY IT LIVES HERE AND NOT ONLY IN internal/: the estimate is now part of
-// the SERVER's output. Every envelope carries what the call cost, and every
-// dispatch brief and worker contract carries what the prompt will cost — so
-// the orchestrator can see the price of its own behaviour instead of
-// discovering it at the end of a run.
+// WHY IT LIVES HERE AND NOT ONLY IN internal/: runtime route and output
+// budget tests use the same estimator as the repository's QA tooling. It is
+// deliberately NOT added to every envelope: per-call metadata should carry
+// only facts an agent needs, not another repeated token figure.
 //
 // The repo's QA tool (`internal/tools/budget/context-budget.mjs`) imports THIS one,
 // so the number the CI gate reports and the number the server reports are

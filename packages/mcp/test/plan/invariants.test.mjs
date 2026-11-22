@@ -18,6 +18,7 @@ import { setTaskStatus, detectEol } from '../../src/core/plan/status-mutator.mjs
 import { analyzeImpact } from '../../src/core/plan/impact-analyzer.mjs';
 import { updateRegistry } from '../../src/core/skill/registry-updater.mjs';
 import { ArchgenError } from '../../src/core/protocol/errors.mjs';
+import { globContains, globsMayOverlap } from '../../src/core/plan/graph.mjs';
 
 const work = mkdtempSync(join(tmpdir(), 'archgen-core-'));
 
@@ -135,6 +136,30 @@ test('a same-wave ownership overlap is OWNERSHIP_CONFLICT', () => {
     () => resolveWaves(p),
     (e) => e instanceof ArchgenError && e.code === 'OWNERSHIP_CONFLICT',
   );
+});
+
+test('non-recursive wildcard ownership cannot collide in one wave', () => {
+  assert.equal(globsMayOverlap('src/*.ts', 'src/foo.ts'), true);
+  assert.equal(globsMayOverlap('src/foo/*', 'src/foo/bar.ts'), true);
+  const p = writeTasks(
+    'plain-glob-clash.yaml',
+    `tasks:
+  - id: A
+    title: A
+    file_ownership: ["src/*.ts"]
+  - id: B
+    title: B
+    file_ownership: ["src/foo.ts"]
+`,
+  );
+  assert.throws(() => resolveWaves(p), (e) => e.code === 'OWNERSHIP_CONFLICT');
+});
+
+test('glob containment is coverage, not intersection', () => {
+  assert.equal(globContains('tests/**', 'tests/unit/core/**'), true);
+  assert.equal(globContains('tests/unit/core/**', 'tests/unit/core/**'), true);
+  assert.equal(globContains('tests/unit/core/foo.test.ts', 'tests/unit/core/**'), false);
+  assert.equal(globContains('tests/unit/core/*', 'tests/unit/core/**'), false);
 });
 
 test('an unparseable file is a finding, never a raw stack', () => {
@@ -289,6 +314,29 @@ test('resolveWaves excludes tasks blocked by a failure', () => {
   assert.ok(!waves.flat().some((t) => t.id === 'B'), 'B must not be executable');
 });
 
+test('explicitly blocked tasks and dependents are not executable', () => {
+  const p = writeTasks(
+    'manual-block.yaml',
+    `tasks:
+  - id: A
+    title: held
+    status: blocked
+    file_ownership: ["a"]
+  - id: B
+    title: dependent
+    file_ownership: ["b"]
+    depends_on: ["A"]
+  - id: C
+    title: independent
+    file_ownership: ["c"]
+`,
+  );
+  const result = resolveWaves(p);
+  assert.deepEqual(result.waves.flat().map((t) => t.id), ['C']);
+  assert.deepEqual(result.blocked, ['A']);
+  assert.deepEqual(result.blockedByBlocked, ['B']);
+});
+
 // ── impact ──────────────────────────────────────────────────────────────────
 
 test('analyzeImpact reports direct and transitive dependents', () => {
@@ -330,6 +378,22 @@ test('analyzeImpact accepts an artifact path as the target', () => {
   assert.deepEqual(result.transitive, []);
 });
 
+test('analyzeImpact matches a concrete file covered by an ownership glob', () => {
+  const p = writeTasks(
+    'impact-glob.yaml',
+    `tasks:
+  - id: A
+    title: A
+    file_ownership: ["src/**"]
+  - id: B
+    title: B
+    file_ownership: ["b"]
+    depends_on: ["A"]
+`,
+  );
+  assert.deepEqual(analyzeImpact(p, 'src/foo.ts').direct, ['B']);
+});
+
 test('analyzeImpact rejects a target nothing claims', () => {
   const p = writeTasks('impact-none.yaml');
   assert.throws(
@@ -356,6 +420,32 @@ test('updateRegistry preserves every byte outside the managed block', () => {
   assert.match(out, /Some prose\./);
   assert.match(out, /Trailing prose\./);
   assert.match(out, /\| demo \| planned \| /);
+});
+
+test('registry status overrides cannot contradict canonical tasks', () => {
+  const dir = join(work, 'registry-conflict');
+  mkdirSync(join(dir, '.archgen', 'demo'), { recursive: true });
+  writeFileSync(join(dir, '.archgen', 'demo', 'tasks.yaml'), TASKS, 'utf8');
+  assert.throws(
+    () => updateRegistry(dir, { slug: 'demo', status: 'done' }),
+    (e) => e instanceof ArchgenError && e.code === 'CONFLICT',
+  );
+  const shown = updateRegistry(dir);
+  assert.equal(shown.rows[0].status, 'planned');
+  assert.throws(
+    () => updateRegistry(dir, { slug: 'phantom', status: 'planned' }),
+    (e) => e instanceof ArchgenError && e.code === 'CONFLICT',
+  );
+});
+
+test('mixed failed and done work is blocked, not in progress', () => {
+  const dir = join(work, 'registry-failed');
+  mkdirSync(join(dir, '.archgen', 'demo'), { recursive: true });
+  writeFileSync(
+    join(dir, '.archgen', 'demo', 'tasks.yaml'),
+    'tasks:\n  - id: A\n    title: A\n    status: failed\n    file_ownership: ["a"]\n  - id: B\n    title: B\n    status: done\n    file_ownership: ["b"]\n',
+  );
+  assert.equal(updateRegistry(dir).rows[0].status, 'blocked');
 });
 
 test('updateRegistry refuses a slug without a status', () => {

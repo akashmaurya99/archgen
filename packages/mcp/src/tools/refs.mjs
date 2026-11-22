@@ -12,10 +12,11 @@ import { z } from 'zod/v4';
 import { join } from 'node:path';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
 import { routingSentence } from '../core/protocol/routing.mjs';
-import { ASSETS_DIR } from '../context.mjs';
-import { indexTopic, readTopic, searchTopic, listTopics, REF_TOPICS } from '../core/docs/refs.mjs';
+import { ASSETS_DIR, loadAsset } from '../context.mjs';
+import { indexTopic, readTopic, searchTopic, listTopics, referenceRoute, REF_TOPICS } from '../core/docs/refs.mjs';
+import { INTENTS } from '../core/plan/plan-profile.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
-import { toolCall } from '../core/protocol/call.mjs';
+import { continuationCall, toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/protocol/guidance.mjs';
 
@@ -29,14 +30,18 @@ const REFS_ACTION_ARGS = {
   index: ['topic', 'section', 'limit', 'offset'],
   read: ['topic', 'section', 'include', 'limit', 'offset'],
   search: ['topic', 'token', 'limit', 'offset'],
+  route: ['mode', 'phase', 'intent', 'limit', 'offset'],
 };
 
 const schema = z.object({
-  action: z.enum(['list', 'index', 'read', 'search']),
+  action: z.enum(['list', 'index', 'read', 'search', 'route']),
   topic: z.enum(REF_TOPICS).optional().describe('Reference topic.'),
   section: z.string().optional().describe('One section; "*" = whole topic; omit for the index.'),
   include: z.enum(['own', 'all']).optional().describe("'own' (default) = the section's own text; 'all' = the whole subtree."),
   token: z.string().optional().describe('Token to find (search).'),
+  mode: z.string().optional().describe('route: GENERATE, BROWNFIELD, START-WORK, UPDATE, ROLLBACK, INVESTIGATE, INSTALL-MCP, or FETCH-SKILL.'),
+  phase: z.string().optional().describe('route phase; omit for its first phase.'),
+  intent: z.enum(INTENTS).optional().describe('route: intent used to select only relevant discovery guidance.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -72,7 +77,7 @@ export function registerRefTools(server) {
         const p = project(all, {
           limit: args.limit,
           offset: args.offset,
-          next: toolCall('archgen_refs', { action: 'list', limit: bound, offset: from + bound }),
+          next: continuationCall('archgen_refs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { topics: p.items },
@@ -82,6 +87,44 @@ export function registerRefTools(server) {
             next: p.next,
             available: { topics: p.total },
             more: toolCall('archgen_refs', { action: 'index', topic: '<the topic you need>' }),
+          }),
+        );
+      }
+
+      if (args.action === 'route') {
+        if (!args.mode) {
+          throw invalidInput(
+            'route requires mode',
+            { ...hint({ action: toolCall('archgen_refs', { action: 'route', mode: 'GENERATE' }), reason: 'the mode selects its first phase; intent narrows discovery to one workflow.' }), action: args.action },
+          );
+        }
+        const routed = referenceRoute(loadAsset('mode-routes.json'), {
+          mode: args.mode,
+          phase: args.phase ?? null,
+          intent: args.intent ?? null,
+          roots,
+        });
+        const p = project(routed.sections, {
+          limit: bound,
+          offset: from,
+          next: continuationCall('archgen_refs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound }),
+        });
+        const nextPhaseCall = routed.nextPhase
+          ? continuationCall('archgen_refs', args, {
+              projectRoot: ctx.projectRoot,
+              limit: bound,
+              offset: 0,
+              overrides: { phase: routed.nextPhase },
+            })
+          : null;
+        return withMeta(
+          { ...routed, sections: p.items },
+          moreMeta({
+            total: p.total,
+            returned: p.returned,
+            next: p.next,
+            more: nextPhaseCall,
+            available: { sections: p.total },
           }),
         );
       }
@@ -103,7 +146,7 @@ export function registerRefTools(server) {
         const p = project(indexed.sections, {
           limit: args.limit,
           offset: args.offset,
-          next: toolCall('archgen_refs', { action: 'index', topic: args.topic, limit: bound, offset: from + bound }),
+          next: continuationCall('archgen_refs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { ...indexed, sections: p.items },
@@ -126,7 +169,7 @@ export function registerRefTools(server) {
         const p = project(found.sections, {
           limit: args.limit,
           offset: args.offset,
-          next: toolCall('archgen_refs', { action: 'search', topic: args.topic, token: args.token, limit: bound, offset: from + bound }),
+          next: continuationCall('archgen_refs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { ...found, sections: p.items },
@@ -147,7 +190,7 @@ export function registerRefTools(server) {
       const p = project(read.sections, {
         limit: args.limit,
         offset: args.offset,
-        next: toolCall('archgen_refs', { action: 'read', topic: args.topic, section: '<the section you need>', limit: bound, offset: from + bound }),
+        next: continuationCall('archgen_refs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound }),
       });
       return withMeta(
         { ...read, sections: p.items },

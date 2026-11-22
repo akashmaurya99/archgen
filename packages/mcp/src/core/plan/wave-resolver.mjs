@@ -17,7 +17,7 @@ import { toolCall } from '../protocol/call.mjs';
  * Resolve the executable waves of a task graph.
  *
  * @param {string} file absolute path to tasks.yaml
- * @returns {{waves: Array<Array<{id: string, title: string, status: string, file_ownership: string[]}>>, blockedByFailure: string[]}}
+ * @returns {{waves: Array<Array<{id: string, title: string, status: string, file_ownership: string[]}>>, blockedByFailure: string[], blocked: string[], blockedByBlocked: string[]}}
  */
 export function resolveWaves(file) {
   const { data } = readParsedPlanFile(file);
@@ -51,7 +51,7 @@ export function resolveWaves(file) {
     });
   }
 
-  const { waves, blockedByFailure } = computeWaves(byId, prerequisites);
+  const { waves, blockedByFailure, blocked, blockedByBlocked } = computeWaves(byId, prerequisites);
 
   for (const wave of waves) {
     const conflict = findOwnershipConflict(wave);
@@ -81,6 +81,8 @@ export function resolveWaves(file) {
         file_ownership: ownedPaths(t),
       }))),
     blockedByFailure,
+    blocked,
+    blockedByBlocked,
   };
 }
 

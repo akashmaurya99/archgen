@@ -1,10 +1,5 @@
-// skills.mjs — the `archgen_skills` tool: capability-skill matching,
-// installation and loading.
-//
-// This tool replaces the skill's FETCH-SKILL PROSE. The agent no longer reads
-// a registry, shells out to an installer, or hand-composes a follow-instruction:
-// it asks this tool which capability skills a task needs, installs exactly
-// those, and gets the file path a worker must follow.
+// skills.mjs — read-only capability-skill matching, loading, and inspection.
+// Installation belongs to the full-profile archgen_setup install_skill action.
 import { z } from 'zod/v4';
 import { readFileSync } from 'node:fs';
 import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC } from './_register.mjs';
@@ -12,11 +7,11 @@ import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset } from '../context.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
 import { hint, teach } from '../core/protocol/guidance.mjs';
-import { toolCall } from '../core/protocol/call.mjs';
+import { continuationCall, toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import {
   matchSkills,
-  installSkill,
+  findRegistrySkill,
   loadSkill,
   listInstalled,
   findInstalledSkill,
@@ -31,23 +26,20 @@ import {
  */
 const SKILLS_ACTION_ARGS = {
   match: ['title', 'summary', 'fileOwnership', 'limit', 'offset'],
-  install: ['skillId', 'harness', 'global', 'approve', 'limit', 'offset'],
   installed: ['limit', 'offset'],
   load: ['skillId', 'section', 'limit', 'offset'],
   digest: ['skillId', 'section', 'limit', 'offset'],
   list: ['skillId', 'limit', 'offset'],
 };
+const SKILLS_ACTIONS = new Set(Object.keys(SKILLS_ACTION_ARGS));
 
 const schema = z.object({
-  action: z.enum(['match', 'install', 'installed', 'load', 'digest', 'list']),
+  action: z.enum(['match', 'installed', 'load', 'digest', 'list']),
   title: z.string().optional().describe('Task title.'),
   summary: z.string().optional().describe('Task summary.'),
   fileOwnership: z.array(z.string()).optional().describe('Task file globs.'),
   skillId: z.string().optional().describe('Skill id or slug.'),
   section: z.string().optional().describe('One skill section.'),
-  harness: z.string().optional().describe('Target harness; default universal.'),
-  global: z.boolean().optional().describe('Install for the user, not the project.'),
-  approve: z.boolean().optional().describe('Required to install; without it returns the plan.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -61,17 +53,23 @@ export function registerSkillTools(server) {
     actionArgs: SKILLS_ACTION_ARGS,
     title: 'ArchGen skills',
     description:
-      'Match, install, load, and inspect capability skills (UI, accessibility, motion) from the registry; ' +
-      'one skill is installed per call. ' +
+      'Read-only capability-skill matching, loading, and inspection. Installation is the full-profile archgen_setup install_skill action. ' +
       routingSentence(SKILLS_ACTION_ARGS),
     inputSchema: schema,
-    readOnly: false,
+    readOnly: true,
     destructive: false,
     idempotent: true,
     handler: (ctx, args) => {
       const registry = loadAsset('skill-registry.json');
       const bound = args.limit ?? 50;
       const from = args.offset ?? 0;
+
+      if (!SKILLS_ACTIONS.has(args.action)) {
+        throw invalidInput(
+          `unknown action '${args.action}'`,
+          { ...hint({ action: toolCall('archgen_help', { topic: 'skills' }), reason: 'installation belongs to the full-profile archgen_setup install_skill action.' }), action: args.action, available: [...SKILLS_ACTIONS] },
+        );
+      }
 
       if (args.action === 'list') {
         // ONE row, or the whole registry — but never three copies of a row.
@@ -97,7 +95,7 @@ export function registerSkillTools(server) {
         const p = project(rows, {
           limit: args.limit,
           offset: args.offset,
-          next: toolCall('archgen_skills', { action: 'list', limit: bound, offset: from + bound }),
+          next: continuationCall('archgen_skills', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { version: registry.version, installer: registry.installer, skills: p.items },
@@ -124,7 +122,7 @@ export function registerSkillTools(server) {
           // It used to carry only the title, so a task matched on its summary
           // or its file ownership produced an EMPTY next page — the agent
           // followed the tool's own cursor and got nothing.
-          next: toolCall('archgen_skills', { action: 'match', title: args.title ?? '', summary: args.summary ?? '', fileOwnership: args.fileOwnership ?? [], limit: bound, offset: from + bound }),
+          next: continuationCall('archgen_skills', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound }),
         });
         // The required and installed lists are computed from the WHOLE match
         // set, not from the page. They used to be computed from the page, so
@@ -152,10 +150,10 @@ export function registerSkillTools(server) {
 
       if (args.action === 'installed') {
         const all = listInstalled({ projectRoot: ctx.projectRoot, registry, home: ctx.home });
-        const p = project(all.installed ?? [], {
+        const p = project(all, {
           limit: args.limit,
           offset: args.offset,
-          next: toolCall('archgen_skills', { action: 'installed', limit: bound, offset: from + bound }),
+          next: continuationCall('archgen_skills', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound }),
         });
         return withMeta(
           { installed: p.items },
@@ -177,11 +175,7 @@ export function registerSkillTools(server) {
           },
         );
       }
-      const entry =
-        registry.skills.find((s) => s.id === wanted || s.slug === wanted) ??
-        (registry.routing && (registry.routing.id === wanted || registry.routing.slug === wanted)
-          ? registry.routing
-          : null);
+      const entry = findRegistrySkill(registry, wanted);
       if (!entry) {
         throw invalidInput(
           teach(
@@ -204,7 +198,7 @@ export function registerSkillTools(server) {
             installed: false,
             sections: [],
             searchedPaths: found.searchedPaths ?? [],
-            hint: 'not installed — install it first: ' + toolCall('archgen_skills', { action: 'install', skillId: entry.slug, approve: true }),
+            hint: 'not installed — install it first: ' + toolCall('archgen_setup', { action: 'install_skill', skillId: entry.slug, approve: true }),
           };
         }
         const content = readFileSync(found.path, 'utf8');
@@ -247,7 +241,7 @@ export function registerSkillTools(server) {
         const p = project(sections, {
           limit: args.limit,
           offset: args.offset,
-          next: toolCall('archgen_skills', { action: 'digest', skillId: entry.slug, limit: bound, offset: from + bound }),
+          next: continuationCall('archgen_skills', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound, overrides: { skillId: entry.slug } }),
         });
         return withMeta(
           { skill: entry.slug, installed: true, path: found.path, scope: found.scope, sections: p.items },
@@ -290,7 +284,7 @@ export function registerSkillTools(server) {
           followInstruction: loaded.loaded ? followInstruction({ slug: entry.slug, path: loaded.path, domain: entry.domain }) : null,
           hint: loaded.loaded
             ? null
-            : 'not installed — install it first: ' + toolCall('archgen_skills', { action: 'install', skillId: entry.slug, approve: true }),
+            : 'not installed — install it first: ' + toolCall('archgen_setup', { action: 'install_skill', skillId: entry.slug, approve: true }),
         };
         // Where the tool looked matters only when it found nothing.
         if (!loaded.loaded) result.searchedPaths = loaded.searchedPaths ?? [];
@@ -308,12 +302,23 @@ export function registerSkillTools(server) {
               `no section '${args.section}' in skill '${entry.slug}'`, { ...hint({ action: toolCall('archgen_skills', { action: 'digest', skillId: '<skill id>' }), reason: "the digest is the map of a skill's sections." }), skillId: entry.slug, section: args.section, available: sections.map((s) => s.slug) });
           }
           const body = loaded.content.split('\n').slice(hit.line - 1, hit.endLine).join('\n');
-          return { ...result, section: hit.slug, sectionTitle: hit.title, sectionText: body };
+          return {
+            skill: result.skill,
+            purpose: result.purpose,
+            domain: result.domain,
+            loaded: true,
+            path: result.path,
+            scope: result.scope,
+            followInstruction: result.followInstruction,
+            section: hit.slug,
+            sectionTitle: hit.title,
+            sectionText: body,
+          };
         }
         const p = project(result.sections, {
           limit: args.limit,
           offset: args.offset,
-          next: toolCall('archgen_skills', { action: 'load', skillId: entry.slug, limit: bound, offset: from + bound }),
+          next: continuationCall('archgen_skills', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound, overrides: { skillId: entry.slug } }),
         });
         return withMeta(
           { ...result, sections: p.items },
@@ -327,16 +332,10 @@ export function registerSkillTools(server) {
         );
       }
 
-      return installSkill({
-        registry,
-        entry,
-        projectRoot: ctx.projectRoot,
-        harness: args.harness ?? 'universal',
-        global: args.global === true,
-        approved: args.approve === true,
-        home: ctx.home,
-        env: ctx.env,
-      });
+      throw invalidInput(
+        `unknown action '${args.action}'`,
+        { ...hint({ action: toolCall('archgen_help', { topic: 'skills' }), reason: 'use one of the read-only actions.' }), action: args.action },
+      );
     },
   });
 }

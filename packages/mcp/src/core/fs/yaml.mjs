@@ -1,5 +1,5 @@
 // yaml.mjs — zero-dependency YAML subset parser/writer for archgen contracts.
-// WHY hand-rolled: skill scripts must run on bare Node ≥18 with no npm install
+// WHY hand-rolled: ArchGen runs on Node ≥20 with no YAML dependency
 // (portability across harness sandboxes); full YAML libs are overkill for our
 // two documented shapes (tasks.yaml, architecture.yaml).
 //
@@ -77,7 +77,14 @@ export function parseYaml(text, opts = {}) {
   // Drop blank/comment-only knowledge from the recursive descent input by
   // filtering here but recording positions first (keeps parser core simple).
   const pos = { i: 0 };
-  const data = parseBlock(lines, pos, 0, ctx, []);
+  // The writer uses an explicit flow token for an empty ROOT collection; a
+  // blank document would parse as null and silently change its type.
+  const emptyRoot = lines.length === 1 && (lines[0].trim() === '{}' || lines[0].trim() === '[]')
+    ? lines[0].trim()
+    : null;
+  const data = emptyRoot
+    ? (pos.i++, parseScalarOrFlow(emptyRoot, ctx, 1, []))
+    : parseBlock(lines, pos, 0, ctx, []);
   // Guard: nothing structural may survive past the root block (e.g. a sequence
   // followed by a mapping at the same indent) — silent truncation would corrupt
   // contracts, so refuse loudly instead.
@@ -173,6 +180,19 @@ function peekContent(lines, pos, indent) {
   return null;
 }
 
+/** Assign a parsed key as an OWN data property, including `__proto__`.
+ * Ordinary assignment invokes Object.prototype's legacy setter for that key,
+ * allowing YAML to spoof inherited fields and then lose them on serialization.
+ */
+function setOwn(mapping, key, value) {
+  Object.defineProperty(mapping, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+}
+
 function parseMapping(lines, pos, indent, ctx, basePath = []) {
   /** @type {Record<string, any>} */
   const out = {};
@@ -199,22 +219,22 @@ function parseMapping(lines, pos, indent, ctx, basePath = []) {
     // Value may be inline, a nested block, or a sequence at SAME indent (common YAML style).
     const inlineVal = splitKeyValue(c.text, ctx, pos.i, keyPath);
     if (inlineVal.hasValue) {
-      out[key.name] = parseScalarOrFlow(inlineVal.value, ctx, pos.i, keyPath);
+      setOwn(out, key.name, parseScalarOrFlow(inlineVal.value, ctx, pos.i, keyPath));
       key.inlineComment(keyPath);
       continue;
     }
     // Look ahead: nested block (deeper indent) or sequence at same indent.
     const next = nextContent(lines, pos.i);
-    if (!next || next.indent < indent) { out[key.name] = null; key.inlineComment(keyPath); continue; }
+    if (!next || next.indent < indent) { setOwn(out, key.name, null); key.inlineComment(keyPath); continue; }
     if (next.indent > indent) {
-      out[key.name] = parseChild(lines, pos, next.indent, ctx, keyPath);
+      setOwn(out, key.name, parseChild(lines, pos, next.indent, ctx, keyPath));
       continue;
     }
     // Same indent: only legal child here is a sequence ("- ...").
     if (next.bare.startsWith('- ')) {
-      out[key.name] = parseSequence(lines, pos, indent, ctx, keyPath);
+      setOwn(out, key.name, parseSequence(lines, pos, indent, ctx, keyPath));
     } else {
-      out[key.name] = null;
+      setOwn(out, key.name, null);
       key.inlineComment(keyPath);
     }
   }
@@ -414,7 +434,7 @@ function parseScalarOrFlow(v, ctx, lineNo, path) {
       }
       const val = part.slice(m.end).trim();
       if (val.startsWith('{')) fail(ctx, lineNo, `nested flow mappings are not supported: ${val}`, path);
-      obj[m.key] = parseScalarOrFlow(val, ctx, lineNo, extendPath(path, m.key));
+      setOwn(obj, m.key, parseScalarOrFlow(val, ctx, lineNo, extendPath(path, m.key)));
     }
     return obj;
   }
@@ -425,7 +445,16 @@ function parseScalarOrFlow(v, ctx, lineNo, path) {
 
 function splitFlow(inner) {
   const parts = []; let cur = ''; let inS = false, inD = false, depth = 0;
-  for (const ch of inner) {
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    // A backslash-escaped quote is content, not the end of a double-quoted
+    // scalar. Skipping the escaped character also keeps a following comma in
+    // the same flow item.
+    if (inD && ch === '\\') {
+      cur += ch;
+      if (i + 1 < inner.length) cur += inner[++i];
+      continue;
+    }
     if (ch === "'" && !inD) inS = !inS;
     else if (ch === '"' && !inS) inD = !inD;
     else if (!inS && !inD && (ch === '[' || ch === '{')) depth++;
@@ -678,7 +707,11 @@ function emitValue(out, v, indent, comments, used, path) {
         inlineCommentFor(out, comments, used, itemPath);
       } else if (item !== null && typeof item === 'object') {
         const entries = Object.entries(item);
-        if (entries.length === 0) { out.push(pad + '- {}'); return; }
+        if (entries.length === 0) {
+          out.push(pad + '- {}');
+          inlineCommentFor(out, comments, used, itemPath);
+          return;
+        }
         const [k0, v0] = entries[0];
         // The first key shares the dash's line, so its block starts one level
         // deeper than the key's own column.
@@ -692,7 +725,9 @@ function emitValue(out, v, indent, comments, used, path) {
     return;
   }
   if (v !== null && typeof v === 'object') {
-    emitEntries(out, Object.entries(v), indent, comments, used, path);
+    const entries = Object.entries(v);
+    if (entries.length === 0) out.push(pad + '{}');
+    else emitEntries(out, entries, indent, comments, used, path);
     return;
   }
   out.push(pad + encodeScalar(v));

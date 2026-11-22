@@ -437,20 +437,26 @@ export function doctorProject(projectDir, packageRoot, opts = {}) {
     add('WARN', `archgen MCP server not reachable${mcp.detail ? ` — ${mcp.detail}` : ''} — install with: npx archgen-mcp bootstrap --project . --yes`);
   } else {
     const rep = mcp.report;
-    add(
-      rep.skill ? 'OK' : 'WARN',
-      rep.skill
-        ? `archgen MCP server v${rep.server} ready (skill ${rep.skill.version ?? 'unknown'})`
-        : 'archgen MCP server ready, but no skill was found',
-    );
-    const wired = (rep.mcpTargets ?? []).filter((t) => t.exists).length;
-    if (wired === 0) {
-      add('WARN', 'archgen MCP is not wired into any harness config — run: npx archgen-mcp bootstrap --project . --yes');
+    if (Array.isArray(rep.checks)) {
+      for (const check of rep.checks) add(check.status ?? 'WARN', check.msg ?? 'archgen MCP check failed');
+      if (!rep.checks.length) add('OK', rep.summary ?? 'archgen MCP checks passed');
+      if (rep.versions?.codegraph) add('OK', `codegraph ${rep.versions.codegraph}`);
     } else {
-      add('OK', `archgen MCP wiring present in ${wired} harness config(s)`);
+      add(
+        rep.skill ? 'OK' : 'WARN',
+        rep.skill
+          ? `archgen MCP server v${rep.server} ready (skill ${rep.skill.version ?? 'unknown'})`
+          : 'archgen MCP server ready, but no skill was found',
+      );
+      const wired = (rep.mcpTargets ?? []).filter((t) => t.wired).length;
+      if (wired === 0) {
+        add('WARN', 'archgen MCP is not wired into any harness config — run: npx archgen-mcp bootstrap --project . --yes');
+      } else {
+        add('OK', `archgen MCP wiring present in ${wired} harness config(s)`);
+      }
+      if (rep.codegraph) add('OK', `codegraph ${rep.codegraph.version}`);
+      else add('WARN', 'codegraph not installed — run: npx archgen-mcp bootstrap --project . --yes');
     }
-    if (rep.codegraph) add('OK', `codegraph ${rep.codegraph.version}`);
-    else add('WARN', 'codegraph not installed — run: npx archgen-mcp bootstrap --project . --yes');
   }
 
   const tally = { OK: 0, FIXED: 0, 'WOULD-FIX': 0, WARN: 0, FAIL: 0 };

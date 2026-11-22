@@ -39,8 +39,8 @@ export function parseMarkdown(text) {
     let lm;
     while ((lm = MD_LINK_RE.exec(line)) !== null) {
       const t = lm[1];
-      if (/^[a-z][a-z0-9+.-]*:/i.test(t) || t.startsWith('#')) continue; // scheme'd or pure anchor
-      if (/\.(md|markdown|ya?ml)$/i.test(t.split('#')[0])) links.push({ line: i + 1, target: t });
+      if (/^[a-z][a-z0-9+.-]*:/i.test(t)) continue; // scheme'd external link
+      if (t.startsWith('#') || /\.(md|markdown|ya?ml)$/i.test(t.split('#')[0])) links.push({ line: i + 1, target: t });
     }
   }
   // A target reachable by both extractors counts once.
@@ -208,6 +208,14 @@ export function buildSections(doc) {
   const lines = doc.lines ?? [];
   const counts = new Map();
   const sections = [];
+  const ends = new Array(headings.length).fill(lines.length);
+  const stack = [];
+  for (let i = 0; i < headings.length; i++) {
+    while (stack.length && headings[stack[stack.length - 1]].level >= headings[i].level) {
+      ends[stack.pop()] = headings[i].line - 1;
+    }
+    stack.push(i);
+  }
   for (let i = 0; i < headings.length; i++) {
     const h = headings[i];
     const base = slugifyHeading(h.text);
@@ -215,11 +223,8 @@ export function buildSections(doc) {
     const n = counts.get(base) ?? 0;
     counts.set(base, n + 1);
     const slug = n === 0 ? base : `${base}-${n}`;
-    // End line: the line before the next heading at the same or shallower level.
-    let endLine = lines.length;
-    for (let j = i + 1; j < headings.length; j++) {
-      if (headings[j].level <= h.level) { endLine = headings[j].line - 1; break; }
-    }
+    // Precomputed in ONE stack pass above: no quadratic forward scan per heading.
+    const endLine = ends[i];
     const body = lines.slice(h.line - 1, endLine).join('\n');
     const section = {
       level: h.level,
@@ -233,6 +238,15 @@ export function buildSections(doc) {
     sections.push(section);
   }
   return sections;
+}
+
+/** A bounded excerpt centered on the matched token, never start-truncated away. */
+export function excerptAround(rawText, pattern, max = 200) {
+  const raw = String(rawText ?? '').trim();
+  if (raw.length <= max) return raw;
+  const at = Math.max(0, raw.search(pattern));
+  const start = Math.max(0, at - Math.floor(max * 0.4));
+  return `${start > 0 ? '…' : ''}${raw.slice(start, start + max)}${start + max < raw.length ? '…' : ''}`;
 }
 
 /**

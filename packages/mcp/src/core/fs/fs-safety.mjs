@@ -171,9 +171,16 @@ export function containPath(rootAbs, candidate) {
  *   the write outside the tree.
  */
 export function writeFileAtomic(file, content, opts = {}) {
-  mkdirSync(dirname(file), { recursive: true });
+  // Authorize the complete parent chain BEFORE creating anything. A refused
+  // write must leave an absent tree absent, including through a symlinked
+  // parent directory.
   if (opts.root) assertWithinRoot(opts.root, file);
   assertNotSymlink(file);
+  mkdirSync(dirname(file), { recursive: true });
+  if (opts.root) {
+    assertWithinRoot(opts.root, dirname(file));
+    assertWithinRoot(opts.root, file);
+  }
   let tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
   for (let attempt = 0; ; attempt++) {
     try {
@@ -216,7 +223,7 @@ export function writeFileAtomic(file, content, opts = {}) {
  *
  * @param {string} file the file being mutated
  * @param {() => any} fn
- * @param {{timeoutMs?: number, staleMs?: number, pollMs?: number}} [opts]
+ * @param {{timeoutMs?: number, staleMs?: number, pollMs?: number, root?: string}} [opts]
  * @returns {any} whatever `fn` returns
  */
 export function withFileLock(file, fn, opts = {}) {
@@ -226,7 +233,14 @@ export function withFileLock(file, fn, opts = {}) {
   const lockPath = `${file}.lock`;
   const deadline = Date.now() + timeoutMs;
 
+  if (opts.root) {
+    assertWithinRoot(opts.root, file);
+    assertWithinRoot(opts.root, lockPath);
+  }
+  assertNotSymlink(file);
+  assertNotSymlink(lockPath);
   mkdirSync(dirname(lockPath), { recursive: true });
+  if (opts.root) assertWithinRoot(opts.root, lockPath);
   for (;;) {
     try {
       writeFileSync(lockPath, String(process.pid), { flag: 'wx' });

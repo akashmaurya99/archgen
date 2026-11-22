@@ -4,7 +4,7 @@
   "package": "@colbymchenry/codegraph",
   "install": "latest",
   "wire": "1.6.2",
-  "tools": ["explore", "node", "search", "callers", "callees", "impact", "files", "status"],
+  "tools": ["explore"],
   "telemetry": "off",
   "_fields": {
     "install": "What to install when the CLI is MISSING. 'latest' = the newest published release. An EXISTING install is never touched — it is the user's to manage.",

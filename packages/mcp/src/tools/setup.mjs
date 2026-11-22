@@ -13,6 +13,7 @@ import { invalidInput } from '../core/protocol/errors.mjs';
 import { toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { hint } from '../core/protocol/guidance.mjs';
+import { findRegistrySkill, installSkill } from '../core/skill/skill-manager.mjs';
 
 /**
  * The arguments each action takes. An argument that belongs to another
@@ -30,6 +31,7 @@ const SETUP_ACTION_ARGS = {
   doctor: ['location', 'limit', 'offset'],
   bootstrap: ['location', 'approve', 'telemetry', 'noCodegraph', 'noMcp', 'limit', 'offset'],
   install_mcp: ['location', 'approve', 'telemetry', 'limit', 'offset'],
+  install_skill: ['skillId', 'harness', 'global', 'approve', 'limit', 'offset'],
   uninstall_mcp: ['location', 'approve', 'limit', 'offset'],
   harnesses: ['location', 'harness', 'limit', 'offset'],
 };
@@ -38,13 +40,15 @@ const SETUP_ACTION_ARGS = {
 const SETUP_ACTIONS = new Set(Object.keys(SETUP_ACTION_ARGS));
 
 const schema = z.object({
-  action: z.enum(['doctor', 'bootstrap', 'install_mcp', 'uninstall_mcp', 'harnesses']),
+  action: z.enum(['doctor', 'bootstrap', 'install_mcp', 'install_skill', 'uninstall_mcp', 'harnesses']),
   location: z.enum(['project', 'global', 'both']).optional().describe(LOCATION_DESC),
   approve: z.boolean().optional().describe(APPROVE_DESC),
-  telemetry: z.enum(['keep', 'off', 'on']).optional().describe('CodeGraph anonymous telemetry; off is machine-wide.'),
+  telemetry: z.enum(['keep', 'off', 'on']).optional().describe("keep|off|on: admin override for the CLI's global telemetry setting; the default MCP policy disables it per process."),
   noCodegraph: z.boolean().optional().describe('Skip the CodeGraph half of bootstrap.'),
   noMcp: z.boolean().optional().describe('Skip the MCP wiring half of bootstrap.'),
   harness: z.string().optional().describe('Harness id.'),
+  skillId: z.string().optional().describe('Capability-skill id or slug for install_skill.'),
+  global: z.boolean().optional().describe('install_skill: install for the user, not the project.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -113,12 +117,12 @@ export function registerSetupTools(server) {
     actionArgs: SETUP_ACTION_ARGS,
     title: 'ArchGen setup',
     description:
-      'ArchGen install health and wiring: doctor, bootstrap, install/uninstall MCP, ' +
-      'detected harnesses, and harness capabilities. ' +
+      'Admin only: health, MCP wiring, CodeGraph/bootstrap, and explicitly approved capability-skill installation. ' +
       routingSentence(SETUP_ACTION_ARGS),
     inputSchema: schema,
     readOnly: false,
-    destructive: false,
+    destructive: true,
+    openWorld: true,
     idempotent: true,
     handler: async (ctx, args) => {
       const registry = loadAsset('harness-mcp.json');
@@ -282,6 +286,33 @@ export function registerSetupTools(server) {
             'The actions this server offers. If your tool schema lists fewer, your client is holding a stale catalog — ' +
             'reload the session so it re-fetches the tool list.',
         };
+      }
+
+      if (args.action === 'install_skill') {
+        const skillRegistry = loadAsset('skill-registry.json');
+        if (!args.skillId) {
+          throw invalidInput(
+            'skillId is required for install_skill',
+            { ...hint({ action: toolCall('archgen_skills', { action: 'list' }), reason: 'the registry lists every installable id and slug.' }), action: args.action },
+          );
+        }
+        const entry = findRegistrySkill(skillRegistry, args.skillId);
+        if (!entry) {
+          throw invalidInput(
+            `unknown skill '${args.skillId}'`,
+            { ...hint({ action: toolCall('archgen_skills', { action: 'list' }), reason: 'the registry is the installation vocabulary.' }), skillId: args.skillId },
+          );
+        }
+        return installSkill({
+          registry: skillRegistry,
+          entry,
+          projectRoot: ctx.projectRoot,
+          harness: args.harness ?? 'universal',
+          global: args.global === true,
+          approved,
+          home: ctx.home,
+          env: ctx.env,
+        });
       }
 
       if (args.action === 'uninstall_mcp') {

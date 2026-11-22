@@ -53,9 +53,11 @@
         "slug",
         "intent",
         "signals",
+        "testLayout",
         "modules",
         "tasks",
         "file",
+        "view",
         "kind",
         "featureRequest",
         "topic",
@@ -112,6 +114,14 @@
           "existing-architecture",
           "existing-adr"
         ],
+        "view": [
+          "index",
+          "all"
+        ],
+        "testLayout": [
+          "mirrored",
+          "colocated"
+        ],
         "kind": [
           "verifier",
           "review",
@@ -155,7 +165,6 @@
           "module",
           "format",
           "status",
-          "collection",
           "limit",
           "offset"
         ],
@@ -180,7 +189,7 @@
           "modules",
           "tasks",
           "slug",
-          "collection"
+          "testLayout"
         ],
         "scaffold": [
           "scope",
@@ -189,8 +198,9 @@
           "modules",
           "tasks",
           "slug",
+          "testLayout",
           "file",
-          "collection"
+          "view"
         ],
         "brief": [
           "kind",
@@ -199,8 +209,7 @@
           "slug",
           "featureRequest",
           "topic",
-          "round",
-          "collection"
+          "round"
         ]
       },
       "facts": {
@@ -236,6 +245,9 @@
         "tasks": [
           "count",
           "list"
+        ],
+        "testLayout": [
+          "mirrored|colocated"
         ],
         "file": [
           "one artifact file|artifact file"
@@ -280,6 +292,7 @@
         "slugDir",
         "codeStandardsPath",
         "module",
+        "view",
         "limit",
         "offset",
         "projectRoot"
@@ -310,12 +323,17 @@
           "blocked",
           "done",
           "failed"
+        ],
+        "view": [
+          "frontier",
+          "waves"
         ]
       },
       "actionArgs": {
         "next": [
           "tasksYaml",
           "taskId",
+          "view",
           "limit",
           "offset"
         ],
@@ -365,6 +383,9 @@
         ],
         "module": [
           "module"
+        ],
+        "view": [
+          "frontier|waves"
         ],
         "limit": [
           "50"
@@ -424,12 +445,16 @@
         "index": [
           "slugDir",
           "file",
-          "collection"
+          "collection",
+          "limit",
+          "offset"
         ],
         "digest": [
           "slugDir",
           "file",
-          "collection"
+          "collection",
+          "limit",
+          "offset"
         ],
         "validate": [
           "slugDir",
@@ -458,10 +483,7 @@
           "slugDir",
           "section",
           "file",
-          "include",
-          "collection",
-          "limit",
-          "offset"
+          "include"
         ]
       },
       "facts": {
@@ -651,7 +673,7 @@
     "archgen_setup": {
       "annotations": {
         "readOnly": false,
-        "destructive": false,
+        "destructive": true,
         "idempotent": true
       },
       "properties": [
@@ -662,6 +684,8 @@
         "noCodegraph",
         "noMcp",
         "harness",
+        "skillId",
+        "global",
         "limit",
         "offset",
         "projectRoot"
@@ -674,6 +698,7 @@
           "doctor",
           "bootstrap",
           "install_mcp",
+          "install_skill",
           "uninstall_mcp",
           "harnesses"
         ],
@@ -707,6 +732,14 @@
           "location",
           "approve",
           "telemetry",
+          "limit",
+          "offset"
+        ],
+        "install_skill": [
+          "skillId",
+          "harness",
+          "global",
+          "approve",
           "limit",
           "offset"
         ],
@@ -746,6 +779,12 @@
         "harness": [
           "harness"
         ],
+        "skillId": [
+          "skill id|slug"
+        ],
+        "global": [
+          "user|project"
+        ],
         "limit": [
           "50"
         ],
@@ -760,7 +799,7 @@
     },
     "archgen_skills": {
       "annotations": {
-        "readOnly": false,
+        "readOnly": true,
         "destructive": false,
         "idempotent": true
       },
@@ -771,9 +810,6 @@
         "fileOwnership",
         "skillId",
         "section",
-        "harness",
-        "global",
-        "approve",
         "limit",
         "offset",
         "projectRoot"
@@ -784,7 +820,6 @@
       "enums": {
         "action": [
           "match",
-          "install",
           "installed",
           "load",
           "digest",
@@ -796,14 +831,6 @@
           "title",
           "summary",
           "fileOwnership",
-          "limit",
-          "offset"
-        ],
-        "install": [
-          "skillId",
-          "harness",
-          "global",
-          "approve",
           "limit",
           "offset"
         ],
@@ -845,16 +872,6 @@
         "section": [
           "section"
         ],
-        "harness": [
-          "harness"
-        ],
-        "global": [
-          "user|project"
-        ],
-        "approve": [
-          "plan",
-          "install"
-        ],
         "limit": [
           "50"
         ],
@@ -879,6 +896,9 @@
         "section",
         "include",
         "token",
+        "mode",
+        "phase",
+        "intent",
         "limit",
         "offset",
         "projectRoot"
@@ -891,7 +911,8 @@
           "list",
           "index",
           "read",
-          "search"
+          "search",
+          "route"
         ],
         "topic": [
           "interview",
@@ -929,6 +950,13 @@
           "token",
           "limit",
           "offset"
+        ],
+        "route": [
+          "mode",
+          "phase",
+          "intent",
+          "limit",
+          "offset"
         ]
       },
       "facts": {
@@ -940,6 +968,15 @@
         ],
         "token": [
           "token"
+        ],
+        "mode": [
+          "GENERATE|BROWNFIELD|START-WORK"
+        ],
+        "phase": [
+          "phase"
+        ],
+        "intent": [
+          "intent"
         ],
         "limit": [
           "50"

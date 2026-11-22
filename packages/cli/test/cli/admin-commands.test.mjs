@@ -93,10 +93,10 @@ test('codegraph status is READ-ONLY', () => {
   assert.match(r.out, /tools:/, 'the status must name the tool surface');
 });
 
-test('codegraph ensure without --yes is a PLAN and writes nothing', () => {
+test('codegraph ensure is inert when CodeGraph is explicitly disabled', () => {
   const r = cli(['codegraph', 'ensure', '--project', project]);
   assert.equal(r.code, 0, r.err);
-  assert.match(r.out, /PLAN only/);
+  assert.match(r.out, /switched off|skipped/);
   assert.ok(!existsSync(join(home, '.claude.json')), 'an unapproved ensure must not write');
 });
 

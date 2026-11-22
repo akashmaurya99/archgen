@@ -60,6 +60,9 @@ test('a slug is legal exactly one way, in every tool', async () => {
   try {
     // The same slug, offered to the three tools that take one.
     const good = 'demo-slug';
+    const feature = join(s.root, '.archgen', good);
+    mkdirSync(feature, { recursive: true });
+    writeFileSync(join(feature, 'tasks.yaml'), 'tasks: []\n');
     for (const tool of ['archgen_plan', 'archgen_registry']) {
       const r = await call(tool, { action: tool === 'archgen_plan' ? 'profile' : 'update', intent: 'GREENFIELD-SYSTEM', slug: good, status: 'planned' }, s.root);
       assert.equal(r.ok, true, `${tool} must accept the slug '${good}': ${r.error?.message ?? ''}`);

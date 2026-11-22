@@ -635,7 +635,7 @@ test('a bare wildcard waiver scope approves nothing', () => {
 // ── 9. the family a file belongs to ────────────────────────────────────────
 
 test('a sibling artifact does not satisfy a DIFFERENT family\'s decision', () => {
-  // `docs/prd.md` and `docs/<module>.md` are different families whose
+  // `docs/prd.md` and `docs/topology.md` are different families whose
   // PATTERNS overlap. Matching the pattern let a PRD satisfy the
   // module-diagram family's `create` — so a missing diagram passed.
   const f = fixture({
@@ -644,7 +644,7 @@ test('a sibling artifact does not satisfy a DIFFERENT family\'s decision', () =>
     answers: [
       'plan_profile:',
       '  artifacts:',
-      '    - path: .archgen/demo/docs/<module>.md',
+      '    - path: .archgen/demo/docs/topology.md',
       '      decision: create',
       '      reason: a topology diagram per module',
       '',
@@ -668,7 +668,7 @@ test('an artifact recorded omit is not flagged because a SIBLING family exists',
     answers: [
       'plan_profile:',
       '  artifacts:',
-      '    - path: .archgen/demo/docs/<module>.md',
+      '    - path: .archgen/demo/docs/topology.md',
       '      decision: omit',
       '      reason: no non-obvious topology',
       '',

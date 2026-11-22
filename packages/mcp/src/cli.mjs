@@ -14,13 +14,12 @@
 //   bootstrap [--project <dir>]         wire the archgen MCP + ensure CodeGraph
 //   doctor [--project <dir>]            health report
 //   uninstall-mcp [--project <dir>]     remove the archgen MCP entries
+import { z } from 'zod/v4';
 import { Context, serverVersion } from './context.mjs';
 import { createServer, exposedToolNames } from './server.mjs';
 import { getToolSpec, registeredToolNames, runTool } from './tools/_register.mjs';
 import { loadAsset } from './context.mjs';
-import { uninstallArchgenMcp, archgenMcpStatus } from './core/harness/mcp-server-manager.mjs';
-import { assertLocation, findCodegraph } from './core/harness/codegraph-manager.mjs';
-import { detectHarnesses } from './core/harness/harness-wiring.mjs';
+import { assertLocation } from './core/harness/codegraph-manager.mjs';
 import { writeOut, writeErr } from './core/protocol/io.mjs';
 
 /**
@@ -113,14 +112,21 @@ export function parseArgs(argv) {
   };
   const rest = [...argv];
   const command = rest[0];
-  if (command && !command.startsWith('-')) {
+  let commandExplicit = Boolean(command && !command.startsWith('-'));
+  if (commandExplicit) {
     opts.command = command;
     rest.shift();
   }
+  const commands = new Set(['serve', 'exec', 'version', 'bootstrap', 'doctor', 'platform', 'mcp-list', 'codegraph', 'uninstall-mcp', 'help']);
+  const valueFor = (flag, i) => {
+    const value = rest[i + 1];
+    if (!value || value.startsWith('-')) throw new Error(`${flag} requires a non-flag value`);
+    return value;
+  };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
-    if (a === '--project') opts.project = rest[++i];
-    else if (a === '--location') opts.location = rest[++i];
+    if (a === '--project') { opts.project = valueFor(a, i); i++; }
+    else if (a === '--location') { opts.location = valueFor(a, i); i++; }
     else if (a === '--yes') opts.yes = true;
     else if (a === '--no-codegraph') opts.noCodegraph = true;
     else if (a === '--no-mcp') opts.noMcp = true;
@@ -130,15 +136,23 @@ export function parseArgs(argv) {
     else if (a === '--catalog') opts.catalog = true;
     else if (a === '--catalog-wire') opts.catalogWire = true;
     else if (a === '--catalog-all') opts.catalogAll = true;
-    else if (a === '--tool-profile') opts.toolProfile = rest[++i];
-    else if (a === '--tool') opts.tool = rest[++i];
+    else if (a === '--tool-profile') { opts.toolProfile = valueFor(a, i); i++; }
+    else if (a === '--tool') { opts.tool = valueFor(a, i); i++; }
     else if (a === '--version' || a === '-v') opts.command = 'version';
-    else if (a === '--fail-on') opts.failOn = rest[++i];
+    else if (a === '--fail-on') { opts.failOn = valueFor(a, i); i++; }
     else if (a === '--help' || a === '-h') opts.command = 'help';
-    else if (!a.startsWith('-')) {
-      if (opts.tool === null && opts.command === 'exec') opts.tool = a;
-      else if (opts.args === null) opts.args = a;
-      else opts.extra = a;
+    else if (a.startsWith('-')) throw new Error(`unknown flag: ${a}`);
+    else if (!commandExplicit && commands.has(a)) { opts.command = a; commandExplicit = true; }
+    else if (opts.tool === null && opts.command === 'exec') opts.tool = a;
+    else if (opts.args === null) opts.args = a;
+    else opts.extra = a;
+  }
+  if (opts.extra !== undefined) throw new Error(`unexpected argument: ${opts.extra}`);
+  if (!['exec', 'codegraph'].includes(opts.command) && opts.args !== null) throw new Error(`unexpected argument: ${opts.args}`);
+  if (opts.failOn !== null) {
+    const at = opts.failOn.lastIndexOf(':');
+    if (at <= 0 || !opts.failOn.slice(0, at).trim() || !opts.failOn.slice(at + 1).trim()) {
+      throw new Error('--fail-on must have the form <path>:<non-empty-value>');
     }
   }
   return opts;
@@ -230,7 +244,7 @@ export async function runCli(argv, io = {}) {
     out(JSON.stringify({
       name: opts.tool,
       description: spec.description ?? '',
-      inputSchema: server.toolInputSchemaJson(opts.tool) ?? null,
+      inputSchema: z.toJSONSchema(spec.inputSchema),
     }, null, 2));
     return 0;
   }
@@ -262,7 +276,7 @@ export async function runCli(argv, io = {}) {
     const catalog = names.map((name) => ({
       name,
       description: getToolSpec(name)?.description ?? '',
-      inputSchema: server.toolInputSchemaJson(name) ?? null,
+      inputSchema: z.toJSONSchema(getToolSpec(name).inputSchema),
     }));
     out(JSON.stringify(catalog, null, 2));
     return 0;
@@ -308,7 +322,8 @@ export async function runCli(argv, io = {}) {
     // made the CLI blind to exactly what the MCP server warns about.
     const envelope = await runTool(spec, ctx, { ...parsed, ...check.data });
     out(JSON.stringify(envelope, null, 2));
-    if (!envelope.ok) return 1;
+    const failedInstall = parsed.action === 'install_skill' && parsed.approve === true && envelope.data?.installed === false;
+    if (!envelope.ok || envelope.data?.ok === false || failedInstall) return 1;
     // `--fail-on <path>:<value>` turns a tool result into a BUILD GATE.
     //
     // WHY: the deterministic floor was only ever reachable from an agent
@@ -377,48 +392,39 @@ export async function runCli(argv, io = {}) {
   }
 
   if (opts.command === 'doctor') {
-    const status = archgenMcpStatus({ projectRoot: ctx.projectRoot, registry, home: ctx.home, env: ctx.env });
-    const codegraph = findCodegraph(ctx.env);
-    const report = {
-      projectRoot: ctx.projectRoot,
-      skill: ctx.skill ? { path: ctx.skill.path, version: ctx.skill.version, scope: ctx.skill.scope } : null,
-      server: ctx.serverVersion,
-      node: process.versions.node,
-      codegraph: codegraph ? { bin: codegraph.bin, version: codegraph.version } : null,
-      mcpBinary: status.binary,
-      mcpTargets: status.targets,
-      harnesses: detectHarnesses(registry, ctx.projectRoot, ctx.home, ctx.env).map((d) => d.id),
-    };
+    const envelope = await runTool(getToolSpec('archgen_setup'), ctx, { action: 'doctor' });
+    const report = envelope.data ?? {};
     if (opts.json) {
       out(JSON.stringify(report, null, 2));
     } else {
-      out(`archgen-mcp doctor — ${ctx.projectRoot}`);
-      out(`  node:    ${report.node}`);
-      out(`  server:  ${report.server}`);
-      out(`  skill:   ${report.skill ? `${report.skill.path} (${report.skill.version ?? 'unknown'})` : 'NOT FOUND'}`);
-      out(`  mcp bin: ${report.mcpBinary.bin ?? 'not on PATH (npx fallback)'} (${report.mcpBinary.source})`);
-      out(`  codegraph: ${report.codegraph ? report.codegraph.version : 'not installed'}`);
-      out(`  harnesses: ${report.harnesses.join(', ') || 'none detected'}`);
+      out(`archgen-mcp doctor — ${ctx.projectRoot} — ${report.status ?? 'FAIL'}`);
+      out(`  ${report.summary ?? 'no checks ran'}`);
+      for (const check of report.checks ?? []) out(`  ${check.status}: ${check.msg}`);
+      out(`  node:    ${process.versions.node}`);
+      out(`  server:  ${report.versions?.server ?? ctx.serverVersion}`);
+      out(`  skill:   ${report.versions?.skill ?? 'NOT FOUND'}`);
+      out(`  codegraph: ${report.versions?.codegraph ?? 'not installed'}`);
     }
-    return 0;
+    return !envelope.ok || report.status === 'FAIL' ? 1 : 0;
   }
 
   if (opts.command === 'uninstall-mcp') {
-    if (!opts.yes) {
-      err('uninstall-mcp needs --yes (nothing was removed)');
-      return 2;
-    }
-    // The scope is explicit. It was hard-coded to 'both', so a caller that
-    // asked to remove ONE project's wiring also tore down the global wiring
-    // every other project shares.
-    const res = uninstallArchgenMcp(ctx.projectRoot, ctx.home, assertLocation(opts.location), ctx.env);
+    const envelope = await runTool(getToolSpec('archgen_setup'), ctx, {
+      action: 'uninstall_mcp',
+      approve: opts.yes === true,
+      location: assertLocation(opts.location),
+    });
+    const res = envelope.data ?? {};
     if (opts.json) out(JSON.stringify(res, null, 2));
-    else {
-      out(`removed ${res.removed.length} config(s)`);
-      for (const r of res.removed) out(`  - ${r}`);
-      for (const s of res.skipped) out(`  ! ${s}`);
+    else if (res.planned) {
+      out('PLAN only — nothing was removed. Re-run with --yes to apply.');
+    } else {
+      out(`removed ${res.removedCount ?? res.removed?.length ?? 0} config(s)`);
+      for (const r of res.removed ?? []) out(`  - ${r}`);
+      for (const s of res.skipped ?? []) out(`  ! ${s}`);
+      if (res.detail) out(`  ${res.detail}`);
     }
-    return 0;
+    return envelope.ok ? 0 : 1;
   }
 
   // ── the admin surface ────────────────────────────────────────────────────
@@ -498,7 +504,7 @@ export async function runCli(argv, io = {}) {
         out('  PLAN only — nothing was written. Re-run with --yes to apply it.');
       }
     }
-    return envelope.ok ? 0 : 1;
+    return envelope.ok && data.ok !== false ? 0 : 1;
   }
 
   if (opts.command === 'serve') return null; // the caller connects the transport

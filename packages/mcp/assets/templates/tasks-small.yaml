@@ -1,0 +1,8 @@
+tasks:
+  - id: "TASK-01"
+    title: "<localized outcome>"
+    depends_on: []
+    file_ownership: ["<source-root>/<module>/**", "<test-root>/<module>/**"]
+    acceptance:
+      - "<build or test command> exits 0"
+      - "<observable behavior> produces <expected result>"

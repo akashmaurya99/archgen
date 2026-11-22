@@ -140,10 +140,10 @@ export function collectionRules(collections, topic) {
      */
     reject(action, collection) {
       if (collection === undefined || collection === null) return;
-      const allowed = allowedFor(action);
+      const elsewhere = [...new Set(Object.values(collections).flat())];
       throw invalidInput(
-        `'${action}' has no collection (allowed elsewhere: ${allowed.join('|') || 'none'})`,
-        { ...hint({ action: toolCall('archgen_help', { topic }), reason: 'the collections of each action are listed there.' }), action, collection },
+        `'${action}' has no collection (allowed elsewhere: ${elsewhere.join('|') || 'none'})`,
+        { ...hint({ action: toolCall('archgen_help', { topic }), reason: 'the collections of each action are listed there.' }), action, collection, availableElsewhere: elsewhere },
       );
     },
   };

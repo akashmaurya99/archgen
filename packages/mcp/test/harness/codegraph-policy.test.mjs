@@ -25,6 +25,7 @@ import {
   codegraphEntries,
   codegraphSpec,
   codegraphInstallSpec,
+  validateCodegraphPolicy,
 } from '../../src/core/harness/codegraph-manager.mjs';
 
 const REGISTRY = {
@@ -55,15 +56,9 @@ test('the policy names the package, the install, the wire spec and the telemetry
   assert.equal(policy.telemetry, 'off');
 });
 
-test('EVERY CodeGraph tool is exposed, so the agent can use the whole surface', () => {
-  // The allowlist REPLACES the default and silently drops unknown names, so
-  // a typo would remove a tool without saying so — and a missing name would
-  // leave the agent without a capability it is told it has.
-  const policy = codegraphPolicy({});
-  for (const tool of ALL_TOOLS) {
-    assert.ok(policy.tools.includes(tool), `the policy does not expose ${tool}`);
-  }
-  assert.equal(policy.tools.length, ALL_TOOLS.length, 'the policy names a tool CodeGraph does not have');
+test('the default publishes explore only; the full surface remains an explicit opt-in', () => {
+  assert.deepEqual(codegraphPolicy({}).tools, ['explore']);
+  assert.deepEqual(codegraphPolicy({ ARCHGEN_CODEGRAPH_TOOLS: ALL_TOOLS.join(',') }).tools, ALL_TOOLS);
 });
 
 test('the wired entry carries the allowlist and the telemetry switch', () => {
@@ -123,4 +118,10 @@ test('the environment overrides the policy', () => {
   const unpinned = codegraphPolicy({ ARCHGEN_CODEGRAPH_VERSION: 'latest' });
   assert.equal(unpinned.wire, null);
   assert.equal(codegraphSpec(unpinned), '@colbymchenry/codegraph');
+});
+
+test('a corrupt or empty CodeGraph policy fails closed', () => {
+  for (const policy of [null, {}, { package: 'x', install: 'latest', wire: null, tools: [], telemetry: 'off' }]) {
+    assert.throws(() => validateCodegraphPolicy(policy), (error) => error.code === 'INVALID_INPUT');
+  }
 });

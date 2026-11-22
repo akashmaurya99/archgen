@@ -11,11 +11,11 @@
 // without a prior backup of it. Restores themselves land atomically
 // (temp-sibling dir, then rename).
 
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { BACKUP_PATHS_FILE, BACKUP_ROOT_REL, byName, moveToBackupInto, readBackupPaths, uniqueBackupTs } from './store.js';
+import { dirname, join, resolve } from 'node:path';
+import { BACKUP_PATHS_FILE, BACKUP_ROOT_REL, assertNotSymlink, assertWithinRoot, byName, isSafeRelativePath, moveToBackupInto, readBackupPaths, uniqueBackupTs } from './store.js';
 import { GLOBAL_BACKUP_REL, globalTargets } from './install.js';
 import { lstatSafe } from './fs-paths.js';
 
@@ -34,6 +34,8 @@ function summarize(dir) {
 
 function snapshotsUnder(origin, base, vaultAbs) {
   if (!existsSync(vaultAbs)) return [];
+  assertWithinRoot(base, vaultAbs);
+  assertNotSymlink(vaultAbs);
   return readdirSync(vaultAbs, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
@@ -41,6 +43,8 @@ function snapshotsUnder(origin, base, vaultAbs) {
     .reverse()
     .map((ts) => {
       const snapshotDir = join(vaultAbs, ts);
+      assertWithinRoot(base, snapshotDir);
+      assertNotSymlink(snapshotDir);
       let summary = null;
       try { summary = summarize(snapshotDir); } catch { summary = { files: 0, dirs: 0, topLevel: [] }; }
       return { id: ts, ts, origin, base, snapshotDir, summary };
@@ -78,18 +82,26 @@ function listBackups(projectRoot, options = {}) {
 }
 
 /** Atomic copy-back: temp sibling dir, then rename into place. */
-function layDown(srcAbs, destAbs) {
+function layDown(srcAbs, destAbs, sourceRoot, destBase) {
+  assertWithinRoot(sourceRoot, srcAbs);
+  assertWithinRoot(destBase, destAbs);
+  assertNotSymlink(srcAbs);
+  assertNotSymlink(destAbs);
   mkdirSync(dirname(destAbs), { recursive: true });
+  assertWithinRoot(destBase, destAbs);
   const tmp = join(dirname(destAbs), '.archgen-restore-' + randomBytes(6).toString('hex'));
-  cpSync(srcAbs, tmp, { recursive: true });
-  renameSync(tmp, destAbs);
+  try {
+    cpSync(srcAbs, tmp, { recursive: true });
+    renameSync(tmp, destAbs);
+  } catch (error) {
+    try { rmSync(tmp, { recursive: true, force: true }); } catch { /* preserve the original error */ }
+    throw error;
+  }
 }
 
 /** A recorded path is usable only when it stays inside the destination base. */
 function isSafeRel(rel) {
-  if (typeof rel !== 'string' || rel === '') return false;
-  if (isAbsolute(rel)) return false;
-  return !rel.split('/').some((seg) => seg === '..' || seg === '');
+  return isSafeRelativePath(rel);
 }
 
 /** Every FILE a snapshot holds, relative to the snapshot dir (legacy snapshots). */
@@ -115,14 +127,22 @@ function snapshotFiles(snapshotDir, prefix = '') {
  */
 function restoreEntries(snap, destBase) {
   const recorded = readBackupPaths(snap.snapshotDir);
-  const rels = (recorded && recorded.length > 0)
-    ? recorded.filter(isSafeRel)
-    : snapshotFiles(snap.snapshotDir).filter(isSafeRel);
-  return rels.map((rel) => ({
-    rel,
-    name: rel.split('/').pop(),
-    srcAbs: join(snap.snapshotDir, ...rel.split('/')),
-    destAbs: join(destBase, ...rel.split('/')),
+  const pairs = (recorded && recorded.length > 0)
+    ? recorded.filter(isSafeRel).map((rel) => ({
+      rel,
+      // Migration backups have one explicit source prefix; their recorded
+      // destination remains the original project-relative artifact path.
+      sourceRel: existsSync(join(snap.snapshotDir, ...rel.split('/'))) ? rel : `migrate/${rel}`,
+    }))
+    : snapshotFiles(snap.snapshotDir).filter(isSafeRel).map((sourceRel) => ({
+      sourceRel,
+      rel: sourceRel.startsWith('migrate/') ? sourceRel.slice('migrate/'.length) : sourceRel,
+    }));
+  return pairs.filter((entry) => isSafeRel(entry.rel) && isSafeRel(entry.sourceRel)).map((entry) => ({
+    rel: entry.rel,
+    name: entry.rel.split('/').pop(),
+    srcAbs: join(snap.snapshotDir, ...entry.sourceRel.split('/')),
+    destAbs: join(destBase, ...entry.rel.split('/')),
   }));
 }
 
@@ -184,7 +204,7 @@ export function restoreBackups(projectRoot, options = {}) {
   const restored = [];
   for (const en of entries) {
     try {
-      layDown(en.srcAbs, en.destAbs);
+      layDown(en.srcAbs, en.destAbs, snap.snapshotDir, destBase);
       restored.push({ from: en.srcAbs, to: en.destAbs });
     } catch (e) {
       warnings.push(`could not restore ${en.name}: ${e.message}`);

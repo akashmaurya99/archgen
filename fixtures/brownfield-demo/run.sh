@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # brownfield-demo/run.sh — deterministic BROWNFIELD survey→plan end-to-end.
-# ZERO LLM calls: the SURVEY sub-agent is simulated by a static-analysis stub
-# (find/grep over the real fixture project) writing codebase-map.md; planning
-# is a committed MEDIUM-sized artifact pair. Under test: right-sizing (artifact
+# ZERO LLM calls: read-only survey evidence is embedded in the SMALL plan;
+# planning is a committed SMALL artifact pair. Under test: right-sizing (artifact
 # set equality), ownership against real paths, impact pin, verifier APPROVE.
 set -uo pipefail
 
@@ -44,59 +43,39 @@ mkdir -p "$DOT/plans"
 # mcp_exec <tool> <json-args> — run one archgen MCP tool inside the sandbox.
 mcp_exec() { node "$MCP" exec "$1" "$2" --project "$SANDBOX"; }
 
-# ── [2/7] SURVEY step — static stub per orchestration.md §survey contract ───
-# Real read-only analysis of the seeded tree feeds the four required sections;
-# every claim cites a path that actually exists (the §survey VERIFY rule).
-{
-  echo "# codebase-map — $SLUG"
-  echo
-  echo "## Structure"
-  echo
-  echo '```'
-  ( cd "$SANDBOX/project" && find . -type f | sort | sed 's|^\./|  |' )
-  echo '```'
-  echo
-  echo "## Modules"
-  echo
-  echo "| module | responsibility | key entry points |"
-  echo "| --- | --- | --- |"
-  echo "| server | http lifecycle and request logging | src/server.ts |"
-  echo "| routes | request dispatch table | src/routes.ts |"
-  echo "| shared | cross-cutting structured logging | src/shared/logger.ts |"
-  echo
-  echo "## Conventions"
-  echo
-  for sym in $(grep -h '^export' "$SRC"/server.ts "$SRC"/routes.ts "$SRC"/shared/logger.ts \
-                 | sed -E 's/^export (function|const) ([A-Za-z0-9_]+).*/\2/' | sort); do
-    echo "- named export \`$sym\` (observed via grep over src)"
-  done
-  echo "- errors handled at the dispatch boundary in src/routes.ts"
-  echo "- no test layout present yet"
-  echo
-  echo "## Affected"
-  echo
-  echo "- src/server.ts — limiter core lands beside createServer (evidence: src/server.ts)"
-  echo "- src/routes.ts — per-route budgets attach in handleRoute (evidence: src/routes.ts)"
-  echo "- src/shared/logger.ts — limit events reuse the emit helper (evidence: src/shared/logger.ts)"
-} > "$DOT/codebase-map.md"
-
-for section in "## Structure" "## Modules" "## Conventions" "## Affected"; do
-  grep -qF "$section" "$DOT/codebase-map.md" || fail "codebase-map.md missing required section: $section"
-done
-# every cited path must exist (§survey VERIFY rule)
-for p in src/server.ts src/routes.ts src/shared/logger.ts; do
-  grep -qF "$p" "$DOT/codebase-map.md" || fail "codebase-map.md does not cite $p"
-  [ -f "$SANDBOX/project/$p" ] || fail "codebase-map cites non-existent path $p"
-done
-pass "[2/7] survey stub wrote codebase-map.md (all 4 sections, evidence paths verified)"
-
-# ── [3/7] MEDIUM-sized plan for the rate-limit feature ──────────────────────
-cp "$SCRIPT_DIR/tasks.template.yaml"     "$DOT/tasks.yaml"
+# ── [2/7] SURVEY evidence embedded in the SMALL plan ─────────────────────────
+# A localized change does not need a separate six-section map. The plan cites
+# real evidence paths, while the static-analysis stub confirms the repository
+# still exposes the conventions recorded in its Survey section.
 cp "$SCRIPT_DIR/plans/add-rate-limit.md" "$DOT/plans/add-rate-limit.md"
+PLAN="$DOT/plans/add-rate-limit.md"
+grep -q '^## Survey' "$PLAN" || fail "SMALL plan has no embedded Survey section"
+grep -q '^## Profile' "$PLAN" || fail "SMALL plan has no machine-readable profile"
+grep -h '^export ' "$SRC/server.ts" "$SRC/routes.ts" "$SRC/shared/logger.ts" | grep -q . \
+  || fail "static survey no longer observes named exports"
+grep -q 'named exports' "$PLAN" || fail "embedded Survey omitted observed naming conventions"
+for p in project/src/server.ts project/src/routes.ts project/src/shared/logger.ts; do
+  grep -qF "$p" "$PLAN" || fail "embedded Survey does not cite $p"
+  [ -f "$SANDBOX/$p" ] || fail "embedded Survey cites non-existent path $p"
+done
+[ ! -e "$DOT/codebase-map.md" ] || fail "localized SMALL plan created an unneeded codebase-map.md"
+profile_json="$(mcp_exec archgen_plan "{\"action\":\"profile\",\"intent\":\"BROWNFIELD-FEATURE\",\"modules\":1,\"tasks\":3,\"slug\":\"$SLUG\"}")" \
+  || fail "the localized brownfield profile failed"
+PROFILE_JSON="$profile_json" node --input-type=module -e '
+const p = JSON.parse(process.env.PROFILE_JSON);
+const map = p.data.artifacts.find((a) => a.path.endsWith("codebase-map.md"));
+if (p.data.scopeClass !== "SMALL" || p.data.confidence !== "medium" || map.decision !== "omit") {
+  console.error(JSON.stringify(p, null, 2)); process.exit(1);
+}
+' || fail "the deterministic profiler disagrees with the embedded-survey fixture"
+pass "[2/7] localized survey evidence embedded in plan (no standalone map)"
+
+# ── [3/7] SMALL plan for the rate-limit feature ─────────────────────────────
+cp "$SCRIPT_DIR/tasks.template.yaml" "$DOT/tasks.yaml"
 TASKS="$DOT/tasks.yaml"
 mcp_exec archgen_plan "{\"action\":\"validate\",\"tasksYaml\":\"$TASKS\"}" >/dev/null 2>&1 \
   || fail "archgen_plan{validate} rejected brownfield tasks.yaml"
-pass "[3/7] MEDIUM artifacts written and validated (plan + tasks only)"
+pass "[3/7] SMALL artifacts written and validated (plan + tasks only)"
 
 # ── [4/7] ownership references EXISTING project paths ───────────────────────
 OWNERSHIP="$(mktemp "${TMPDIR:-/tmp}/archgen-ownership.XXXXXX")"
@@ -114,10 +93,9 @@ while IFS= read -r g; do
 done < "$OWNERSHIP"
 pass "[4/7] every file_ownership glob resolves to an existing tracked path"
 
-# ── [5/7] right-sizing proof: artifact set is EXACTLY three files ───────────
+# ── [5/7] right-sizing proof: artifact set is EXACTLY two files ─────────────
 actual="$(cd "$SANDBOX" && find .archgen -type f | sed 's|^\.archgen/||' | sort)"
 expected="$(printf '%s\n' \
-  "$SLUG/codebase-map.md" \
   "$SLUG/plans/add-rate-limit.md" \
   "$SLUG/tasks.yaml" | sort)"
 if [ "$actual" != "$expected" ]; then
@@ -127,7 +105,7 @@ $expected
 --- actual ---
 $actual"
 fi
-pass "[5/7] artifact set == exactly {codebase-map.md, tasks.yaml, plans/add-rate-limit.md}"
+pass "[5/7] artifact set == exactly {tasks.yaml, plans/add-rate-limit.md}"
 
 # ── [6/7] impact pin: changing RL1 ripples to exactly RL2+RL3 ───────────────
 if ! diff -u "$SCRIPT_DIR/expected-impact.json" <(mcp_exec archgen_plan "{\"action\":\"impact\",\"tasksYaml\":\"$TASKS\",\"target\":\"RL1\"}" | node -e '

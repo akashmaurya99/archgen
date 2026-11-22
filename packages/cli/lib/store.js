@@ -29,9 +29,10 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { loadConfig } from './config.js';
 
 export const STORE_REL = '.agents/skills/archgen';
@@ -240,6 +241,31 @@ export function assertWithinRoot(rootAbs, absPath) {
   throw new Error(refuseSymlinkMessage(absPath));
 }
 
+/** A vault path must be relative and free of traversal on every platform. */
+export function isSafeRelativePath(relPath) {
+  if (typeof relPath !== 'string' || relPath === '' || isAbsolute(relPath)) return false;
+  if (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(relPath)) return false;
+  const normalized = relPath.replaceAll('\\', '/');
+  return !normalized.split('/').some((segment) => segment === '' || segment === '.' || segment === '..');
+}
+
+/** Atomic project/global-root-scoped write with pre-mkdir containment checks. */
+export function atomicWriteFile(root, file, content) {
+  assertWithinRoot(root, file);
+  assertNotSymlink(file);
+  mkdirSync(dirname(file), { recursive: true });
+  assertWithinRoot(root, file);
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    writeFileSync(tmp, content, { flag: 'wx' });
+    renameSync(tmp, file);
+  } catch (error) {
+    try { unlinkSync(tmp); } catch { /* no temporary file was created */ }
+    throw error;
+  }
+  return file;
+}
+
 /** Version string of this CLI package (used for the in-store stamp). */
 export function cliVersion(packageRoot) {
   return JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version;
@@ -326,10 +352,7 @@ export function saveManifest(root, manifest) {
   const p = join(root, ...MANIFEST_REL.split('/'));
   // Guard BEFORE creating the parent: a symlinked `.archgen` would otherwise
   // redirect the whole manifest write outside the project.
-  assertNotSymlink(p);
-  assertWithinRoot(root, p);
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(manifest, null, 2) + '\n');
+  atomicWriteFile(root, p, JSON.stringify(manifest, null, 2) + '\n');
 }
 
 /** Record a created dir/link/block; dedupes on kind+path. */
@@ -362,11 +385,12 @@ export function readBackupPaths(snapshotDir) {
 }
 
 /** Add `relPaths` to a snapshot's path record (creating it when absent). */
-function recordBackupPaths(snapshotDir, relPaths) {
+function recordBackupPaths(root, snapshotDir, relPaths) {
   const existing = readBackupPaths(snapshotDir) ?? [];
   const merged = [...existing];
   for (const p of relPaths) if (!merged.includes(p)) merged.push(p);
-  writeFileSync(
+  atomicWriteFile(
+    root,
     join(snapshotDir, BACKUP_PATHS_FILE),
     JSON.stringify({ version: 1, paths: merged }, null, 2) + '\n',
   );
@@ -405,24 +429,38 @@ export function uniqueBackupTs(base, backupRootRel) {
  *
  * @returns {string} backup location relative to `root`
  */
-export function moveToBackupInto(root, relPath, backupRootRel, ts = new Date().toISOString().replace(/:/g, '-')) {
+export function moveToBackupInto(root, relPath, backupRootRel, ts = new Date().toISOString().replace(/:/g, '-'), opts = {}) {
+  if (!isSafeRelativePath(relPath) || !isSafeRelativePath(backupRootRel) || !/^\d{4}-\d{2}-\d{2}T[^/\\]+$/.test(ts)) {
+    throw new Error(`unsafe backup path: ${relPath}`);
+  }
   const destRel = backupRootRel + '/' + ts + '/' + relPath;
-  const destAbs = join(root, ...destRel.split('/'));
-  mkdirSync(dirname(destAbs), { recursive: true });
   const srcAbs = join(root, ...relPath.split('/'));
+  const destAbs = join(root, ...destRel.split('/'));
+  const sourceStat = lstatSync(srcAbs);
+  if (sourceStat.isSymbolicLink()) {
+    if (!opts.allowSymlink) assertNotSymlink(srcAbs);
+    // Renaming a verified link moves the LINK, never its target. The target
+    // may legitimately be the packaged source outside this vault's root.
+    const lexicalRoot = resolve(root);
+    if (resolve(srcAbs) !== lexicalRoot && !resolve(srcAbs).startsWith(lexicalRoot + sep)) {
+      throw new Error(refuseSymlinkMessage(srcAbs));
+    }
+  } else {
+    assertWithinRoot(root, srcAbs);
+  }
+  assertWithinRoot(root, destAbs);
+  assertNotSymlink(destAbs);
+  mkdirSync(dirname(destAbs), { recursive: true });
+  assertWithinRoot(root, destAbs);
   try {
     renameSync(srcAbs, destAbs);
   } catch (err) {
-    // Fallback copy+remove must NEVER run on a symlinked source: cpSync would
-    // read through the link and rmSync would remove it — rethrow instead so
-    // the caller refuses the replace rather than touching the link's target.
-    let st = null;
-    try { st = lstatSync(srcAbs); } catch { /* vanished mid-move */ }
-    if (st && st.isSymbolicLink()) throw err;
+    if (sourceStat.isSymbolicLink()) throw err;
     cpSync(srcAbs, destAbs, { recursive: true });
+    assertWithinRoot(root, srcAbs);
     rmSync(srcAbs, { recursive: true, force: true });
   }
-  recordBackupPaths(join(root, ...backupRootRel.split('/'), ts), [relPath]);
+  recordBackupPaths(root, join(root, ...backupRootRel.split('/'), ts), [relPath]);
   return destRel;
 }
 

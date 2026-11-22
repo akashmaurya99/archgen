@@ -48,3 +48,21 @@ export function toolCall(tool, args) {
     .map(([k, v]) => `${k}:${callValue(v)}`);
   return `${tool}{${parts.join(',')}}`;
 }
+
+/** Build a continuation from the ORIGINAL query, changing only its window.
+ * Filters, selectors, approval scope and the resolved project all survive.
+ */
+export function continuationCall(tool, args, { projectRoot, limit = 50, offset = 0, overrides = {} } = {}) {
+  const carried = Object.fromEntries(
+    Object.entries(args ?? {}).filter(([key, value]) =>
+      !['action', 'limit', 'offset', 'projectRoot'].includes(key) && value !== undefined && value !== null),
+  );
+  return toolCall(tool, {
+    action: args?.action,
+    ...carried,
+    ...overrides,
+    projectRoot,
+    limit,
+    offset,
+  });
+}

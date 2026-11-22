@@ -8,7 +8,8 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, exist
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { wireServer, writeJsonConfig, writeTomlConfig, detectHarnesses, removeWiring } from '../../src/core/harness/harness-wiring.mjs';
+import { wireServer, writeJsonConfig, writeTomlConfig, detectHarnesses, removeWiring, configTargetFor } from '../../src/core/harness/harness-wiring.mjs';
+import { parseJsonc } from '../../src/core/fs/jsonc-config.mjs';
 import { wireArchgenMcp } from '../../src/core/harness/mcp-server-manager.mjs';
 import { loadAsset } from '../../src/context.mjs';
 
@@ -234,4 +235,41 @@ test('removal takes out exactly the entry that was written', () => {
   const data = JSON.parse(readFileSync(target, 'utf8'));
   assert.equal(data.mcpServers.archgen, undefined, 'the archgen entry must be gone');
   assert.deepEqual(data.mcpServers.other, { command: 'keep-me' }, 'other entries must survive');
+});
+
+test('OpenCode uses an existing JSONC config without creating a competing JSON file', () => {
+  const { root, home } = sandbox();
+  const jsonc = join(root, 'opencode.jsonc');
+  writeFileSync(jsonc, '{\n  // keep this comment\n  "mcp": { "servers": {} }\n}\n');
+  const cfg = registry.harnesses.opencode.configs.project;
+  assert.equal(configTargetFor(cfg, { projectRoot: root, home }).path, jsonc);
+  const result = wireArchgenMcp({
+    projectRoot: root,
+    registry,
+    home,
+    location: 'project',
+    approved: true,
+    binPath: '/abs/archgen-mcp',
+    env: { ARCHGEN_CODEGRAPH: '0' },
+  });
+  assert.ok(result.wired.some((row) => row.path === jsonc && row.status === 'written'));
+  assert.equal(existsSync(join(root, 'opencode.json')), false);
+  const raw = readFileSync(jsonc, 'utf8');
+  assert.match(raw, /keep this comment/);
+  assert.equal(parseJsonc(raw).data.mcp.servers.archgen.command[0], '/abs/archgen-mcp');
+});
+
+test('unapproved and dry-run plans create no parent directory or lock file', () => {
+  const { root } = sandbox();
+  for (const approved of [false, true]) {
+    const target = join(root, `absent-${approved}`, 'config.json');
+    const result = writeJsonConfig(target, 'mcpServers', 'archgen', { command: 'archgen-mcp' }, {
+      approved,
+      dryRun: approved,
+      root,
+    });
+    assert.equal(result.status, 'planned');
+    assert.equal(existsSync(join(root, `absent-${approved}`)), false, 'planning created a directory');
+    assert.equal(existsSync(`${target}.lock`), false, 'planning created a lock');
+  }
 });

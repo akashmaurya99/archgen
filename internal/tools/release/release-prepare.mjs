@@ -115,9 +115,10 @@ function main() {
   // thing: the declaration is a RANGE, so a bare version is normalised
   // into one. (The version is never written down here — the version
   // belongs in exactly one place, and this file is not it.)
-  const rawWanted = args.requires ?? `>=${args.version}`;
+  const rawWanted = args.requires ?? currentRequires;
   const wanted = /^[<>=^~]/.test(rawWanted) ? rawWanted : `>=${rawWanted}`;
-  if (args.requires === undefined && currentRequires && currentRequires !== wanted) {
+  const suggestedRequires = `>=${args.version}`;
+  if (args.requires === undefined && currentRequires && currentRequires !== suggestedRequires) {
     console.log(
       c.yellow(
         `  note: skill/SKILL.md requires archgen_mcp '${currentRequires}', but the release is ${args.version}.`,
@@ -128,7 +129,7 @@ function main() {
         '         Raise it if the skill now calls a capability that only this server has:',
       ),
     );
-    console.log(c.yellow(`           node internal/tools/release/release-prepare.mjs ${args.version} --requires '${wanted}'`));
+    console.log(c.yellow(`           node internal/tools/release/release-prepare.mjs ${args.version} --requires '${suggestedRequires}'`));
   }
 
   const TOTAL = 7;

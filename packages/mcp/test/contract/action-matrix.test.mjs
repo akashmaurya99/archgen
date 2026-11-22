@@ -117,7 +117,7 @@ function matrix() {
 
   // ── archgen_registry ────────────────────────────────────────────────────
   rows.push(['archgen_registry', 'show', {}]);
-  rows.push(['archgen_registry', 'update', { slug: 'demo', status: 'planned' }]);
+  rows.push(['archgen_registry', 'update', {}]);
 
   // ── archgen_codegraph (unapproved: a PLAN, never a write) ───────────────
   rows.push(['archgen_codegraph', 'status', {}]);
@@ -129,17 +129,18 @@ function matrix() {
   rows.push(['archgen_setup', 'harnesses', {}]);
   rows.push(['archgen_setup', 'bootstrap', { approve: false }]);
   rows.push(['archgen_setup', 'install_mcp', { approve: false }]);
+  rows.push(['archgen_setup', 'install_skill', { skillId: 'ui-baseline', approve: false }]);
   rows.push(['archgen_setup', 'uninstall_mcp', { approve: false }]);
 
-  // ── archgen_skills (unapproved: a PLAN, never a write) ──────────────────
+  // ── archgen_skills (read-only) ────────────────────────────────────────────
   rows.push(['archgen_skills', 'list', {}]);
   rows.push(['archgen_skills', 'installed', {}]);
   rows.push(['archgen_skills', 'match', { title: 'Build the dashboard UI', fileOwnership: ['src/features/web/**'] }]);
   rows.push(['archgen_skills', 'load', { skillId: 'ui-baseline' }]);
   rows.push(['archgen_skills', 'digest', { skillId: 'ui-baseline' }]);
-  rows.push(['archgen_skills', 'install', { skillId: 'ui-baseline', approve: false }]);
 
   // ── archgen_refs ────────────────────────────────────────────────────────
+  rows.push(['archgen_refs', 'route', { mode: 'GENERATE', phase: 'scope', intent: 'GREENFIELD-MODULE' }]);
   rows.push(['archgen_refs', 'list', {}]);
   rows.push(['archgen_refs', 'index', { topic: 'orchestration' }]);
   rows.push(['archgen_refs', 'read', { topic: 'orchestration' }]);

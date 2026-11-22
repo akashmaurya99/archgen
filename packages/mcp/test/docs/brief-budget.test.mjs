@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildBriefContext } from '../../src/core/docs/brief-context.mjs';
-import { renderBriefContext } from '../../src/core/docs/briefs.mjs';
+import { renderBriefContext, renderDispatchBrief, MAX_BRIEF_TOKENS } from '../../src/core/docs/briefs.mjs';
 import { Context } from '../../src/context.mjs';
 import { estimateTokens } from '../../../../internal/tools/budget/tokens.mjs';
 
@@ -100,6 +100,47 @@ test('the bounded brief costs a fraction of the unbounded one', () => {
   } finally {
     p.cleanup();
   }
+});
+
+test('the complete dispatch prompt has a final token ceiling and explicit continuations', () => {
+  const scope = { slugDir: '/p/.archgen/demo', tasksYaml: '/p/.archgen/demo/tasks.yaml', plansDir: '/p/.archgen/demo/plans' };
+  const rendered = renderDispatchBrief({
+    scope,
+    allowedCalls: [],
+    evidence: {
+      files: Array.from({ length: 200 }, (_, i) => ({
+        path: `plans/${i}.md`,
+        sections: Array.from({ length: 20 }, (_, j) => ({ slug: `section-${j}`, title: `Section ${j}` })),
+      })),
+    },
+    graph: Array.from({ length: 500 }, (_, i) => `T${i} --> T${i + 1}`).join('\n'),
+    docsValidation: { valid: false, broken: Array.from({ length: 100 }, (_, i) => ({ file: 'plans/a.md', kind: 'task', ref: `T${i}` })), warnings: [] },
+    audit: {
+      verdict: 'ISSUES',
+      issues: Array.from({ length: 200 }, (_, i) => `PLAN_ISSUE: finding ${i} ${'detail '.repeat(20)}`),
+      warnings: [],
+      issuesTotal: 200,
+      warningsTotal: 0,
+      issueCodes: { PLAN_ISSUE: 200 },
+      maps: { ownership: Array.from({ length: 500 }, (_, i) => ({ id: `T${i}`, wave: 1, globs: ['src/**'] })) },
+      snapshot: { tasks: 200, requirements: 0, edgeRows: 0, linkedRows: 0, fingerprint: 'sha256:test' },
+      waivers: [],
+    },
+  }, 'TASK: preserve every gate instruction in this template.');
+  assert.ok(rendered.budget, 'the pathological context must trigger the final budget');
+  assert.ok(rendered.budget.originalTokens > MAX_BRIEF_TOKENS);
+  assert.ok(rendered.budget.renderedTokens <= MAX_BRIEF_TOKENS, `rendered ${rendered.budget.renderedTokens}`);
+  assert.match(rendered.text, /preserve every gate instruction/);
+  assert.match(rendered.text, /Context budget applied/);
+  assert.match(rendered.text, /archgen_docs\{action:'digest'/);
+  assert.match(rendered.text, /blocking issues: 200/);
+  assert.match(rendered.text, /fingerprint: sha256:test/);
+});
+
+test('an ordinary brief is not rewritten by the final budget', () => {
+  const rendered = renderDispatchBrief({ allowedCalls: [] }, 'TASK: small');
+  assert.equal(rendered.budget, null);
+  assert.match(rendered.text, /TASK: small$/);
 });
 
 test('the brief carries the snapshot the agent checks for staleness', () => {

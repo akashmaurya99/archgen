@@ -178,7 +178,7 @@ pass "archgen_docs — 8 actions"
 
 echo "── archgen_registry ───────────────────────────────────────"
 mcp archgen_registry "{\"action\":\"show\"}" "registry/show"
-mcp archgen_registry "{\"action\":\"update\",\"slug\":\"demo\",\"status\":\"planned\"}" "registry/update"
+mcp archgen_registry "{\"action\":\"update\"}" "registry/update"
 pass "archgen_registry — 2 actions"
 
 echo "── archgen_platform (the runtime facts) ────────────────────"
@@ -203,7 +203,7 @@ mcp archgen_skills "{\"action\":\"installed\"}" "skills/installed"
 mcp archgen_skills "{\"action\":\"match\",\"title\":\"Build the dashboard UI\",\"fileOwnership\":[\"src/features/web/**\"]}" "skills/match"
 mcp archgen_skills "{\"action\":\"load\",\"skillId\":\"ui-baseline\"}" "skills/load (not installed -> hint)"
 mcp archgen_skills "{\"action\":\"digest\",\"skillId\":\"ui-baseline\"}" "skills/digest (not installed -> hint)"
-mcp archgen_skills "{\"action\":\"install\",\"skillId\":\"ui-baseline\"}" "skills/install (unapproved -> plan)"
+mcp archgen_setup "{\"action\":\"install_skill\",\"skillId\":\"ui-baseline\",\"approve\":false}" "skills/install (unapproved -> plan)"
 pass "archgen_skills — 6 actions"
 
 echo "── archgen_refs ───────────────────────────────────────────"

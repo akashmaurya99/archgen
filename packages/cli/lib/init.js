@@ -142,6 +142,7 @@ export function initProject(projectDir, packageRoot, opts = {}) {
   const tmp = join(skillsParent, '.archgen-tmp-' + randomBytes(6).toString('hex'));
   const aside = join(skillsParent, '.archgen-old-' + randomBytes(6).toString('hex'));
   let asideUsed = false;
+  let divergentBackup = null;
   try {
     cpSync(source, tmp, { recursive: true });
     pruneDevOnly(tmp); // dev-only artifacts (scripts/test) never reach the installed store
@@ -151,7 +152,8 @@ export function initProject(projectDir, packageRoot, opts = {}) {
         renameSync(storeAbs, aside);
         asideUsed = true;
       } else {
-        backups.push(moveToBackup(root, STORE_REL));
+        divergentBackup = moveToBackup(root, STORE_REL);
+        backups.push(divergentBackup);
       }
     }
     renameSync(tmp, storeAbs);
@@ -163,6 +165,12 @@ export function initProject(projectDir, packageRoot, opts = {}) {
         renameSync(aside, storeAbs);
         asideUsed = false;
       } catch { /* keep it aside rather than deleting the user's data */ }
+    } else if (divergentBackup && !lstatSafe(storeAbs)) {
+      // The divergent store was moved into the vault, not renamed aside. It
+      // must be restored on a failed swap too; copying keeps the vault copy.
+      try {
+        cpSync(join(root, ...divergentBackup.split('/')), storeAbs, { recursive: true });
+      } catch { /* the vault still preserves the only remaining copy */ }
     }
     rmSync(tmp, { recursive: true, force: true });
     throw e;

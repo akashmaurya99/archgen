@@ -59,7 +59,7 @@ function fakeCodegraph(root, logFile) {
   writeFileSync(
     bin,
     `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(logFile)}\n` +
-      `case "$1" in\n  --version) echo "9.9.9";;\n  telemetry) echo "off";;\n  status) echo "{}";;\n  init) mkdir -p "$2/.codegraph";;\nesac\n`,
+      `case "$1" in\n  --version) echo "9.9.9";;\n  telemetry) echo "off";;\n  status) echo "{}";;\n  init) mkdir -p "$2/.codegraph"; printf 'db' > "$2/.codegraph/codegraph.db";;\nesac\n`,
     'utf8',
   );
   chmodSync(bin, 0o755);
@@ -102,6 +102,7 @@ function configuredSandbox() {
   const { root, home } = sandbox();
   mkdirSync(join(root, '.claude'), { recursive: true });
   mkdirSync(join(root, '.codegraph'), { recursive: true });
+  writeFileSync(join(root, '.codegraph', 'codegraph.db'), 'db');
   const log = join(root, 'calls.log');
   const { binDir, bin } = fakeCodegraph(root, log);
   writeFileSync(
@@ -223,6 +224,7 @@ test('ensure without approval is still a no-op when the project is already confi
   try {
     mkdirSync(join(root, '.fakeproj'), { recursive: true });
     mkdirSync(join(root, '.codegraph'), { recursive: true });
+    writeFileSync(join(root, '.codegraph', 'codegraph.db'), 'db');
     const log = join(root, 'calls.log');
     const { binDir, bin } = fakeCodegraph(root, log);
     const env = { PATH: `${binDir}:/bin:/usr/bin` };

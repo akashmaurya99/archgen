@@ -5,7 +5,7 @@ tasks:
   - id: SCAFFOLD
     title: Scaffold project skeleton and typed config loading
     depends_on: []
-    file_ownership: ["src/config/**", "package.json"]
+    file_ownership: ["src/config/**", "tests/unit/config/**", "package.json"]
     acceptance:
       - "npm run build exits 0"
       - "config loads from env with a typed schema"
@@ -13,7 +13,7 @@ tasks:
   - id: SHARED
     title: Implement shared logging and error envelope helpers
     depends_on: [SCAFFOLD]
-    file_ownership: ["src/shared/**"]
+    file_ownership: ["src/shared/**", "tests/unit/shared/**"]
     acceptance:
       - "logger emits structured json lines"
       - "error envelope helper covers every handler path"
@@ -21,7 +21,7 @@ tasks:
   - id: API
     title: Notes REST API with validation
     depends_on: [SCAFFOLD, SHARED]
-    file_ownership: ["src/features/api/**"]
+    file_ownership: ["src/features/api/**", "tests/unit/features/api/**"]
     acceptance:
       - "GET /notes returns the seeded list"
       - "POST /notes rejects an empty body with 400"
@@ -29,7 +29,7 @@ tasks:
     title: Admin console pages wired to the API client
     depends_on: [SCAFFOLD, SHARED]
     parallel_group: wave-ui
-    file_ownership: ["src/features/web/**"]
+    file_ownership: ["src/features/web/**", "tests/unit/features/web/**"]
     acceptance:
       - "console renders the notes list from the live API"
   # Docs track runs alongside the features
@@ -37,7 +37,7 @@ tasks:
     title: Author user guide and record architecture decisions
     depends_on: [SCAFFOLD]
     artifacts: ["docs/user-guide.md", "decisions/0001-postgres-over-mongo.md"]
-    file_ownership: ["docs/user-guide.md"]
+    file_ownership: ["docs/user-guide.md", "decisions/0001-postgres-over-mongo.md"]
     acceptance:
       - "user guide covers install and first-run"
       - "decision records follow the ADR template"

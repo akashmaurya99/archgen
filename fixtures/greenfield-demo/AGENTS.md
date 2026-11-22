@@ -13,9 +13,9 @@ Quick triggers:
 - "roll back ..." / "install mcp ..." / "fetch design skill" -> auxiliary modes
 
 Rules of the road:
-- Generated artifacts live ONLY under `.archgen/<slug>/`
-- Never hand-edit task statuses - call the `archgen_tasks` MCP tool (comment-safe)
-- Two gates before any execution: verifier approval, then human approval
+- Generated plan artifacts live under `.archgen/<slug>/`; local install state is not plan state
+- Never hand-edit task statuses - call `archgen_tasks{action:'set_status'}`
+- Four stages before execution: deterministic floor -> verifier -> plan review -> user approval
 
 ## Features registry
 

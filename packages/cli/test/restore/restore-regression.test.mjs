@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { initProject } from '../../lib/init.js';
 import { installGlobal } from '../../lib/install.js';
 import { restoreBackups, restoreMain } from '../../lib/restore.js';
+import { applyMigration } from '../../lib/migrations/index.mjs';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const STORE = (p) => join(p, '.agents', 'skills', 'archgen');
@@ -142,6 +143,32 @@ test('H1: the global vault records its exact path and restores exactly that', ()
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test('migration backups restore to the original artifact path, not under migrate/', async () => {
+  const slugDir = join(proj, '.archgen', 'demo');
+  mkdirSync(slugDir, { recursive: true });
+  const tasks = join(slugDir, 'tasks.yaml');
+  writeFileSync(tasks, 'tasks: []\n');
+  const applied = await applyMigration('001-stamp-provenance', proj, { dryRun: false });
+  const ts = applied.backups[0].backup.split('/')[2];
+  writeFileSync(tasks, 'tasks: ["CURRENT"]\n');
+
+  const result = restoreBackups(proj, { snapshot: ts, includeGlobal: false });
+  assert.equal(result.action, 'restored');
+  assert.ok(result.restored.some((entry) => entry.to === tasks));
+  assert.match(readFileSync(tasks, 'utf8'), /^tasks: \[\]/m);
+  assert.ok(!existsSync(join(proj, 'migrate')), 'the source prefix is never a destination directory');
+});
+
+test('a snapshot cannot traverse through Windows separators', () => {
+  const ts = '2020-01-01T00-00-00-001Z';
+  const snapshot = join(proj, '.archgen', '.backup', ts);
+  mkdirSync(snapshot, { recursive: true });
+  writeFileSync(join(snapshot, '.archgen-backup-paths.json'), JSON.stringify({ version: 1, paths: ['..\\outside'] }));
+  const result = restoreBackups(proj, { snapshot: ts, includeGlobal: false });
+  assert.deepEqual(result.restored, []);
+  assert.ok(!existsSync(join(dirname(proj), 'outside')));
 });
 
 test('H1: a legacy snapshot without a path record restores file-by-file, not directory-by-directory', () => {

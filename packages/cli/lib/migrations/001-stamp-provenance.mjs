@@ -17,8 +17,9 @@
 // line; stamped files are invisible to this migration, so a second run is a
 // no-op. apply() re-checks per file before writing — it can never double-stamp.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { assertNotSymlink, assertWithinRoot, atomicWriteFile } from '../store.js';
 
 const SCHEMA_VERSION = 1;
 const MARKER_RE = /^#\s*schema_version:\s*\d+\s*$/m;
@@ -26,7 +27,7 @@ const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 const STORE_VERSION_REL = '.agents/skills/archgen/.archgen-version';
 
 export const id = '001-stamp-provenance';
-export const description = 'stamp provenance header (schema_version / generator / generated_at) onto tasks.yaml and architecture.yaml';
+export const description = 'stamp provenance header (schema_version / generator / generated_at) onto tasks.yaml, architecture.yaml and answers.yaml';
 export const fromSchema = null;
 export const toSchema = SCHEMA_VERSION;
 
@@ -76,9 +77,11 @@ export function apply(ctx, files) {
   const generatedAt = new Date().toISOString(); // one timestamp per run
   for (const rel of rels) {
     const abs = join(ctx.projectRoot, ...rel.split('/'));
+    assertWithinRoot(ctx.projectRoot, abs);
+    assertNotSymlink(abs);
     let content;
     try { content = readFileSync(abs, 'utf8'); } catch { continue; } // vanished mid-run
     if (MARKER_RE.test(content)) continue; // re-check: never double-stamp
-    writeFileSync(abs, stampLines(ctx.projectRoot, generatedAt).join('\n') + '\n' + content);
+    atomicWriteFile(ctx.projectRoot, abs, stampLines(ctx.projectRoot, generatedAt).join('\n') + '\n' + content);
   }
 }

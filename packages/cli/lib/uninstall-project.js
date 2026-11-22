@@ -117,7 +117,17 @@ export function uninstallProject(projectDir, packageRoot) {
 
   // 5. Manifest file — then prune .archgen only if nothing else remains
   //    (feature folders / backups keep it alive).
-  const manifestRemoved = rmIfExists(join(root, relJoin(MANIFEST_REL)));
+  const removeOwned = (rel) => {
+    const abs = join(root, relJoin(rel));
+    try {
+      assertWithinRoot(root, abs);
+      return rmIfExists(abs);
+    } catch (e) {
+      warnings.push(`${rel} left untouched: ${e.message}`);
+      return false;
+    }
+  };
+  const manifestRemoved = removeOwned(MANIFEST_REL);
   if (manifestRemoved) pruneEmptyParents(root, dirname(MANIFEST_REL));
 
   // 6. The legacy extension runtime directory. The VS Code extension wrote a
@@ -125,7 +135,7 @@ export function uninstallProject(projectDir, packageRoot) {
   //    it is dead state now that the extension and its bridge are gone, and it
   //    is archgen-owned, so the uninstall removes it. Feature folders and
   //    backups beside it are untouched.
-  const runtimeRemoved = rmIfExists(join(root, '.archgen', '.runtime'));
+  const runtimeRemoved = removeOwned('.archgen/.runtime');
   if (runtimeRemoved) pruneEmptyParents(root, '.archgen/.runtime');
 
   return {

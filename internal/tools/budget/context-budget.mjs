@@ -10,8 +10,10 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { estimateTokens, exactTokens, fmtTokens, pctOf } from './tokens.mjs';
 import { writeOut, writeErr } from '../../../packages/mcp/src/core/protocol/io.mjs';
+import { renderBlock } from '../../../packages/cli/lib/block.js';
+import { referenceRoute } from '../../../packages/mcp/src/core/docs/refs.mjs';
 
-const USAGE = 'usage: context-budget.mjs [--skill-dir <dir>] [--project <dir>] [--slug <name>] [--mcp-dir <dir>] [--json] [--windows <list>] [--budget <n>] [--max-always-on <n>] [--tokenizer <pkg>]';
+const USAGE = 'usage: context-budget.mjs [--skill-dir <dir>] [--project <dir>] [--slug <name>] [--mcp-dir <dir>] [--json] [--windows <list>] [--budget <n>] [--max-always-on <n>] [--tokenizer <pkg>] [--tool-profile <lean|full>]';
 const DEFAULT_WINDOWS = [32768, 65536, 131072, 200000, 1000000];
 
 function die(msg, code = 4) { writeErr(`context-budget: ${msg}`); process.exit(code); }
@@ -28,6 +30,7 @@ const opts = {
   maxAlwaysOn: null,
   tokenizer: null,
   mcpDir: null,
+  toolProfile: process.env.ARCHGEN_TOOL_PROFILE ?? 'lean',
 };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -40,6 +43,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--max-always-on') opts.maxAlwaysOn = parseInt(argv[++i], 10);
   else if (a === '--tokenizer') opts.tokenizer = argv[++i];
   else if (a === '--mcp-dir') opts.mcpDir = argv[++i];
+  else if (a === '--tool-profile') opts.toolProfile = argv[++i];
   else if (a.startsWith('--')) die(`${USAGE} — unknown option '${a}'`);
   else die(`${USAGE} — unexpected argument '${a}'`);
 }
@@ -168,11 +172,26 @@ async function auditSkill(mcpDir) {
 
   const scenarios = [];
   const modeRefs = MODE_REFERENCES['GENERATE'];
-  const mcpRef = (rel) => {
-    const p = join(mcpDir, rel);
-    return existsSync(p) ? estimateTokens(readFileSync(p, 'utf8')) : 0;
-  };
-  const modeRefTokens = modeRefs.reduce((n, rel) => n + mcpRef(rel), 0);
+  let modeRefTokens = 0;
+  const manifestPath = join(mcpDir, 'assets', 'mode-routes.json');
+  if (existsSync(manifestPath)) {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const route = manifest.modes.GENERATE;
+    const roots = { assetsDir: join(mcpDir, 'assets', 'references'), skillDir };
+    for (const intent of ['GREENFIELD-SYSTEM', 'GREENFIELD-MODULE', 'BROWNFIELD-FEATURE', 'BROWNFIELD-CHANGE']) {
+      const total = route.order.reduce((sum, phase) => {
+        const bundle = referenceRoute(manifest, { mode: 'GENERATE', phase, intent, roots });
+        return sum + estimateTokens(bundle.sections.map((section) => section.text).join('\n'));
+      }, 0);
+      modeRefTokens = Math.max(modeRefTokens, total);
+    }
+  } else {
+    // Backward-compatible fallback for a package without the route manifest.
+    modeRefTokens = modeRefs.reduce((n, rel) => {
+      const p = join(mcpDir, rel);
+      return n + (existsSync(p) ? estimateTokens(readFileSync(p, 'utf8')) : 0);
+    }, 0);
+  }
   const refAndAssets = byFile
     .filter((r) => r.file.startsWith('references/') || r.file.startsWith('assets/'))
     .reduce((n, r) => n + r.tokens, 0);
@@ -186,7 +205,7 @@ async function auditSkill(mcpDir) {
     id: 'skill-mode',
     label: "SKILL.md + one mode's protocol references (GENERATE path)",
     tokens: skillMd + modeRefTokens,
-    note: `SKILL.md + ${modeRefs.length} MCP-served reference files`,
+    note: 'SKILL.md + actual mode-routes.json phase bundles (not whole files)',
   });
   scenarios.push({
     id: 'skill-reference-max',
@@ -231,7 +250,8 @@ async function auditArtifacts(projectRoot, slugFilter) {
     const byFile = rows.map((r) => ({ file: relative(dir, r.file).split(sep).join('/'), tokens: r.tokens, bytes: r.bytes }));
     const tasksFile = byFile.find((r) => r.file === 'tasks.yaml');
     const planFiles = byFile.filter((r) => r.file.startsWith('plans/'));
-    const codeStandards = byFile.find((r) => r.file === 'references/code-standards.md');
+    const standardsPath = skillDir ? join(skillDir, 'references', 'code-standards.md') : null;
+    const standardsTokens = standardsPath && existsSync(standardsPath) ? estimateTokens(readFileSync(standardsPath, 'utf8')) : 0;
 
     // Worker slice: the task contract (tasks.yaml) + the plan file that owns
     // the tasks + the code-standards reference every worker prompt carries.
@@ -246,7 +266,7 @@ async function auditArtifacts(projectRoot, slugFilter) {
       files: byFile,
       tasksYamlTokens: tasksFile?.tokens ?? 0,
       planTokens: planFiles.reduce((n, p) => n + p.tokens, 0),
-      workerSliceTokens: workerTokens + (codeStandards?.tokens ?? 0),
+      workerSliceTokens: workerTokens + standardsTokens,
     });
   }
   return results;
@@ -280,7 +300,7 @@ async function auditCatalog(mcpDir) {
   }
   let stdout;
   try {
-    const r = spawnSync(process.execPath, [bin, '--catalog'], { encoding: 'utf8', timeout: 30000 });
+    const r = spawnSync(process.execPath, [bin, '--catalog', '--tool-profile', opts.toolProfile], { encoding: 'utf8', timeout: 30000 });
     if (r.status !== 0) throw new Error(r.stderr?.trim().split('\n')[0] || `exit ${r.status}`);
     stdout = r.stdout;
   } catch (e) {
@@ -327,7 +347,7 @@ async function auditWireCatalog(mcpDir) {
   if (!existsSync(bin)) {
     return { available: false, tools: [], totalTokens: 0, bytes: 0, reason: `no MCP package at ${mcpDir}` };
   }
-  const list = await listMcpTools(bin, null);
+  const list = await listMcpTools(bin, { ARCHGEN_TOOL_PROFILE: opts.toolProfile });
   if (!list.ok) {
     return { available: false, tools: [], totalTokens: 0, bytes: 0, reason: list.reason };
   }
@@ -435,7 +455,7 @@ async function auditCodegraphCatalog(mcpDir) {
       return {
         available: true,
         estimated: true,
-        tools: baseline.tools.map((name) => ({ name, tokens: 0 })),
+        tools: baseline.tools.map((name) => ({ name, tokens: baseline.perToolTokens?.[name] ?? 0 })),
         totalTokens: baseline.totalTokens,
         bytes: 0,
         reason: 'the codegraph CLI is not on PATH — the committed baseline was used',
@@ -458,7 +478,7 @@ async function auditCodegraphCatalog(mcpDir) {
       return {
         available: true,
         estimated: true,
-        tools: baseline.tools.map((name) => ({ name, tokens: 0 })),
+        tools: baseline.tools.map((name) => ({ name, tokens: baseline.perToolTokens?.[name] ?? 0 })),
         totalTokens: baseline.totalTokens,
         bytes: 0,
         reason: `the CodeGraph server did not answer (${list.reason}) — the committed baseline was used`,
@@ -705,20 +725,26 @@ if (codegraphCatalog.available) {
     note: `${codegraphCatalog.tools.length} tools — the curated CodeGraph surface`,
   });
 }
-// The ALWAYS-ON figure is the WIRE one: it is what a client injects, and it
-// is the number the ceiling is checked against. The projection stays in the
-// report for comparison.
+// The repo-owned baseline separates genuinely installed instructions and
+// catalogs from the skill body loaded only when its trigger activates.
+const instructionTokens = estimateTokens(renderBlock());
+scenarios.push({
+  id: 'project-instructions',
+  label: 'Generated AGENTS.md instructions (installed in the harness)',
+  tokens: instructionTokens,
+  note: 'the static project-instruction block',
+});
 const alwaysOnTokens = skill && wireCatalog.available
-  ? skill.scenarios[0].tokens + wireCatalog.totalTokens + codegraphCatalog.totalTokens
+  ? instructionTokens + skill.scenarios[0].tokens + wireCatalog.totalTokens + codegraphCatalog.totalTokens
   : skill && catalog.available
-    ? skill.scenarios[0].tokens + catalog.totalTokens + codegraphCatalog.totalTokens
+    ? instructionTokens + skill.scenarios[0].tokens + catalog.totalTokens + codegraphCatalog.totalTokens
     : null;
 if (alwaysOnTokens !== null) {
   scenarios.push({
     id: 'always-on',
-    label: 'ALWAYS-ON: SKILL.md + the tool catalogs the client injects',
+    label: 'REPO BASELINE: generated instructions + triggered SKILL.md + both tool catalogs',
     tokens: alwaysOnTokens,
-    note: 'what the agent pays before it does anything',
+    note: 'installed context plus the skill body after activation',
   });
 }
 for (const a of artifacts) {
@@ -739,9 +765,9 @@ if (skill && artifacts.length) {
   const a = artifacts[0];
   scenarios.push({
     id: 'orchestrator-total',
-    label: 'orchestrator total (SKILL.md + mode refs + artifacts + one worker slice)',
-    tokens: skill.scenarios[1].tokens + a.total + a.workerSliceTokens,
-    note: 'realistic worst case for one full planning/execution cycle',
+    label: 'orchestrator total (SKILL.md + mode refs + artifacts)',
+    tokens: skill.scenarios[1].tokens + a.total,
+    note: 'one orchestrator context; worker contexts are reported separately',
   });
 }
 

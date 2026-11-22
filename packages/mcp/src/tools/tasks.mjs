@@ -13,12 +13,13 @@ import { setTaskStatus, STATUSES } from '../core/plan/status-mutator.mjs';
 import { writeResumeSnapshot } from '../core/plan/resume-snapshot.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
 import { hint } from '../core/protocol/guidance.mjs';
-import { toolCall } from '../core/protocol/call.mjs';
+import { continuationCall, toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, warningMeta, withMeta } from '../envelope.mjs';
 import { resolveSlugInput, ScopeError } from '../core/plan/scope.mjs';
 import { dirname, join } from 'node:path';
 import { ownedPaths } from '../core/plan/graph.mjs';
 import { resolutionWarning, resolveTasksFile } from '../core/fs/tasks-file.mjs';
+import { codegraphState } from '../core/harness/codegraph-manager.mjs';
 
 /**
  * Resolve the task file an action reads.
@@ -41,7 +42,7 @@ function resolveTasks(args, ctx, action) {
     projectRoot: ctx.projectRoot,
     action,
   });
-  return { file: resolved.file, warning: resolutionWarning(resolved) };
+  return { file: ctx.contain(resolved.file), warning: resolutionWarning(resolved) };
 }
 
 /**
@@ -85,7 +86,7 @@ function slugDirFor(tasksFile, action) {
  * action is a typed error, not a silent no-op.
  */
 const TASKS_ACTION_ARGS = {
-  next: ['tasksYaml', 'taskId', 'limit', 'offset'],
+  next: ['tasksYaml', 'taskId', 'view', 'limit', 'offset'],
   set_status: ['tasksYaml', 'taskId', 'status', 'force'],
   list: ['tasksYaml', 'taskId', 'filterStatus', 'module', 'limit', 'offset'],
   snapshot: ['tasksYaml'],
@@ -105,6 +106,7 @@ const schema = z.object({
   slugDir: z.string().optional().describe('.archgen/<slug>/ dir.'),
   codeStandardsPath: z.string().optional().describe('Code-standards path.'),
   module: z.string().optional().describe('Module path fragment.'),
+  view: z.enum(['frontier', 'waves']).optional().describe("next: 'frontier' (default) = executable wave only; 'waves' = paginated wave list."),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
   projectRoot: projectRootArg,
@@ -138,7 +140,7 @@ export function registerTaskTools(server) {
             'status is required for set_status',
             { ...hint({ action: toolCall('archgen_tasks', { action: 'set_status', tasksYaml: file, taskId: '<task id>', status: 'done' }), reason: "set_status names the task and the status." }), action, file },
           );
-          const updated = setTaskStatus(file, args.taskId, args.status, { force: args.force === true });
+          const updated = setTaskStatus(file, args.taskId, args.status, { force: args.force === true, root: ctx.projectRoot });
           return withMeta(updated, warningMeta(warning));
         }
         case 'list': {
@@ -197,7 +199,7 @@ export function registerTaskTools(server) {
             // caller's own argument — which was undefined when the caller had
             // not passed one, so the tool published a "next call" that could
             // not work.
-            next: toolCall('archgen_tasks', { action: 'list', tasksYaml: file, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
+            next: continuationCall('archgen_tasks', args, { projectRoot: ctx.projectRoot, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50), overrides: { tasksYaml: file } }),
           });
           return withMeta(
             { ...listed, file, tasks: p.items },
@@ -245,6 +247,7 @@ export function registerTaskTools(server) {
           // a pointer is a file the worker may never open, and a worker that
           // never opens it produces work that ignores the skill.
           let capabilities = [];
+          let capabilityReady = true;
           const capabilityWarnings = [];
           try {
             const registry = loadAsset('skill-registry.json');
@@ -281,6 +284,8 @@ export function registerTaskTools(server) {
                   // A skill that cannot be read is a WARNING, not a silent
                   // empty capability: the worker must know its rules are
                   // missing from the prompt.
+                  cap.ready = false;
+                  capabilityReady = false;
                   capabilityWarnings.push(
                     `capability skill '${m.slug}' is installed but unreadable (${e?.message ?? e}) — its rules are NOT in this contract`,
                   );
@@ -293,6 +298,7 @@ export function registerTaskTools(server) {
             // empty list, so the contract said "no capability skill is
             // required" when matching had never run — the worker was told
             // nothing was required when the truth was UNKNOWN.
+            capabilityReady = false;
             capabilityWarnings.push(
               `capability matching failed (${e?.message ?? e}) — the required capability skills are UNKNOWN, not absent`,
             );
@@ -304,19 +310,21 @@ export function registerTaskTools(server) {
           // count and no hint.
           let docSections = [];
           let docSectionsTotal = 0;
+          const documentWarnings = [];
           try {
             const map = docIndex(slugDir, { mode: 'map', token: args.taskId, projectRoot: ctx.projectRoot });
             const all = map.data.sections ?? [];
             docSectionsTotal = all.length;
             docSections = all.slice(0, 2).map((s) => ({
-              file: s.file,
+              file: String(s.file).startsWith('.archgen/') ? s.file : `.archgen/${String(s.file).replaceAll('\\', '/')}`,
               section: s.section,
               title: s.title,
               line: s.line,
               endLine: s.endLine,
             }));
-          } catch {
+          } catch (error) {
             docSections = [];
+            documentWarnings.push(`document navigation failed (${error?.message ?? error}) — pre-located plan context is UNAVAILABLE`);
           }
 
           // The code-standards reference: resolved from the INSTALLED skill when
@@ -333,16 +341,32 @@ export function registerTaskTools(server) {
               ? join(ctx.skill.path, 'references', 'code-standards.md')
               : null;
 
+          let codegraphReady = false;
+          if (existsSync(join(ctx.projectRoot, '.codegraph', 'codegraph.db'))) {
+            try {
+              codegraphReady = codegraphState({
+                registry: loadAsset('harness-mcp.json'),
+                projectRoot: ctx.projectRoot,
+                home: ctx.home,
+                env: ctx.env,
+                location: 'project',
+              }).indexed === true;
+            } catch {
+              codegraphReady = false; // native search remains the documented fallback
+            }
+          }
           const contract = buildWorkerContract({
             tasksYaml: tasksFile,
             taskId: args.taskId,
             slugDir,
             codeStandardsPath,
             capabilities,
+            capabilityReady,
             docSections,
-            // CodeGraph is DETECTED here, not left for the worker to work
-            // out: the instruction only helps if it is in the prompt.
-            codegraph: existsSync(join(ctx.projectRoot, '.codegraph')),
+            diagnostics: [...capabilityWarnings, ...documentWarnings, ...(warning ? [warning] : [])],
+            // A database file alone is not proof of a usable index: the CLI
+            // status probe must also succeed before the worker is directed to it.
+            codegraph: codegraphReady,
           });
           return {
             ...contract,
@@ -359,16 +383,7 @@ export function registerTaskTools(server) {
             ...(docSectionsTotal > docSections.length
               ? {
                   docSectionsOmitted: docSectionsTotal - docSections.length,
-                  docSectionsHint: `read the rest with ${toolCall('archgen_docs', { action: 'map', token: args.taskId })}`,
-                }
-              : {}),
-            ...(capabilityWarnings.length || warning
-              ? {
-                  warnings: [
-                    ...(contract.warnings ?? []),
-                    ...capabilityWarnings,
-                    ...(warning ? [warning] : []),
-                  ],
+                  docSectionsHint: `read the rest with ${toolCall('archgen_docs', { action: 'map', slugDir, token: args.taskId })}`,
                 }
               : {}),
           };
@@ -425,8 +440,30 @@ export function registerTaskTools(server) {
                 waveCount: resolved.waves.length,
                 wave: resolved.waves[index],
                 blockedByFailure: resolved.blockedByFailure,
+                blocked: resolved.blocked,
+                blockedByBlocked: resolved.blockedByBlocked,
               },
               warningMeta(warning),
+            );
+          }
+          const waveView = args.view ?? ((args.limit !== undefined || args.offset !== undefined) ? 'waves' : 'frontier');
+          if (waveView === 'frontier') {
+            const frontier = resolved.waves[0] ?? null;
+            return withMeta(
+              {
+                file,
+                frontier,
+                frontierIndex: frontier ? 1 : null,
+                waveCount: resolved.waves.length,
+                blockedByFailure: resolved.blockedByFailure,
+                blocked: resolved.blocked,
+                blockedByBlocked: resolved.blockedByBlocked,
+                ...(frontier ? {} : { note: 'no executable wave remains — every task is done, failed, or blocked' }),
+              },
+              {
+                ...moreMeta({ total: resolved.waves.length, returned: frontier ? 1 : 0, available: { waves: resolved.waves.length, tasks: frontier?.length ?? 0 } }),
+                ...warningMeta(warning),
+              },
             );
           }
           // The waves are the plan's shape; a long plan would dump every task
@@ -435,7 +472,7 @@ export function registerTaskTools(server) {
           const p = project(resolved.waves, {
             limit: args.limit,
             offset: args.offset,
-            next: toolCall('archgen_tasks', { action: 'next', tasksYaml: file, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
+            next: continuationCall('archgen_tasks', args, { projectRoot: ctx.projectRoot, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50), overrides: { tasksYaml: file } }),
           });
           return withMeta(
             {

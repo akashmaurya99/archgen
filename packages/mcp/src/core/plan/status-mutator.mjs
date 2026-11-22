@@ -21,8 +21,9 @@ import { conflict, invalidInput } from '../protocol/errors.mjs';
 import { writeFileAtomic, withFileLock } from '../fs/fs-safety.mjs';
 import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
+import { TASK_STATUSES } from './task-contract.mjs';
 
-export const STATUSES = ['pending', 'ready', 'running', 'blocked', 'done', 'failed'];
+export const STATUSES = TASK_STATUSES;
 
 /**
  * Detect the dominant line ending of a file's raw text.
@@ -58,7 +59,7 @@ export function sameId(a, b) {
  * @param {string} file absolute path to tasks.yaml
  * @param {string} taskId
  * @param {string} nextStatus one of STATUSES
- * @param {{force?: boolean}} [opts]
+ * @param {{force?: boolean, root?: string}} [opts]
  * @returns {{taskId: string, from: string, to: string, changed: boolean, file: string}}
  */
 export function setTaskStatus(file, taskId, nextStatus, opts = {}) {
@@ -75,11 +76,11 @@ export function setTaskStatus(file, taskId, nextStatus, opts = {}) {
   // keep a reader from seeing a half-written file, but two writers still
   // lose each other's changes without this: parallel workers in one wave
   // each read the same bytes and each write its own status over the other's.
-  return withFileLock(file, () => mutateStatus(file, taskId, nextStatus, force));
+  return withFileLock(file, () => mutateStatus(file, taskId, nextStatus, force, opts.root), { root: opts.root });
 }
 
 /** The read-modify-write itself. Runs with the file's lock held. */
-function mutateStatus(file, taskId, nextStatus, force) {
+function mutateStatus(file, taskId, nextStatus, force, root) {
   let raw;
   try {
     raw = readFileSync(file, 'utf8');
@@ -93,7 +94,8 @@ function mutateStatus(file, taskId, nextStatus, force) {
   // the author's convention instead of churning every line CRLF<->LF.
   const eol = detectEol(raw);
 
-  const { data, comments } = readParsedPlanFile(file);
+  const read = readParsedPlanFile(file);
+  const { data, comments } = read;
   const tasks = data?.tasks;
   if (!Array.isArray(tasks)) throw invalidInput(
     `${file}: missing 'tasks:' sequence`,
@@ -104,7 +106,8 @@ function mutateStatus(file, taskId, nextStatus, force) {
   // YAML reads `id: 007` as the number 7, so the id the agent holds ("007")
   // and the id the file holds (7) are different strings for the same task.
   // A strict comparison made such a task permanently unaddressable.
-  const task = tasks.find((t) => t && sameId(t.id, taskId));
+  const taskIndex = tasks.findIndex((t) => t && sameId(t.id, taskId));
+  const task = taskIndex === -1 ? null : tasks[taskIndex];
   if (!task) throw invalidInput(
     `task '${taskId}' not found in ${file}`,
     { ...hint({ action: toolCall('archgen_tasks', { action: 'list', tasksYaml: '<tasks.yaml>' }), reason: "the list carries every task id." }), file, taskId },
@@ -128,9 +131,29 @@ function mutateStatus(file, taskId, nextStatus, force) {
   }
 
   const changed = prev !== nextStatus;
+  if (!changed) return { taskId, from: prev, to: nextStatus, changed, file };
+
   task.status = nextStatus;
-  const content = stringifyYaml(data, comments, { eol });
-  writeFileAtomic(file, content);
+  const statusLine = read.provenance.get(`tasks[${taskIndex}].status`);
+  const targeted = statusLine ? replaceStatusLine(raw, statusLine, nextStatus) : null;
+  // A normal status transition is a one-token edit. Preserve every unrelated
+  // byte, including flow style and quoting; fall back to the semantic writer
+  // only for an unusual layout or a previously absent status field.
+  const content = targeted ?? stringifyYaml(data, comments, { eol });
+  writeFileAtomic(file, content, { root });
 
   return { taskId, from: prev, to: nextStatus, changed, file };
+}
+
+/** Replace only the status scalar on its original physical line. */
+function replaceStatusLine(raw, lineNumber, nextStatus) {
+  const lines = raw.match(/.*(?:\r\n|\n|$)/g)?.filter((line) => line !== '') ?? [];
+  const original = lines[lineNumber - 1];
+  if (!original) return null;
+  const eol = original.endsWith('\r\n') ? '\r\n' : original.endsWith('\n') ? '\n' : '';
+  const body = eol ? original.slice(0, -eol.length) : original;
+  const match = body.match(/^(\s*status\s*:\s*)(?:"(?:\\.|[^"\\])*"|'[^']*'|[^#\s]+)([ \t]*(?:#.*)?)$/);
+  if (!match) return null;
+  lines[lineNumber - 1] = `${match[1]}${nextStatus}${match[2]}${eol}`;
+  return lines.join('');
 }

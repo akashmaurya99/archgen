@@ -195,7 +195,7 @@
         "opencode.json",
         "opencode.jsonc"
       ],
-      "_note": "OpenCode's global config is JSONC (opencode.jsonc) \u2014 codegraph's own installer writes it correctly; our writer refuses non-JSON files on purpose, so this entry is a fallback only.",
+      "_note": "OpenCode supports JSON and JSONC. The shared writer preserves existing comments and selects opencode.jsonc when opencode.json is absent; new configs default to opencode.json.",
       "configs": {
         "global": {
           "path": "~/.config/opencode/opencode.json",

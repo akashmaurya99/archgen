@@ -56,6 +56,7 @@ const READONLY_ACTIONS = "archgen_plan{validate,verify,graph,impact,coverage,pro
  *   capabilities?: Array<{slug: string, path: string|null, purpose?: string, domain?: string, installed?: boolean, rules?: string, sections?: Array<{slug: string, title: string, normative?: boolean}>}>,
  *   docSections?: Array<{file: string, section: string, title: string, matches?: Array<{line: number, text: string}>}>,
  *   codegraph?: boolean,
+ *   diagnostics?: string[],
  * }} opts
  */
 /**
@@ -150,7 +151,7 @@ export function buildWorkerContract(opts) {
     acceptance.forEach((a, i) => lines.push(`${i + 1}. ${a}`));
   }
   lines.push('');
-  lines.push(`**Files you own (edit NOTHING outside these):**`);
+  lines.push(`**Product files you own (edit NOTHING outside these; .agent working state is the sole exception):**`);
   if (ownership.length === 0) {
     lines.push('- (none recorded — this task is not dispatchable)');
   } else {
@@ -186,7 +187,7 @@ export function buildWorkerContract(opts) {
   if (opts.codeStandardsPath) {
     lines.push('## Code standards (contractual)');
     lines.push('');
-    lines.push(`Follow ${opts.codeStandardsPath} — the verifier rejects violations.`);
+    lines.push(`Follow ${opts.codeStandardsPath} — your closeout diff review checks every rule and acceptance criterion.`);
     lines.push('');
   }
 
@@ -208,7 +209,7 @@ export function buildWorkerContract(opts) {
       if (!cap.installed) {
         lines.push(
           `**NOT INSTALLED — the worker cannot comply until it is.** The orchestrator must install it with ` +
-            `archgen_skills { action: 'install', skillId: '${cap.slug}', approve: true } and re-dispatch.`,
+            `archgen_setup { action: 'install_skill', skillId: '${cap.slug}', approve: true } and re-dispatch.`,
         );
         lines.push('');
         continue;
@@ -304,7 +305,7 @@ export function buildWorkerContract(opts) {
       'the set_status in "When you finish". Do not open the gates, do not dispatch anyone, and do not change ' +
       'another task\'s status.',
   );
-  lines.push('- Edit NOTHING outside your owned files.');
+  lines.push('- Edit no PRODUCT path outside your owned files; the .agent working-state directory below is the sole exception.');
   lines.push('- Do NOT talk to other workers — coordination happens through tasks.yaml.');
   lines.push(
     '- Finish in ONE pass: everything you need is in this contract or one read away. Do not come back asking for ' +
@@ -314,7 +315,7 @@ export function buildWorkerContract(opts) {
 
   lines.push('## Paths and working state');
   lines.push('');
-  lines.push('- Every path above is repo-root-relative and VERBATIM from tasks.yaml — never reconstruct a path from memory.');
+  lines.push('- Product paths and document paths above are repo-root-relative and VERBATIM — never reconstruct one from memory.');
   // The slug dir is known — it is the directory the tasks file lives in — so
   // the working-state path is a real path, never a literal "<slug>".
   const workingRoot = slugDir ?? dirname(tasksYaml);
@@ -334,28 +335,25 @@ export function buildWorkerContract(opts) {
       `or \`${toolCall('archgen_tasks', { action: 'set_status', tasksYaml, taskId: task.id, status: 'failed' })}\` ` +
       'if you could not complete it. Do this IN THE SAME TURN you finish, before anything else.',
   );
-  if (capabilities.length && capabilities[0].installed) {
-    lines.push(
-      `2. State whether you followed the capability skill, one auditable line: ` +
-        `\`Skill compliance: followed ${capabilities[0].slug} (${capabilities[0].path})\` — or, if you did not, ` +
-        `write \`Skill compliance: NOT followed —\` and then the reason in your own words.`,
-    );
+  if (capabilities.length) {
+    lines.push('2. State ONE auditable compliance line for EVERY required skill (or `Skill compliance: NOT followed —` plus the reason):');
+    for (const cap of capabilities) {
+      lines.push(`   - \`Skill compliance: followed ${cap.slug} (${cap.path ?? 'not installed'})\``);
+    }
+  } else if (opts.capabilityReady === false) {
+    lines.push('2. State `Skill compliance: UNKNOWN — capability discovery failed; this task is not dispatchable`.');
   } else {
-    // The line is always there, so the audit is uniform — but it never
-    // contains a placeholder the worker has to fill with a name it was not
-    // given.
-    lines.push(
-      '2. State one auditable line: `Skill compliance: N/A — no capability skill was required for this task` ' +
-        '(or, if one was required and you did not follow it, `Skill compliance: NOT followed —` and the reason).',
-    );
+    lines.push('2. State one auditable line: `Skill compliance: N/A — no capability skill was required for this task`.');
   }
-  lines.push('3. Commit your work scoped to the owned files.');
+  lines.push('3. Review your diff against the code standards and every acceptance criterion; fix any violation before closeout.');
+  lines.push('4. Commit your work scoped to the owned files.');
   lines.push('');
 
   const warnings = [
     ...(acceptance.length === 0 ? ['task has NO acceptance criteria — the verifier rejects it'] : []),
     ...(ownership.length === 0 ? ['task has NO file_ownership — a worker could edit anything'] : []),
-    ...(capabilities.filter((c) => !c.installed).map((c) => `capability skill '${c.slug}' is REQUIRED but NOT installed — install it with archgen_skills{action:'install'} before dispatch`)),
+    ...(capabilities.filter((c) => !c.installed).map((c) => `capability skill '${c.slug}' is REQUIRED but NOT installed — install it with archgen_setup{action:'install_skill'} before dispatch`)),
+    ...(Array.isArray(opts.diagnostics) ? opts.diagnostics.filter(Boolean).map(String) : []),
   ];
 
   return {
@@ -367,7 +365,9 @@ export function buildWorkerContract(opts) {
     artifacts,
     upstream,
     downstream,
-    dispatchable: acceptance.length > 0 && ownership.length > 0 && capabilities.every((c) => c.installed !== false),
+    // Derive this from the FINAL diagnostic set. A warning appended by the
+    // caller must never coexist with a green dispatch decision.
+    dispatchable: acceptance.length > 0 && ownership.length > 0 && opts.capabilityReady !== false && capabilities.every((c) => c.installed !== false && c.ready !== false) && warnings.length === 0,
     // The ledger key for the dispatch table: one task = one worker session, so
     // a follow-up on the same files continues that session instead of
     // starting a fresh agent that has to re-read everything.

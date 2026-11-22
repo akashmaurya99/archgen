@@ -21,10 +21,58 @@
 //      worker sub-agents may have no MCP tools.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd, firstProse, toPurpose } from './docs.mjs';
+import { parseMarkdown, buildSections, findSection, sectionChildren, sectionOwnEnd, firstProse, toPurpose, excerptAround } from './docs.mjs';
 import { notFound } from '../protocol/errors.mjs';
 import { hint, noSuchSection } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
+
+/** Resolve one mode/phase into a deduplicated, intent-filtered reading bundle. */
+export function referenceRoute(manifest, { mode, phase = null, intent = null, roots }) {
+  const modes = manifest?.modes ?? {};
+  const selected = modes[mode];
+  if (!selected) {
+    throw notFound(`no reference route for mode '${mode}'`, {
+      ...hint({ action: toolCall('archgen_refs', { action: 'list' }), reason: 'the mode router names every supported workflow.' }),
+      mode,
+      available: Object.keys(modes),
+    });
+  }
+  const order = selected.order ?? Object.keys(selected.phases ?? {});
+  const currentPhase = phase ?? order[0];
+  const inherited = selected.extends ? modes[selected.extends] : null;
+  const ownEntries = selected.phases?.[currentPhase];
+  const inheritedEntries = inherited?.phases?.[currentPhase];
+  if (!ownEntries && !inheritedEntries) {
+    throw notFound(`no phase '${currentPhase}' in route '${mode}'`, {
+      ...hint({ action: toolCall('archgen_refs', { action: 'route', mode }), reason: 'the route defaults to its first phase; each result names nextPhase.' }),
+      mode,
+      phase: currentPhase,
+      available: order,
+    });
+  }
+  const entries = [...(inheritedEntries ?? []), ...(ownEntries ?? [])];
+  const seen = new Set();
+  const sections = [];
+  let intentRequired = false;
+  for (const entry of entries) {
+    if (entry.intents && !intent) { intentRequired = true; continue; }
+    if (entry.intents && !entry.intents.includes(intent)) continue;
+    const key = `${entry.topic}\0${entry.section}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const read = readTopic(entry.topic, { ...roots, section: entry.section, include: entry.include ?? 'own' });
+    sections.push({ topic: entry.topic, section: entry.section, title: read.title ?? entry.section, text: read.text ?? '' });
+  }
+  const index = order.indexOf(currentPhase);
+  return {
+    mode,
+    phase: currentPhase,
+    intent: intent ?? null,
+    sections,
+    nextPhase: index >= 0 ? order[index + 1] ?? null : null,
+    intentRequired,
+  };
+}
 
 /** The reference documents this server serves. */
 export const REF_TOPICS = [
@@ -282,14 +330,7 @@ export function searchTopic(topic, token, opts) {
       // The excerpt must CONTAIN the token: truncating from the start produced
       // hits whose text did not show the word that matched, which is useless to
       // the agent reading the result.
-      const raw = bodyLines[i].trim();
-      let text = raw;
-      if (raw.length > 200) {
-        const at = Math.max(0, raw.search(re));
-        const start = Math.max(0, at - 80);
-        text = `${start > 0 ? '…' : ''}${raw.slice(start, start + 200)}${start + 200 < raw.length ? '…' : ''}`;
-      }
-      matches.push({ line, text });
+      matches.push({ line, text: excerptAround(bodyLines[i], re) });
     }
     if (matches.length) {
       hits.push({

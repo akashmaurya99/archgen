@@ -65,12 +65,43 @@ export function codegraphPolicy(env = process.env) {
   };
 }
 
-/** The policy asset, read once per call. */
+/** Validate policy data before it can drive an install or config write. */
+export function validateCodegraphPolicy(policy) {
+  const valid = policy && typeof policy === 'object' && !Array.isArray(policy) &&
+    typeof policy.package === 'string' && policy.package.trim() !== '' &&
+    typeof policy.install === 'string' && policy.install.trim() !== '' &&
+    (policy.wire === null || (typeof policy.wire === 'string' && policy.wire.trim() !== '')) &&
+    Array.isArray(policy.tools) && policy.tools.length > 0 &&
+    policy.tools.every((tool) => typeof tool === 'string' && tool.trim() !== '') &&
+    ['off', 'on', 'keep'].includes(policy.telemetry);
+  if (!valid) {
+    throw invalidInput(
+      "server asset 'codegraph-policy.json' is incomplete or invalid",
+      { ...hint({ action: 'archgen-skill doctor', reason: 'a broken policy must stop installation and wiring, never become an empty allowlist.' }), asset: 'codegraph-policy.json' },
+    );
+  }
+  return policy;
+}
+
+/** The policy asset, read once per call; corruption fails closed. */
 function loadPolicy() {
+  let text;
   try {
-    return JSON.parse(readFileSync(join(ASSETS_DIR, 'codegraph-policy.json'), 'utf8'));
-  } catch {
-    return {};
+    text = readFileSync(join(ASSETS_DIR, 'codegraph-policy.json'), 'utf8');
+  } catch (error) {
+    throw invalidInput(
+      `missing server asset 'codegraph-policy.json': ${error.message}`,
+      { ...hint({ action: 'archgen-skill doctor', reason: 'the server package is incomplete — reinstall archgen-mcp.' }), asset: 'codegraph-policy.json' },
+    );
+  }
+  try {
+    return validateCodegraphPolicy(JSON.parse(text));
+  } catch (error) {
+    if (error?.code === 'INVALID_INPUT') throw error;
+    throw invalidInput(
+      `server asset 'codegraph-policy.json' is not valid JSON: ${error.message}`,
+      { ...hint({ action: 'archgen-skill doctor', reason: 'the server package is incomplete — reinstall archgen-mcp.' }), asset: 'codegraph-policy.json' },
+    );
   }
 }
 
@@ -316,8 +347,34 @@ export function findCodegraph(env = process.env) {
   const bin = which('codegraph', env);
   if (!bin) return null;
   const v = run(bin, ['--version'], { timeout: 20000 });
+  if (!v.ok) return null;
   const version = (v.stdout || v.stderr).trim().split('\n')[0] || 'unknown';
   return { bin, version };
+}
+
+/** A directory named .codegraph is not an index. Require a real database and
+ * a successful status probe before reporting readiness. */
+function inspectIndex(projectRoot, cli, env) {
+  const database = join(projectRoot, '.codegraph', 'codegraph.db');
+  if (!existsSync(database)) return { ready: false, files: null, detail: 'no codegraph.db' };
+  try {
+    if (!statSync(database).isFile() || statSync(database).size === 0) return { ready: false, files: null, detail: 'empty codegraph.db' };
+  } catch {
+    return { ready: false, files: null, detail: 'unreadable codegraph.db' };
+  }
+  if (!cli?.bin) return { ready: false, files: null, detail: 'the CodeGraph CLI is unavailable' };
+  const status = run(cli.bin, ['status', projectRoot, '--json'], { timeout: 60000, env });
+  if (!status.ok) return { ready: false, files: null, detail: (status.stderr || status.stdout || 'codegraph status failed').trim().split('\n')[0] };
+  try {
+    const parsed = JSON.parse(status.stdout);
+    return {
+      ready: true,
+      files: parsed.files ?? parsed.fileCount ?? parsed.totalFiles ?? null,
+      detail: parsed.status ?? null,
+    };
+  } catch {
+    return { ready: true, files: null, detail: null };
+  }
 }
 
 /**
@@ -356,7 +413,7 @@ export function codegraphState(opts) {
       });
     }
   }
-  return { cli, policy, indexed: existsSync(join(projectRoot, '.codegraph')), targets };
+  return { cli, policy, indexed: inspectIndex(projectRoot, cli, env).ready, targets };
 }
 
 /**
@@ -460,6 +517,21 @@ export async function manageCodegraph(opts) {
     telemetry: policy.telemetry,
     disabled,
   };
+
+  // Disabled mutating modes end HERE: no version probe, installer, telemetry
+  // command, native wiring, config lock, manifest, or index process. Status is
+  // the only read-only exception and is handled by the dedicated branch below.
+  if (disabled && mode !== 'status') {
+    report.cli.action = 'absent';
+    report.cli.detail = `CodeGraph is switched off (ARCHGEN_CODEGRAPH=${env.ARCHGEN_CODEGRAPH}) — no commands or writes were attempted`;
+    report.telemetry.action = 'skipped';
+    report.index.action = 'skipped';
+    report.index.detail = 'CodeGraph is switched off — the project index was not inspected or built';
+    report.changed = false;
+    report.planned = false;
+    report.alreadyConfigured = false;
+    return report;
+  }
 
   /**
    * Resolve the CodeGraph CLI.
@@ -660,20 +732,12 @@ export async function manageCodegraph(opts) {
 
   /** Index the project: `codegraph init` builds `.codegraph/` + the first graph. */
   const initIndex = async (cli) => {
-    const codegraphDir = join(projectRoot, '.codegraph');
-    if (existsSync(codegraphDir)) {
+    const current = inspectIndex(projectRoot, cli, env);
+    if (current.ready) {
       report.index.action = 'already-indexed';
       report.index.initialized = true;
-      const st = run(cli.bin ?? 'codegraph', ['status', projectRoot, '--json'], { timeout: 60000, env });
-      if (st.ok) {
-        try {
-          const parsed = JSON.parse(st.stdout);
-          report.index.files = parsed.files ?? parsed.fileCount ?? parsed.totalFiles ?? null;
-          report.index.detail = parsed.status ?? null;
-        } catch {
-          /* status shape is informational only */
-        }
-      }
+      report.index.files = current.files;
+      report.index.detail = current.detail;
       return;
     }
     if (dryRun) {
@@ -696,18 +760,12 @@ export async function manageCodegraph(opts) {
       report.ok = false;
       return;
     }
-    report.index.action = 'indexed';
-    report.index.initialized = true;
-    const st = run(cli.bin ?? 'codegraph', ['status', projectRoot, '--json'], { timeout: 60000, env });
-    if (st.ok) {
-      try {
-        const parsed = JSON.parse(st.stdout);
-        report.index.files = parsed.files ?? parsed.fileCount ?? parsed.totalFiles ?? null;
-        report.index.detail = parsed.status ?? null;
-      } catch {
-        /* informational */
-      }
-    }
+    const initialized = inspectIndex(projectRoot, cli, env);
+    report.index.action = initialized.ready ? 'indexed' : 'failed';
+    report.index.initialized = initialized.ready;
+    report.index.files = initialized.files;
+    report.index.detail = initialized.detail;
+    if (!initialized.ready) report.ok = false;
   };
 
   const applyTelemetry = async (cli) => {
@@ -722,7 +780,8 @@ export async function manageCodegraph(opts) {
       report.telemetry.detail = `CodeGraph is switched off (ARCHGEN_CODEGRAPH=${env.ARCHGEN_CODEGRAPH}) — the telemetry setting was not applied`;
       return;
     }
-    if (telemetry === state) {
+    const desiredState = telemetry === 'off' ? 'disabled' : telemetry === 'on' ? 'enabled' : 'unknown';
+    if (desiredState === state) {
       report.telemetry.action = 'unchanged';
       return;
     }
@@ -738,7 +797,11 @@ export async function manageCodegraph(opts) {
     }
     const r = run(cli.bin, ['telemetry', telemetry], { timeout: 30000, env });
     report.telemetry.action = r.ok ? 'set-' + telemetry : 'failed';
-    if (!r.ok) report.telemetry.detail = (r.stderr || '').trim().split('\n')[0];
+    if (r.ok) report.telemetry.state = desiredState;
+    if (!r.ok) {
+      report.telemetry.detail = (r.stderr || '').trim().split('\n')[0];
+      report.ok = false;
+    }
   };
 
   if (mode === 'status') {
@@ -786,13 +849,16 @@ export async function manageCodegraph(opts) {
         // Without approval: print the plan and write nothing. An index that
         // ALREADY exists is not a pending write — reporting it as one made a
         // configured project look unconfigured on every unapproved call.
-        report.ok = true;
-        if (existsSync(join(projectRoot, '.codegraph'))) {
+        const current = inspectIndex(projectRoot, cli, env);
+        if (current.ready) {
           report.index.action = 'already-indexed';
           report.index.initialized = true;
+          report.index.files = current.files;
+          report.index.detail = current.detail;
         } else {
           report.planned = true;
           report.index.action = 'would-index';
+          report.index.detail = current.detail;
         }
       } else {
         await initIndex(cli);

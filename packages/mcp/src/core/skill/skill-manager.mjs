@@ -21,7 +21,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { skillSearchPaths } from './skill-roots.mjs';
 import { slugifyHeading } from '../docs/docs.mjs';
-import { invalidInput } from '../protocol/errors.mjs';
+import { invalidInput, unavailable } from '../protocol/errors.mjs';
 import { hint, teach } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
 import { satisfies } from '../protocol/compat.mjs';
@@ -57,6 +57,13 @@ export function wholeWordSource(token) {
  * @param {{title?: string, summary?: string, fileOwnership?: string[]}} task
  * @returns {Array<{id: string, slug: string, repo: string, purpose: string, policy: string, matched: string[]}>}
  */
+export function findRegistrySkill(registry, wanted) {
+  return registry.skills.find((skill) => skill.id === wanted || skill.slug === wanted) ??
+    (registry.routing && (registry.routing.id === wanted || registry.routing.slug === wanted)
+      ? registry.routing
+      : null);
+}
+
 export function matchSkills(registry, task) {
   const haystack = [task.title ?? '', task.summary ?? '', ...(task.fileOwnership ?? [])].join('\n');
   const out = [];
@@ -317,8 +324,23 @@ export async function installSkill(opts) {
   }
 
   const after = findInstalledSkill(projectRoot, entry.slug, { home });
+  if (!r.ok || !after.installed) {
+    throw unavailable(
+      `capability skill '${entry.slug}' was not installed${r.detail ? `: ${r.detail}` : ''}`,
+      {
+        ...hint({
+          action: `archgen-mcp exec archgen_setup '${JSON.stringify({ action: 'install_skill', skillId: entry.slug })}' --tool-profile full`,
+          reason: 'without approval the action returns the exact installation plan; inspect the installer error before retrying.',
+        }),
+        skill: entry.slug,
+        repo: entry.repo,
+        detail: r.detail ?? 'the installer completed but the skill is not visible',
+        cli: cliResult,
+      },
+    );
+  }
   return {
-    installed: after.installed,
+    installed: true,
     alreadyInstalled: false,
     skill: entry.slug,
     repo: entry.repo,

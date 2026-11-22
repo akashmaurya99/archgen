@@ -12,7 +12,9 @@
 // usable at scale: fixes can be grouped by code, tests assert behaviour
 // instead of prose, and CI can count classes ("7 MIRROR_MISSING, 4
 // MATRIX_CLAIM_MISMATCH") instead of counting sentences.
+import { existsSync } from 'node:fs';
 import { computeWaves, findOwnershipConflict, graphMaps } from './graph.mjs';
+import { readPlans } from '../fs/artifact-space.mjs';
 import { checkPlanCoverage } from './plan-coverage.mjs';
 import { auditPlan } from './plan-audit.mjs';
 import { validateTasks } from './validator.mjs';
@@ -158,7 +160,10 @@ export function verifyPlan(scope, opts = {}) {
       }
     }
 
-    issues.push(...checkPlanCoverage(plansDir, tasks).findings.map((m) => withCode(m)));
+    // One immutable Markdown snapshot feeds coverage and the artifact audit:
+    // no duplicate read and no mid-check disagreement if a file changes.
+    const sharedPlanText = existsSync(plansDir) ? readPlans(plansDir) : null;
+    issues.push(...checkPlanCoverage(plansDir, tasks, { planText: sharedPlanText }).findings.map((m) => withCode(m)));
 
     // The mechanical floor: the checks a gate agent would otherwise make by
     // hand, every round. They are computed HERE so the agent is left with
@@ -167,7 +172,7 @@ export function verifyPlan(scope, opts = {}) {
     // The audit reads the SAME artifact space the coverage pass just read:
     // `slugDir` is the resolved space root and `plansDir` is its plans
     // directory, so the two halves can never read different directories.
-    const audit = auditPlan({ slugDir, tasks });
+    const audit = auditPlan({ slugDir, tasks, planText: sharedPlanText });
     lastAudit = audit;
     issues.push(...audit.issues);
     warnings.push(...audit.warnings);

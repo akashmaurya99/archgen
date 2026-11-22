@@ -125,6 +125,12 @@ test('the TOML shape renders as a Codex section', () => {
   assert.doesNotMatch(toml, /^type = /m, 'Codex MCP entries carry no "type" field');
 });
 
+test('TOML environment stays inside the server table as an inline value', () => {
+  const toml = entryToToml({ command: 'codegraph', args: ['serve'], env: { CODEGRAPH_MCP_TOOLS: 'explore', CODEGRAPH_TELEMETRY: '0' } });
+  assert.match(toml, /^env = \{ CODEGRAPH_MCP_TOOLS = "explore", CODEGRAPH_TELEMETRY = "0" \}$/m);
+  assert.doesNotMatch(toml, /^\[env\]$/m);
+});
+
 test('wiring a Codex config writes the archgen section, and uninstall removes it', () => {
   const root = mkdtempSync(join(tmpdir(), 'ag-codex-'));
   const home = mkdtempSync(join(tmpdir(), 'ag-codex-home-'));

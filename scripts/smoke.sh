@@ -65,10 +65,12 @@ node_modules/.bin/archgen-mcp doctor --project "$PROJECT" --json > "$WORK/doctor
   || fail "the doctor failed: $(cat "$WORK/doctor.json")"
 node -e '
   const r = require(process.argv[1]);
-  if (!r || typeof r.server !== "string") { console.error("the doctor returned no server version"); process.exit(1); }
-  if (r.skill !== null && typeof r.skill !== "object") { console.error("the doctor returned a malformed skill block"); process.exit(1); }
-  console.log("     server:", r.server, "| node:", r.node, "| codegraph:", r.codegraph?.version ?? "not installed");
-' "$WORK/doctor.json"
+  if (!r || typeof r.versions?.server !== "string") { console.error("the doctor returned no versions.server"); process.exit(1); }
+  if (r.versions.server !== process.argv[2]) { console.error(`doctor server ${r.versions.server} != packed release ${process.argv[2]}`); process.exit(1); }
+  if (r.versions.skill !== null && typeof r.versions.skill !== "string") { console.error("the doctor returned a malformed versions.skill"); process.exit(1); }
+  const node = `node ${process.version}`;
+  console.log("     server:", r.versions.server, "|", node, "| codegraph:", r.versions.codegraph ?? "not installed");
+' "$WORK/doctor.json" "$VERSION"
 pass "the server is reachable and reports its version"
 
 step "6. The tool catalog is complete"
@@ -91,7 +93,10 @@ step "7. The CLI installs the skill and wires the MCP server"
 # in the user's home. A smoke test must never write to the real one.
 export HOME="$WORK/home"
 mkdir -p "$HOME/.claude" "$HOME/.config/opencode" "$HOME/.codex" "$PROJECT/.claude"
-node_modules/.bin/archgen-skill init "$PROJECT" --no-codegraph > "$WORK/init.log" 2>&1 \
+# ARCHGEN_CODEGRAPH=0 disables ALL server bootstrap, including ArchGen MCP
+# wiring. This step needs that wiring; --no-codegraph already isolates the
+# optional CodeGraph install, so remove the blanket guard only for this command.
+env -u ARCHGEN_CODEGRAPH node_modules/.bin/archgen-skill init "$PROJECT" --no-codegraph > "$WORK/init.log" 2>&1 \
   || fail "init failed: $(cat "$WORK/init.log")"
 [ -f "$PROJECT/.agents/skills/archgen/SKILL.md" ] || fail "the skill was not installed"
 [ -L "$PROJECT/.claude/skills/archgen" ] || fail "the Claude adapter is not a symlink"

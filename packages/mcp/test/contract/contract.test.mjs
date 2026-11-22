@@ -11,6 +11,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { createServer, exposedToolNames } from '../../src/server.mjs';
 import { resetServerContext } from '../../src/tools/_register.mjs';
+import { toToolResult } from '../../src/envelope.mjs';
 
 /** Connect a client to a fresh server over an in-memory transport. */
 async function connect() {
@@ -92,6 +93,21 @@ test('the envelope always carries the meta block', async () => {
   const meta = result.structuredContent.meta;
   assert.ok(meta.serverVersion);
   assert.ok(meta.projectRoot);
-  assert.ok(Array.isArray(meta.warnings));
+  assert.ok(meta.warnings === undefined || Array.isArray(meta.warnings), 'empty warnings are omitted; any emitted warning is an array');
   await client.close();
+});
+
+test('structured results avoid duplicate success payloads and keep full errors', () => {
+  const envelope = { ok: true, data: { answer: 'complete' }, meta: { projectRoot: '/p' } };
+  const legacy = toToolResult(envelope);
+  assert.deepEqual(JSON.parse(legacy.content[0].text), envelope);
+  assert.ok(!legacy.content[0].text.includes('\n  '));
+
+  const structured = toToolResult(envelope, { mode: 'structured' });
+  assert.match(structured.content[0].text, /succeeded/);
+  assert.deepEqual(structured.structuredContent, envelope);
+
+  const failure = toToolResult({ ok: false, error: { code: 'INVALID_INPUT', message: 'bad', details: {} }, meta: {} }, { mode: 'structured' });
+  assert.equal(failure.isError, true);
+  assert.deepEqual(JSON.parse(failure.content[0].text).error.code, 'INVALID_INPUT');
 });

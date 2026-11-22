@@ -89,7 +89,16 @@
         "path": ".archgen/<slug>/codebase-map.md",
         "pattern": "codebase-map.md",
         "intentIn": ["BROWNFIELD-FEATURE", "BROWNFIELD-CHANGE"],
-        "purpose": "survey evidence; reuse a fresh map when one already exists",
+        "omitWhen": {
+          "scopeIn": ["SMALL"],
+          "moduleMax": 1,
+          "taskMax": 3,
+          "confidenceIn": ["medium", "high"],
+          "signalNone": ["multi-module", "public-contract", "data-migration", "security-sensitive", "multi-service", "external-integration", "cross-team", "regulated", "irreversible"]
+        },
+        "omitReason": "localized change — embed the concise Survey section in the plan",
+        "createReason": "complex or uncertain brownfield evidence needs a standalone survey",
+        "purpose": "survey evidence only when a separate map has a consumer; reuse a fresh map",
         "dependsOn": []
       },
       {
@@ -110,7 +119,7 @@
         "pattern": "docs/prd.md",
         "scopeIn": ["LARGE"],
         "intentIn": ["GREENFIELD-SYSTEM"],
-        "signalSome": ["product-facing", "production"],
+        "signalSome": ["product-facing"],
         "reuseSignal": "existing-prd",
         "purpose": "product requirements for a product-facing system",
         "dependsOn": [
@@ -126,12 +135,10 @@
         "pattern": "architecture.yaml",
         "scopeIn": ["MEDIUM", "LARGE"],
         "signalSome": [
-          "new-module",
           "multi-module",
           "public-contract",
           "data-migration",
-          "multi-service",
-          "external-integration"
+          "multi-service"
         ],
         "reuseSignal": "existing-architecture",
         "purpose": "the contract source of truth for cross-module work",
@@ -156,7 +163,7 @@
       {
         "path": ".archgen/<slug>/decisions/0001-<title>.md",
         "pattern": "decisions/*.md",
-        "signalSome": ["irreversible", "regulated", "data-migration"],
+        "signalSome": ["irreversible", "regulated"],
         "reuseSignal": "existing-adr",
         "purpose": "irreversible decisions only — never routine choices",
         "dependsOn": [
@@ -168,10 +175,16 @@
         ]
       },
       {
-        "path": ".archgen/<slug>/docs/<module>.md",
+        "path": ".archgen/<slug>/docs/topology.md",
         "pattern": "docs/*.md",
         "scopeIn": ["LARGE"],
         "signalSome": ["multi-module", "multi-service", "external-integration"],
+        "omitWhen": {
+          "moduleMax": 2,
+          "signalNone": ["multi-service", "external-integration"]
+        },
+        "omitReason": "simple topology — the architecture and plan are sufficient",
+        "createReason": "non-obvious topology needs a visual integration contract",
         "purpose": "topology diagrams for non-obvious systems (<=15 nodes)",
         "dependsOn": [
           {
@@ -184,9 +197,10 @@
       {
         "path": ".archgen/<slug>/docs/mermaid-snippets.md",
         "pattern": "docs/mermaid-snippets.md",
+        "supportOnly": true,
         "scopeIn": ["LARGE"],
         "signalSome": ["multi-module", "multi-service", "external-integration"],
-        "purpose": "diagram snippets — only when a diagram is created",
+        "purpose": "authoring template for module diagrams — never a separate plan artifact",
         "dependsOn": [
           {
             "family": "architecture.yaml",
@@ -285,7 +299,7 @@
       "intentDefaults": ["BROWNFIELD-CHANGE"],
       "planSections": ["Profile", "Intent", "Tasks", "Risks"],
       "requires": [],
-      "forbids": ["docs/prd.md", "architecture.yaml", "decisions/", "docs/<module>.md"],
+      "forbids": ["docs/prd.md", "architecture.yaml", "decisions/", "docs/topology.md"],
       "notes": [
         "Every task entry STILL carries repo-root-relative paths verbatim in file_ownership, in each step, and in verification commands.",
         "No Context section, no diagrams, no PRD, no architecture contract, no ADRs."
@@ -294,8 +308,8 @@
     "MEDIUM": {
       "label": "MEDIUM — a real feature with real risk",
       "intentDefaults": ["GREENFIELD-MODULE", "BROWNFIELD-FEATURE"],
-      "planSections": ["Profile", "Context", "Per-task sections", "Verification steps"],
-      "requires": ["plan context of 2-4 paragraphs", "per-task sections with approach + edge cases + out-of-scope", "ordered runnable verification steps"],
+      "planSections": ["Profile", "Context", "Per-task sections", "Edge-case matrices", "Verification steps"],
+      "requires": ["plan context of 2-4 paragraphs", "per-task sections with approach + edge cases + out-of-scope", "an edge-case matrix with every row mapped to an acceptance bullet", "ordered runnable verification steps"],
       "forbids": ["docs/prd.md"],
       "notes": [
         "One `<id> — <title>` heading per task, in dependency order.",
@@ -304,14 +318,14 @@
       ]
     },
     "LARGE": {
-      "label": "LARGE — a full professional stack (greenfield from scratch)",
+      "label": "LARGE — a broad or high-risk system of work",
       "intentDefaults": ["GREENFIELD-SYSTEM"],
       "planSections": ["Profile", "Context", "Per-task sections", "Edge-case matrices", "Verification steps"],
       "requires": [
         "docs/prd.md when the profile marks it create (~1 page per major module)",
-        "architecture.yaml with naming_conventions, data_contracts, api_contracts and environment_matrix",
+        "architecture.yaml when the profile marks it create, with naming_conventions, data_contracts, api_contracts and environment_matrix",
         "an edge-case matrix per task (every row maps to an acceptance bullet)",
-        "per-module diagrams only when the profile marks them create (<=15 nodes each) plus one integration diagram",
+        "one docs/topology.md integration view when the profile marks it create (<=15 nodes); per-module views only for complex internals",
         "MEDIUM-grade plan sections"
       ],
       "forbids": [],

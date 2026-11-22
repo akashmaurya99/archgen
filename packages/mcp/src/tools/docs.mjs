@@ -7,7 +7,7 @@ import { docIndex } from '../core/docs/doc-navigator.mjs';
 import { activeSlugDir as resolveActiveSlugDir } from '../core/fs/tasks-file.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
 import { hint, teach } from '../core/protocol/guidance.mjs';
-import { toolCall } from '../core/protocol/call.mjs';
+import { continuationCall, toolCall } from '../core/protocol/call.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
 import { collectionRules } from '../core/protocol/action-args.mjs';
 
@@ -27,12 +27,12 @@ const { resolve: resolveCollection, reject: rejectCollection } = collectionRules
  * action is a typed error, not a silent no-op.
  */
 const DOCS_ACTION_ARGS = {
-  index: ['slugDir', 'file', 'collection'],
-  digest: ['slugDir', 'file', 'collection'],
+  index: ['slugDir', 'file', 'collection', 'limit', 'offset'],
+  digest: ['slugDir', 'file', 'collection', 'limit', 'offset'],
   validate: ['slugDir', 'file', 'collection', 'limit', 'offset'],
   refs: ['slugDir', 'token', 'file', 'collection', 'limit', 'offset'],
   map: ['slugDir', 'token', 'file', 'collection', 'limit', 'offset'],
-  section: ['slugDir', 'section', 'file', 'include', 'collection', 'limit', 'offset'],
+  section: ['slugDir', 'section', 'file', 'include'],
 };
 
 const schema = z.object({
@@ -74,7 +74,7 @@ export function registerDocTools(server) {
         case 'index': {
           resolveCollection('index', args.collection, 'files');
           const overview = docIndex(slugDir, { mode: 'overview', file: args.file ?? null, projectRoot: ctx.projectRoot });
-          return bounded('files', overview.data, args, toolCall('archgen_docs', { action: 'index', slugDir, limit: bound, offset: from + bound }), {
+          return bounded('files', overview.data, args, continuationCall('archgen_docs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound, overrides: { slugDir } }), {
             files: (overview.data.files ?? []).length,
             more: toolCall('archgen_docs', { action: 'section', slugDir, section: '<the section you need>' }),
           });
@@ -82,7 +82,7 @@ export function registerDocTools(server) {
         case 'digest': {
           resolveCollection('digest', args.collection, 'files');
           const digest = docIndex(slugDir, { mode: 'digest', file: args.file ?? null, projectRoot: ctx.projectRoot });
-          return bounded('files', digest.data, args, toolCall('archgen_docs', { action: 'digest', slugDir, limit: bound, offset: from + bound }), {
+          return bounded('files', digest.data, args, continuationCall('archgen_docs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound, overrides: { slugDir } }), {
             files: (digest.data.files ?? []).length,
             sectionsOmitted: digest.data.sectionsOmitted === true,
             more: toolCall('archgen_docs', { action: 'section', slugDir, section: '<the section you need>' }),
@@ -98,7 +98,7 @@ export function registerDocTools(server) {
           const report = docIndex(slugDir, { mode: 'validate', file: args.file ?? null, projectRoot: ctx.projectRoot });
           const data = report.data;
           const cont = (c, off) =>
-            toolCall('archgen_docs', { action: 'validate', slugDir, file: args.file, collection: c, limit: bound, offset: off });
+            continuationCall('archgen_docs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: off, overrides: { slugDir, collection: c } });
           const broken = project(data.broken ?? [], {
             limit: args.limit,
             offset: collection === 'broken' ? args.offset : 0,
@@ -150,7 +150,7 @@ export function registerDocTools(server) {
           // The continuation keeps the FILE SCOPE. It used to drop it, so
           // the "next call" was a different query and returned different
           // matches.
-          return bounded('matches', refs.data, args, toolCall('archgen_docs', { action: 'refs', slugDir, token: args.token, file: args.file, limit: bound, offset: from + bound }), {
+          return bounded('matches', refs.data, args, continuationCall('archgen_docs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound, overrides: { slugDir } }), {
             matches: (refs.data.matches ?? []).length,
           });
         }
@@ -161,7 +161,7 @@ export function registerDocTools(server) {
           );
           resolveCollection('map', args.collection, 'sections');
           const map = docIndex(slugDir, { mode: 'map', token: args.token, file: args.file ?? null, projectRoot: ctx.projectRoot });
-          return bounded('sections', map.data, args, toolCall('archgen_docs', { action: 'map', slugDir, token: args.token, file: args.file, limit: bound, offset: from + bound }), {
+          return bounded('sections', map.data, args, continuationCall('archgen_docs', args, { projectRoot: ctx.projectRoot, limit: bound, offset: from + bound, overrides: { slugDir } }), {
             sections: (map.data.sections ?? []).length,
             matches: map.data.matchCount ?? undefined,
             more: toolCall('archgen_docs', { action: 'section', slugDir, section: '<the section you need>' }),

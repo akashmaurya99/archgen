@@ -26,7 +26,8 @@ import { loadAsset } from '../context.mjs';
 import { detectHarness, platformCapabilities } from '../core/harness/platform-caps.mjs';
 import { codegraphState, codegraphPolicy } from '../core/harness/codegraph-manager.mjs';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
+import { configTargetFor } from '../core/harness/harness-wiring.mjs';
 
 const schema = z.object({
   harness: z.string().optional().describe('Harness id; omit to detect the current one.'),
@@ -43,17 +44,58 @@ const schema = z.object({
  * @param {any} row the capability row
  * @returns {any} the compact row
  */
+function withCanonicalConfig(row, wiring, ctx) {
+  if (!row) return null;
+  const wiringId = row.wiringId ?? (row.id === 'copilot' ? 'vscode' : row.id);
+  const configs = wiring.harnesses?.[wiringId]?.configs;
+  if (!configs) return row;
+  const merge = (location) => {
+    const capability = row.mcpConfig?.[location] ?? null;
+    const canonical = configs[location] ?? null;
+    if (!capability && !canonical) return null;
+    const merged = { ...(capability ?? {}), ...(canonical ?? {}) };
+    // The writer stores Copilot's global path relative to its dedicated home.
+    // The capability row carries the display-ready absolute-with-home path.
+    if (canonical?.home && capability?.path) merged.path = capability.path;
+    if (canonical && ctx) {
+      const target = configTargetFor(canonical, ctx);
+      if (target.path.endsWith('.jsonc') && !canonical.path.endsWith('.jsonc')) {
+        merged.path = canonical.path.startsWith('~/')
+          ? `~/${relative(ctx.home, target.path).replaceAll('\\', '/')}`
+          : relative(ctx.projectRoot, target.path).replaceAll('\\', '/');
+      }
+    }
+    return merged;
+  };
+  return {
+    ...row,
+    mcpConfig: {
+      project: merge('project'),
+      global: merge('global'),
+    },
+  };
+}
+
+const CONFIG_FIELDS = [
+  'path', 'key', 'format', 'entry', 'urlField', 'urlFieldAlternative', 'urlRequired',
+  'stdioFields', 'environmentKey', 'commandIsArray', 'type', 'trustGated', 'oauth',
+];
+
+function compactConfig(config) {
+  if (!config) return null;
+  // Keep every field the caller needs to construct a valid entry, but omit
+  // absent/null metadata instead of paying for nulls in every response.
+  return Object.fromEntries(CONFIG_FIELDS.filter((key) => config[key] !== undefined && config[key] !== null).map((key) => [key, config[key]]));
+}
+
 function compactCapabilities(row) {
   if (!row) return null;
-  const mcp = row.mcpConfig ?? {};
-  const project = mcp.project ?? null;
-  const global = mcp.global ?? null;
   return {
     label: row.label ?? null,
     skillPaths: row.skillPaths ?? null,
     mcpConfig: {
-      project: project ? { path: project.path, key: project.key, format: project.format ?? null, urlField: project.urlField ?? null } : null,
-      global: global ? { path: global.path, key: global.key, format: global.format ?? null, urlField: global.urlField ?? null } : null,
+      project: compactConfig(row.mcpConfig?.project),
+      global: compactConfig(row.mcpConfig?.global),
     },
     mcpCli: row.mcpCli ?? null,
     restart: row.restart ?? null,
@@ -94,9 +136,9 @@ function codegraphFacts(projectRoot, env) {
       telemetry: policy.telemetry,
     };
   } catch {
-    // The CodeGraph policy asset is part of the server package; a missing one
-    // is a broken install, and the platform facts are still worth answering.
-    return { indexed: existsSync(join(projectRoot, '.codegraph')), version: null, tools: [], package: null, install: null, wire: null, telemetry: 'off' };
+    // The CodeGraph policy asset is part of the server package; report the
+    // broken policy explicitly instead of presenting an intentional empty list.
+    return { indexed: existsSync(join(projectRoot, '.codegraph', 'codegraph.db')), version: null, tools: [], package: null, install: null, wire: null, telemetry: 'off', policyError: true };
   }
 }
 
@@ -114,6 +156,7 @@ export function registerPlatformTools(server) {
     idempotent: true,
     handler: (ctx, args) => {
       const caps = loadAsset('platform-capabilities.json');
+      const wiring = loadAsset('harness-mcp.json');
 
       // A NAMED harness: the registry knows it, so its row is the answer.
       if (args.harness) {
@@ -122,7 +165,7 @@ export function registerPlatformTools(server) {
           harness: row.id ?? args.harness,
           detected: null,
           primary: row.id ?? args.harness,
-          capabilities: compactCapabilities(row),
+          capabilities: compactCapabilities(withCanonicalConfig(row, wiring, ctx)),
           codegraph: codegraphFacts(ctx.projectRoot, ctx.env),
           reason: null,
           nextStep: null,
@@ -131,7 +174,7 @@ export function registerPlatformTools(server) {
 
       // No harness named: DETECT this one.
       try {
-        const detected = detectHarness(caps, { projectRoot: ctx.projectRoot, home: ctx.home });
+        const detected = detectHarness(caps, { projectRoot: ctx.projectRoot, home: ctx.home, env: ctx.env }, wiring);
         const primary = detected.primary?.id ?? null;
         const row = primary ? platformCapabilities(caps, primary) : null;
         return {
@@ -140,7 +183,7 @@ export function registerPlatformTools(server) {
           // every capability row of every harness on the machine.
           detected: (detected.detected ?? []).map((d) => d.id),
           primary,
-          capabilities: compactCapabilities(row),
+          capabilities: compactCapabilities(withCanonicalConfig(row, wiring, ctx)),
           codegraph: codegraphFacts(ctx.projectRoot, ctx.env),
           reason: null,
           nextStep: null,

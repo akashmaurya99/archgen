@@ -5,7 +5,7 @@
 // so the tables and the tool can never disagree.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,6 +13,11 @@ import { loadAsset, BRIEFS_DIR } from '../../src/context.mjs';
 import { platformCapabilities, detectHarness } from '../../src/core/harness/platform-caps.mjs';
 import { loadBrief, loadAllBriefs, BRIEF_KINDS } from '../../src/core/docs/briefs.mjs';
 import { ALLOWED_CALLS } from '../../src/core/docs/brief-context.mjs';
+import { createServer } from '../../src/server.mjs';
+import { getToolSpec, runTool } from '../../src/tools/_register.mjs';
+import { Context } from '../../src/context.mjs';
+
+createServer();
 
 const caps = loadAsset('platform-capabilities.json');
 
@@ -77,6 +82,19 @@ test('detection finds the harness whose markers exist', () => {
   }
 });
 
+test('the declared detection order wins over registry insertion order', () => {
+  const root = mkdtempSync(join(tmpdir(), 'archgen-harness-order-'));
+  try {
+    mkdirSync(join(root, '.windsurf'), { recursive: true });
+    writeFileSync(join(root, 'opencode.json'), '{}\n');
+    const found = detectHarness(caps, { projectRoot: root, home: root }, loadAsset('harness-mcp.json'));
+    assert.deepEqual(found.detected.map((row) => row.id), ['windsurf', 'opencode']);
+    assert.equal(found.primary.id, 'windsurf');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('an undetectable platform is a typed INVALID_INPUT with the procedure', () => {
   const dir = mkdtempSync(join(tmpdir(), 'archgen-harness-'));
   try {
@@ -86,6 +104,41 @@ test('an undetectable platform is a typed INVALID_INPUT with the procedure', () 
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('platform output preserves URL fields, entry shapes, and Copilot home resolution', async () => {
+  const ctx = new Context({ projectRoot: process.cwd(), env: { ARCHGEN_CODEGRAPH: '0' } });
+  const expected = new Map([
+    ['gemini', { urlField: 'httpUrl', command: true }],
+    ['antigravity', { urlField: 'serverUrl' }],
+    ['codex', { urlField: 'url', format: 'toml' }],
+    ['opencode', { commandIsArray: true, environmentKey: 'environment' }],
+  ]);
+  for (const [harness, want] of expected) {
+    const result = await runTool(getToolSpec('archgen_platform'), ctx, { harness });
+    assert.equal(result.ok, true, result.error?.message);
+    const config = result.data.capabilities.mcpConfig.project;
+    if (want.urlField) assert.equal(config.urlField, want.urlField, harness);
+    if (want.format) assert.equal(config.format, want.format, harness);
+    if (want.commandIsArray) assert.equal(config.commandIsArray, true, harness);
+    if (want.environmentKey) assert.equal(config.environmentKey, want.environmentKey, harness);
+  }
+  const copilot = await runTool(getToolSpec('archgen_platform'), ctx, { harness: 'copilot' });
+  assert.equal(copilot.data.capabilities.mcpConfig.global.path, '~/.copilot/mcp-config.json');
+  assert.equal(copilot.data.capabilities.mcpConfig.global.urlField, 'url');
+});
+
+test('platform facts name an existing OpenCode JSONC config', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'archgen-opencode-jsonc-'));
+  try {
+    writeFileSync(join(root, 'opencode.jsonc'), '{ // keep\n "mcp": { "servers": {} }\n}\n');
+    const ctx = new Context({ projectRoot: root, home: root, env: { ARCHGEN_CODEGRAPH: '0' } });
+    const result = await runTool(getToolSpec('archgen_platform'), ctx, { harness: 'opencode' });
+    assert.equal(result.ok, true, result.error?.message);
+    assert.equal(result.data.capabilities.mcpConfig.project.path, 'opencode.jsonc');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

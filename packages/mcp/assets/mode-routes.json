@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "modes": {
+    "GENERATE": {
+      "phases": {
+        "scope": [
+          { "topic": "interview", "section": "how-to-ask" },
+          { "topic": "interview", "section": "round-0--scope-calibration-not-a-questionnaire" },
+          { "topic": "interview", "section": "step-1--classify-intent--collect-signals" },
+          { "topic": "artifact-templates", "section": "plan-depth-by-scope-class" },
+          { "topic": "artifact-templates", "section": "artifact-necessity--reuse" }
+        ],
+        "discover": [
+          { "topic": "interview", "section": "greenfield-system--professional-discovery-6-rounds", "include": "all", "intents": ["GREENFIELD-SYSTEM"] },
+          { "topic": "interview", "section": "greenfield-module--net-new-inside-an-existing-system-3-rounds", "intents": ["GREENFIELD-MODULE"] },
+          { "topic": "interview", "section": "brownfield-feature-additive-max-5-questions-one-batched-message", "intents": ["BROWNFIELD-FEATURE"] },
+          { "topic": "interview", "section": "brownfield-change-behavior-modification-3-rounds", "intents": ["BROWNFIELD-CHANGE"] },
+          { "topic": "interview", "section": "answers-file-format-machine-readable-enables-non-interactive-runs" }
+        ],
+        "author": [
+          { "topic": "artifact-templates", "section": "the-write-order--which-file-first-and-why-it-matters" },
+          { "topic": "artifact-templates", "section": "self-containment-rules-anti-hallucination" },
+          { "topic": "artifact-templates", "section": "the-plan-profile-record--where-the-decisions-live" }
+        ],
+        "invariants": [
+          { "topic": "artifact-templates", "section": "the-yaml-subset--what-tasksyaml-accepts" },
+          { "topic": "artifact-templates", "section": "mechanical-invariants--proven-by-the-floor-so-make-them-true-the-first-time" },
+          { "topic": "artifact-templates", "section": "structural-correctness--verifier-enforced-authoring-rules" },
+          { "topic": "artifact-templates", "section": "edge-case-matrix-medium" }
+        ],
+        "gate": [
+          { "topic": "orchestration", "section": "gate-sizing--proportional-never-skipped" },
+          { "topic": "orchestration", "section": "the-floor-comes-first--the-gate-agent-never-sees-a-mechanical-defect" },
+          { "topic": "orchestration", "section": "gate-protocol--one-protocol-two-stages-two-rounds-each" },
+          { "topic": "orchestration", "section": "waivers-and-gate-metrics--the-audit-trail" }
+        ],
+        "repair": [
+          { "topic": "orchestration", "section": "fix-discipline--batch-per-file-and-per-code-one-pass" },
+          { "topic": "orchestration", "section": "the-floors-codes--group-fixes-by-code-not-by-sentence" }
+        ]
+      },
+      "order": ["scope", "discover", "author", "invariants", "gate", "repair"]
+    },
+    "BROWNFIELD": {
+      "extends": "GENERATE",
+      "phases": {
+        "survey": [
+          { "topic": "orchestration", "section": "survey--brownfield-codebase-analysis-brief" },
+          { "topic": "interview", "section": "brownfield-classes--survey-before-questioning-mandatory" }
+        ]
+      },
+      "order": ["survey", "scope", "discover", "author", "invariants", "gate", "repair"]
+    },
+    "START-WORK": {
+      "phases": {
+        "dispatch": [
+          { "topic": "orchestration", "section": "executor--sub-agents-are-for-work-never-lookups" },
+          { "topic": "orchestration", "section": "dispatch--wave-execution" },
+          { "topic": "orchestration", "section": "session-reuse-and-parallel-dispatch" },
+          { "topic": "orchestration", "section": "worker-prompt-contract" }
+        ],
+        "closeout": [
+          { "topic": "orchestration", "section": "failure-policy" }
+        ]
+      },
+      "order": ["dispatch", "closeout"]
+    },
+    "UPDATE": {
+      "extends": "GENERATE",
+      "phases": {
+        "impact": [
+          { "topic": "artifact-templates", "section": "artifact-necessity--reuse" },
+          { "topic": "artifact-templates", "section": "plan-depth-by-scope-class" }
+        ]
+      },
+      "order": ["impact", "author", "invariants", "gate", "repair"]
+    },
+    "ROLLBACK": {
+      "phases": {
+        "plan": [
+          { "topic": "orchestration", "section": "dispatch--wave-execution" },
+          { "topic": "orchestration", "section": "failure-policy" }
+        ]
+      },
+      "order": ["plan"]
+    },
+    "INVESTIGATE": {
+      "phases": {
+        "investigate": [
+          { "topic": "orchestration", "section": "investigate--root-cause-protocol" }
+        ]
+      },
+      "order": ["investigate"]
+    },
+    "INSTALL-MCP": {
+      "phases": {
+        "configure": [
+          { "topic": "platforms", "section": "mcp-configuration" },
+          { "topic": "mcp-and-skills", "section": "install-mcp-procedure-approval-gated" }
+        ]
+      },
+      "order": ["configure"]
+    },
+    "FETCH-SKILL": {
+      "phases": {
+        "match": [
+          { "topic": "mcp-and-skills", "section": "fetch-skill-procedure" },
+          { "topic": "mcp-and-skills", "section": "the-registry" }
+        ],
+        "install": [
+          { "topic": "mcp-and-skills", "section": "install-skill-procedure-approval-gated" }
+        ]
+      },
+      "order": ["match", "install"]
+    }
+  }
+}

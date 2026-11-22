@@ -116,8 +116,8 @@ test('every archgen call the skill names is a call the tool accepts', () => {
  * The arguments a call must carry for the TOOL to accept it.
  *
  * The schema's `required` list covers only unconditional arguments. An
- * argument that is required for ONE action (tasksYaml for every archgen_tasks
- * action, planDir for verify) is enforced by the handler, not the schema —
+ * argument that is required for ONE action (taskId for set_status, planDir for
+ * verify) is enforced by the handler, not the schema —
  * so the check drives the handler itself.
  */
 function requiredArgs(spec, call) {
@@ -128,7 +128,7 @@ function requiredArgs(spec, call) {
   // name (`tasksYaml`), which the agent fills with the path it holds.
   const named = (key) => Object.prototype.hasOwnProperty.call(call.args, key);
 
-  if (tool === 'archgen_tasks' && !named('tasksYaml')) missing.push('tasksYaml');
+  // tasksYaml is optional: the resolver discovers the active artifact space.
   if (tool === 'archgen_plan') {
     if (action === 'verify' && (!named('tasksYaml') || !named('planDir'))) {
       if (!named('tasksYaml')) missing.push('tasksYaml');
@@ -155,8 +155,12 @@ function requiredArgs(spec, call) {
   if (tool === 'archgen_tasks' && action === 'contract') {
     if (!named('taskId')) missing.push('taskId');
   }
-  if (tool === 'archgen_refs' && action !== 'list' && !named('topic')) missing.push('topic');
-  if (tool === 'archgen_skills' && ['load', 'digest', 'install'].includes(action) && !named('skillId')) {
+  if (tool === 'archgen_refs' && action === 'route' && !named('mode')) missing.push('mode');
+  if (tool === 'archgen_refs' && action !== 'list' && action !== 'route' && !named('topic')) missing.push('topic');
+  if (tool === 'archgen_skills' && ['load', 'digest'].includes(action) && !named('skillId')) {
+    missing.push('skillId');
+  }
+  if (tool === 'archgen_setup' && action === 'install_skill' && !named('skillId')) {
     missing.push('skillId');
   }
   void spec;

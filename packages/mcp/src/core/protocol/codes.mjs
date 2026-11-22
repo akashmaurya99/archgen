@@ -22,6 +22,8 @@ export const ISSUE_CODES = {
   PROFILE_REUSE_MISSING: 'the profile says reuse, but the cited host file does not exist',
   PROFILE_UNRECORDED: 'an artifact exists that the profile does not record a decision for',
   PROFILE_DECISION_INVALID: 'the profile records a decision the floor cannot interpret',
+  CONFIG_INVALID: 'architecture.yaml has an invalid structural shape or slug',
+  MODULE_OVERLAP: 'two architecture modules claim overlapping ownership',
   MIRROR_MISSING: 'a source-owning task has no mirrored test path',
   MATRIX_UNKNOWN_TASK: 'a matrix row cites a task that does not exist',
   MATRIX_INDEX_OUT_OF_RANGE: 'a matrix row cites an acceptance that does not exist',
@@ -66,6 +68,7 @@ export const ISSUE_CODES = {
 export const WARNING_CODES = {
   PROFILE_NOT_RECORDED: 'the plan records no profile — artifact necessity cannot be checked',
   CONFIG_NOT_ENFORCED: 'a rule could not run because the plan does not declare what it needs',
+  CONFIG_REQUIRED: 'a legacy architecture omits fields required of new contracts',
   OWNERSHIP_CONTAINED: "one task's paths contain another's",
   WAIVER_COUNT_MISMATCH: 'the recorded waived count disagrees with the ledger',
   GATE_IDENTITY_MISSING: 'the gate block records no verifier',

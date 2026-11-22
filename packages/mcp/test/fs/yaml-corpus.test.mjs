@@ -258,6 +258,43 @@ test('the writer preserves a collection nested under a sequence item', () => {
   assert.deepEqual(again, data);
 });
 
+test('__proto__ is an own data key in block and flow mappings', () => {
+  for (const source of [
+    '__proto__:\n  polluted: true\nsafe: 1\n',
+    'root: {__proto__: true, safe: 1}\n',
+  ]) {
+    const input = source;
+    const { data } = parseYaml(input, { filename: 'proto.yaml' });
+    const target = data.root ?? data;
+    assert.equal(Object.hasOwn(target, '__proto__'), true);
+    assert.equal(Object.getPrototypeOf(target), Object.prototype);
+    assert.equal({}.polluted, undefined);
+    const { data: roundTripData } = parseYaml(stringifyYaml(data), { filename: 'proto.yaml' });
+    const roundTrip = roundTripData.root ?? roundTripData;
+    assert.equal(Object.hasOwn(roundTrip, '__proto__'), true);
+    assert.equal(Object.getPrototypeOf(roundTrip), Object.prototype);
+  }
+});
+
+test('flow splitting honors escaped quotes before commas', () => {
+  const source = String.raw`a: ["a\",b", "c"]` + '\n';
+  const { data } = parseYaml(source, { filename: 'escaped-flow.yaml' });
+  assert.deepEqual(data, { a: ['a",b', 'c'] });
+  assert.deepEqual(parseYaml(stringifyYaml(data)).data, data);
+});
+
+test('empty root collections and empty sequence-item comments round-trip', () => {
+  for (const empty of [{}, []]) {
+    const out = stringifyYaml(empty);
+    assert.deepEqual(parseYaml(out).data, empty);
+  }
+  const source = 'items:\n  - {} # keep me\n';
+  const parsed = parseYaml(source);
+  const out = stringifyYaml(parsed.data, parsed.comments);
+  assert.match(out, /- \{\} # keep me/);
+  assert.deepEqual(parseYaml(out).comments, parsed.comments);
+});
+
 /** Escape a literal string for use inside a RegExp. */
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

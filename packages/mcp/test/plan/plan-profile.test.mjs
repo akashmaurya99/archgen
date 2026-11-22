@@ -26,7 +26,7 @@ function artifact(p, path) {
 }
 
 test('a localized brownfield change is SMALL and does not create heavyweight documents', () => {
-  const p = profile({ intent: 'BROWNFIELD-CHANGE', slug: 'demo' });
+  const p = profile({ intent: 'BROWNFIELD-CHANGE', modules: 1, tasks: 1, slug: 'demo' });
   assert.equal(p.scopeClass, 'SMALL');
   assert.equal(p.confidence, 'medium');
   assert.equal(artifact(p, 'tasks.yaml').decision, 'create');
@@ -34,20 +34,53 @@ test('a localized brownfield change is SMALL and does not create heavyweight doc
   assert.equal(artifact(p, 'docs/prd.md').decision, 'omit');
   assert.equal(artifact(p, 'architecture.yaml').decision, 'omit');
   assert.equal(artifact(p, 'decisions/0001-<title>.md').decision, 'omit');
-  assert.equal(artifact(p, 'docs/<module>.md').decision, 'omit');
+  assert.equal(artifact(p, 'docs/topology.md').decision, 'omit');
+  assert.equal(artifact(p, 'codebase-map.md').decision, 'omit');
+  assert.match(artifact(p, 'codebase-map.md').reason, /embed the concise Survey/);
 });
 
 test('a brownfield feature stays lean when it touches one module', () => {
-  const p = profile({ intent: 'BROWNFIELD-FEATURE', signals: [], modules: 1, slug: 'demo' });
+  const p = profile({ intent: 'BROWNFIELD-FEATURE', signals: [], modules: 1, tasks: 1, slug: 'demo' });
   assert.equal(p.scopeClass, 'SMALL');
   assert.equal(artifact(p, 'docs/prd.md').decision, 'omit');
   assert.equal(artifact(p, 'architecture.yaml').decision, 'omit');
+  assert.equal(artifact(p, 'codebase-map.md').decision, 'omit', 'known module/task bounds support the embedded survey');
+  const uncertain = profile({ intent: 'BROWNFIELD-FEATURE', signals: [], modules: 1, slug: 'demo' });
+  assert.equal(uncertain.confidence, 'low');
+  assert.equal(artifact(uncertain, 'codebase-map.md').decision, 'create', 'unknown task bounds still require a real survey');
+});
+
+test('production alone does not manufacture a PRD', () => {
+  const p = profile({ intent: 'GREENFIELD-SYSTEM', signals: ['production'], slug: 'demo' });
+  assert.equal(p.scopeClass, 'LARGE');
+  assert.equal(artifact(p, 'docs/prd.md').decision, 'omit');
+});
+
+test('a localized new module or integration does not force architecture', () => {
+  for (const signal of ['new-module', 'external-integration']) {
+    const p = profile({ intent: 'BROWNFIELD-FEATURE', signals: [signal], modules: 1, tasks: 2, slug: 'demo' });
+    assert.equal(artifact(p, 'architecture.yaml').decision, 'omit');
+  }
+});
+
+test('diagrams require non-obvious topology rather than merely two modules', () => {
+  const two = profile({ intent: 'GREENFIELD-SYSTEM', signals: ['production', 'product-facing', 'multi-module'], modules: 2, slug: 'demo' });
+  assert.equal(artifact(two, 'docs/topology.md').decision, 'omit');
+  const three = profile({ intent: 'GREENFIELD-SYSTEM', signals: ['production', 'product-facing', 'multi-module'], modules: 3, slug: 'demo' });
+  assert.equal(artifact(three, 'docs/topology.md').decision, 'create');
+  const integration = profile({ intent: 'GREENFIELD-SYSTEM', signals: ['production', 'external-integration'], modules: 1, slug: 'demo' });
+  assert.equal(artifact(integration, 'architecture.yaml').decision, 'omit');
+  assert.equal(artifact(integration, 'docs/topology.md').decision, 'omit', 'no architecture exists to draw');
+  const contracted = profile({ intent: 'GREENFIELD-SYSTEM', signals: ['production', 'external-integration', 'multi-module'], modules: 2, slug: 'demo' });
+  assert.equal(artifact(contracted, 'architecture.yaml').decision, 'create');
+  assert.equal(artifact(contracted, 'docs/topology.md').decision, 'create');
 });
 
 test('a data migration escalates and requires an architecture contract', () => {
   const p = profile({ intent: 'BROWNFIELD-CHANGE', signals: ['data-migration'], slug: 'demo' });
   assert.notEqual(p.scopeClass, 'SMALL');
   assert.equal(artifact(p, 'architecture.yaml').decision, 'create');
+  assert.equal(artifact(p, 'decisions/0001-<title>.md').decision, 'omit', 'a migration alone does not prove an ADR-worthy irreversible decision');
 });
 
 test('a public contract escalates a change out of SMALL', () => {
@@ -84,8 +117,8 @@ test('ADRs and diagrams stay conditional even at LARGE', () => {
   });
   assert.equal(p.scopeClass, 'LARGE');
   assert.equal(artifact(p, 'decisions/0001-<title>.md').decision, 'omit');
-  assert.equal(artifact(p, 'docs/<module>.md').decision, 'omit');
-  assert.equal(artifact(p, 'docs/mermaid-snippets.md').decision, 'omit');
+  assert.equal(artifact(p, 'docs/topology.md').decision, 'omit');
+  assert.equal(artifact(p, 'docs/mermaid-snippets.md'), undefined, 'the authoring snippet template is not a plan artifact');
 });
 
 test('an irreversible decision creates an ADR', () => {
@@ -132,6 +165,10 @@ test('unknown intents and signals are typed INVALID_INPUT', () => {
   );
   assert.throws(
     () => profile({ intent: 'BROWNFIELD-CHANGE', signals: ['vibes'] }),
+    (e) => e.code === 'INVALID_INPUT',
+  );
+  assert.throws(
+    () => profile({ intent: 'BROWNFIELD-CHANGE', testLayout: 'unknown' }),
     (e) => e.code === 'INVALID_INPUT',
   );
 });

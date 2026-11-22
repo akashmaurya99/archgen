@@ -60,8 +60,14 @@ export async function guard(body, ctx, args) {
  * @param {{ok: boolean, data?: unknown, error?: object, meta: object}} envelope
  * @returns {{content: Array<{type: 'text', text: string}>, structuredContent: object, isError?: boolean}}
  */
-export function toToolResult(envelope) {
-  const text = JSON.stringify(envelope, null, 2);
+export function toToolResult(envelope, opts = {}) {
+  // Legacy clients receive the complete JSON text, now without whitespace-
+  // only token overhead. Verified structured clients can avoid a second full
+  // representation; errors ALWAYS keep their complete machine-readable body.
+  const structured = opts.mode === 'structured' && envelope.ok;
+  const text = structured
+    ? 'ArchGen call succeeded — use structuredContent for data and metadata.'
+    : JSON.stringify(envelope);
   return {
     content: [{ type: 'text', text }],
     structuredContent: envelope,

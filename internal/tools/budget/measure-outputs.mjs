@@ -38,6 +38,7 @@ function sandbox() {
   cpSync(join(FIXTURE, 'docs', 'c4-context.md'), join(slug, 'docs', 'context.md'));
   cpSync(join(FIXTURE, 'architecture.template.yaml'), join(slug, 'architecture.yaml'));
   cpSync(join(FIXTURE, 'answers.yaml'), join(slug, 'answers.yaml'));
+  cpSync(join(FIXTURE, 'tasks.template.yaml'), join(slug, 'tasks.yaml'));
   return dir;
 }
 
@@ -148,7 +149,7 @@ const CALLS = [
   ['archgen_skills', { action: 'installed' }],
   ['archgen_skills', { action: 'digest', skillId: 'fixing-motion-performance' }],
   ['archgen_skills', { action: 'load', skillId: 'fixing-motion-performance' }],
-  ['archgen_skills', { action: 'install', skillId: 'fixing-motion-performance' }],
+  ['archgen_setup', { action: 'install_skill', skillId: 'fixing-motion-performance' }],
   ['archgen_refs', { action: 'list' }],
   ['archgen_refs', { action: 'index', topic: 'orchestration' }],
   ['archgen_refs', { action: 'read', topic: 'orchestration', section: 'dispatch--wave-execution' }],

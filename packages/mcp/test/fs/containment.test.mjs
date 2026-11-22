@@ -17,6 +17,10 @@ import { Context } from '../../src/context.mjs';
 import { assertWithinRoot } from '../../src/core/fs/fs-safety.mjs';
 import { docIndex } from '../../src/core/docs/doc-navigator.mjs';
 import { resolveSlugInput } from '../../src/core/plan/scope.mjs';
+import { createServer } from '../../src/server.mjs';
+import { getToolSpec, runTool } from '../../src/tools/_register.mjs';
+
+createServer();
 
 let root;
 let outside;
@@ -109,6 +113,18 @@ test('the scope gate refuses an artifact space outside the project root', () => 
   assert.throws(() => resolveSlugInput(foreign, root), (e) => e.name === 'ScopeError');
   // Without a root the gate accepts it — the root is what makes it specific.
   assert.equal(resolveSlugInput(foreign).slug, 'demo');
+});
+
+test('automatic task discovery refuses a symlink to an outside task file', async () => {
+  const slugDir = join(root, '.archgen', 'demo');
+  mkdirSync(slugDir, { recursive: true });
+  const external = join(outside, 'tasks.yaml');
+  writeFileSync(external, 'tasks: []\n');
+  symlinkSync(external, join(slugDir, 'tasks.yaml'));
+  const ctx = new Context({ projectRoot: root });
+  const result = await runTool(getToolSpec('archgen_tasks'), ctx, { action: 'list', slugDir });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'PERMISSION_DENIED');
 });
 
 test('the scope gate accepts an artifact space inside the project root', () => {

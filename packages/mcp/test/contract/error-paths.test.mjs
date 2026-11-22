@@ -122,8 +122,8 @@ function failingCalls() {
     ['archgen_skills', 'load', {}],
     ['archgen_skills', 'load', { skillId: 'no-such-skill' }],
     ['archgen_skills', 'digest', { skillId: 'no-such-skill' }],
-    ['archgen_skills', 'install', { skillId: 'no-such-skill', approve: true }],
-    ['archgen_skills', 'install', { skillId: 'ui-baseline', harness: 'no-such-harness', approve: true }],
+    ['archgen_setup', 'install_skill', { skillId: 'no-such-skill', approve: true }],
+    ['archgen_setup', 'install_skill', { skillId: 'ui-baseline', harness: 'no-such-harness', approve: true }],
 
     // ── archgen_refs ────────────────────────────────────────────────────────
     ['archgen_refs', 'index', {}],

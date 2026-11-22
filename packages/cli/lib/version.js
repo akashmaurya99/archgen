@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { npmInvocation } from './spawn-npm.js';
 
 export function parseSemver(v) {
-  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(v ?? '').trim());
+  const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(String(v ?? '').trim());
   return m ? { major: +m[1], minor: +m[2], patch: +m[3] } : null;
 }
 

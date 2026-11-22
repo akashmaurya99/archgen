@@ -122,7 +122,13 @@ export async function runTool(spec, ctx, args) {
   // tracked as they are read, and one that was passed and never read is
   // reported. The call still did what the action does.
   const tracked = trackArgs(args, spec.actionArgs);
-  const envelope = await guard(spec.handler, ctx, tracked.args);
+  const envelope = await guard(async (base, callArgs) => {
+    const requested = callArgs.projectRoot;
+    const scoped = typeof requested === 'string' && requested.trim() !== ''
+      ? base.withProjectRoot(requested)
+      : base;
+    return spec.handler(scoped, callArgs);
+  }, ctx, tracked.args);
   const ignored = tracked.ignored();
   if (ignored.length && envelope.ok) {
     envelope.meta = {
@@ -181,7 +187,7 @@ export function registerTool(server, name, spec) {
         readOnlyHint: spec.readOnly === true,
         destructiveHint: spec.destructive === true,
         idempotentHint: spec.idempotent === true,
-        openWorldHint: false,
+        openWorldHint: spec.openWorld === true,
       },
     },
     async (args, extra) => {
@@ -190,13 +196,8 @@ export function registerTool(server, name, spec) {
       // not define the boundary. The server's anchor does, and a selection
       // outside it is refused with PERMISSION_DENIED.
       const base = extra?.archgenContext ?? serverContext();
-      const requested = args?.projectRoot;
-      const ctx =
-        typeof requested === 'string' && requested.trim() !== ''
-          ? base.withProjectRoot(requested)
-          : base;
-      const envelope = await runTool(spec, ctx, args ?? {});
-      return toToolResult(envelope);
+      const envelope = await runTool(spec, base, args ?? {});
+      return toToolResult(envelope, { mode: base.env?.ARCHGEN_MCP_RESULT_MODE });
     },
   );
 }
@@ -206,6 +207,11 @@ let cachedContext = null;
 function serverContext() {
   if (!cachedContext) cachedContext = new Context();
   return cachedContext;
+}
+
+/** Set the process context when stdio is launched with an explicit anchor. */
+export function configureServerContext(projectRoot) {
+  cachedContext = new Context({ projectRoot });
 }
 
 /** Reset the cached context (tests). */

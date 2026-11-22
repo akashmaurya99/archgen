@@ -48,7 +48,11 @@ export function parseJsonc(text) {
  */
 export function mergeEntry(text, key, serverId, entry) {
   const strict = parseStrict(text);
-  if (strict.ok) return mergeStrict(text, strict.data, key, serverId, entry);
+  if (strict.ok) {
+    const reason = strictTargetReason(text, key, serverId);
+    if (reason) return { text, changed: false, reason };
+    return mergeStrict(text, strict.data, key, serverId, entry);
+  }
 
   const parsed = parseJsonc(text);
   if (parsed.error) {
@@ -180,6 +184,8 @@ export function buildChain(parts, serverId, entry, fromIndex = -1) {
 export function removeEntry(text, key, serverId) {
   const strict = parseStrict(text);
   if (strict.ok) {
+    const reason = strictTargetReason(text, key, serverId);
+    if (reason) return { text, changed: false, reason };
     const obj = strict.data && typeof strict.data === 'object' && !Array.isArray(strict.data) ? strict.data : null;
     const bucket = obj ? bucketOf(obj, key) : null;
     if (!bucket || !(serverId in bucket)) {
@@ -225,6 +231,23 @@ function parseStrict(text) {
   } catch {
     return { ok: false, data: null };
   }
+}
+
+/** Refuse strict-JSON shapes that a whole-document rewrite would corrupt. */
+function strictTargetReason(text, key, serverId) {
+  let root;
+  try {
+    root = scanDocument(text);
+  } catch (error) {
+    return `cannot locate the target safely (${error.message})`;
+  }
+  const resolved = walkKeyPath(root, key.split('.'));
+  if (resolved.ambiguous) return `the key '${key}' appears more than once`;
+  if (resolved.blocked) return `'${resolved.blocked}' is not an object`;
+  if (resolved.member && resolved.member.kind !== 'object') return `'${key}' is not an object`;
+  const duplicates = resolved.member?.object?.members?.filter((member) => member.key === serverId) ?? [];
+  if (duplicates.length > 1) return `the server '${serverId}' appears more than once under '${key}'`;
+  return null;
 }
 
 /**
@@ -369,7 +392,9 @@ function stripTrailingCommas(scan) {
 class RawScanner {
   constructor(text) {
     this.text = text;
-    this.i = 0;
+    // BOM is metadata, not a structural token. Skip it while preserving all
+    // subsequent offsets for textual splices.
+    this.i = text.charCodeAt(0) === 0xfeff ? 1 : 0;
   }
 
   peek() {

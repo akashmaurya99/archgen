@@ -9,7 +9,7 @@ import { registerTool, projectRootArg, LIMIT_DESC, OFFSET_DESC, LOCATION_DESC, A
 import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset } from '../context.mjs';
 import { manageCodegraph, assertLocation, shapeReport } from '../core/harness/codegraph-manager.mjs';
-import { toolCall } from '../core/protocol/call.mjs';
+import { continuationCall, toolCall } from '../core/protocol/call.mjs';
 import { invalidInput } from '../core/protocol/errors.mjs';
 import { hint } from '../core/protocol/guidance.mjs';
 import { moreMeta, project, withMeta } from '../envelope.mjs';
@@ -31,7 +31,7 @@ const schema = z.object({
   action: z.enum(['ensure', 'status', 'wire']),
   location: z.enum(['project', 'global', 'both']).optional().describe(LOCATION_DESC),
   approve: z.boolean().optional().describe(APPROVE_DESC),
-  telemetry: z.enum(['keep', 'off', 'on']).optional().describe('CodeGraph anonymous telemetry; off is machine-wide.'),
+  telemetry: z.enum(['keep', 'off', 'on']).optional().describe("keep|off|on: admin override for the CLI's global telemetry setting; the default MCP policy disables it per process."),
   noInstall: z.boolean().optional().describe('Do not install the CLI; use npx in configs.'),
   limit: z.number().int().positive().optional().describe(LIMIT_DESC),
   offset: z.number().int().nonnegative().optional().describe(OFFSET_DESC),
@@ -52,6 +52,7 @@ export function registerCodegraphTools(server) {
     inputSchema: schema,
     readOnly: false,
     destructive: false,
+    openWorld: true,
     idempotent: true,
     handler: async (ctx, args) => {
       const registry = loadAsset('harness-mcp.json');
@@ -92,7 +93,7 @@ export function registerCodegraphTools(server) {
       // continuation, so eight harnesses were unreachable.
       const det = project(report.detected ?? [], {
         ...window,
-        next: toolCall('archgen_codegraph', { action: args.action, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
+        next: continuationCall('archgen_codegraph', args, { projectRoot: ctx.projectRoot, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) }),
       });
       shaped.detected = det.items;
       const manualTotal = shaped.wiring?.manualTotal ?? 0;
@@ -103,7 +104,7 @@ export function registerCodegraphTools(server) {
           returned: det.returned,
           next: det.next,
           more: manualTotal > shaped.wiring?.manual?.length
-            ? toolCall('archgen_codegraph', { action: args.action, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) })
+            ? continuationCall('archgen_codegraph', args, { projectRoot: ctx.projectRoot, limit: args.limit ?? 50, offset: (args.offset ?? 0) + (args.limit ?? 50) })
             : undefined,
           available: { harnesses: det.total, wiringManual: manualTotal },
         }),

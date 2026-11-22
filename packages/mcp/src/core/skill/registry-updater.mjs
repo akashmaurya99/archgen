@@ -10,11 +10,12 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml } from '../fs/yaml.mjs';
-import { invalidInput } from '../protocol/errors.mjs';
+import { conflict, invalidInput } from '../protocol/errors.mjs';
 import { isSlug } from '../protocol/slug.mjs';
 import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
 import { writeFileAtomic } from '../fs/fs-safety.mjs';
+import { TASK_STATUSES } from '../plan/task-contract.mjs';
 
 const START_MARKER = '<!-- archgen:features:start -->';
 const END_MARKER = '<!-- archgen:features:end -->';
@@ -23,7 +24,7 @@ const SEPARATOR = '| --- | --- | --- |';
 export const DISPLAY_STATUSES = ['planned', 'in progress', 'done', 'blocked', 'unknown'];
 // Task-level statuses the status mutator may write; anything else in tasks.yaml
 // means the file is not a contract we can read -> row falls back to unknown.
-const TASK_STATUSES = new Set(['pending', 'ready', 'running', 'blocked', 'done', 'failed']);
+const TASK_STATUS_SET = new Set(TASK_STATUSES);
 
 /** Date -> YYYY-MM-DD (local time, zero-padded). */
 function fmtDate(d) {
@@ -46,12 +47,11 @@ function deriveStatus(tasks) {
   for (const t of tasks) {
     if (t === null || typeof t !== 'object' || Array.isArray(t)) return 'unknown';
     const s = String(t.status ?? 'pending').trim().toLowerCase();
-    if (!TASK_STATUSES.has(s)) return 'unknown';
+    if (!TASK_STATUS_SET.has(s)) return 'unknown';
     statuses.push(s);
   }
   if (statuses.length === 0) return 'planned'; // scaffolded folder, no entries yet
-  if (statuses.includes('blocked')) return 'blocked';
-  if (statuses.every((s) => s === 'failed')) return 'blocked'; // all-failed feature: nothing progresses
+  if (statuses.includes('blocked') || statuses.includes('failed')) return 'blocked';
   if (statuses.every((s) => s === 'done')) return 'done';
   if (statuses.every((s) => s === 'pending' || s === 'ready')) return 'planned';
   return 'in progress';
@@ -83,10 +83,10 @@ function scanFeatures(projectRoot) {
 }
 
 /** Parse the CURRENT registry rows out of an existing AGENTS.md (or null). */
-function oldRowsFrom(raw) {
-  const si = raw.indexOf(START_MARKER);
+function oldRowsFrom(raw, startMarker = START_MARKER, endMarker = END_MARKER) {
+  const si = raw.indexOf(startMarker);
   if (si === -1) return null;
-  const ei = raw.indexOf(END_MARKER, si + START_MARKER.length);
+  const ei = raw.indexOf(endMarker, si + startMarker.length);
   if (ei === -1) return null;
   const old = new Map();
   for (const line of raw.slice(si + START_MARKER.length, ei).split(/\r?\n/)) {
@@ -109,6 +109,8 @@ function oldRowsFrom(raw) {
 export function updateRegistry(projectRoot, opts = {}) {
   const slug = opts.slug ?? null;
   const status = opts.status ?? null;
+  const startMarker = opts.startMarker ?? START_MARKER;
+  const endMarker = opts.endMarker ?? END_MARKER;
 
   if ((slug === null) !== (status === null)) {
     throw invalidInput(
@@ -119,7 +121,7 @@ export function updateRegistry(projectRoot, opts = {}) {
   if (status !== null && !DISPLAY_STATUSES.includes(status)) {
     throw invalidInput(
       `invalid status '${status}' (allowed: ${DISPLAY_STATUSES.join('|')})`,
-      { ...hint({ action: toolCall('archgen_registry', { action: 'update', slug: '<slug>', status: 'planned' }), reason: "the registry carries one of the four display statuses." }), status },
+      { ...hint({ action: toolCall('archgen_registry', { action: 'update', slug: '<slug>', status: 'planned' }), reason: "the registry carries one of the five display statuses." }), status },
     );
   }
   if (slug !== null && !isSlug(slug)) {
@@ -139,11 +141,22 @@ export function updateRegistry(projectRoot, opts = {}) {
 
   const rows = scanFeatures(projectRoot);
 
-  // Upsert override (run right after generating).
+  // The optional pair is an EXPECTED-STATUS assertion, never a second source
+  // of truth. tasks.yaml remains canonical on the very next show/update.
   if (slug !== null) {
     const existing = rows.get(slug);
-    if (existing) existing.status = status;
-    else rows.set(slug, { feature: slug, status, updated: fmtDate(new Date()) });
+    if (!existing) {
+      throw conflict(
+        `cannot register '${slug}': no readable .archgen/${slug}/tasks.yaml exists`,
+        { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', slug }), reason: 'generate the canonical task file before refreshing its derived registry row.' }), slug, status },
+      );
+    }
+    if (existing.status !== status) {
+      throw conflict(
+        `registry status '${status}' disagrees with tasks.yaml status '${existing.status}' for '${slug}'`,
+        { ...hint({ action: toolCall('archgen_tasks', { action: 'list', slug }), reason: 'change task state through archgen_tasks, then refresh the derived registry.' }), slug, expected: status, derived: existing.status },
+      );
+    }
   }
 
   const ordered = [...rows.values()].sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0));
@@ -160,7 +173,7 @@ export function updateRegistry(projectRoot, opts = {}) {
   } catch {
     /* missing -> scaffold below */
   }
-  const oldRows = raw === null ? new Map() : (oldRowsFrom(raw) ?? new Map());
+  const oldRows = raw === null ? new Map() : (oldRowsFrom(raw, startMarker, endMarker) ?? new Map());
 
   let out;
   let banner;
@@ -172,30 +185,30 @@ export function updateRegistry(projectRoot, opts = {}) {
       '\n' +
       'This project uses the archgen skill at `.agents/skills/archgen/SKILL.md` for architecture generation and autonomous task execution.\n' +
       '\n' +
-      START_MARKER +
+      startMarker +
       '\n' +
       renderTable('\n') +
-      END_MARKER +
+      endMarker +
       '\n';
-  } else if (!raw.includes(START_MARKER)) {
+  } else if (!raw.includes(startMarker)) {
     // Existing user file: append newline + markers + table; prior bytes untouched.
     banner = `appended features registry to ${agentsPath}`;
     const eol = raw.includes('\r\n') ? '\r\n' : '\n';
-    out = raw + eol + START_MARKER + eol + renderTable(eol) + END_MARKER + '\n';
+    out = raw + eol + startMarker + eol + renderTable(eol) + endMarker + '\n';
   } else {
     // Markers present: replace ONLY the span between them; every outside byte
     // (BOM, prose, trailing sections, CRLF endings) survives verbatim.
-    const si = raw.indexOf(START_MARKER);
-    const ei = raw.indexOf(END_MARKER, si + START_MARKER.length);
+    const si = raw.indexOf(startMarker);
+    const ei = raw.indexOf(endMarker, si + startMarker.length);
     if (ei === -1) {
       throw invalidInput(
-        `${agentsPath}: found ${START_MARKER} but no ${END_MARKER} — repair the markers by hand`,
+        `${agentsPath}: found ${startMarker} but no ${endMarker} — repair the markers by hand`,
         { ...hint({ action: "repair the AGENTS.md markers by hand", reason: "the markers delimit the table the server rewrites." }), file: agentsPath, },
       );
     }
     banner = `updated features registry in ${agentsPath}`;
     const eol = raw.includes('\r\n') ? '\r\n' : '\n';
-    out = raw.slice(0, si + START_MARKER.length) + eol + renderTable(eol) + raw.slice(ei);
+    out = raw.slice(0, si + startMarker.length) + eol + renderTable(eol) + raw.slice(ei);
   }
 
   // Human summary.
@@ -213,10 +226,11 @@ export function updateRegistry(projectRoot, opts = {}) {
   }
   if (unchanged) notes.push(`unchanged: ${unchanged}`);
 
-  writeFileAtomic(agentsPath, out);
+  const changed = raw === null || out !== raw;
+  if (changed) writeFileAtomic(agentsPath, out, { root: projectRoot });
 
   return {
-    updated: true,
+    updated: changed,
     banner,
     notes,
     rows: ordered,
@@ -239,7 +253,9 @@ export function updateRegistry(projectRoot, opts = {}) {
  * @returns {{rows: Array<{feature: string, status: string, updated: string}>,
  *            hasMarkers: boolean, inSync: boolean, source: string}}
  */
-export function showRegistry(projectRoot) {
+export function showRegistry(projectRoot, opts = {}) {
+  const startMarker = opts.startMarker ?? START_MARKER;
+  const endMarker = opts.endMarker ?? END_MARKER;
   const rows = [...scanFeatures(projectRoot).values()].sort((a, b) =>
     a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0,
   );
@@ -250,8 +266,8 @@ export function showRegistry(projectRoot) {
   } catch {
     /* absent */
   }
-  const rendered = raw === null ? null : oldRowsFrom(raw);
-  const hasMarkers = Boolean(raw && raw.includes(START_MARKER) && raw.includes(END_MARKER));
+  const rendered = raw === null ? null : oldRowsFrom(raw, startMarker, endMarker);
+  const hasMarkers = Boolean(raw && raw.includes(startMarker) && raw.includes(endMarker));
   let inSync = false;
   if (rendered) {
     inSync =

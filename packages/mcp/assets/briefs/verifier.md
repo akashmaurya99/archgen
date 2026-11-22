@@ -25,8 +25,8 @@ Then judge:
 - Do the waves match real dependencies, with no artificial serialization?
 - Does the plan contradict the PRD, `answers.yaml`, the decisions, or `references/code-standards.md`?
 - **SCOPE & ARTIFACT NECESSITY:** the recorded profile exists and every create/reuse/omit decision matches the files on disk; every created artifact has a consumer; every reuse names a real host path; every omission records a reason; no task lacks a requirement.
-- **Code standards:** source and test trees are separate — no test tree inside the source tree, and every source-owning task owns the mirrored test path.
-- **Artifact tracking:** no `.gitignore` rule covers `.archgen/`, `.agents/skills/archgen`, `.claude/skills/archgen`, `AGENTS.md` or `CLAUDE.md`.
+- **Code standards:** host-native colocated tests are valid; declared mirrored roots require full mirrored coverage.
+- **Artifact tracking:** team plan artifacts are committed; `.gitignore` may cover only local install manifests, wiring records, indexes, coverage, and backups — never tasks, plans, decisions, or the registry.
 
 <!-- include: _gate-protocol.md -->
 

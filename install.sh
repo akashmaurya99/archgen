@@ -234,6 +234,7 @@ if [ "$INIT" -eq 1 ]; then
   refuse_escape "$ROOT/.claude/skills" "$ROOT"
   mkdir -p -- "$ROOT/.agents/skills"
   BACKUP_NOTE=""
+  BACKUP_DEST=""
   # The copy lands in a TEMPORARY sibling FIRST. The old store is only moved
   # aside once the new one is COMPLETE, so an interrupted or failing copy
   # leaves the project with the store it had — never with none.
@@ -265,6 +266,9 @@ if [ "$INIT" -eq 1 ]; then
   fi
   if ! mv -- "$STORE_TMP" "$STORE"; then
     rm -rf -- "$STORE_TMP"
+    if [ -n "$BACKUP_DEST" ] && [ -e "$BACKUP_DEST" ]; then
+      mv -- "$BACKUP_DEST" "$STORE" 2>/dev/null || true
+    fi
     die "could not move the copied skill store into place at .agents/skills/archgen"
   fi
   prune_dev_only "$STORE" "$SOURCE"
@@ -386,9 +390,9 @@ Quick triggers:
 - "roll back ..." / "install mcp ..." / "fetch design skill" -> auxiliary modes
 
 Rules of the road:
-- Generated artifacts live ONLY under `.archgen/<slug>/`
-- Never hand-edit task statuses - call the `archgen_tasks` MCP tool (comment-safe)
-- Two gates before any execution: verifier approval, then human approval
+- Generated plan artifacts live under `.archgen/<slug>/`; local install state is not plan state
+- Never hand-edit task statuses - call `archgen_tasks{action:'set_status'}`
+- Four stages before execution: deterministic floor -> verifier -> plan review -> user approval
 
 ## Features registry
 
@@ -499,20 +503,28 @@ BLOCK
   # wrote one and install.sh did not, so an install made by the shell
   # installer was invisible to the CLI's uninstaller.
   PROJECT_MANIFEST="$ROOT/.archgen/.install-manifest.json"
+  refuse_escape "$ROOT/.archgen" "$ROOT"
+  refuse_symlink "$PROJECT_MANIFEST"
   if mkdir -p -- "$ROOT/.archgen" 2>/dev/null && [ ! -L "$ROOT/.archgen" ]; then
     NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     LINK_ENTRY=""
     if [ -L "$CLAUDE_LINK" ] && [ "$(readlink -- "$CLAUDE_LINK")" = "../../.agents/skills/archgen" ]; then
       LINK_ENTRY="    { \"kind\": \"link\", \"path\": \".claude/skills/archgen\", \"createdAt\": \"$NOW\" },"
     fi
-    {
+    MANIFEST_TMP="$PROJECT_MANIFEST.tmp.$$"
+    if {
       printf '{\n  "version": 1,\n  "createdAt": "%s",\n  "entries": [\n' "$NOW"
       printf '    { "kind": "dir", "path": ".agents/skills/archgen", "createdAt": "%s" },\n' "$NOW"
       printf '%s\n' "$LINK_ENTRY"
       printf '    { "kind": "block", "path": "AGENTS.md", "createdAt": "%s" },\n' "$NOW"
       printf '    { "kind": "block", "path": "CLAUDE.md", "createdAt": "%s" }\n' "$NOW"
       printf '  ]\n}\n'
-    } > "$PROJECT_MANIFEST" 2>/dev/null || warn "could not write $PROJECT_MANIFEST"
+    } > "$MANIFEST_TMP" 2>/dev/null && mv -f -- "$MANIFEST_TMP" "$PROJECT_MANIFEST" 2>/dev/null; then
+      :
+    else
+      rm -f -- "$MANIFEST_TMP"
+      warn "could not write $PROJECT_MANIFEST"
+    fi
   fi
 
   # Server bootstrap (mirrors packages/cli --init): wire the archgen MCP server
@@ -535,11 +547,10 @@ BLOCK
       # The two halves are skipped INDEPENDENTLY: `--no-codegraph` used to
       # switch the whole bootstrap off, so opting out of CodeGraph also
       # unwired the MCP server.
-      BOOT_ARGS="--project $ROOT --location $LOCATION --yes"
-      [ "$CODEGRAPH" -eq 0 ] && BOOT_ARGS="$BOOT_ARGS --no-codegraph"
-      [ "$MCP" -eq 0 ] && BOOT_ARGS="$BOOT_ARGS --no-mcp"
-      # shellcheck disable=SC2086
-      if ! npx -y archgen-mcp bootstrap $BOOT_ARGS; then
+      BOOT_ARGS=(--project "$ROOT" --location "$LOCATION" --yes)
+      [ "$CODEGRAPH" -eq 0 ] && BOOT_ARGS+=(--no-codegraph)
+      [ "$MCP" -eq 0 ] && BOOT_ARGS+=(--no-mcp)
+      if ! npx -y archgen-mcp bootstrap "${BOOT_ARGS[@]}"; then
         warn "server bootstrap incomplete — run: npx archgen-mcp bootstrap --project . --yes"
       fi
     else
@@ -591,7 +602,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
       # An EDITED copy is moved into the backup vault before it is removed:
       # the uninstall must never be the last place those edits exist.
       if [ "$kind" = "copy" ] && [ -d "$path" ] && [ ! -L "$path" ]; then
-        if ! diff -rq -- "$SOURCE" "$path" >/dev/null 2>&1; then
+        if ! diff -rq -x '.archgen-version' -x '.DS_Store' -x 'Thumbs.db' -x 'desktop.ini' -- "$SOURCE" "$path" >/dev/null 2>&1; then
           TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
           BACKUP="$(dirname -- "$path")/.archgen-backups/$TS/archgen"
           if mkdir -p -- "$(dirname -- "$BACKUP")" && mv -- "$path" "$BACKUP" 2>/dev/null; then
@@ -732,7 +743,7 @@ while IFS= read -r tdir; do
       printf '%-8s %-5s %s\n' FAILED - "Refusing to write through symlink at $dest — use --copy or remove symlink"
       failed=$((failed+1)); continue
     fi
-    if [ -d "$dest" ] && [ ! -L "$dest" ] && diff -rq -- "$SOURCE" "$dest" >/dev/null 2>&1; then
+    if [ -d "$dest" ] && [ ! -L "$dest" ] && diff -rq -x '.archgen-version' -x '.DS_Store' -x 'Thumbs.db' -x 'desktop.ini' -- "$SOURCE" "$dest" >/dev/null 2>&1; then
       printf '%-8s %-5s %s\n' SAME copy "$dest"; same=$((same+1)); continue
     fi
     if [ -e "$dest" ] || [ -L "$dest" ]; then

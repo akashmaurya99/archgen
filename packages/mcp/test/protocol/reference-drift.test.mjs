@@ -51,13 +51,10 @@ test('code-standards.md stays in the skill (workers may have no MCP tools)', () 
   );
 });
 
-test('the depth ladder and artifact-templates.md agree on the edge-case minimum', () => {
+test('the depth ladder owns edge-case ceilings without a second prose copy', () => {
   const ref = read('artifact-templates.md');
   if (!ref) return;
-  // The pin must still carry the NUMBER, not just the phrase — that is the
-  // whole point of the gate: the reference and the ladder can never disagree
-  // about how many edge cases a MEDIUM task needs.
-  assert.match(ref, /Edge cases[^\n]*\b3\b/, 'the reference must state the MEDIUM minimum');
+  assert.match(ref, /edge cases within the profile budget/i);
   assert.equal(ladder.profile.depthBudgets.MEDIUM.edgeCasesPerTask, 3);
   assert.ok(ladder.profile.depthBudgets.LARGE.edgeCasesPerTask >= 3);
   assert.equal(ladder.profile.depthBudgets.SMALL.edgeCasesPerTask, 0);
@@ -209,28 +206,14 @@ const readBrief = (name) => {
   return existsSync(p) ? readFileSync(p, 'utf8') : null;
 };
 
-test('code-standards.md keeps the test tree OUT of the source tree', () => {
+test('code-standards.md allows host-native colocation and keeps a mirrored fallback', () => {
   const p = join(SKILL_REFS, 'code-standards.md');
-  if (!inRepo()) return; // published package — the references are not shipped
-  assert.ok(existsSync(p), 'the references must be present in the repository');
+  if (!inRepo()) return;
   const text = readFileSync(p, 'utf8');
-  assert.doesNotMatch(text, /colocat/i, 'the standards still teach colocated tests');
-  assert.match(text, /sibling/i, 'the standards must say the test tree is a SIBLING of the source tree');
-  assert.match(text, /tests\/unit/, 'the standards must show the test tree');
-
-  // The layout block must not carry a tests/ directory inside the source tree.
-  const block = /```\n([\s\S]*?)```/.exec(text)?.[1] ?? '';
-  const inside = [];
-  let inSource = false;
-  for (const line of block.split('\n')) {
-    if (/^src\//.test(line)) {
-      inSource = true;
-      continue;
-    }
-    if (/^\S/.test(line)) inSource = false; // a new top-level entry
-    if (inSource && /tests\//.test(line)) inside.push(line.trim());
-  }
-  assert.deepEqual(inside, [], `the source tree still declares a tests directory: ${inside.join(', ')}`);
+  assert.match(text, /host-native colocation is valid and needs no waiver/i);
+  assert.match(text, /sibling test tree/i);
+  assert.match(text, /tests\/unit/);
+  assert.match(text, /declared mirror enforcement/i);
 });
 
 test('the templates agree with the standards on the test tree', () => {

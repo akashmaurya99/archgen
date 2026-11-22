@@ -27,7 +27,7 @@ import { toolCall } from './call.mjs';
 
 /** Parse a semver-ish version into comparable parts. */
 export function parseVersion(v) {
-  const m = /^\s*v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?\s*$/.exec(String(v ?? ''));
+  const m = /^\s*v?(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\s*$/.exec(String(v ?? ''));
   return m ? { major: +m[1], minor: +m[2], patch: +m[3] } : null;
 }
 
@@ -68,7 +68,7 @@ export function compareVersions(a, b) {
 export function satisfies(version, spec) {
   const raw = String(spec ?? '').trim();
   if (!raw) return true; // no requirement declared
-  const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)/.exec(raw);
+  const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\s*$/.exec(raw);
   if (!m) throw invalidInput(
     `unparseable version requirement '${spec}'`,
     { ...hint({ action: 'archgen-skill doctor', reason: "the skill declares the server version it needs." }), requirement: spec },

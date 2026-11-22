@@ -30,7 +30,8 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { parseYaml } from '../fs/yaml.mjs';
-import { buildGraph, computeWaves, globsMayOverlap, ownedPaths } from './graph.mjs';
+import { buildGraph, computeWaves, globContains, globsMayOverlap, ownedPaths } from './graph.mjs';
+import { validateArchitecture } from './architecture-validator.mjs';
 import { WARNING_CODES } from '../protocol/codes.mjs';
 import {
   artifactFamilies,
@@ -115,7 +116,7 @@ function sameTitle(a, b) {
  * @param {{slugDir: string, tasks: any[]}} input
  * @returns {{issues: string[], warnings: string[], maps: object, waivers: object[], profile: object|null}}
  */
-export function auditPlan({ slugDir, tasks }) {
+export function auditPlan({ slugDir, tasks, planText: sharedPlanText = null }) {
   const issues = [];
   const warnings = [];
   const maps = { requirements: [], edgeMatrix: [], ownership: [], modules: [], decisions: [] };
@@ -139,7 +140,7 @@ export function auditPlan({ slugDir, tasks }) {
   const architectureFile = readYaml(join(slugDir, 'architecture.yaml'));
   const architecture = architectureFile.data;
   const prdText = readText(join(slugDir, 'docs', 'prd.md'));
-  const planText = readPlans(join(slugDir, 'plans'));
+  const planText = sharedPlanText ?? readPlans(join(slugDir, 'plans'));
   const decisionFiles = listFiles(join(slugDir, 'decisions'));
   const waivers = readWaivers(join(slugDir, 'waivers.yaml'));
   const answersFile = readYaml(join(slugDir, 'answers.yaml'));
@@ -157,6 +158,11 @@ export function auditPlan({ slugDir, tasks }) {
     warnings.push(
       finding('PROFILE_UNPARSEABLE', `answers.yaml does not parse: ${answersFile.error}`),
     );
+  }
+  if (!architectureFile.error) {
+    const structural = validateArchitecture(architecture, slugDir);
+    issues.push(...structural.filter((entry) => !entry.startsWith('CONFIG_REQUIRED:')));
+    warnings.push(...structural.filter((entry) => entry.startsWith('CONFIG_REQUIRED:')));
   }
 
   const byId = new Map(tasks.map((t) => [String(t?.id ?? ''), t]));
@@ -224,7 +230,7 @@ export function auditPlan({ slugDir, tasks }) {
     /** The files that physically exist, for the create/omit/reuse checks. */
     const presentIn = (family, recordedPath) => {
       // The family ASSIGNMENT, not the pattern match. `docs/prd.md` and
-      // `docs/<module>.md` are different families that OVERLAP as patterns:
+      // `docs/topology.md` are different families that OVERLAP as patterns:
       // matching the pattern let a PRD satisfy the module-diagram family's
       // decision, so a missing diagram passed and a present PRD blocked a
       // plan that said omit.
@@ -246,8 +252,16 @@ export function auditPlan({ slugDir, tasks }) {
       if (!path) continue;
       const rel = normalizeArtifactPath(path);
       const family = familyOf(rel, families);
-      // A family may be named more than once (two plan files, two ADRs); the
-      // FIRST decision wins, and the rest are checked against the same family.
+      // A family may contain several files, but it cannot carry contradictory
+      // decisions. Silently choosing the first hid exactly the omit/reuse bug.
+      const previous = decided.get(family);
+      if (previous && previous.decision !== decision) {
+        issues.push(finding(
+          'PROFILE_DECISION_INVALID',
+          `artifact family '${family ?? rel}' has conflicting decisions '${previous.decision}' and '${decision}' — keep exactly one decision per family`,
+        ));
+        continue;
+      }
       if (!decided.has(family)) {
         decided.set(family, {
           path,
@@ -379,7 +393,7 @@ export function auditPlan({ slugDir, tasks }) {
         const dir = under.split('/').slice(0, -1).join('/');
         const mirroredDir = dir ? `${roots.testRoot}/${dir}` : roots.testRoot;
         const covered = tasks.some((o) =>
-          ownedPaths(o).some((og) => globsMayOverlap(normalizeGlob(og), `${mirroredDir}/**`)),
+          ownedPaths(o).some((og) => globContains(normalizeGlob(og), `${mirroredDir}/**`)),
         );
         if (!covered) {
           issues.push(
@@ -570,7 +584,7 @@ export function auditPlan({ slugDir, tasks }) {
   }
 
   // ── 5. declared decisions exist on disk ──────────────────────────────────
-  for (const d of architecture?.decisions ?? []) {
+  for (const d of Array.isArray(architecture?.decisions) ? architecture.decisions : []) {
     const id = String(d?.id ?? '');
     const title = String(d?.title ?? '');
     const n = /^D(\d+)$/i.exec(id);
@@ -585,11 +599,11 @@ export function auditPlan({ slugDir, tasks }) {
 
   // ── 6. every declared path has an owner ──────────────────────────────────
   const declared = [];
-  for (const s of architecture?.structure ?? []) {
+  for (const s of Array.isArray(architecture?.structure) ? architecture.structure : []) {
     if (typeof s?.path === 'string' && !s.path.includes('<')) declared.push(s.path);
   }
-  for (const mod of architecture?.modules ?? []) {
-    for (const o of mod?.owns ?? []) if (typeof o === 'string' && !o.includes('<')) declared.push(o);
+  for (const mod of Array.isArray(architecture?.modules) ? architecture.modules : []) {
+    for (const o of Array.isArray(mod?.owns) ? mod.owns : []) if (typeof o === 'string' && !o.includes('<')) declared.push(o);
   }
   for (const p of declared) {
     const covered = tasks.some((t) => ownedPaths(t).some((g) => globsMayOverlap(g, p)));
@@ -740,7 +754,7 @@ export function auditPlan({ slugDir, tasks }) {
     const globs = ownedPaths(t);
     maps.ownership.push({ id, globs, wave: waveOf.get(id) ?? null });
   }
-  for (const mod of architecture?.modules ?? []) {
+  for (const mod of Array.isArray(architecture?.modules) ? architecture.modules : []) {
     const name = String(mod?.name ?? '');
     const owns = (mod?.owns ?? []).filter((o) => typeof o === 'string');
     const ownedBy = tasks

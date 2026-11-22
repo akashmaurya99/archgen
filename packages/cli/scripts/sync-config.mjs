@@ -43,11 +43,11 @@ export function readRequiresMcp(raw) {
  * satisfied: it must never pass vacuously.
  */
 export function serverSatisfies(version, spec) {
-  const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)/.exec(String(spec ?? '').trim());
+  const m = /^(\^|~|>=|<=|>|<|=)?\s*v?(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(String(spec ?? '').trim());
   if (!m) return false;
   const op = m[1] ?? '=';
   const want = { major: +m[2], minor: +m[3], patch: +m[4] };
-  const hm = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(version ?? '').trim());
+  const hm = /^v?(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(String(version ?? '').trim());
   if (!hm) return false;
   const have = { major: +hm[1], minor: +hm[2], patch: +hm[3] };
   const cmp = (a, b) => (a.major !== b.major ? a.major - b.major : a.minor !== b.minor ? a.minor - b.minor : a.patch - b.patch);

@@ -19,7 +19,7 @@ import { isTaskMapping } from './graph.mjs';
  * answer from `findings` — which are NEGATIVE — inverts it, because an
  * uncovered task's finding names the task.
  */
-export function checkPlanCoverage(planDir, tasks) {
+export function checkPlanCoverage(planDir, tasks, opts = {}) {
   const findings = [];
   const referenced = new Set();
   const mentionedInTasks = new Set();
@@ -30,9 +30,9 @@ export function checkPlanCoverage(planDir, tasks) {
   } catch (e) {
     return { findings: [`cannot read plans dir ${planDir}: ${e.message}`], referenced, mentionedInTasks };
   }
-  let planText = '';
+  let planText = typeof opts.planText === 'string' ? opts.planText : '';
   try {
-    planText = files.map((f) => readFileSync(join(planDir, f), 'utf8')).join('\n');
+    if (typeof opts.planText !== 'string') planText = files.map((f) => readFileSync(join(planDir, f), 'utf8')).join('\n');
   } catch (e) {
     return { findings: [`cannot read a plan file under ${planDir}: ${e.message}`], referenced, mentionedInTasks };
   }
@@ -95,10 +95,10 @@ export function checkPlanCoverage(planDir, tasks) {
 }
 
 /** Prefixes that mark a REQUIREMENT id, never a task id. */
-const REQUIREMENT_PREFIXES = new Set(['FR', 'REQ', 'NFR']);
+export const REQUIREMENT_PREFIXES = new Set(['FR', 'REQ', 'NFR']);
 
 /** Prefixes that mark a TECHNICAL constant, never a task id. */
-const TECHNICAL_PREFIXES = new Set([
+export const TECHNICAL_PREFIXES = new Set([
   'SHA', 'MD5', 'HMAC', 'AES', 'RSA', 'ECDSA', 'CRC', 'UUID', 'ULID',
   'HTTP', 'HTTPS', 'TLS', 'SSL', 'DNS', 'TCP', 'UDP', 'IP', 'WS', 'WSS', 'GRPC',
   'UTF', 'ASCII', 'ISO', 'RFC', 'IETF', 'W3C', 'ECMA', 'IEEE', 'ANSI', 'POSIX',
@@ -109,7 +109,7 @@ const TECHNICAL_PREFIXES = new Set([
 ]);
 
 /** Prefixes that are generic TASK references even when this plan uses none. */
-const TASK_PREFIXES = new Set([
+export const TASK_PREFIXES = new Set([
   'TASK', 'T', 'STEP', 'ISSUE', 'BUG', 'CHORE', 'EPIC', 'WORK', 'JOB', 'ITEM',
   'PATCH', 'SPIKE', 'TODO', 'FIX',
 ]);

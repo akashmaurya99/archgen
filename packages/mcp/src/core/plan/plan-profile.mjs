@@ -63,18 +63,30 @@ function unique(values) {
   return [...new Set(values)];
 }
 
-/** Does a rule's condition match the current profile? */
-function ruleMatches(rule, { scope, intent, signals }) {
-  if (rule.scopeIn && !rule.scopeIn.includes(scope)) return false;
-  if (rule.intentIn && !rule.intentIn.includes(intent)) return false;
-  if (rule.signalSome && !rule.signalSome.some((s) => signals.includes(s))) return false;
-  if (rule.signalAll && !rule.signalAll.every((s) => signals.includes(s))) return false;
-  if (rule.signalNone && rule.signalNone.some((s) => signals.includes(s))) return false;
+/** Does one evidence predicate match? Unknown counts never prove a bound. */
+function conditionMatches(condition, { scope, intent, signals, modules, tasks, confidence }) {
+  if (condition.scopeIn && !condition.scopeIn.includes(scope)) return false;
+  if (condition.intentIn && !condition.intentIn.includes(intent)) return false;
+  if (condition.signalSome && !condition.signalSome.some((s) => signals.includes(s))) return false;
+  if (condition.signalAll && !condition.signalAll.every((s) => signals.includes(s))) return false;
+  if (condition.signalNone && condition.signalNone.some((s) => signals.includes(s))) return false;
+  if (condition.moduleMin !== undefined && (modules === null || modules < condition.moduleMin)) return false;
+  if (condition.moduleMax !== undefined && (modules === null || modules > condition.moduleMax)) return false;
+  if (condition.taskMin !== undefined && (tasks === null || tasks < condition.taskMin)) return false;
+  if (condition.taskMax !== undefined && (tasks === null || tasks > condition.taskMax)) return false;
+  if (condition.confidenceIn && !condition.confidenceIn.includes(confidence)) return false;
   return true;
 }
 
+/** Does a rule's positive condition fire without its omission predicate? */
+function ruleMatches(rule, context) {
+  if (!conditionMatches(rule, context)) return false;
+  return !rule.omitWhen || !conditionMatches(rule.omitWhen, context);
+}
+
 /** Why a conditional rule did not fire, in one clause. */
-function omitReason(rule, scope, intent) {
+function omitReason(rule, scope, intent, context) {
+  if (rule.omitWhen && conditionMatches(rule.omitWhen, context) && rule.omitReason) return rule.omitReason;
   if (rule.scopeIn && !rule.scopeIn.includes(scope)) return `not needed at ${scope} scope`;
   if (rule.intentIn && !rule.intentIn.includes(intent)) return `not applicable to ${intent}`;
   if (rule.signalSome) return `no trigger (${rule.signalSome.join(' | ')})`;
@@ -109,6 +121,13 @@ export function buildPlanProfile(ladder, input = {}) {
     );
   }
 
+  const testLayout = input.testLayout ?? 'mirrored';
+  if (!['mirrored', 'colocated'].includes(testLayout)) {
+    throw invalidInput(
+      `unknown testLayout '${testLayout}' (allowed: mirrored|colocated)`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'profile', intent, testLayout: 'colocated' }), reason: 'use the test layout observed in the host repository.' }), testLayout },
+    );
+  }
   const signals = unique((Array.isArray(input.signals) ? input.signals : []).map((s) => String(s).toLowerCase()));
   const known = new Set(spec.signals ?? SCOPE_SIGNALS);
   const unknown = signals.filter((s) => !known.has(s));
@@ -168,7 +187,13 @@ export function buildPlanProfile(ladder, input = {}) {
   // say so.
   let confidence;
   if (signals.length === 0) {
-    confidence = intent === 'BROWNFIELD-CHANGE' ? 'medium' : 'low';
+    // Repository evidence counts too. A brownfield feature with known module
+    // and task bounds is not "thin evidence" merely because it needs no
+    // escalation signal; greenfield still calibrates without product signals.
+    confidence = intent === 'BROWNFIELD-CHANGE'
+      || (intent.startsWith('BROWNFIELD') && modules !== null && taskCount !== null)
+      ? 'medium'
+      : 'low';
   } else if (signals.length === 1) {
     confidence = 'medium';
   } else {
@@ -201,6 +226,9 @@ export function buildPlanProfile(ladder, input = {}) {
   const resolvePath = (p) => (slug ? p.replaceAll('<slug>', slug) : p);
   const artifacts = [];
   for (const rule of spec.artifactRules ?? []) {
+    // Authoring inputs (for example the Mermaid snippet template) are served
+    // by the scaffold but never become plan-of-record artifacts themselves.
+    if (rule.supportOnly) continue;
     const artifact = {
       path: resolvePath(rule.path),
       purpose: rule.purpose ?? null,
@@ -229,17 +257,14 @@ export function buildPlanProfile(ladder, input = {}) {
     // created — but it is still LISTED, with the reason. The list is the
     // agent's record of what it considered and why it left out; a family
     // that vanished from the list would be a family nobody decided about.
-    const inScope = !rule.scopeIn || rule.scopeIn.includes(scopeClass);
-    const inIntent = !rule.intentIn || rule.intentIn.includes(intent);
-    const triggered = hasSignalCondition(rule)
-      ? ruleMatches(rule, { scope: scopeClass, intent, signals })
-      : true;
+    const context = { scope: scopeClass, intent, signals, modules, tasks: taskCount, confidence };
+    const triggered = hasEvidenceCondition(rule) ? ruleMatches(rule, context) : conditionMatches(rule, context);
 
-    if (inScope && inIntent && triggered) {
+    if (triggered) {
       artifacts.push({
         ...artifact,
         decision: 'create',
-        reason: hasSignalCondition(rule) ? 'profile trigger is present' : (rule.purpose ?? 'required for every plan'),
+        reason: hasEvidenceCondition(rule) ? (rule.createReason ?? 'profile trigger is present') : (rule.purpose ?? 'required for every plan'),
       });
       continue;
     }
@@ -247,23 +272,24 @@ export function buildPlanProfile(ladder, input = {}) {
     artifacts.push({
       ...artifact,
       decision: 'omit',
-      reason: omitReason(rule, scopeClass, intent),
+      reason: omitReason(rule, scopeClass, intent, context),
     });
   }
 
-  // Mermaid snippets exist only to support diagrams. Do not ship an empty
-  // snippets file when no module diagram was created.
-  const diagram = artifacts.find((a) => a.path.includes('/docs/<module>.md'));
-  const snippets = artifacts.find((a) => a.path.endsWith('/docs/mermaid-snippets.md'));
-  if (snippets && diagram && diagram.decision !== 'create') {
-    snippets.decision = 'omit';
-    snippets.reason = 'no diagrams were created';
+  // Cross-artifact necessity: a diagram is a VIEW of an architecture contract,
+  // never an isolated substitute for one. Reused host architecture satisfies it.
+  const architectureDecision = artifacts.find((artifact) => artifact.path.endsWith('/architecture.yaml'))?.decision;
+  const diagram = artifacts.find((artifact) => artifact.pattern === 'docs/*.md');
+  if (diagram?.decision === 'create' && architectureDecision === 'omit') {
+    diagram.decision = 'omit';
+    diagram.reason = 'no architecture contract or reused host architecture to draw from';
   }
 
   const depth = spec.depthBudgets?.[scopeClass] ?? null;
 
   return {
     scopeClass,
+    ...(testLayout === 'colocated' ? { testLayout } : {}),
     confidence,
     intentClass: intent,
     score: bounded,
@@ -287,7 +313,7 @@ export function buildPlanProfile(ladder, input = {}) {
     // produced a scaffold for a DIFFERENT profile — a different class, a
     // different artifact set, and a floor that then reported the recorded
     // profile as unsatisfied.
-    next: scaffoldCall(scopeClass, { intent, signals, modules, tasks: taskCount, slug }),
+    next: scaffoldCall(scopeClass, { intent, signals, modules, tasks: taskCount, slug, testLayout }),
   };
 }
 
@@ -310,6 +336,7 @@ function scaffoldCall(scopeClass, input) {
     signals: input.signals,
     modules: input.modules ?? undefined,
     tasks: input.tasks ?? undefined,
+    testLayout: input.testLayout === 'colocated' ? 'colocated' : undefined,
     // A slug is only named when there IS one. The literal '<slug>' was carried
     // otherwise, and following it verbatim produced artifact paths containing
     // '<slug>'.
@@ -333,9 +360,9 @@ function countOf(value) {
   return null;
 }
 
-/** A rule with a SIGNAL condition can be switched on and off by evidence. */
-function hasSignalCondition(rule) {
-  return Boolean(rule.signalSome || rule.signalAll || rule.signalNone);
+/** A rule with an evidence condition can be switched on and off. */
+function hasEvidenceCondition(rule) {
+  return Boolean(rule.signalSome || rule.signalAll || rule.signalNone || rule.omitWhen);
 }
 
 /**
@@ -362,9 +389,10 @@ export function scopeArtifactRules(ladder, scopeClass) {
   const defaultIntent = (ladder?.classes?.[scopeClass]?.intentDefaults ?? [])[0] ?? null;
   const out = [];
   for (const rule of rules) {
+    if (rule.supportOnly) continue;
     if (rule.scopeIn && !rule.scopeIn.includes(scopeClass)) continue;
     if (rule.intentIn && !(defaultIntent && rule.intentIn.includes(defaultIntent))) continue;
-    const conditional = Boolean(rule.signalSome || rule.signalAll || rule.signalNone);
+    const conditional = hasEvidenceCondition(rule);
     out.push({ ...rule, required: !conditional });
   }
   return out;

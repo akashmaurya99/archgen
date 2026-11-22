@@ -9,9 +9,10 @@
 // what a rule is.
 //
 // One module for the space, one for the rules that judge it.
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { parseYaml } from './yaml.mjs';
+import { containPath } from './fs-safety.mjs';
 import { loadAsset } from '../../context.mjs';
 
 export // The asset is a PROCESS-WIDE constant, so its derived families are too.
@@ -239,10 +240,8 @@ export function existsUnder(base, path) {
   if (!rel) return false;
   try {
     const root = resolve(base);
-    const target = resolve(root, rel);
-    // The target must be INSIDE the base directory.
-    if (target !== root && !target.startsWith(root + sep)) return false;
-    return existsSync(target);
+    const target = containPath(root, resolve(root, rel));
+    return existsSync(target) && !lstatSync(target).isSymbolicLink();
   } catch {
     return false;
   }
@@ -260,7 +259,7 @@ export function existsUnder(base, path) {
 export function listArtifacts(slugDir) {
   const out = [];
   const names = ['tasks.yaml', 'architecture.yaml', 'codebase-map.md'];
-  for (const n of names) if (existsSync(join(slugDir, n))) out.push(n);
+  for (const n of names) if (existsUnder(slugDir, n)) out.push(n);
   for (const dir of ['docs', 'decisions', 'plans']) {
     const full = join(slugDir, dir);
     if (!existsSync(full)) continue;
@@ -297,7 +296,7 @@ export function artifactSpaceFamilies(slugDir) {
     out.get(family).push(rel);
   };
   for (const name of ['tasks.yaml', 'architecture.yaml', 'codebase-map.md', 'answers.yaml']) {
-    if (existsSync(join(slugDir, name))) add(name);
+    if (existsUnder(slugDir, name)) add(name);
   }
   for (const dir of ['docs', 'decisions', 'plans']) {
     const full = join(slugDir, dir);
@@ -308,7 +307,17 @@ export function artifactSpaceFamilies(slugDir) {
 }
 export function readText(path) {
   try {
-    return existsSync(path) ? readFileSync(path, 'utf8') : null;
+    if (!existsSync(path) || lstatSync(path).isSymbolicLink()) return null;
+    const abs = resolve(path);
+    // Artifact reads use the slug itself as the containment boundary. This
+    // catches a symlinked docs/plans parent as well as a symlinked leaf.
+    for (let dir = dirname(abs); dirname(dir) !== dir; dir = dirname(dir)) {
+      if (basename(dirname(dir)) === '.archgen') {
+        containPath(dir, abs);
+        break;
+      }
+    }
+    return readFileSync(abs, 'utf8');
   } catch {
     return null;
   }
@@ -343,7 +352,8 @@ export function readPlans(dir) {
   try {
     return readdirSync(dir)
       .filter((f) => f.endsWith('.md'))
-      .map((f) => readFileSync(join(dir, f), 'utf8'))
+      .map((f) => readText(join(dir, f)))
+      .filter((text) => text !== null)
       .join('\n');
   } catch {
     return '';

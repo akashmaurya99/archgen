@@ -18,8 +18,8 @@ const BIN = join(HERE, '..', '..', 'bin', 'archgen-mcp.mjs');
  * Spawn the server and speak raw JSON-RPC over its stdio.
  * @returns {Promise<{call: (method: string, params?: any) => Promise<any>, stderr: () => string, close: () => void}>}
  */
-function spawnServer() {
-  const child = spawn(process.execPath, [BIN], { stdio: ['pipe', 'pipe', 'pipe'] });
+function spawnServer(args = []) {
+  const child = spawn(process.execPath, [BIN, ...args], { stdio: ['pipe', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   let buffer = '';
@@ -149,4 +149,30 @@ test('an unknown method returns a JSON-RPC error, not a crash', async (t) => {
   const res = await server.call('tools/definitely-not-a-method', {});
   assert.ok(res.error, `expected an error, got: ${JSON.stringify(res)}`);
   assert.equal(res.error.code, -32601);
+});
+
+test('explicit and implicit serve both honor the full tool profile', async (t) => {
+  for (const args of [['serve', '--tool-profile', 'full'], ['--tool-profile', 'full', 'serve']]) {
+    const server = spawnServer(args);
+    t.after(() => server.close());
+    await server.call('initialize', {
+      protocolVersion: '2026-07-28', capabilities: {}, clientInfo: { name: 'profile-test', version: '1.0.0' },
+    });
+    const listed = await server.call('tools/list', {});
+    assert.equal(listed.result.tools.length, 10, `${args.join(' ')} did not publish the full profile`);
+  }
+});
+
+test('an out-of-anchor projectRoot returns a typed envelope, not a protocol exception', async (t) => {
+  const server = spawnServer();
+  t.after(() => server.close());
+  await server.call('initialize', {
+    protocolVersion: '2026-07-28', capabilities: {}, clientInfo: { name: 'containment-test', version: '1.0.0' },
+  });
+  const result = await server.call('tools/call', {
+    name: 'archgen_help', arguments: { topic: 'plan', projectRoot: '..' },
+  });
+  assert.equal(result.result.isError, true);
+  assert.equal(result.result.structuredContent.ok, false);
+  assert.equal(result.result.structuredContent.error.code, 'PERMISSION_DENIED');
 });

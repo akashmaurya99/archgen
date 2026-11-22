@@ -28,6 +28,7 @@
     "test:mcp": "npm --prefix packages/mcp test",
     "test:immutable": "node internal/tools/safety/repo-immutable.mjs -- npm test",
     "test:budget": "node internal/tools/budget/context-budget.mjs --skill-dir skill --project . --max-always-on 18000",
+    "test:budget:full": "node internal/tools/budget/context-budget.mjs --skill-dir skill --project . --tool-profile full --max-always-on 18000",
     "test:contract": "node internal/tools/lint/check-capability-contract.mjs",
     "test:versions": "node internal/tools/lint/version-lint.mjs && node internal/tools/lint/version-consistency.mjs",
     "release:prepare": "node internal/tools/release/release-prepare.mjs",

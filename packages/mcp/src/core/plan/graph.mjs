@@ -122,7 +122,7 @@ export function findCycle(prerequisites) {
 /** Topological waves over NOT-DONE tasks.
  * @param {Map<string,any>} byId
  * @param {Map<string,string[]>} prerequisites
- * @returns {{waves: Array<Array<any>>, blockedByFailure: string[]}}
+ * @returns {{waves: Array<Array<any>>, blockedByFailure: string[], blocked: string[], blockedByBlocked: string[]}}
  * Wave membership: every prerequisite is DONE OR ALREADY QUEUED in an earlier
  * wave. That is standard topological layering — a task in wave 3 may depend
  * on a task in wave 2, which is not done yet when wave 3 starts; it is
@@ -134,9 +134,11 @@ export function findCycle(prerequisites) {
 export function computeWaves(byId, prerequisites) {
   const done = new Set();
   const failed = new Set();
+  const blocked = new Set();
   for (const [id, t] of byId) {
     if (t.status === 'done') done.add(id);
     if (t.status === 'failed') failed.add(id);
+    if (t.status === 'blocked') blocked.add(id);
   }
   // Propagate failure transitively.
   const blockedByFailure = new Set();
@@ -151,8 +153,23 @@ export function computeWaves(byId, prerequisites) {
     }
   }
 
+  // A manual hold is not satisfaction either. Keep it distinct from failure
+  // propagation so the UI can explain why independent work may still run.
+  const blockedByBlocked = new Set();
+  changed = true;
+  while (changed) {
+    changed = false;
+    for (const [id, deps] of prerequisites) {
+      if (blocked.has(id) || done.has(id) || failed.has(id) || blockedByFailure.has(id) || blockedByBlocked.has(id)) continue;
+      if (deps.some((d) => blocked.has(d) || blockedByBlocked.has(d))) {
+        blockedByBlocked.add(id); changed = true;
+      }
+    }
+  }
+
   const remaining = [...byId.keys()].filter((id) =>
-    !done.has(id) && !failed.has(id) && !blockedByFailure.has(id));
+    !done.has(id) && !failed.has(id) && !blocked.has(id) &&
+    !blockedByFailure.has(id) && !blockedByBlocked.has(id));
   const waves = [];
   const satisfied = new Set(done);
   let frontier = remaining.filter((id) => prerequisites.get(id).every((d) => satisfied.has(d)));
@@ -169,7 +186,12 @@ export function computeWaves(byId, prerequisites) {
     }
     frontier = next;
   }
-  return { waves, blockedByFailure: [...blockedByFailure].sort() };
+  return {
+    waves,
+    blockedByFailure: [...blockedByFailure].sort(),
+    blocked: [...blocked].sort(),
+    blockedByBlocked: [...blockedByBlocked].sort(),
+  };
 }
 
 /**
@@ -214,24 +236,88 @@ export function findOwnershipConflict(wave) {
   return null;
 }
 
+function normalizeGlobPath(value) {
+  const normalized = String(value ?? '').replaceAll('\\', '/').replace(/^\.\//, '');
+  // A declared directory owns its descendants; a trailing slash is not an
+  // empty path segment that makes sibling ownership look disjoint.
+  return normalized.endsWith('/') ? `${normalized}**` : normalized;
+}
+
+/** Match a concrete repository-relative path against one ownership glob. */
+export function globMatches(pattern, path) {
+  const glob = normalizeGlobPath(pattern);
+  const target = normalizeGlobPath(path);
+  if (glob === target) return true;
+  let source = '^';
+  for (let i = 0; i < glob.length; i++) {
+    const ch = glob[i];
+    if (ch === '*') {
+      if (glob[i + 1] === '*') {
+        while (glob[i + 1] === '*') i++;
+        if (glob[i + 1] === '/') {
+          source += '(?:.*/)?';
+          i++;
+        } else source += '.*';
+      } else source += '[^/]*';
+      continue;
+    }
+    if (ch === '?') { source += '[^/]'; continue; }
+    // Brace and character-class syntax is not interpreted by the subset. For
+    // impact analysis, a conservative segment wildcard avoids false negatives.
+    if (ch === '[' || ch === '{') {
+      const close = ch === '[' ? ']' : '}';
+      const end = glob.indexOf(close, i + 1);
+      if (end !== -1) { source += '[^/]*'; i = end; continue; }
+    }
+    source += '\\^$.+|()'.includes(ch) ? `\\${ch}` : ch;
+  }
+  return new RegExp(`${source}$`).test(target);
+}
+
 /** Conservative may-intersect test for two ownership globs. */
 export function globsMayOverlap(a, b) {
-  if (a === b) return true;
-  // Deepen the check only when a recursive '**' is involved; plain literal
-  // globs keep the cheap equality rule above.
-  if (!a.includes('**') && !b.includes('**')) return false;
-  const as = a.split('/');
-  const bs = b.split('/');
+  const left = normalizeGlobPath(a);
+  const right = normalizeGlobPath(b);
+  if (left === right) return true;
+  const as = left.split('/');
+  const bs = right.split('/');
   const n = Math.min(as.length, bs.length);
   for (let i = 0; i < n; i++) {
     const x = as[i];
     const y = bs[i];
     if (x === y) continue;
-    if (x === '**' || y === '**') return true; // '**' swallows any divergence below it
-    if (x.includes('*') || y.includes('*') || x.includes('?') || y.includes('?')) return true; // uncertain -> flag
-    return false; // both segments literal and different: paths diverge here
+    if (x === '**' || y === '**') return true;
+    if (/[*?[{]/.test(x) || /[*?[{]/.test(y)) return true;
+    return false;
   }
-  return true; // one pattern is a segment-prefix of the other
+  // A non-recursive pattern cannot reach below its final segment. Recursive
+  // patterns and a concrete prefix remain conservatively overlapping.
+  if (as.length !== bs.length) {
+    const longer = as.length > bs.length ? as : bs;
+    const shorter = as.length > bs.length ? bs : as;
+    if (longer.slice(0, shorter.length).every((segment, i) => segment === shorter[i] || segment === '**' || /[*?[{]/.test(segment) || /[*?[{]/.test(shorter[i]))) {
+      return longer.slice(shorter.length).some((segment) => segment === '**') ||
+        shorter.some((segment) => segment === '**');
+    }
+    return false;
+  }
+  return true;
+}
+
+/** True when every path matched by `narrow` is also matched by `broad`. */
+export function globContains(broad, narrow) {
+  const a = normalizeGlobPath(broad);
+  const b = normalizeGlobPath(narrow);
+  if (a === b) return true;
+  if (a.endsWith('/**')) {
+    const prefix = a.slice(0, -3);
+    return b === prefix || b.startsWith(`${prefix}/`);
+  }
+  if (!/[*?[{]/.test(b)) return globMatches(a, b);
+  // General glob-language containment is undecidable for the conservative
+  // subset without a full automaton. Exact and recursive-prefix cases above
+  // are sound; refusing uncertain coverage prevents a false MIRROR pass.
+  return false;
 }
 
 // --- additive (hardening pass): dedup normalization + quality surfacing -----

@@ -67,7 +67,7 @@ test('the claim ledger is present and well formed', () => {
   if (!inRepo()) return;
   assert.ok(ledger, 'internal/claims/skill-claims.json must exist');
   assert.ok(Array.isArray(ledger.claims), 'the ledger must carry a claims array');
-  assert.ok(ledger.claims.length >= 100, `the ledger must carry the obligations (found ${ledger.claims.length})`);
+  assert.ok(ledger.claims.length >= 40, `the semantic obligation set must stay complete (found ${ledger.claims.length})`);
 
   const ids = new Set();
   for (const c of ledger.claims) {

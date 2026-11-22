@@ -12,7 +12,7 @@ import { routingSentence } from '../core/protocol/routing.mjs';
 import { loadAsset, BRIEFS_DIR, TEMPLATES_DIR, serverVersion } from '../context.mjs';
 import { buildScaffold, skeletonKeyForPath } from '../core/plan/scaffold.mjs';
 import { buildPlanProfile, INTENTS, SCOPE_SIGNALS } from '../core/plan/plan-profile.mjs';
-import { loadBrief, renderBriefContext, BRIEF_KINDS } from '../core/docs/briefs.mjs';
+import { loadBrief, renderDispatchBrief, BRIEF_KINDS } from '../core/docs/briefs.mjs';
 import { resolveBriefScope, briefVars } from '../core/docs/brief-scope.mjs';
 import { buildBriefContext } from '../core/docs/brief-context.mjs';
 import { validateTasksYaml } from '../core/plan/validator.mjs';
@@ -62,12 +62,12 @@ const { resolve: resolveCollection, reject: rejectCollection } = collectionRules
 const PLAN_ACTION_ARGS = {
   validate: ['tasksYaml', 'planDir', 'collection', 'limit', 'offset'],
   verify: ['tasksYaml', 'planDir', 'collection', 'limit', 'offset'],
-  graph: ['tasksYaml', 'planDir', 'node', 'module', 'format', 'status', 'collection', 'limit', 'offset'],
+  graph: ['tasksYaml', 'planDir', 'node', 'module', 'format', 'status', 'limit', 'offset'],
   impact: ['tasksYaml', 'target', 'collection', 'limit', 'offset'],
   coverage: ['tasksYaml', 'planDir', 'taskId', 'collection', 'limit', 'offset'],
-  profile: ['intent', 'signals', 'modules', 'tasks', 'slug', 'collection'],
-  scaffold: ['scope', 'intent', 'signals', 'modules', 'tasks', 'slug', 'file', 'collection'],
-  brief: ['kind', 'tasksYaml', 'planDir', 'slug', 'featureRequest', 'topic', 'round', 'collection'],
+  profile: ['intent', 'signals', 'modules', 'tasks', 'slug', 'testLayout'],
+  scaffold: ['scope', 'intent', 'signals', 'modules', 'tasks', 'slug', 'testLayout', 'file', 'view'],
+  brief: ['kind', 'tasksYaml', 'planDir', 'slug', 'featureRequest', 'topic', 'round'],
 };
 
 const schema = z.object({
@@ -87,6 +87,7 @@ const schema = z.object({
   slug: z.string().optional().describe('Project slug.'),
   intent: z.enum(INTENTS).optional(),
   signals: z.array(z.enum(SCOPE_SIGNALS)).optional().describe('Evidence signals.'),
+  testLayout: z.enum(['mirrored', 'colocated']).optional().describe("Test ownership layout; default 'mirrored' preserves legacy scaffolds."),
   modules: z
     .union([z.number().int().positive(), z.array(z.unknown()).min(1)])
     .optional()
@@ -96,6 +97,7 @@ const schema = z.object({
     .optional()
     .describe('Planned tasks: a count, or the list itself.'),
   file: z.string().optional().describe('One artifact file.'),
+  view: z.enum(['index', 'all']).optional().describe("scaffold: 'index' (default) = metadata only; 'all' includes every skeleton (legacy)."),
   kind: z.enum(BRIEF_KINDS).optional(),
   featureRequest: z.string().optional().describe('One-line feature request.'),
   topic: z.string().optional().describe('Investigation topic.'),
@@ -169,8 +171,8 @@ export function registerPlanTools(server) {
             // fetch the rest.
             collection,
           });
-          const errNext = nextCall('validate', args, report.errorsOffset + report.errors.length, file);
-          const warnNext = nextCall('validate', args, report.warningsOffset + report.warnings.length, file);
+          const errNext = nextCall('validate', args, report.errorsOffset + report.errors.length, file, args.collection, ctx.projectRoot);
+          const warnNext = nextCall('validate', args, report.warningsOffset + report.warnings.length, file, args.collection, ctx.projectRoot);
           // The truncation test is OFFSET-AWARE. Comparing the page length
           // with the total is true at the tail too, so the continuation
           // pointed at the SAME offset and an agent following it spun
@@ -230,8 +232,8 @@ export function registerPlanTools(server) {
           // in the payload, so a caller that needs the tail can reach it.
           // The next call is emitted when EITHER list is truncated — the
           // warnings used to vanish with no pointer at all.
-          const issueNext = nextCall('verify', args, out.issuesOffset + out.issues.length, file);
-          const warningNext = nextCall('verify', args, out.warningsOffset + out.warnings.length, file);
+          const issueNext = nextCall('verify', args, out.issuesOffset + out.issues.length, file, args.collection, ctx.projectRoot);
+          const warningNext = nextCall('verify', args, out.warningsOffset + out.warnings.length, file, args.collection, ctx.projectRoot);
           // OFFSET-AWARE: `omitted` is what is LEFT after this window. The
           // old test (`page.length < total`) was true at the tail as well,
           // so the continuation pointed at the same offset forever.
@@ -284,7 +286,7 @@ export function registerPlanTools(server) {
             limit: args.limit,
             collection,
           });
-          const call = (c, off) => nextCall('coverage', args, off, file, c);
+          const call = (c, off) => nextCall('coverage', args, off, file, c, ctx.projectRoot);
           const next = {
             tasks: call('tasks', covered.tasks.offset + covered.tasks.items.length),
             covered: call('covered', covered.covered.offset + covered.covered.items.length),
@@ -293,7 +295,6 @@ export function registerPlanTools(server) {
             requirements: call('requirements', covered.requirements.offset + covered.requirements.uncovered.length),
             edgeCases: call('edgeCases', covered.edgeCases.offset + covered.edgeCases.unlinked.length),
           };
-          const truncated = (shown, total) => shown < total;
           // The REQUESTED collection comes first in the continuation list —
           // `meta.next` is the call the agent is told to fetch, so it must
           // continue the collection it asked about, not the default one.
@@ -339,7 +340,6 @@ export function registerPlanTools(server) {
           // chain that jumped between collections repeated an offset and
           // handed the agent a different query than the one it was paging.
           const selectedNext = omittedOf[collection] > 0 ? next[collection] : undefined;
-          void truncated;
           // `meta.total`/`meta.returned` describe the SELECTED collection.
           // They described the whole set before, so `returned` could exceed
           // `total` and neither number matched the answer.
@@ -405,7 +405,7 @@ export function registerPlanTools(server) {
           // could never reach the other two — the agent had to guess the
           // collection name the tool never mentioned.
           const cont = (c, off) =>
-            toolCall('archgen_plan', { action: 'impact', tasksYaml: file, target: args.target, collection: c, limit: args.limit ?? 50, offset: off });
+            nextCall('impact', args, off, file, c, ctx.projectRoot);
           const nextOf = {
             direct: cont('direct', direct.offset + direct.items.length),
             transitive: cont('transitive', transitive.offset + transitive.items.length),
@@ -442,9 +442,9 @@ export function registerPlanTools(server) {
               artifactsTotal: artifacts.total,
             },
             { ...moreMeta({
-              // The total covers EVERY list the payload carries — a `returned`
-              // larger than the `total` is impossible to reconcile.
-              total: direct.total + transitive.total + artifacts.total,
+              // total and returned describe the SELECTED collection; the
+              // other totals remain in `available`.
+              total: selectedTotal,
               returned: selectedShown,
               next: selectedNext,
               more: moreList.length ? moreList.join(' | ') : undefined,
@@ -470,6 +470,7 @@ export function registerPlanTools(server) {
             modules: args.modules,
             tasks: args.tasks,
             slug: args.slug ?? null,
+            testLayout: args.testLayout ?? 'mirrored',
           });
         }
         case 'scaffold': {
@@ -490,6 +491,7 @@ export function registerPlanTools(server) {
             signals: args.signals ?? [],
             modules: args.modules ?? null,
             tasks: args.tasks ?? null,
+            testLayout: args.testLayout ?? 'mirrored',
             // The generator token carries the RUNNING server's version. The
             // server knows it exactly, so the artifact records the truth
             // instead of the agent having to guess, copy or type a version —
@@ -507,7 +509,8 @@ export function registerPlanTools(server) {
             signals: args.signals?.length ? args.signals : undefined,
             modules: args.modules,
             tasks: args.tasks,
-            slug: args.slug ?? '<slug>',
+            testLayout: args.testLayout,
+            slug: args.slug ?? undefined,
           };
           // ONE file's skeleton, when the caller named one.
           //
@@ -612,6 +615,7 @@ export function registerPlanTools(server) {
                 dependsOn: step?.dependsOn ?? [],
               },
               skeleton,
+              ...(key === 'plans/<slug>.md' ? { edgeMatrixTemplate: built.edgeMatrixTemplate } : {}),
               writeThese: artifact ? [artifact.path] : [],
               // The dependencies that are not on disk yet. A hard one would
               // have refused the call; a soft one is reported here.
@@ -619,18 +623,36 @@ export function registerPlanTools(server) {
               dependencyCheck: space ? 'checked against the artifact space on disk' : 'skipped — no artifact space resolved',
               nextStep: unmet.length
                 ? `Write ${unmet[0].path} first — it carries ${unmet[0].carries || 'the facts this file cites'} — then ${artifact?.path ?? wanted}.`
-                : `Write ${artifact?.path ?? wanted} from the skeleton above, then ${toolCall('archgen_plan', { action: 'validate' })}.`,
+                : key
+                  ? `Write ${artifact?.path ?? wanted} from the skeleton above, then ${toolCall('archgen_plan', { action: 'validate' })}.`
+                  : `Build ${artifact?.path ?? wanted} with ${toolCall('archgen_plan', { action: 'brief', kind: 'survey', slug, featureRequest: '<feature request>' })}; there is no static skeleton for survey evidence.`,
             };
           }
-          return withMeta(
-            built,
-            moreMeta({
-              total: (built.writeThese ?? []).length,
-              returned: (built.writeThese ?? []).length,
-              available: { files: (built.writeThese ?? []).length },
-              more: toolCall('archgen_plan', { action: 'scaffold', ...sameInputs, file: '<one file>' }),
-            }),
-          );
+          const scaffoldMeta = moreMeta({
+            total: (built.writeThese ?? []).length,
+            returned: (built.writeThese ?? []).length,
+            available: { files: (built.writeThese ?? []).length },
+            more: toolCall('archgen_plan', { action: 'scaffold', ...sameInputs, file: '<one file>' }),
+          });
+          if (args.view === 'all') return withMeta(built, scaffoldMeta);
+
+          // Concise by default: the artifact decisions and write order are the
+          // map; each skeleton is fetched only when its turn arrives. `all`
+          // preserves the legacy single-response contract for existing users.
+          const {
+            skeletons,
+            edgeMatrixTemplate,
+            edgeCaseClasses,
+            edgeCaseExtras,
+            ...index
+          } = built;
+          if (index.profile) {
+            const { artifacts: profileArtifacts, ...profileSummary } = index.profile;
+            index.profile = profileSummary;
+          }
+          index.skeletonsOmitted = true;
+          index.skeletonPolicy = 'fetch one file with scaffold{file}; use view:"all" only for the legacy full payload';
+          return withMeta(index, scaffoldMeta);
         }
         case 'brief': {
           rejectCollection('brief', args.collection);
@@ -680,7 +702,8 @@ export function registerPlanTools(server) {
             throw invalidInput(
               `brief '${kind}' is missing ${missing.join(', ')} — pass ${passable.length ? passable.join(', ') : 'the missing values'}`, { ...hint({ action: toolCall('archgen_plan', { action: 'brief', kind: 'investigate', tasksYaml: '<tasks.yaml>', planDir: '<planDir>', topic: '<topic>', round: '1' }), reason: "an investigate brief needs a topic." }), action, kind, missing });
           }
-          return { kind, brief: `${renderBriefContext(briefContext)}\n${brief}`, scope };
+          const rendered = renderDispatchBrief(briefContext, brief);
+          return { kind, brief: rendered.text, scope, ...(rendered.budget ? { briefBudget: rendered.budget } : {}) };
         }
         case 'graph': {
           rejectCollection('graph', args.collection);
@@ -815,7 +838,7 @@ function requireTasksYaml(args, ctx) {
     projectRoot: ctx.projectRoot,
     action: args.action,
   });
-  return { file: resolved.file, warning: resolutionWarning(resolved) };
+  return { file: ctx.contain(resolved.file), warning: resolutionWarning(resolved) };
 }
 
 /**
@@ -846,7 +869,7 @@ function requireTasksYaml(args, ctx) {
  *   argument there named the wrong collection, and every continuation in the
  *   list pointed at the one the caller had already read.
  */
-function nextCall(action, args, offset, file = null, collection = args.collection) {
+function nextCall(action, args, offset, file = null, collection = args.collection, projectRoot = args.projectRoot) {
   const carried = {};
   for (const key of PLAN_ACTION_ARGS[action] ?? []) {
     if (args[key] !== undefined) carried[key] = args[key];
@@ -860,6 +883,7 @@ function nextCall(action, args, offset, file = null, collection = args.collectio
     action,
     ...carried,
     collection,
+    projectRoot,
     limit: args.limit ?? 50,
     offset: Math.max(0, offset),
   });

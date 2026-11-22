@@ -1,27 +1,50 @@
 name: Demo Platform
-slug: demo            # becomes .archgen/demo/
-stack:
+slug: demo
+toolchain:
   language: typescript
   runtime: node20
-  framework: fastify
-  database: postgres
-structure:            # planned folder tree — planned BEFORE code exists
-  - path: src/features/<feature>/
-    purpose: feature modules (api, internal, tests colocated)
+  package_manager: npm
+  build: npm run build
+  test: npm test
+  lint: npm run lint
+  typecheck: npx tsc --noEmit
+  source_root: src
+  test_root: tests/unit
+existing_docs: []
+structure:
+  - path: src/features/
+    purpose: feature modules (api and web)
+  - path: tests/unit/features/
+    purpose: feature unit tests mirroring the source tree
   - path: src/shared/
     purpose: cross-feature utilities, no feature imports
+  - path: tests/unit/shared/
+    purpose: shared-kernel unit tests
   - path: src/config/
-    purpose: env parsing + constants
+    purpose: env parsing and typed constants
+  - path: tests/unit/config/
+    purpose: config unit tests
+naming_conventions:
+  file_naming: kebab-case TypeScript files
+  dir_layout: src/<module> mirrored under tests/unit/<module>
+  symbol_casing: camelCase
+  test_placement: tests/unit mirrors the source path
 modules:
   - name: api
     responsibility: HTTP surface for notes and users
-    owns: ["src/features/api/**"]
+    owns: ["src/features/api/**", "tests/unit/features/api/**"]
+    depends_on_modules: []
+    key_interfaces: ["notesRouter (src/features/api/routes.ts)"]
   - name: web
     responsibility: Server-rendered admin console
-    owns: ["src/features/web/**"]
-decisions:            # ADR-lite; full ADRs live in decisions/
+    owns: ["src/features/web/**", "tests/unit/features/web/**"]
+    depends_on_modules: [api]
+    key_interfaces: ["adminPage (src/features/web/page.ts)"]
+decisions:
   - id: D1
     title: Postgres over MongoDB
     context: transactional records plus reporting queries
     decision: Postgres 16 accessed through Prisma
-    consequences: schema migrations required per release
+    consequences:
+      - schema migrations required per release
+      - relational integrity enforced at the database level

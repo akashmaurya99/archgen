@@ -156,7 +156,7 @@ are supported for all of them.
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/akashmaurya99/archgen/blob/main/CONTRIBUTING.md).
-Skill suite and CLI tests run with zero dependencies:
+CLI tests have zero package dependencies. MCP tests require the server's committed dependencies (`npm ci --prefix packages/mcp`):
 
 ```sh
 node --test packages/mcp/test/**/*.test.mjs

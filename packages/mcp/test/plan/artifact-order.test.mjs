@@ -107,7 +107,7 @@ test('the order is the ladder chain, restricted to the create set', () => {
   const order = buildWriteOrder(profile.artifacts, rules);
   assert.deepEqual(
     order.order.map((p) => p.replace('.archgen/demo/', '')),
-    ['answers.yaml', 'docs/prd.md', 'architecture.yaml', 'docs/<module>.md', 'docs/mermaid-snippets.md', 'tasks.yaml', 'plans/demo.md'],
+    ['answers.yaml', 'docs/prd.md', 'architecture.yaml', 'docs/topology.md', 'tasks.yaml', 'plans/demo.md'],
   );
 });
 
@@ -136,16 +136,27 @@ test('the create set is served in the order, not in the rule array accident', ()
   );
 });
 
-test('a SMALL brownfield plan writes the survey first', () => {
+test('a localized SMALL brownfield plan embeds its survey and writes only tasks plus plan', () => {
   const built = buildScaffold(ladder, 'SMALL', {
-    slug: 'demo',
-    intent: 'BROWNFIELD-CHANGE',
-    signals: [],
+    slug: 'demo', intent: 'BROWNFIELD-CHANGE', signals: [], modules: 1, tasks: 1,
+  });
+  assert.deepEqual(
+    built.writeThese.map((p) => p.replace('.archgen/demo/', '')),
+    ['tasks.yaml', 'plans/demo.md'],
+  );
+  assert.equal(built.surveyLocation, 'plans/<slug>.md#survey');
+  assert.match(built.skeletons['plans/<slug>.md'], /## Survey/);
+});
+
+test('an uncertain brownfield feature writes its standalone survey first', () => {
+  const built = buildScaffold(ladder, 'SMALL', {
+    slug: 'demo', intent: 'BROWNFIELD-FEATURE', signals: [], modules: 1,
   });
   assert.deepEqual(
     built.writeThese.map((p) => p.replace('.archgen/demo/', '')),
     ['codebase-map.md', 'tasks.yaml', 'plans/demo.md'],
   );
+  assert.equal(built.surveyLocation, null);
 });
 
 test('an omitted dependency dissolves its edge', () => {

@@ -29,18 +29,19 @@ import { registerHelpTools } from './tools/help.mjs';
 import { registerSkillTools } from './tools/skills.mjs';
 import { registerRefTools } from './tools/refs.mjs';
 import { registerPlatformTools } from './tools/platform.mjs';
-import { registerEnvelopeResource } from './tools/_register.mjs';
+import { configureServerContext, registerEnvelopeResource } from './tools/_register.mjs';
 import { serverVersion } from './context.mjs';
 import { resolveProfile, setActiveProfile, toolNames } from './core/protocol/profiles.mjs';
 
 /**
  * Build the archgen MCP server.
  *
- * @param {{profile?: string}} [opts] `profile` overrides $ARCHGEN_TOOL_PROFILE.
+ * @param {{profile?: string, projectRoot?: string}} [opts] `profile` overrides $ARCHGEN_TOOL_PROFILE; projectRoot anchors stdio containment.
  * @returns {McpServer}
  */
 export function createServer(opts = {}) {
   setActiveProfile(resolveProfile(opts.profile));
+  if (opts.projectRoot) configureServerContext(opts.projectRoot);
 
   const server = new McpServer({
     name: 'archgen',

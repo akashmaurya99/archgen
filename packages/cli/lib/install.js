@@ -144,7 +144,10 @@ export function installGlobal(opts = {}) {
           rows.push(['SAME', 'copy', dest]);
         } else {
           if (prev) {
-            const loc = moveToBackupInto(tdir, 'archgen', GLOBAL_BACKUP_REL, uniqueBackupTs(tdir, GLOBAL_BACKUP_REL));
+            const loc = moveToBackupInto(tdir, 'archgen', GLOBAL_BACKUP_REL, uniqueBackupTs(tdir, GLOBAL_BACKUP_REL), {
+              // Reached only after the link was proven to point at THIS source.
+              allowSymlink: prev.isSymbolicLink(),
+            });
             const abs = join(tdir, ...loc.split('/'));
             backups.push(abs);
             rows.push(['BACKED-UP', '-', abs]);

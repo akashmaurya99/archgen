@@ -1,4 +1,4 @@
-## [0.1.8] - UNRELEASED
+## [0.1.8] - 2026-11-22
 
 The release machinery release: the test suite runs on every supported Node
 version, the budget gate measures the SAME number everywhere, and the publish
@@ -164,6 +164,104 @@ the server's bootstrap, where they already existed — the CLI could not reach
 them. `--no-codegraph` also keeps the command OFFLINE and side-effect free:
 without it the bootstrap ENSURES CodeGraph, and on a machine without
 CodeGraph that is a real global install.
+
+### Changed — artifacts are created only when they have a real consumer
+
+The planning model no longer equates a large scope with a large document set.
+`depth-ladder.json` now evaluates scope, intent, confidence, module/task counts,
+and explicit omission predicates for each artifact independently. Known
+repository evidence contributes to confidence; unknown evidence still triggers
+a real survey instead of a confident guess.
+
+Verified scaffold outputs are now:
+
+| Scenario | Files produced |
+| --- | --- |
+| Localized SMALL brownfield | **2** — `tasks.yaml` and a plan with embedded `## Survey` and profile |
+| Uncertain SMALL brownfield | **3** — adds `codebase-map.md` |
+| Internal LARGE system | **3** — `answers.yaml`, `tasks.yaml`, and the plan |
+| Contracted product LARGE | **6** — adds PRD, architecture, and `docs/topology.md` |
+
+A PRD requires `product-facing`, not merely production. Architecture requires
+cross-module, public-contract, migration, or service boundaries. ADRs require an
+irreversible or regulated decision. Complex brownfield work keeps the six-section
+survey map, while a proven localized change embeds concise evidence in its plan.
+Mermaid snippets are scaffold inputs only, and diagrams default to ONE
+`docs/topology.md` integration view with an architecture source. Existing host
+documents are reused rather than regenerated.
+
+### Added — scope- and host-aware scaffolds
+
+Task templates now match the work: SMALL has one minimal task, MEDIUM teaches
+disjoint parallel ownership, and LARGE adds parallel features plus integration
+and recovery. Their estimated sizes are 126, 319, and 588 tokens respectively,
+instead of one LARGE example being served to every scope.
+
+`testLayout:'colocated'` is carried through profile, scaffold, and continuation
+calls. Colocated repositories omit mirrored roots and ownership; the default
+`mirrored` mode preserves compatibility. Generated YAML keeps only the required
+provenance comments (`schema_version`, `generator`, and `generated_at`), and
+generated Markdown no longer carries instructional HTML comments.
+
+### Changed — progressive disclosure loads complete guidance exactly once
+
+`assets/mode-routes.json` maps each mode and phase to deduplicated reference
+bundles. GENERATE/UPDATE no longer repeat mechanical invariants, FETCH-SKILL no
+longer repeats its procedure, and whole-route uniqueness is tested.
+GREENFIELD-SYSTEM discovery now includes its nested questions and close-out
+rather than only the parent heading, with Round 0 plus R1–R5 respecting the
+six-round cap.
+
+CodeGraph defaults to `codegraph_explore`; specialized tools remain explicit
+configuration or CLI options. Legacy MCP results use minified JSON, while
+verified structured clients may opt into `ARCHGEN_MCP_RESULT_MODE=structured`
+for a short success summary with the complete envelope in `structuredContent`.
+Errors always retain full JSON. Dispatch briefs keep their instructions and
+exact floor counts under a 6,000-token final safety ceiling, with explicit
+continuations for pathological evidence sets.
+
+### Fixed — harness, worker, and plan correctness
+
+Harness detection now respects the declared priority, and platform responses
+preserve URL fields, entry shapes, environment keys, and Copilot home
+resolution. OpenCode selects an existing `opencode.jsonc` and preserves its
+comments instead of creating a competing JSON file. Per-process telemetry
+policy is distinguished from an approved machine-global override.
+
+Worker dispatchability is derived from the final diagnostic set: ambiguous plan
+resolution, unavailable document context, failed capability discovery, and
+unreadable required skills all block dispatch. CodeGraph guidance requires a
+usable index, not merely a database file.
+
+Architecture validation now covers rich data/API/environment contracts,
+duplicate identities, unknown module dependencies, cycles, and mirrored-root
+conflicts. Task graph, glob containment/overlap, blocked-wave scheduling, impact
+matching, registry derivation, and comment-preserving status updates were
+corrected together.
+
+### Security — writes and parsers fail closed
+
+YAML `__proto__`, escaped flow quotes, empty collections, duplicate keys, and
+comment-preserving targeted writes were hardened. JSON/JSONC merges refuse
+ambiguous or destructive shapes while preserving BOMs and comments. Symlink
+containment, dry runs, atomic sibling-temp renames, file locks, migrations,
+backups, restore, uninstall, and CLI update paths were hardened across the MCP
+server and CLI. Project-root selection and every continuation stay inside the
+server's anchor.
+
+### Changed — measured quality gates and context figures
+
+The repository now verifies the real lean/full `tools/list` payloads,
+phase-based reference bundles, generated artifacts, and the CodeGraph catalog.
+Current measured baselines are **10,067 tokens lean** and **11,609 full**, below
+the 18,000-token ceiling. The complete GENERATE route scenario is 12,624 tokens.
+The lean and full budgets are CI gates, not documentation estimates.
+
+Verification includes 724 MCP tests, 228 CLI tests, 31 internal tests, the
+greenfield/brownfield/negative/tool-matrix fixtures, 27 additional matrix
+classes, version/sync/capability contracts, repository immutability, and packed
+npm-tarball smoke testing. The publish workflow falls back to `NPM_TOKEN` only
+when OIDC actually failed, and its summary runs only after a real publish.
 
 ## [0.1.7] - 2026-11-13
 

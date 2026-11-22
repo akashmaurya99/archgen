@@ -1,5 +1,5 @@
-TASK: Survey this repository to prepare a feature plan for: `<feature request>`
-SCOPE: Read-only exploration. Writes EXACTLY ONE file: `<slug dir>/codebase-map.md`. Nothing else.
+TASK: Survey this repository for a plan whose profile creates `codebase-map.md`: `<feature request>`. A localized SMALL plan embeds this evidence in `## Survey` instead and does not need this brief.
+SCOPE: Read-only exploration, with exactly ONE NAMED WRITER for `<slug dir>/codebase-map.md`. Other surveyors return findings or write explicitly assigned disjoint fragments; they never share a write target.
 PLAN: tasks `<tasks.yaml>` · plans `<plans dir>` · artifacts `<slug dir>`
 
 DELIVERABLE: Write `<slug dir>/codebase-map.md` containing these six non-empty sections:

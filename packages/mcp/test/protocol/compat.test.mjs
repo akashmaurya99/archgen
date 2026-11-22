@@ -60,6 +60,9 @@ test('^ stays inside the major, ~ inside the major+minor', () => {
 
 test('an unparseable requirement is REJECTED, never vacuously satisfied', () => {
   assert.throws(() => satisfies('1.2.3', 'latest-ish'), (e) => e.code === 'INVALID_INPUT');
+  assert.throws(() => satisfies('1.2.3', '>=1.2.3 trailing garbage'), (e) => e.code === 'INVALID_INPUT');
+  assert.equal(parseVersion('1.2.3garbage'), null);
+  assert.equal(parseVersion('1.2.3-'), null);
 });
 
 test('an empty requirement means no constraint', () => {

@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { invalidInput, notFound } from '../protocol/errors.mjs';
 import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
+import { estimateTokens } from '../protocol/tokens.mjs';
 
 export const BRIEF_KINDS = ['verifier', 'review', 'survey', 'investigate'];
 
@@ -191,16 +192,6 @@ export function renderBriefContext(ctx = {}) {
   );
   out.push('');
 
-  if (ctx.scope) {
-    out.push('## EVIDENCE — the plan under review');
-    out.push('');
-    // The paths are NOT repeated here: each brief names its own scope in its
-    // first lines, and the tool's payload carries them as structured data.
-    // Listing them a third time cost the reader 300 bytes per brief for no
-    // fact.
-    out.push('');
-  }
-
   if (ctx.evidence?.files?.length) {
     out.push('### Section index — pull the section, never the file');
     out.push('');
@@ -246,9 +237,10 @@ export function renderBriefContext(ctx = {}) {
       "Broken references (reported by `archgen_docs{action:'validate'}`; the deterministic floor does NOT gate " +
         'on them — judge them here):',
     );
-      for (const b of ctx.docsValidation.broken) {
+      for (const b of ctx.docsValidation.broken.slice(0, FINDING_ROW_CAP)) {
         out.push(`- ${b.file ?? ''}${b.line ? `:${b.line}` : ''} — ${b.kind ?? 'broken'}: ${b.ref ?? ''}`);
       }
+      if (broken > FINDING_ROW_CAP) out.push(`- … ${broken - FINDING_ROW_CAP} more broken reference(s); validate the named documents for the remainder`);
     }
     out.push('');
   }
@@ -258,6 +250,55 @@ export function renderBriefContext(ctx = {}) {
   }
 
   return out.join('\n');
+}
+
+export const MAX_BRIEF_TOKENS = 6000;
+
+/**
+ * Assemble the complete dispatch prompt with a final safety budget. Normal
+ * briefs are returned byte-for-byte. Pathological evidence sets fall back to
+ * the floor counts/snapshot and explicit source continuations; the brief's
+ * instructions and finding classes are never truncated.
+ */
+export function renderDispatchBrief(ctx, template) {
+  const context = renderBriefContext(ctx);
+  const complete = `${context}\n${template}`;
+  const originalTokens = estimateTokens(complete);
+  if (originalTokens <= MAX_BRIEF_TOKENS) return { text: complete, budget: null };
+
+  const continuations = [
+    toolCall('archgen_docs', { action: 'digest', slugDir: ctx.scope?.slugDir }),
+    toolCall('archgen_plan', { action: 'graph', tasksYaml: ctx.scope?.tasksYaml, format: 'json' }),
+    toolCall('archgen_plan', { action: 'verify', tasksYaml: ctx.scope?.tasksYaml, planDir: ctx.scope?.plansDir }),
+  ];
+  const omitted = ['section index', 'dependency graph', 'reference details', 'evidence maps'];
+  const notice = [
+    '### Context budget applied',
+    `- The complete evidence rendering was approximately ${originalTokens} tokens. ${omitted.join(', ')} were omitted from THIS prompt, not from the plan.`,
+    '- Judge the floor counts and snapshot below, then read the named source sections for any remaining judgment. The orchestrator can use these continuations:',
+    ...continuations.map((call) => `- ${call}`),
+    '',
+  ].join('\n');
+  const compactAudit = ctx.audit ? { ...ctx.audit, maps: {}, waivers: [] } : null;
+  let candidate = `${renderBriefContext({ scope: ctx.scope, allowedCalls: ctx.allowedCalls, audit: compactAudit })}\n${notice}\n${template}`;
+  if (estimateTokens(candidate) > MAX_BRIEF_TOKENS) {
+    // Finding text is the next tier to go; exact per-code totals and the plan
+    // fingerprint remain, so no defect class or stale-plan check disappears.
+    const countsOnly = compactAudit
+      ? { ...compactAudit, issues: [], warnings: [], waivedFindings: [] }
+      : null;
+    candidate = `${renderBriefContext({ scope: ctx.scope, allowedCalls: ctx.allowedCalls, audit: countsOnly })}\n${notice}\n${template}`;
+  }
+  return {
+    text: candidate,
+    budget: {
+      maxTokens: MAX_BRIEF_TOKENS,
+      originalTokens,
+      renderedTokens: estimateTokens(candidate),
+      omitted,
+      continuations,
+    },
+  };
 }
 
 /**
@@ -336,7 +377,7 @@ function renderAudit(audit, scope = null) {
       out.push(
         `- … ${omitted} more of the same classes — report them BY CLASS with the counts above, not one line each` +
           (scope?.tasksYaml
-            ? ` (the instances are reachable: archgen_plan{action:'verify',offset:${shownIssues.length}})`
+            ? ` (the instances are reachable: ${toolCall('archgen_plan', { action: 'verify', tasksYaml: scope.tasksYaml, planDir: scope.plansDir, collection: 'issues', offset: shownIssues.length })})`
             : ''),
       );
     }
@@ -350,7 +391,7 @@ function renderAudit(audit, scope = null) {
       out.push(
         `- … ${omitted} more` +
           (scope?.tasksYaml
-            ? ` (reachable: archgen_plan{action:'verify',collection:'warnings',offset:${shownWarnings.length}})`
+            ? ` (reachable: ${toolCall('archgen_plan', { action: 'verify', tasksYaml: scope.tasksYaml, planDir: scope.plansDir, collection: 'warnings', offset: shownWarnings.length })})`
             : ''),
       );
     }
@@ -475,13 +516,14 @@ function renderAudit(audit, scope = null) {
   const waivers = audit.waivers ?? [];
   if (waivers.length) {
     out.push('#### Waived findings — approved deviations, not defects to fix');
-    for (const w of waivers) {
+    for (const w of waivers.slice(0, FINDING_ROW_CAP)) {
       out.push(
         `${w.id || 'waiver'} | ${w.scope.join(', ') || 'unscoped'} | ${w.finding}` +
           `${w.reason ? ` | reason: ${w.reason}` : ''}` +
           `${w.approvedBy ? ` | approved by ${w.approvedBy}${w.approvedAt ? ` on ${w.approvedAt}` : ''}` : ''}`,
       );
     }
+    if (waivers.length > FINDING_ROW_CAP) out.push(`… ${waivers.length - FINDING_ROW_CAP} more approved waiver(s) in waivers.yaml`);
     out.push('');
     out.push('A waived finding is NOT a defect: do not re-raise it unless it regressed.');
     out.push('');

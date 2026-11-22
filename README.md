@@ -227,11 +227,11 @@ it — it never re-implements it.
 | `codegraph_files` | a layout survey of the index |
 | `codegraph_status` | index health, when the index looks wrong |
 
-CodeGraph publishes only `codegraph_explore` by default; the other seven are
-unlisted because each listed tool costs permanent context. archgen's policy
-publishes all of them and ships the **routing rules** that tell the agent
-which one to reach for, so eight tools do not become eight guesses. Sub-agents
-and harnesses without MCP use the CLI equivalents instead:
+ArchGen publishes only `codegraph_explore` by default; the other seven remain
+available through explicit configuration or the CLI when a narrow operation is
+cheaper. The policy ships **routing rules** for choosing among them without
+turning eight tools into eight guesses. Sub-agents and harnesses without MCP
+use the CLI equivalents instead:
 `codegraph explore`, `codegraph query`, `codegraph node`, `codegraph impact`.
 
 The policy lives in one file
@@ -242,7 +242,7 @@ The policy lives in one file
 | `package` | `@colbymchenry/codegraph` | one source for the CLI and the MCP entry |
 | `install` | `latest` | what a **first-time** install fetches — the newest published release |
 | `wire` | `1.6.2` | the exact spec the MCP entry's `npx` fallback uses |
-| `tools` | all eight | the whole surface, in the agent's hands |
+| `tools` | `explore` | the high-signal default; opt into specialized tools explicitly |
 | `telemetry` | `off` | `CODEGRAPH_TELEMETRY=0` in the MCP entry — per process, no machine-wide write |
 
 An installed CodeGraph is never upgraded or rewritten: it may be pinned, it
@@ -255,10 +255,15 @@ always-on footprint exceeds 18,000 tokens.
 
 | | Tokens |
 | --- | ---: |
-| `skill/SKILL.md` | 7,813 |
-| MCP tool catalog — the real `tools/list` payload | 5,850 |
-| CodeGraph's own tools (when CodeGraph is wired) | 3,796 |
-| **Always-on total** | **17,459** — 53% of a 32k window |
+| `skill/SKILL.md` (loaded on trigger) | 3,009 |
+| Generated `AGENTS.md` instructions | 381 |
+| MCP tool catalog — the real `tools/list` payload | 6,114 |
+| CodeGraph's own tools (explore-only default) | 563 |
+| **Repo baseline** | **10,067** — 31% of a 32k window (was 17,937) |
+
+Legacy MCP results use minified JSON. Verified structured clients may set
+`ARCHGEN_MCP_RESULT_MODE=structured` to keep the full envelope in
+`structuredContent` with a short success summary; errors always keep full JSON.
 
 The catalog is measured over the REAL protocol, not a projection: the budget
 tool speaks JSON-RPC to the real binary and measures what `tools/list`
@@ -267,17 +272,21 @@ under-counted by a third, because it never saw the output schema or the
 annotations.
 
 **Everything else is pulled per section, on demand.** The five protocol
-references are 20,751 tokens *in total*, but a typical section is **278
+references are 21,501 tokens *in total*, but a typical section is **291
 tokens** — the agent loads the one it needs, never the file:
 
 | On demand | In total | What is actually read |
 | --- | ---: | --- |
-| A protocol reference | 20,751 | one section — **278 tokens** |
+| A protocol reference | 21,501 | one section — **291 tokens** |
 | A capability skill's rules | — | **~160 tokens** |
-| A dispatch brief | 4,069 | the one being dispatched |
-| An artifact template | 3,071 | the one being scaffolded |
+| A dispatch brief | 4,119 | the one being dispatched |
+| Artifact templates (8 scope variants) | 2,761 | one scope only; task skeletons are **126–588 tokens** |
 
-Nothing is ever read whole. `digest` returns section anchors, `archgen_refs`
+Task scaffolds match SMALL/MEDIUM/LARGE depth. Pass `testLayout:'colocated'` for host-native colocated tests; mirrored remains the compatible default.
+
+Typical artifact counts are **2 files for SMALL** (`tasks.yaml` + plan with embedded survey/profile), **3–4 for MEDIUM**, and **4–6 for LARGE**. Complex brownfield work adds `codebase-map.md`; PRDs require `product-facing`; architecture requires real contracts; `docs/topology.md` requires non-obvious topology and an architecture source. Existing host documents are reused, and ADRs/waivers appear only for actual decisions.
+
+Whole topics are never required by the default routes. `digest` returns section anchors, `archgen_refs`
 and `archgen_skills` serve one section at a time, and a dispatch brief arrives
 with the evidence map, the dependency graph, the reference-integrity result,
 the mechanical floor and the traceability maps already rendered — so the agent

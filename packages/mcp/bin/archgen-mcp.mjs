@@ -13,16 +13,13 @@
 //   archgen-mcp uninstall-mcp               remove what was wired
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { createServer } from '../src/server.mjs';
-import { runCli } from '../src/cli.mjs';
+import { parseArgs, runCli } from '../src/cli.mjs';
 
 const argv = process.argv.slice(2);
 const first = argv[0];
-// The stdio server is the DEFAULT, and only for no argument at all or the
-// explicit word 'serve'. Anything else is the command-line facade — a known
-// command, a flag, or an unknown word, which must say "unknown command"
-// rather than silently start a server and block on stdin (which is what it
-// used to do, making the mistake look like a hang).
-const wantsCli = !(first === undefined || first === 'serve');
+// Stdio is the DEFAULT, including when its options are passed without the
+// explicit `serve` word. Other flags select the command-line facade.
+const wantsCli = !(first === undefined || first === 'serve' || first === '--tool-profile' || first === '--project');
 
 if (wantsCli) {
   try {
@@ -36,7 +33,11 @@ if (wantsCli) {
 }
 
 try {
-  const server = createServer();
+  const opts = parseArgs(first === 'serve' ? argv.slice(1) : argv);
+  if (opts.command !== 'serve' || opts.args !== null || opts.extra !== undefined) {
+    throw new Error('serve accepts only --project and --tool-profile');
+  }
+  const server = createServer({ profile: opts.toolProfile, projectRoot: opts.project ?? undefined });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write('archgen-mcp: server running on stdio\n');

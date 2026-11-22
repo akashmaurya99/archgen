@@ -135,6 +135,45 @@ test('the mirror check stays quiet when the mirrored path is owned', () => {
   }
 });
 
+test('one mirrored test file does not satisfy the whole required tree', () => {
+  const f = fixture({ architecture: 'toolchain:\n  source_root: src\n  test_root: tests/unit\n' });
+  try {
+    const tasks = [{
+      id: 'T1', depends_on: [], acceptance: ['x'],
+      file_ownership: ['src/core/**', 'tests/unit/core/foo.test.ts'],
+    }];
+    const { issues } = auditPlan({ slugDir: f.slugDir, tasks });
+    assert.ok(issues.some((x) => x.includes('MIRROR_MISSING') && x.includes('tests/unit/core/**')));
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a broader recursive test owner satisfies mirror coverage', () => {
+  const f = fixture({ architecture: 'toolchain:\n  source_root: src\n  test_root: tests/unit\n' });
+  try {
+    const tasks = [{
+      id: 'T1', depends_on: [], acceptance: ['x'],
+      file_ownership: ['src/core/**', 'tests/**'],
+    }];
+    const { issues } = auditPlan({ slugDir: f.slugDir, tasks });
+    assert.deepEqual(issues.filter((x) => x.includes('MIRROR_MISSING')), []);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('conflicting decisions for one artifact family are invalid', () => {
+  const answers = 'plan_profile:\n  artifacts:\n    - path: .archgen/demo/plans/demo.md\n      decision: create\n      reason: plan\n    - path: .archgen/demo/plans/demo.md\n      decision: omit\n      reason: contradictory\n';
+  const f = fixture({ answers, plans: { 'demo.md': '# Plan\n' } });
+  try {
+    const { issues } = auditPlan({ slugDir: f.slugDir, tasks: TASKS });
+    assert.ok(issues.some((issue) => issue.includes('PROFILE_DECISION_INVALID') && issue.includes('conflicting decisions')));
+  } finally {
+    f.cleanup();
+  }
+});
+
 test('a matrix row citing an acceptance that does not exist is an issue', () => {
   const plan = [
     '| Case | Input/state | Expected behavior | Covered by |',

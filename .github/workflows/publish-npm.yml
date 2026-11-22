@@ -271,7 +271,8 @@ jobs:
           npm publish --provenance --access public 2>&1 | tee publish.log
 
       - name: Publish (NPM_TOKEN fallback)
-        if: startsWith(github.ref_name, matrix.tag) && failure()
+        id: publish_fallback
+        if: startsWith(github.ref_name, matrix.tag) && steps.publish_oidc.outcome == 'failure'
         working-directory: ${{ matrix.dir }}
         run: |
           set -o pipefail
@@ -301,6 +302,6 @@ jobs:
       # The package name in the log proves which package went out; the npm URL
       # is the canonical landing page.
       - name: Summary
-        if: startsWith(github.ref_name, matrix.tag)
+        if: startsWith(github.ref_name, matrix.tag) && (steps.publish_oidc.outcome == 'success' || steps.publish_fallback.outcome == 'success')
         run: |
           echo "::notice::published ${{ steps.verify.outputs.publishing }} — https://www.npmjs.com/package/${{ matrix.name }}"

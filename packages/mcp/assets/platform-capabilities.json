@@ -346,7 +346,7 @@
         "mechanism": "invoke_subagent (async by design)",
         "parallel": true,
         "parallelLimit": null,
-        "isolation": "not UNVERIFIED",
+        "isolation": "unverified — require disjoint ownership or worktrees",
         "note": "fork subagent for context isolation"
       }
     },
@@ -573,7 +573,7 @@
         "~/.agents/skills/<name>/"
       ]
     },
-    "note": "The `skills` CLI installs into .agents/skills/ UNIVERSALLY \u2014 never .opencode/skills/ or .cursor/skills/. Every harness reads .agents/skills/, so that is the path to point a worker at.",
+    "note": "The universal skills root is .agents/skills/ when the selected installer supports it. Harness-specific paths and bridges vary: use the selected harness's skillPaths and the installer's returned path rather than assuming every harness reads the universal root.",
     "distribution": "npx -y skills add <repo> --skill <slug> --agent <agent> --yes"
   }
 }

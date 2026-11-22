@@ -49,6 +49,25 @@ jobs:
         working-directory: packages/mcp
       - run: npm --prefix packages/cli test
 
+  portability:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+        working-directory: packages/mcp
+      - run: node --test test/mcp/mcp-regression.test.mjs test/restore/restore-regression.test.mjs test/cli/cli-args.test.mjs
+        working-directory: packages/cli
+      - run: node --test test/cli/install-regression.test.mjs test/cli/installer-safety.test.mjs
+        working-directory: packages/cli
+        if: matrix.os == 'macos-latest'
+
   # Coverage gate for the MCP server — the runtime that owns every
   # deterministic capability. The floors below are a REGRESSION GUARD: each
   # one is set just under the measured coverage at the time of writing, so
@@ -129,7 +148,7 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
         working-directory: packages/mcp
-      - run: npm run test:budget
+      - run: npm run test:budget && npm run test:budget:full
 
   # Capability contract: the skill declares the MCP server version it needs,
   # and that requirement must be satisfiable by THIS release.

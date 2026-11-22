@@ -139,6 +139,8 @@ The deterministic floor proves these; anything it cannot prove is reported as **
 1. `slug` matches `^[a-z0-9]+(-[a-z0-9]+)*$` and names the existing `.archgen/` dot-folder.
 2. Every `structure[].path` and every `modules[].owns[]` glob is owned by a task — a declared path with no owner is `PATH_UNOWNED`.
 3. Every `decisions[].id` has a matching `decisions/` file — a declared decision with no file is `DECISION_MISSING`.
-4. `toolchain.source_root` and `toolchain.test_root` are both declared, so the mirrored-test-tree rule can run — without them the floor reports `CONFIG_NOT_ENFORCED` and the layout becomes the reviewer's judgement.
+4. When mirrored layout is declared, `toolchain.source_root` and `toolchain.test_root` are both present and different, so the mirrored-test-tree rule can run. Colocated scaffolds omit `test_root` and mirrored ownership; missing roots otherwise report `CONFIG_NOT_ENFORCED` and layout becomes reviewer judgement.
 5. A path or glob that still holds a `<…>` placeholder is skipped until it is filled in.
 6. `structure` is a sequence of `{path, purpose}` entries — the YAML subset refuses block scalars, so an indented folder tree is not a legal shape.
+7. Present type errors, slug/folder mismatches, and overlapping module ownership are `CONFIG_INVALID` / `MODULE_OVERLAP`. Legacy files missing newly required fields report `CONFIG_REQUIRED` during compatibility migration; new scaffolds must contain every required field.
+8. Present rich blocks (`existing_docs`, naming, data/API contracts, and environments) are type-checked. Duplicate module/decision identities, unknown module dependencies, and module dependency cycles are `CONFIG_INVALID`.

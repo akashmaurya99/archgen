@@ -94,7 +94,7 @@ Validates and analyzes a plan (tasks.yaml + plans/).
 - \`tasksYaml\` is OPTIONAL: omit it and the active \`.archgen/<slug>/tasks.yaml\` is used; the answer names the file it read.
 - \`status\` only affects mermaid; \`module\` cannot combine with \`node\` or mermaid.
 - Whole-graph mermaid is refused above 250 nodes—scope with \`node\` or \`module\`.
-- \`profile\` takes \`modules\`/\`tasks\` as a COUNT — a number, or the list itself (its length is the count).
+- \`profile\` takes \`modules\`/\`tasks\` as a COUNT. \`testLayout:'colocated'\` omits mirrored roots; the default \`mirrored\` layout preserves legacy scaffolds. Profile and scaffold must receive the same value.
 - \`tasks.yaml\` is a hand-rolled YAML subset: quote every value, and never use a block scalar (\`|\`, \`>\`). A plain value MAY contain \`": "\`; an UNQUOTED \`key: value\` list item is read as a MAPPING, so quote a criterion that contains one. \`archgen_help{topic:'yaml'}\` and \`§artifact-templates/the-yaml-subset\` state the rules.
 - \`verify\` IS the mechanical floor: ownership overlap, the mirrored test tree, matrix citations, PRD requirement coverage, the recorded profile decisions, decision files, declared paths, wave labels. Run it to APPROVE BEFORE dispatching a gate agent; the gate brief then carries the floor's result, a plan snapshot, and the maps, so the agent judges instead of re-deriving. Every finding carries a stable CODE (\`issueCodes\`/\`warningCodes\` count them); \`issues\` block, \`warnings\` (e.g. one task's glob containing another's, or a rule that is NOT ENFORCED) do not. The findings list is BOUNDED but WALKABLE: \`collection\` selects which list \`offset\`/\`limit\` window (\`issues\` or \`warnings\`), and \`meta.next\` names the call that continues the collection you asked for.
 - Where an action has several collections, \`collection\` says which one the window walks, and naming a collection the action does not have is an \`INVALID_INPUT\` error — never a silently dropped argument.
@@ -117,7 +117,7 @@ The wave execution loop.
 **Actions**
 | action | what it does |
 |---|---|---|
-| \`next\` | dependency frontier → waves |
+| \`next\` | executable frontier by default; \`view:'waves'\` for pagination |
 | \`set_status\` | atomically set one task status |
 | \`list\` | flat task list, filterable |
 | \`snapshot\` | write \`.archgen/<slug>/.agent/resume.md\` |
@@ -186,7 +186,7 @@ Keeps the \`AGENTS.md\` features registry in sync with \`.archgen/\`.
 
 **Gotchas**
 - Machine-maintained: never hand-edit—change \`.archgen/\` state and call \`update\`.
-- \`slug\` and \`status\` must be passed together.
+- Omit both to refresh every derived row. When supplied, \`slug\` and \`status\` must be passed together as an expected-status assertion, never as an override of task state.
 - Managed block: \`<!-- archgen:features:start -->\` … \`<!-- archgen:features:end -->\`; every byte outside it is preserved.`,
 
   codegraph: `# archgen_codegraph — the ADMIN surface
@@ -238,6 +238,7 @@ archgen-mcp bootstrap --project <dir>     # wire + ensure CodeGraph
 | \`doctor\` | issues only (WARN/FAIL) + status/summary/versions + \`serverActions\` |
 | \`bootstrap\` | wire archgen MCP + ensure CodeGraph in one call; a no-op when already configured |
 | \`install_mcp\` | write ONLY the archgen MCP entry into detected harnesses |
+| \`install_skill\` | install ONE capability skill after explicit approval |
 | \`uninstall_mcp\` | remove the archgen MCP entries this server wrote |
 | \`harnesses\` | detected harnesses + exact config path/key |
 
@@ -254,7 +255,7 @@ The runtime facts about THIS harness — read-only, and the only tool that answe
 go on this harness?".
 
 **When**
-- Before editing a harness config or spawning sub-agents (Hard Rule 7).
+- Before editing a harness config or spawning sub-agents (Execution safety rule).
 - To learn the MCP config path, the top-level key, the restart semantics and the sub-agent mechanism.
 
 **Returns**
@@ -269,26 +270,25 @@ go on this harness?".
 
   skills: `# archgen_skills
 
-Matches a task against the capability-skill registry, installs exactly the matched skill, and reads its rules and section index.
+Matches a task against the capability-skill registry and reads rules or sections. Installation is the full-profile archgen_setup install_skill action.
 
 **When**
 - Before dispatching work that touches a registered domain (UI, accessibility, motion, design systems).
-- To install a missing match, or to read the rules a worker must follow.
+- To read a matched skill's rules; installation is a separate admin action.
 
 **Actions**
 | action | what it does |
 |---|---|---|
 | \`match\` | skills a task needs (title + summary + file_ownership) |
-| \`install\` | install ONE capability skill |
 | \`installed\` | what is installed for this project |
 | \`load\` | a skill's RULES or ONE section |
 | \`digest\` | section index of an installed skill |
 | \`list\` | the registry |
 
 **Gotchas**
-- \`install\` needs \`approve:true\`; without it you get the PLAN, nothing is written.
+- \`archgen_setup{action:'install_skill',approve:true}\` needs full-profile admin approval; without approval it returns a PLAN.
 - Exactly ONE skill per install—never a bundle. A task mentioning "animation" gets motion, not the whole UI family.
-- Installs write \`<project>/.agents/skills/<slug>/SKILL.md\`—point workers at that file.
+- Use the installer's returned path and \`archgen_platform\` skillPaths; harness-specific roots and bridges vary. The external installer requires \`installer.nodeEngine\`.
 - \`match\` reports \`required\` vs \`on-demand\`; a \`required\` match MUST be installed before dispatch.
 - \`load\` returns the normative MUST/SHOULD/NEVER rules + section index, not the whole file. One section at a time: \`section:'<slug>'\`.
 - \`list{skillId}\` and \`digest{section}\` narrow to one row/section.
@@ -299,7 +299,7 @@ Matches a task against the capability-skill registry, installs exactly the match
 Loads archgen's own protocol documents—the judgment layer: interviewing, artifacts, gates, dispatch, platform capabilities.
 
 **When**
-- At the start of a mode: load the sections the mode table names; every \`§\` is an obligation.
+- At each phase: use \`route\` for its deduplicated bundle and nextPhase; optional cross-references use \`read\`.
 - After compaction: reload the current mode's sections.
 - Before guessing protocol details—don't; load it.
 
@@ -310,6 +310,7 @@ Loads archgen's own protocol documents—the judgment layer: interviewing, artif
 | \`index\` | section list of one topic |
 | \`read\` | ONE section (index when no section; whole topic only with \`'*'\`) |
 | \`search\` | sections mentioning a token |
+| \`route\` | one mode/phase bundle; intent filters discovery |
 
 **Gotchas**
 - Load the SECTION, not the topic: ~1–2 KB vs ~11 KB.
@@ -326,12 +327,12 @@ Eight published tools, one domain each, plus two admin tools the CLI reaches. Th
 | \`archgen_tasks\` | execution | next wave / set_status / list / snapshot / contract |
 | \`archgen_docs\` | artifacts | digest / section / map / refs / index / validate |
 | \`archgen_registry\` | registry | show / update the AGENTS.md features table |
-| \`archgen_skills\` | capability skills | match / install / installed / load / digest / list |
-| \`archgen_refs\` | protocols | list / index / read / search |
+| \`archgen_skills\` | capability skills | match / installed / load / digest / list; installation is admin-only |
+| \`archgen_refs\` | protocols | route / list / index / read / search |
 | \`archgen_help\` | this | a detailed briefing for one domain |
 | \`archgen_platform\` | runtime | this harness: skill paths, MCP config, sub-agents, CodeGraph index |
 
-**The admin surface** — \`archgen_setup\` (doctor / bootstrap / install_mcp / uninstall_mcp / harnesses) and \`archgen_codegraph\` (ensure / status / wire) install software and write harness configuration. The lean profile does not publish them to the model; the CLI reaches the same handlers (\`archgen-skill mcp add|remove|list\`, \`archgen-skill codegraph ensure|wire|status\`). The \`full\` profile publishes them (\`ARCHGEN_TOOL_PROFILE=full\`).
+**The admin surface** — \`archgen_setup\` (doctor / bootstrap / install_mcp / install_skill / uninstall_mcp / harnesses) and \`archgen_codegraph\` (ensure / status / wire) install software and write harness configuration. The lean profile does not publish them to the model; the CLI reaches the same handlers (\`archgen-skill mcp add|remove|list\`, \`archgen-skill codegraph ensure|wire|status\`). The \`full\` profile publishes them (\`ARCHGEN_TOOL_PROFILE=full\`).
 
 **Error codes**
 \`INVALID_INPUT\` · \`NOT_FOUND\` · \`CYCLE\` · \`OWNERSHIP_CONFLICT\` · \`CONFLICT\` · \`PERMISSION_DENIED\` · \`UNAVAILABLE\` · \`TIMEOUT\` · \`INTERNAL\`

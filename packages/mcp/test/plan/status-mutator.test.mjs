@@ -109,6 +109,24 @@ test('a no-op transition reports changed: false', () => {
   assert.equal(again.from, 'done');
 });
 
+test('a no-op transition leaves every byte untouched', () => {
+  const source = TWO_TASKS.replace('status: pending', 'status: done');
+  writeFileSync(file, source);
+  const result = setTaskStatus(file, 'T-1', 'done');
+  assert.equal(result.changed, false);
+  assert.equal(readFileSync(file, 'utf8'), source);
+});
+
+test('a real transition changes only the status token', () => {
+  const source = 'tasks:\r\n  - {id: T-1, status: pending}\r\n  - id: T-2\r\n    status: "pending" # keep\r\n    acceptance: ["a", "b"]\r\n';
+  writeFileSync(file, source);
+  setTaskStatus(file, 'T-2', 'done');
+  assert.equal(
+    readFileSync(file, 'utf8'),
+    'tasks:\r\n  - {id: T-1, status: pending}\r\n  - id: T-2\r\n    status: done # keep\r\n    acceptance: ["a", "b"]\r\n',
+  );
+});
+
 test('a numeric id is addressable by the text the agent read', () => {
   writeFileSync(file, 'tasks:\n  - id: 007\n    status: pending\n');
   const r = setTaskStatus(file, '007', 'done');

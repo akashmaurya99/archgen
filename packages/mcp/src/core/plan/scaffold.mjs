@@ -9,6 +9,7 @@
 // module serves them; the reference keeps only the authoring RULES and points
 // here. A template can therefore never disagree with the tool.
 import { readFileSync } from 'node:fs';
+import { parseYaml, stringifyYaml } from '../fs/yaml.mjs';
 import { join } from 'node:path';
 import { invalidInput } from '../protocol/errors.mjs';
 import { assertSlug } from '../protocol/slug.mjs';
@@ -87,8 +88,8 @@ function readTemplate(templatesDir, name, slug) {
  */
 export function buildScaffold(ladder, scopeClass, opts = {}) {
   const requested = String(scopeClass ?? '').toUpperCase();
-  const spec = ladder.classes?.[requested];
-  if (!spec) {
+  const requestedSpec = ladder.classes?.[requested];
+  if (!requestedSpec) {
     throw invalidInput(
       `unknown scope class '${scopeClass}' (allowed: ${Object.keys(ladder.classes ?? {}).join('|')})`,
       { ...hint({ action: toolCall('archgen_plan', { action: 'profile', intent: 'GREENFIELD-SYSTEM', slug: '<slug>' }), reason: "the profile names every scope class." }), scopeClass, },
@@ -97,6 +98,13 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
 
   const slug = opts.slug ?? '<slug>';
   if (opts.slug) assertSlug(opts.slug, 'scaffold');
+  const testLayout = opts.testLayout ?? 'mirrored';
+  if (!['mirrored', 'colocated'].includes(testLayout)) {
+    throw invalidInput(
+      `unknown testLayout '${testLayout}' (allowed: mirrored|colocated)`,
+      { ...hint({ action: toolCall('archgen_plan', { action: 'scaffold', scope: requested, testLayout: 'colocated' }), reason: 'use the test layout observed in the host repository.' }), testLayout },
+    );
+  }
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
   const generator = opts.generator ?? 'archgen';
   const templatesDir = opts.templatesDir ?? TEMPLATES_DIR;
@@ -111,10 +119,12 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
         signals: opts.signals ?? [],
         modules: opts.modules,
         tasks: opts.tasks,
-        slug,
+        slug: opts.slug ?? null,
+        testLayout,
       })
     : null;
   const key = profile ? profile.scopeClass : requested;
+  const spec = ladder.classes[key];
 
   // The artifact set: one list (the profile rules), filtered by scope.
   const rules = scopeArtifactRules(ladder, key);
@@ -158,12 +168,22 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
   // The canonical templates (assets/templates/) — one copy, served here.
   const header = provenanceHeader(generatedAt, generator);
   const tasksYaml = templatesDir
-    ? `${header}\n${readTemplate(templatesDir, 'tasks.yaml', slug)}`
-    : `${header}\n${minimalTasksYaml()}`;
-  const planMd = renderPlanMd(key, spec, slug, generatedAt);
+    ? `${header}\n${renderTasksTemplate(templatesDir, key, slug, testLayout)}`
+    : `${header}\n${minimalTasksYaml(testLayout)}`;
+  const embeddedSurvey = Boolean(
+    profile
+    && String(profile.intentClass).startsWith('BROWNFIELD')
+    && profile.artifacts.find((artifact) => artifact.path.endsWith('/codebase-map.md'))?.decision === 'omit'
+    && profile.artifacts.find((artifact) => artifact.path.endsWith('/codebase-map.md'))?.reason.includes('embed'),
+  );
+  const planSections = [...(spec.planSections ?? [])];
+  if (embeddedSurvey && !planSections.includes('Survey')) planSections.splice(1, 0, 'Survey');
+  const planMd = renderPlanMd(key, { ...spec, planSections }, slug, generatedAt);
   const answersYaml = key !== 'SMALL' ? renderAnswersYaml(key, generatedAt, generator) : null;
   const prdMd = templatesDir ? readTemplate(templatesDir, 'prd.md', slug) : null;
-  const architectureYaml = templatesDir ? `${header}\n${readTemplate(templatesDir, 'architecture.yaml', slug)}` : null;
+  const architectureYaml = templatesDir
+    ? `${header}\n${renderArchitectureTemplate(templatesDir, slug, testLayout)}`
+    : null;
   const adrMd = templatesDir ? readTemplate(templatesDir, 'adr.md', slug) : null;
   // ONE edge-case table. The generated rows and the static template used to
   // be concatenated, so the plan carried TWO tables with the SAME row ids and
@@ -204,6 +224,8 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
 
   return {
     scopeClass: key,
+    testLayout,
+    surveyLocation: embeddedSurvey ? 'plans/<slug>.md#survey' : null,
     label: spec.label,
     // WHICH SET THIS IS. 'profile' = exactly the recorded profile's create
     // set. 'class' = the class's CANDIDATE set, because no intent was given
@@ -251,7 +273,7 @@ export function buildScaffold(ladder, scopeClass, opts = {}) {
     depthBudgets,
     intentDefaults: spec.intentDefaults ?? [],
     artifacts,
-    planSections: spec.planSections ?? [],
+    planSections,
     // The edge-case budget has ONE owner: `profile.depthBudgets`. The class
     // used to carry a second copy (`minEdgeCasesPerTask`), and the two
     // disagreed at LARGE (3 against 7), so one payload said two different
@@ -293,7 +315,7 @@ export function skeletonKeyForPath(artifactPath) {
   // A per-module diagram is authored FROM the diagram template — the
   // template IS the mermaid source, and the module file holds the rendered
   // diagram. Without this mapping a LARGE plan was told to write
-  // `docs/<module>.md` and served no skeleton for it at all.
+  // `docs/topology.md` and served no skeleton for it at all.
   if (/\/docs\/[^/]+\.md$/.test(p)) return 'docs/mermaid-snippets.md';
   return null;
 }
@@ -303,15 +325,43 @@ function provenanceHeader(generatedAt, generator) {
   return [`# schema_version: 1`, `# generator: ${generator}`, `# generated_at: ${generatedAt}`].join('\n');
 }
 
+/** Serve the scope's task examples, optionally without mirrored-test ownership. */
+function renderTasksTemplate(templatesDir, scopeClass, slug, testLayout) {
+  const name = scopeClass === 'SMALL' ? 'tasks-small.yaml' : scopeClass === 'MEDIUM' ? 'tasks-medium.yaml' : 'tasks.yaml';
+  const raw = readTemplate(templatesDir, name, slug);
+  if (testLayout !== 'colocated') return raw;
+  const { data } = parseYaml(raw, { filename: name });
+  for (const task of data.tasks ?? []) {
+    task.file_ownership = (task.file_ownership ?? []).filter((glob) => !String(glob).startsWith('<test-root>/'));
+  }
+  return `${stringifyYaml(data).trimEnd()}\n`;
+}
+
+/** Serve architecture without declaring a mirrored tree the host does not use. */
+function renderArchitectureTemplate(templatesDir, slug, testLayout) {
+  const raw = readTemplate(templatesDir, 'architecture.yaml', slug);
+  if (testLayout !== 'colocated') return raw;
+  const { data } = parseYaml(raw, { filename: 'architecture.yaml' });
+  delete data.toolchain.test_root;
+  data.structure = (data.structure ?? []).filter((entry) => !String(entry.path).startsWith('<test-root>/'));
+  data.naming_conventions.dir_layout = '<source-root>/<module>/...; tests colocated with source';
+  data.naming_conventions.test_placement = 'colocated with source following the host convention';
+  for (const module of data.modules ?? []) {
+    module.owns = (module.owns ?? []).filter((glob) => !String(glob).startsWith('<test-root>/'));
+  }
+  return `${stringifyYaml(data).trimEnd()}\n`;
+}
+
 /** The fallback tasks.yaml shape when the template assets are unavailable. */
-function minimalTasksYaml() {
+function minimalTasksYaml(testLayout = 'mirrored') {
+  const ownership = testLayout === 'colocated'
+    ? '["<source-root>/<module>/**"]'
+    : '["<source-root>/<module>/**", "<test-root>/<module>/**"]';
   return `tasks:
-  # Core pipeline — do first
-  - id: <ID>
-    title: <one-line summary>
+  - id: "<ID>"
+    title: "<one-line summary>"
     depends_on: []
-    file_ownership:
-      - <repo-root-relative path or glob>
+    file_ownership: ${ownership}
     acceptance:
       - "<objectively checkable statement>"
 `;
@@ -324,38 +374,54 @@ function renderPlanMd(scopeClass, spec, slug, generatedAt) {
   for (const section of sections) {
     lines.push(`## ${section}`, '');
     if (section === 'Profile') {
+      if (scopeClass === 'SMALL') {
+        lines.push(
+          '- Scope: SMALL — <one-line evidence-based rationale>',
+          '- Create: <artifact paths from the profile>',
+          '- Reuse: <existing repository paths, or none>',
+          '- Omit: <artifact paths + one-line reasons, or none>',
+          '- Escalate if: <signals that would move the scope up, or none>',
+          '',
+          '```yaml',
+          'scope_class: SMALL',
+          'intent_class: ""',
+          'signals: []',
+          'artifacts:',
+          '  - path: ""',
+          '    decision: create | reuse | omit',
+          '    reason: ""',
+          '    host_path: ""',
+          'escalate_if: []',
+          'gate:',
+          '  verifier: ""',
+          '  rounds: 0',
+          '  findings:',
+          '    blocking: 0',
+          '    nit: 0',
+          '    observation: 0',
+          '  waived: 0',
+          '  residual: 0',
+          '  at: ""',
+          '```',
+          '',
+        );
+      } else {
+        lines.push(
+          `- Scope: ${scopeClass} — <one-line evidence-based rationale>`,
+          '- Create: <short human summary of answers.yaml>',
+          '- Reuse: <existing repository paths, or none>',
+          '- Omit: <short human summary, or none>',
+          '',
+          'Canonical machine-readable profile: `../answers.yaml` (`plan_profile`).',
+          'Do NOT add a second YAML profile fence here; keep only this human summary.',
+          '',
+        );
+      }
+    } else if (section === 'Survey') {
       lines.push(
-        '- Scope: <SMALL | MEDIUM | LARGE> — <one-line evidence-based rationale>',
-        '- Create: <artifact paths from the profile>',
-        '- Reuse: <existing repository paths, or none>',
-        '- Omit: <artifact paths + one-line reasons, or none>',
-        '- Escalate if: <signals that would move the scope up, or none>',
-        '',
-        'The block below is the RECORD — the floor reads it and checks every',
-        'create/reuse/omit decision against the files on disk. Keep it in step',
-        'with the bullets above.',
-        '',
-        '```yaml',
-        'scope_class: ' + scopeClass,
-        'intent_class: ""',
-        'signals: []',
-        'artifacts:',
-        '  - path: ""',
-        '    decision: create | reuse | omit',
-        '    reason: ""',
-        '    host_path: "" # for a reuse decision: the existing file it cites',
-        'escalate_if: []',
-        'gate: # filled in after the gate; the floor reads it here',
-        '  verifier: "" # who approved it — an approval needs a subject',
-        '  rounds: 0',
-        '  findings:',
-        '    blocking: 0',
-        '    nit: 0',
-        '    observation: 0',
-        '  waived: 0',
-        '  residual: 0',
-        '  at: "" # ISO-8601 timestamp of the approval',
-        '```',
+        '- Structure/modules and source/test roots: <concise evidence>',
+        '- Existing docs and toolchain: <paths, freshness, commands, conventions>',
+        '- Affected files and evidence: <exact repository paths>',
         '',
       );
     } else if (section === 'Context') {
@@ -389,11 +455,11 @@ plan_profile:
   artifacts:
     - path: ""
       decision: create | reuse | omit
-      host_path: "" # a reuse decision MUST name the host document it reuses
+      host_path: ""
       reason: ""
   escalate_if: []
-  gate: # recorded after the gate; the floor compares it with waivers.yaml
-    verifier: "" # who approved it — an approval needs a subject
+  gate:
+    verifier: ""
     rounds: 0
     findings:
       blocking: 0
@@ -401,7 +467,7 @@ plan_profile:
       observation: 0
     waived: 0
     residual: 0
-    at: "" # ISO-8601 timestamp of the approval
+    at: ""
 problem: ""
 success_criteria:
   - text: ""

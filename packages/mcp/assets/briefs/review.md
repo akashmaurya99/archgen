@@ -14,9 +14,9 @@ COVERAGE:
 | scope fit & minimalism | PASS | every artifact has a consumer; omissions and reuse decisions are recorded |
 | documentation completeness | PASS | every task has a plan section |
 FINDINGS:   (present when VERDICT: ISSUES)
-1. plans/demo.md § API — response type named inconsistently — client/server contract mismatch — standardize on ApiResponse
-2. docs/prd.md § Grades — FR-GRADE-02 has no owning task — requirement will not be built — add a task owning the grade-read endpoint
-3. .archgen/demo/docs/mermaid-snippets.md — diagram shipped for a single-module flow the profile says omit — unneeded artifact — delete it and record the omit reason
+1. [BLOCKING] plans/demo.md § API — response type named inconsistently — client/server contract mismatch — standardize on ApiResponse
+2. [BLOCKING] docs/prd.md § Grades — FR-GRADE-02 has no owning task — requirement will not be built — add a task owning the grade-read endpoint
+3. [NIT] .archgen/demo/docs/module.md — diagram shipped for a single-module flow — visual polish only — no blocking action required
 ```
 
 EXAMINE ALL 5 AREAS EVERY RUN: `edge cases per module` · `task ordering & parallelization` (waves vs real `depends_on` edges) · `cross-module contracts` (interfaces, paths, `naming_conventions`) · `scope fit & minimalism` (unneeded artifacts, unneeded tasks, duplicated host docs, missing omit/reuse reasons) · `documentation completeness` (every task has a plan section).

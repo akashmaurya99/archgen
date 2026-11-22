@@ -1,5 +1,7 @@
 ## Mermaid snippets
 
+Use only the views that answer a real question; the integration view is the default. Do not copy every snippet into every plan.
+
 System context (only when the profile creates diagrams):
 ```mermaid
 graph TB

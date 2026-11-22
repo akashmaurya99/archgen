@@ -32,7 +32,14 @@ function snapshot() {
   const state = new Map();
   const tracked = gitLines(['ls-files', '-z']);
   const untracked = gitLines(['ls-files', '--others', '--exclude-standard', '-z']);
-  const paths = [...tracked, ...untracked];
+  // Ignored generated SOURCE files are mutations too. Dependency/build/index
+  // trees stay excluded, but stamps and package locks can never change invisibly.
+  const sensitiveIgnored = gitLines(['ls-files', '--others', '-z']).filter((path) =>
+    path === 'packages/cli/package-lock.json' ||
+    path === 'packages/cli/vendor/skills/archgen/.archgen-version' ||
+    /(?:^|\/)\.archgen-version$/.test(path) ||
+    /(?:^|\/)\.tmp-/.test(path));
+  const paths = [...new Set([...tracked, ...untracked, ...sensitiveIgnored])];
   const present = paths.filter((path) => existsSync(join(ROOT, path)));
   const missing = paths.filter((path) => !existsSync(join(ROOT, path)));
   for (const path of missing) state.set(path, null);
@@ -61,8 +68,8 @@ function diff(before, after) {
   const problems = [];
   for (const [path, hash] of before) {
     const now = after.get(path);
-    if (now === undefined || now === null) problems.push(`deleted: ${path}`);
-    else if (now !== hash) problems.push(`modified: ${path}`);
+    if (hash !== null && (now === undefined || now === null)) problems.push(`deleted: ${path}`);
+    else if (hash !== null && now !== hash) problems.push(`modified: ${path}`);
   }
   for (const path of after.keys()) {
     if (!before.has(path)) problems.push(`created: ${path}`);

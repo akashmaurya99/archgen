@@ -9,6 +9,7 @@
 // (detection order, the unknown-platform procedure, the CodeGraph indexing
 // scope); the data lives in assets/platform-capabilities.json.
 import { existsSync } from 'node:fs';
+import { detectHarnesses } from './harness-wiring.mjs';
 import { invalidInput, notFound } from '../protocol/errors.mjs';
 import { hint } from '../protocol/guidance.mjs';
 import { toolCall } from '../protocol/call.mjs';
@@ -51,10 +52,26 @@ export function platformCapabilities(registry, harness = null) {
  * @param {object} registry
  * @param {{projectRoot: string, home: string}} opts
  */
-export function detectHarness(registry, opts) {
+export function detectHarness(registry, opts, wiringRegistry = null) {
   const { projectRoot, home } = opts;
 
-  // The per-harness detect markers are the authoritative signal.
+  if (wiringRegistry) {
+    const order = registry.detectionOrder ?? [];
+    const found = detectHarnesses(wiringRegistry, projectRoot, home, opts.env).map((detected) => {
+      const id = detected.id === 'vscode' ? 'copilot' : detected.id;
+      return { id, wiringId: detected.id, label: registry.harnesses?.[id]?.label ?? detected.spec.label, atHome: detected.atHome, atProject: detected.atProject };
+    });
+    if (!found.length) {
+      throw invalidInput(
+        `no known harness detected in ${projectRoot} — follow the unknown-platform procedure (web-search the official docs, propose, get approval)`,
+        { ...hint({ action: toolCall('archgen_platform', {}), reason: 'the harness registry names every harness the server detects.' }), projectRoot },
+      );
+    }
+    found.sort((a, b) => rank(a.id, order) - rank(b.id, order));
+    return { detected: found, primary: found[0], capabilities: platformCapabilities(registry, found[0].id) };
+  }
+
+  // Backward-compatible direct registry probing for library consumers.
   const found = [];
   for (const [id, h] of Object.entries(registry.harnesses ?? {})) {
     const atHome = (h.detectHome ?? []).some((m) => existsAt(home, m));
@@ -80,12 +97,21 @@ export function detectHarness(registry, opts) {
  * what is actually installed.
  */
 function rank(id, order) {
-  const keys = Object.keys(order);
-  const i = keys.findIndex((k) => {
-    const clean = k.replace(/^\./, '').replace(/\/$/, '').replace(/\.json$/, '');
-    return clean === id;
+  const i = order.findIndex((marker) => {
+    const clean = marker
+      .replace(/^~\//, '')
+      .replace(/^\./, '')
+      .replace(/\/$/, '')
+      .replace(/\.jsonc?$/, '')
+      .split('/')[0];
+    if (clean === id) return true;
+    // VS Code is exposed as `copilot`; OpenCode has both file and directory
+    // markers; Codex's marker is a home directory rather than a project one.
+    return (id === 'copilot' && (marker.includes('copilot') || marker.includes('vscode')))
+      || (id === 'opencode' && clean === 'opencode')
+      || (id === 'codex' && clean === 'codex');
   });
-  return i === -1 ? keys.length : i;
+  return i === -1 ? order.length : i;
 }
 
 /** Does a marker path exist under `base`? */

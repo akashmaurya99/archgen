@@ -27,7 +27,7 @@ npm run release:prepare <version>
 ```
 
 It bumps the canonical version, propagates it to every derived surface,
-regenerates both lockfiles, and then runs **every gate**. If any gate fails,
+regenerates the MCP lockfile when present, and then runs **every gate**. If any gate fails,
 the release is not ready and the tool says so. It never publishes and never
 tags — that stays a deliberate, human, one-tag-at-a-time action.
 
@@ -46,7 +46,7 @@ Use `--dry-run` to see the plan without touching anything.
    `metadata.requires.archgen_mcp`. Hand-edited on purpose.
 3. **Every derived surface** — `npm run sync` rewrites the skill config, the
    frontmatter version, both `package.json` files and the vendored skill copy.
-4. **Both lockfiles** — npm owns them; `npm install --package-lock-only`.
+4. **The MCP lockfile** — npm owns it; `npm install --package-lock-only`. The zero-dependency CLI intentionally has no committed lockfile.
 5. **Every gate** — versions, sync drift, the capability contract, the context
    budget, every suite, every fixture, and the immutable check.
 
@@ -248,7 +248,7 @@ npm publish
 ```
 
 The committed lockfile is the source of truth, the gates run first, and
-`prepublishOnly` re-derives the version from `archgen.config.json`.
+`prepublishOnly` verifies the version against `archgen.config.json` without rewriting it.
 
 CI publishes this package automatically on the `vmcp-<version>` tag (see the
 publish table above); the local command is the manual equivalent.

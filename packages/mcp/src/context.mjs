@@ -201,7 +201,7 @@ export class Context {
 
   /**
    * The small metadata block every tool response carries.
-   * @returns {{serverVersion: string, skillVersion: string|null, skillPath: string|null, projectRoot: string, warnings: string[]}}
+   * @returns {{serverVersion: string, skillVersion: string|null, skillPath: string|null, projectRoot: string, warnings?: string[]}}
    */
   meta(warnings = []) {
     return {
@@ -209,7 +209,7 @@ export class Context {
       skillVersion: this.skill?.version ?? null,
       skillPath: this.skill?.path ?? null,
       projectRoot: this.projectRoot,
-      warnings,
+      ...(warnings.length ? { warnings } : {}),
     };
   }
 }

@@ -4,7 +4,7 @@ Sub-agent briefs and wave rules for the orchestrator (`SKILL.md`). A worker may 
 
 ## §survey — brownfield codebase analysis brief
 
-Dispatch 1–2 survey sub-agents with `archgen_plan{action:'brief', kind:'survey', tasksYaml, planDir, featureRequest}` verbatim. Accept `.archgen/<slug>/codebase-map.md` only when all six sections are present and non-empty:
+Inspect read-only first, then profile with known module/task counts. A proven localized SMALL change embeds a concise `## Survey` in its plan and writes no map. Complex or uncertain work creates the map before dependent artifacts: SMALL uses the main agent; MEDIUM/LARGE may use 1–2 survey sub-agents with `archgen_plan{action:'brief', kind:'survey', tasksYaml, planDir, featureRequest}` verbatim. Exactly one named writer owns the final map; other surveyors return findings or write disjoint fragments. Reuse a fresh existing map. Accept `.archgen/<slug>/codebase-map.md` only when all six sections are present and non-empty:
 
 1. **Structure** — top 2 directory levels, 1-line purpose per folder; name the source and test roots.
 2. **Modules** — table: `module | responsibility | key entry points`.
@@ -13,7 +13,7 @@ Dispatch 1–2 survey sub-agents with `archgen_plan{action:'brief', kind:'survey
 5. **Toolchain** — source root, test root, build/test/lint/typecheck commands, package manager, runtime versions, naming/test-placement conventions.
 6. **Affected** — files/modules impacted by the feature, citing exact evidence paths.
 
-`Existing docs` inventories host PRDs, architecture docs, and ADRs (path + freshness) so the profile can return `reuse`. `Toolchain` records source/test roots, build/test/lint/typecheck commands, and naming/test conventions so the plan guesses nothing — the source and test roots it records are exactly what `toolchain.source_root` / `toolchain.test_root` need, and the floor mirrors between them.
+`Existing docs` inventories host PRDs, architecture docs, and ADRs so the profile can return `reuse`. `Toolchain` records roots, commands, and conventions; mirrored roots feed `toolchain.source_root` / `toolchain.test_root`, while colocated layout omits `test_root`. A SMALL embedded Survey keeps the same evidence in three concise bullets: structure/conventions, existing docs/toolchain, and affected paths.
 
 ## §verifier — plan review brief
 
@@ -72,7 +72,9 @@ Every finding carries a stable code, so fixes can be batched and counted. **This
 | `PROFILE_OMIT_PRESENT` | the profile says do not create it (omit/reuse), but the artifact exists |
 | `PROFILE_REUSE_MISSING` | the profile says reuse, but the cited host file does not exist |
 | `PROFILE_UNRECORDED` | an artifact exists with no recorded decision |
-| `PROFILE_DECISION_INVALID` | the recorded decision is unusable (unknown decision, or reuse with no host_path) |
+| `PROFILE_DECISION_INVALID` | the recorded decision is unusable (unknown decision, conflicting decisions, or reuse with no host_path) |
+| `CONFIG_INVALID` | architecture structure, slug, or field types are invalid |
+| `MODULE_OVERLAP` | two architecture modules claim overlapping ownership |
 | `MIRROR_MISSING` | a source-owning task has no mirrored test path |
 | `MATRIX_UNKNOWN_TASK` | a matrix row cites a task that does not exist |
 | `MATRIX_INDEX_OUT_OF_RANGE` | a matrix row cites an acceptance that does not exist |
@@ -96,6 +98,7 @@ The task file's own defects carry their own codes: `UNPARSEABLE`, `NO_TASKS`, `C
 |---|---|
 | `PROFILE_NOT_RECORDED` | no profile was recorded — artifact necessity could not be checked |
 | `CONFIG_NOT_ENFORCED` | a rule could not run (the plan does not declare what the rule needs) |
+| `CONFIG_REQUIRED` | a legacy architecture omits fields required of new contracts |
 | `OWNERSHIP_CONTAINED` | one task's paths contain another's |
 | `TASK_FIELD_UNKNOWN` | a task carries a key the contract does not define |
 | `ARTIFACT_NOT_OWNED` | a task declares an artifact its file ownership does not cover |
@@ -145,9 +148,9 @@ A finding blocks ONLY when it names all three:
 
 A finding that cannot name the violated rule is **not a defect of this plan**: it is a NIT (cosmetic) or an OBSERVATION (a capability nobody asked for). Neither blocks, neither demands a rewrite, and neither starts another round. "This could be phrased more precisely" is a NIT — state it once, in one line, and move on.
 
-### Gate sessions are NEVER reused
+### Gate sessions are NEVER reused; analysis sessions MAY continue
 
-The dispatch ledger (§dispatch) reuses a worker's session for a follow-up. **Gate agents always get a fresh session** — a gate that continues the session of the agent whose work it is judging is not a gate, it is a second opinion from the same mind. Independence is the whole point of the review stage.
+The dispatch ledger (§dispatch) reuses a worker's session for a follow-up. **Verifier and review agents always get a fresh session** — independence is the whole point of judgment. Surveyors and investigators are analysts, not gate judges: continue their sessions for follow-up questions about the same evidence.
 
 ### The floor in CI
 
@@ -171,7 +174,7 @@ Run AFTER the verifier stage reaches `APPROVE` (or an explicit user waiver), BEF
 
 ## §investigate — root-cause protocol
 
-Triggered by recurring defects after execution. Pass `archgen_plan{action:'brief', kind:'investigate'}` verbatim. SMALL → main agent; MEDIUM/LARGE → 1–3 read-only investigators split by disjoint suspected subsystem.
+Triggered by recurring defects after execution. Pass `archgen_plan{action:'brief', kind:'investigate'}` verbatim. SMALL → main agent; MEDIUM/LARGE → 1 investigator by default, with a 2nd only for disjoint suspected subsystems.
 
 Mandatory four-part deliverable (no patch-fixing): **root cause** (one sentence), **evidence** (paths, lines, reproduction), **blast radius** (`archgen_plan{action:'impact', tasksYaml, target}`), **remediation** (new fix tasks inheriting affected `file_ownership`, routed through normal gates).
 
@@ -187,7 +190,8 @@ Dispatch via the platform's native sub-agent mechanism (`archgen_platform`). If 
 | Plan health, graph, coverage, impact, profile (`archgen_plan`, `archgen_docs`) | **MAIN AGENT** (never a sub-agent) |
 | Registry update, resume snapshot, CodeGraph status | **MAIN AGENT** (never a sub-agent) |
 | Single task implementation | **Worker** (`archgen_tasks{action:'contract'}`) |
-| Survey / verifier / reviewer / investigation | **Gate sub-agent** (`brief: 'survey'|'verifier'|'review'|'investigate'`) |
+| Survey / investigation | **Analysis agent**; continue its session for follow-up |
+| Verifier / reviewer | **Fresh independent gate agent** (`brief: 'verifier'|'review'`) |
 
 ### Calling tools from a JS runtime
 
@@ -203,7 +207,7 @@ Maintain a **dispatch ledger** (`dispatchKey → session` from `contract`). A fo
 
 Three rules keep that reuse from becoming a liability:
 
-1. **Gates never reuse a session.** A verifier or reviewer that continues the session of the agent whose work it judges is not independent. Gate agents always start a **fresh session** — the ledger is for workers.
+1. **Judgment gates never reuse a session.** Verifier and reviewer agents always start fresh. Survey and investigation sessions may continue for evidence follow-ups; they are not judging their own plan.
 2. **A changed contract invalidates the session.** If the task's acceptance, ownership or scope changed (an UPDATE, a re-profile, a rewritten acceptance), the agent's earlier work rests on a stale contract: re-prime it with the new contract or start a fresh session. Do not let it "finish what it was doing".
 3. **The session is an optimisation, never the record.** The durable facts are the contract in `tasks.yaml` and the git history; a session transcript is neither portable nor auditable. Never let the agent treat "I remember deciding this" as evidence.
 
@@ -231,7 +235,7 @@ git worktree add ".worktrees/$id" -b "task-$id"
 
 Generate via `archgen_tasks{action:'contract', tasksYaml, taskId}`. It bundles task ID/title, verbatim acceptance, `file_ownership`, dependency neighborhood, the ABSOLUTE path of the installed skill's `references/code-standards.md` (or none, when the skill is not installed — pass `codeStandardsPath` to supply one), inline normative rules + paths for matched skills, pre-located plan sections, `.agent/` paths, the completion protocol (`set_status`, `Skill compliance:` line, commit scope), prohibitions, the CodeGraph directive, and `dispatchKey`.
 
-**Pre-dispatch:** inspect `contract.warnings`. Never dispatch with missing acceptance criteria, empty `file_ownership`, or an uninstalled required skill.
+**Pre-dispatch:** inspect `contract.warnings` and require `dispatchable:true`. ANY warning blocks: missing acceptance/ownership, ambiguous resolution, unavailable document context, failed capability discovery, or an uninstalled/unreadable required skill. CodeGraph guidance requires a valid database and successful status probe; otherwise workers use native search.
 
 ## Failure policy
 
